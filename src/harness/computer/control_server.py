@@ -21,7 +21,7 @@ from harness.computer.control import (
     ControlAction,
     DockerComputerControl,
 )
-from harness.computer.desktop import DesktopControlService
+from harness.computer.desktop import DesktopControlService, DesktopOccupiedError
 from harness.computer.host import ComputerLimits, DockerComputerLifecycle
 from harness.computer.models import (
     ComputerLease,
@@ -147,6 +147,10 @@ def create_app(settings: ControllerSettings) -> FastAPI:
             await engine.dispose()
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    # Exposed for test doubles only; production code goes through the routes.
+    app.state.desktop_service = desktop_service
+    app.state.desktop_screen = desktop_screen
+    app.state.registry = registry
 
     async def health() -> dict[str, str]:
         return {"status": "ok"}
@@ -220,6 +224,8 @@ def create_app(settings: ControllerSettings) -> FastAPI:
         except ValidationError:
             raise HTTPException(400, "Computer desktop request is invalid") from None
         try:
+            screen: VmDesktopService = request.app.state.desktop_screen
+            desktop_leases: DesktopControlService = request.app.state.desktop_service
             computer, current = await registry.holder(command.token)
             if computer.provider != VM_PROVIDER:
                 raise ValueError("this computer has no desktop control surface")
@@ -227,7 +233,9 @@ def create_app(settings: ControllerSettings) -> FastAPI:
                 raise ComputerLeaseLostError("desktop actions need a live execution lease")
             if access is not None:
                 await access.authorize(computer, current, "exec")
-            state = await desktop_service.acquire_agent(
+            # Renew-only: the worker acquires explicitly; the gate never
+            # grants input ownership from observation by itself.
+            state = await desktop_leases.renew_agent(
                 computer.tenant_id, computer.user_id, owner=current.owner
             )
             # The acquired epoch is authoritative: a takeover bumped it, so a
@@ -236,8 +244,8 @@ def create_app(settings: ControllerSettings) -> FastAPI:
                 raise ComputerLeaseLostError("desktop control was not granted to this holder")
             if command.expected_epoch != state.epoch:
                 raise ComputerLeaseLostError("desktop control epoch is stale")
-            return await desktop_screen.operate(computer, command.operation, command.payload)
-        except (ComputerLeaseLostError, NotFoundError):
+            return await screen.operate(computer, command.operation, command.payload)
+        except (ComputerLeaseLostError, DesktopOccupiedError, NotFoundError):
             raise HTTPException(409, "Computer desktop ownership was lost") from None
         except (TimeoutError, httpx.HTTPError, RuntimeError, ValueError, OSError, EOFError):
             raise HTTPException(503, "Computer desktop could not be reached") from None

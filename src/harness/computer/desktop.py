@@ -98,6 +98,21 @@ class DesktopControlService:
             row.updated_at = moment
             return DesktopControl.model_validate(row)
 
+    async def renew_agent(self, tenant_id: str, user_id: str, *, owner: str) -> DesktopControl:
+        """Extend an existing agent ownership; never grants from observation."""
+
+        _identity(owner)
+        async with self._sessions.begin() as session:
+            moment = datetime.now(UTC)
+            row = await self._row(session, tenant_id, user_id)
+            self._settle(row, moment)
+            if row.state != DesktopState.AGENT.value or row.owner != owner:
+                raise DesktopOccupiedError(self._occupied(row))
+            row.expires_at = moment + timedelta(seconds=AGENT_TTL_SECONDS)
+            row.revision += 1
+            row.updated_at = moment
+            return DesktopControl.model_validate(row)
+
     async def release_agent(self, tenant_id: str, user_id: str, *, owner: str) -> DesktopControl:
         """Run teardown returns the desktop to observation, best effort."""
 
