@@ -13,6 +13,7 @@
 | `17698ea5` | M3：后台委派工具（assistant_create_task / task_status / update_task） |
 | `a0a21e56` | 桌面 gate 改为 renew-only + 端到端 gate 测试（真实 canonical 授权链） |
 | `e318b647` | viewer 测试对齐 gate 语义 |
+| `1da0365e` | VM 生命周期测试（adopt/拒绝/guest fencing 存活/物理停机回退，Docker 与 guest 全 mock） |
 
 设计决策记录：[ADR](plans/2026-10-28-kai-dot-vm-bridge.md)；部署手册：[runbook](plans/2026-10-28-kai-dot-deploy-runbook.md)。
 
@@ -24,7 +25,7 @@
 HARNESS_TEST_DATABASE_URL=postgresql+asyncpg://harness:harness@127.0.0.1:35432/harness_test \
   uv run pytest tests/unit/assistant tests/unit/sandbox/test_computer_{runtime,vm_provider,desktop_client,viewer,vm_keys,vm_seed,ssh_gate,workspace}.py \
   tests/integration/storage/test_computer_{desktop,desktop_gate,vm_provider,registry,manager,access}_postgres.py
-# 最终结果：194 passed（05:10）
+# 最终结果：195 passed（05:31）；storage 全量 190 过，其余 16 失败均为本地无 Redis/MinIO 的既有基础设施用例（pristine 分支同因失败）
 ```
 
 专项断言覆盖：
@@ -33,6 +34,7 @@ HARNESS_TEST_DATABASE_URL=postgresql+asyncpg://harness:harness@127.0.0.1:35432/h
 - **控制服务 gate**（2 项，走真实 canonical 授权链：账号/租户/个人线程绑定/SandboxLease/Run fence）：当前持有者+当前 epoch → 200；epoch 过期 → 409；release 后不再自动授权（renew-only）→ 409；错误控制密钥 → 403。
 - **RFB 客户端**（4 项）：3.3–3.8 握手与安全类型选择、SetPixelFormat（U8 bpp）、原始编码全帧 blit→PNG、Pointer/KeyEvent 线序与组合键、keysym 映射（ASCII/命名键/Unicode 0x01000000+）。
 - **VM Provider**（25 项）：registry 路由按 canonical 行、未配置 provider fail-closed、adopt 幂等/冲突拒绝、容器验证（镜像/挂载/KVM 设备/label）。
+- **VM 生命周期**（4 项）：ensure 认领并启动既有 runner、缺容器拒绝、reset 优先 guest fencing（VM 存活返回引用）、guest 不可达时物理停机回退（容器删除、盘不动）。
 - **委派工具**（6 项）：创建即入队一次执行、trigger_key 带委托 run（重试不重复派发）、周期调度、参数校验、状态查询、修订冲突。
 
 类型与静态检查：`ruff check src/ tests/` 全过；pyright 走仓库基线机制（`scripts/check_type_baseline.py`），本分支对基线的净新增诊断集中在既有模式（pydantic-settings `list[Unknown]` 等）；**分支基线本身相对上游已有 929 条陈账**（交接工作树同条件实测），非本轮引入。
