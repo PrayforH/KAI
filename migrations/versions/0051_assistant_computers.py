@@ -18,6 +18,7 @@ def upgrade() -> None:
         sa.Column("provider", sa.String(64), nullable=False),
         sa.Column("image", sa.String(512), nullable=False),
         sa.Column("volume_ref", sa.String(128), nullable=False),
+        sa.Column("volume_ready", sa.Boolean(), nullable=False),
         sa.Column("provider_ref", sa.String(128)),
         sa.Column("state", sa.String(32), nullable=False),
         sa.Column("epoch", sa.Integer(), nullable=False),

@@ -41,6 +41,10 @@ class ComputerRegistry:
         self._sessions = sessions
         self._ttl = timedelta(seconds=lease_ttl_seconds)
 
+    @property
+    def lease_ttl_seconds(self) -> float:
+        return self._ttl.total_seconds()
+
     async def ensure(
         self, tenant: str, user: str, *, provider: str, image: str
     ) -> AssistantComputer:
@@ -66,6 +70,7 @@ class ComputerRegistry:
                     provider=provider,
                     image=image,
                     volume_ref="kai-computer-" + identifier,
+                    volume_ready=False,
                     state=ComputerState.REGISTERED.value,
                     epoch=0,
                     revision=1,
@@ -181,6 +186,71 @@ class ComputerRegistry:
             await session.flush()
             return ComputerLease.model_validate(lease)
 
+    async def holder(self, token: ComputerLease) -> tuple[AssistantComputer, ComputerLease]:
+        """Validate without extending permission; used by the privileged control service."""
+
+        async with self._sessions() as session:
+            return await self._view(session, token)
+
+    @asynccontextmanager
+    async def host_operation(
+        self, token: ComputerLease
+    ) -> AsyncGenerator[tuple[AssistantComputer, ComputerLease]]:
+        """Serialize physical lifecycle without blocking ownership heartbeats.
+
+        Validate *after* acquiring the advisory lock. All host lifecycle calls
+        use this gate; root command calls instead use the physical epoch gate.
+        No computer row lock is held across a slow Docker request.
+        """
+
+        async with self._sessions.begin() as session:
+            await session.execute(
+                select(
+                    func.pg_advisory_xact_lock(
+                        func.hashtextextended("kai-computer-host:" + token.computer_id, 0)
+                    )
+                )
+            )
+            yield await self._view(session, token)
+
+    @staticmethod
+    async def _view(
+        session: AsyncSession, token: ComputerLease
+    ) -> tuple[AssistantComputer, ComputerLease]:
+        pair = (
+            await session.execute(
+                select(Computer, Lease)
+                .join(
+                    Lease,
+                    (
+                        (Lease.tenant_id == Computer.tenant_id)
+                        & (Lease.user_id == Computer.user_id)
+                        & (Lease.epoch == Computer.epoch)
+                    ),
+                )
+                .where(
+                    Computer.tenant_id == token.tenant_id,
+                    Computer.user_id == token.user_id,
+                    Computer.computer_id == token.computer_id,
+                    Lease.lease_id == token.lease_id,
+                    Lease.epoch == token.epoch,
+                    Lease.state == LeaseState.ACTIVE.value,
+                    Lease.expires_at > func.clock_timestamp(),
+                )
+            )
+        ).one_or_none()
+        if pair is None:
+            raise ComputerLeaseLostError("computer lease is expired, released or superseded")
+        computer, lease = pair
+        if (
+            lease.owner != token.owner
+            or lease.purpose != token.purpose
+            or lease.run_id != token.run_id
+            or lease.session_id != token.session_id
+        ):
+            raise ComputerLeaseLostError("computer lease identity does not match")
+        return AssistantComputer.model_validate(computer), ComputerLease.model_validate(lease)
+
     async def complete_start(self, token: ComputerLease, *, provider_ref: str) -> AssistantComputer:
         """Publish a ready instance using the previously reserved work volume.
 
@@ -190,11 +260,38 @@ class ComputerRegistry:
 
         _identity(provider_ref, 128)
         async with self._holder(token, LeasePurpose.START) as (_, computer, lease, moment):
-            if computer.provider_ref is not None:
+            if computer.provider_ref is not None and computer.provider_ref != provider_ref:
                 raise ConflictError("computer already has a provider instance")
             computer.provider_ref = provider_ref
+            computer.volume_ready = True
             _finish(computer, lease, moment, ComputerState.IDLE)
             return AssistantComputer.model_validate(computer)
+
+    async def record_start_instance(self, token: ComputerLease, provider_ref: str) -> None:
+        """Save the creation acknowledgement before waiting for readiness.
+
+        This closes the ordinary crash window between instance creation and
+        initialization. An unknown POST outcome still requires discovery.
+        """
+
+        _identity(provider_ref, 128)
+        async with self._holder(token, LeasePurpose.START) as (_, computer, _, moment):
+            if computer.provider_ref not in {None, provider_ref}:
+                raise ConflictError("creation attempt already recorded another instance")
+            computer.provider_ref = provider_ref
+            _touch(computer, moment)
+
+    async def reject_start(self, token: ComputerLease) -> None:
+        """Only a definite pre-creation rejection may release a failed start.
+
+        A timeout, cancellation, malformed acknowledgement or readiness failure
+        is uncertain and must retain its lease for discovery/recovery instead.
+        """
+
+        async with self._holder(token, LeasePurpose.START) as (_, computer, lease, moment):
+            if computer.provider_ref is not None:
+                raise ConflictError("an acknowledged instance requires recovery")
+            _finish(computer, lease, moment, ComputerState.FAILED)
 
     async def finish_execution(self, token: ComputerLease) -> AssistantComputer:
         """Release after the driver confirmed this lease's process group exited.
@@ -221,6 +318,8 @@ class ComputerRegistry:
             _identity(provider_ref, 128)
         async with self._holder(token, LeasePurpose.RECOVER) as (_, computer, lease, moment):
             computer.provider_ref = provider_ref
+            if provider_ref is not None:
+                computer.volume_ready = True
             _finish(
                 computer,
                 lease,

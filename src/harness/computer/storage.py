@@ -2,7 +2,16 @@
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKeyConstraint, Index, Integer, String, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    String,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from harness.storage.models import Base
@@ -31,6 +40,7 @@ class AssistantComputerRow(Base):
     provider: Mapped[str] = mapped_column(String(64))
     image: Mapped[str] = mapped_column(String(512))
     volume_ref: Mapped[str] = mapped_column(String(128))
+    volume_ready: Mapped[bool] = mapped_column(Boolean)
     provider_ref: Mapped[str | None] = mapped_column(String(128))
     state: Mapped[str] = mapped_column(String(32))
     epoch: Mapped[int] = mapped_column(Integer)

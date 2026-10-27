@@ -1,0 +1,30 @@
+{
+  "tenant": "computer-probe-eda676d184054d66bbca3d67bb64567c",
+  "checkedAt": "2026-10-27T02:36:18.911784+00:00",
+  "scope": "Controlled Manager executions, not canonical KAI model Runs or real user chats",
+  "computer_id": "computer_3a62737fc95a407cb10e70b841135dfa",
+  "volume_ref": "kai-computer-3a62737fc95a407cb10e70b841135dfa",
+  "initial_instance": "15d0b72629ce62a8640b4e1c115d344242b6ab34644b061796be46a6d806e304",
+  "task_privileges": {
+    "uids": [
+      28000,
+      28000,
+      28000
+    ],
+    "root_control_readable": false,
+    "docker_socket_visible": false,
+    "execd_unreachable": true
+  },
+  "first_daemon": 4,
+  "heartbeat_confirmed": true,
+  "stale_holder_rejected": true,
+  "fresh_manager_same_instance_and_disk": true,
+  "finish_drained_detached_daemon": true,
+  "crash_daemon": 3,
+  "replacement_instance": "5534d6b9026593014b49d70febfa0b405fbb0a358bd3fd3e736a96e58975bd4d",
+  "expired_worker_stopped_before_recovery": true,
+  "recovery_preserved_identity_and_disk": true,
+  "passed": true,
+  "control_volume_ref": "kai-computer-3a62737fc95a407cb10e70b841135dfa-control",
+  "test_instance_removed": true
+}

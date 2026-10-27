@@ -1,0 +1,8 @@
+{
+  "scope": "Isolated local PostgreSQL harness_computer_migrations_final; no production schema change",
+  "freshDatabaseUpgradedFrom0001To0051": true,
+  "downgrade0051To0050ThenUpgrade0051": true,
+  "legacyUserSentinelPreserved": true,
+  "computerTablesIncludingVolumeReadyMatchMetadata": true,
+  "initialMigrationExcludesComputerTablesOwnedBy0051": true
+}

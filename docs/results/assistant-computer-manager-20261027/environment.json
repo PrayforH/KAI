@@ -1,0 +1,28 @@
+{
+  "kernel": "3.10.0-1160.119.1.el7.x86_64",
+  "dockerServer": "26.1.4",
+  "imageTag": "kai/assistant-computer:20261027-v0h",
+  "imageId": "sha256:9b926012e692cec7a060124926a2b7638cf81faa13ccd3cb73d72704e11fb88c",
+  "sourceSha256": {
+    "src/harness/computer/__init__.py": "9e26d93dd6aa4ed7f08c3dfe27c5652fd27cb25aae3c6960622a1734ed2d7dfb",
+    "src/harness/computer/control.py": "d411d467afc1365469178c401f9f59c4aabe81f9f646e0061e0b6d6854626afc",
+    "src/harness/computer/control_server.py": "626ebecc93069e25c1fb84d59f71404cfc5f0da5e768fb5a47080fcc36049d95",
+    "src/harness/computer/docker.py": "1744d653a1e894241d1541f6cb765db539a7820d8b46642ea7bec302fc5dbf99",
+    "src/harness/computer/host.py": "d20d1ef8fd6e504b18d036b0af304522bb49d5710cd26693de6aa594f81ff7bd",
+    "src/harness/computer/manager.py": "021f427aae1c6f57a510c102826f95186bea4f916e3b432c5dd1ae960ee90bf6",
+    "src/harness/computer/models.py": "3bf17a88cbc4f6d55e39235cfd2e458c6847b9831e5bae8f2e74ba5190be5cac",
+    "src/harness/computer/registry.py": "a9203ce43a7e7ad19be924edef035c287e7496156ee60200b7129dfd8bd09376",
+    "src/harness/computer/storage.py": "1a6e43adae4ecf86ae1ce9b998bb1bac6528f79b23138707fbba3ff08d9c9dc4",
+    "src/harness/computer/supervisor.py": "7a2d2c6c56669865ddd6b00f4aff84a23dfa84809730e8b5a4f93d519fea3a99",
+    "scripts/probe_assistant_computer.py": "8b757ea1f39f3f36646b8b558072104cf6ba9501d5f79d075012f72feb6cfd97",
+    "tests/integration/computer/test_supervisor_linux.py": "f9fb368aa5eccab06cac4fddb0c658a80e825c42805db8908914d4c9dd3b2e73"
+  },
+  "taskUid": 28000,
+  "memoryBytes": 4294967296,
+  "nanoCpus": 2000000000,
+  "productionComputerEnabled": false,
+  "testDatabase": "harness_computer_probe",
+  "testedSourceMatchesCheckout": true,
+  "imageSupervisorSha256": "7a2d2c6c56669865ddd6b00f4aff84a23dfa84809730e8b5a4f93d519fea3a99",
+  "imageSupervisorMatchesTestedSource": true
+}

@@ -45,6 +45,10 @@ class ComputerLeaseLostError(ConflictError):
     """The caller no longer has permission to act on this computer."""
 
 
+class ComputerStartRejectedError(RuntimeError):
+    """Provider proved that creation was rejected before an instance existed."""
+
+
 class AssistantComputer(BaseModel):
     model_config = ConfigDict(frozen=True, from_attributes=True)
 
@@ -54,6 +58,7 @@ class AssistantComputer(BaseModel):
     provider: str
     image: str
     volume_ref: str
+    volume_ready: bool
     provider_ref: str | None
     state: ComputerState
     epoch: int

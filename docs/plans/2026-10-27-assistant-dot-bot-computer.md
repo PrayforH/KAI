@@ -68,7 +68,7 @@ flowchart LR
 
 ## 79 的首个 Computer 里程碑
 
-先用 OpenSandbox / Docker 适配实现单用户试点：
+首版使用独立 Docker Computer 驱动，普通临时任务继续使用 OpenSandbox。持久电脑不启动 root execd，由内部鉴权控制服务调用固定监督器，任务降权执行；后端替换必须保持租约到期后的物理写入隔离。单用户试点顺序：
 
 1. 用户第一次需要终端或浏览器时创建电脑，持续更新 Provider TTL 和心跳；后续任务重新连接现有 provider_ref。
 2. 挂载用户专属数据卷：`/workspace`、受控的 HOME、浏览器 profile 与相关 OS keyring。项目使用独立子目录，输入附件沿用现有 owner-scoped InputArtifact。
@@ -103,7 +103,7 @@ OpenSandbox 官方提供桌面/VNC 示例，并指出 HTTPS 嵌入需要正确�
 
 ## 后续实施顺序与验收
 
-Computer V0 已开始实现，当前完成用户电脑注册、互斥租约与迁移代码，并在 79 用独立测试实例实证重连与工作盘跨实例保留。代码、测试及未完成接入见[迭代记录](../assistant-computer-v0-20261027.md)。尚未把个人助理切到持久电脑；V0 下列完整验收仍待 Manager、Worker 和清理归属接通后执行。
+Computer V0 持续实现中：已完成注册、互斥租约、Manager、Docker 驱动与固定监督器，并在 79 验证两轮受控执行复用、心跳、旧进程停止及失联恢复保留工作盘。见[注册迭代](../assistant-computer-v0-20261027.md)与[Manager 组件验收](../assistant-computer-manager-20261027.md)。这些仍是隔离组件测试，个人助理尚未切换；下列完整验收还需接通真实 Worker、工作区策略、业务授权及清理归属。生产仍为 0050。
 
 | 里程碑 | 具体变化 | 验收标准 |
 | --- | --- | --- |
