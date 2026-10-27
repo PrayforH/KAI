@@ -16,6 +16,7 @@ from uuid import uuid4
 
 import httpx
 
+from harness.computer.access import ComputerAuthorizer
 from harness.computer.host import verify_instance
 from harness.computer.models import (
     ComputerLease,
@@ -89,8 +90,15 @@ class DockerComputerControl:
     holder and checked against the actual Docker container and mounted disk.
     """
 
-    def __init__(self, registry: ComputerRegistry, docker: httpx.AsyncClient) -> None:
+    def __init__(
+        self,
+        registry: ComputerRegistry,
+        docker: httpx.AsyncClient,
+        *,
+        authorizer: ComputerAuthorizer | None = None,
+    ) -> None:
         self.registry, self.docker = registry, docker
+        self.authorizer = authorizer
 
     async def call(
         self, token: ComputerLease, action: ControlAction, payload: Mapping[str, object]
@@ -103,6 +111,8 @@ class DockerComputerControl:
         )
         if current.purpose not in purposes or computer.provider != "docker-computer":
             raise ComputerLeaseLostError("computer control purpose does not match its lease")
+        if self.authorizer is not None:
+            await self.authorizer.authorize(computer, current, action)
         reference = computer.provider_ref
         if reference is None or re.fullmatch(r"[A-Za-z0-9_-]{1,128}", reference) is None:
             raise ComputerLeaseLostError("computer has no valid instance reference")
@@ -144,6 +154,11 @@ class DockerComputerControl:
         duration = payload.get("timeout_seconds", 30)
         if not isinstance(duration, (int, float)) or not 0 < duration <= 3600:
             raise ValueError("computer execution duration is invalid")
+        # Revalidate after file transfer / Docker I/O. Neither a queued request
+        # nor an old Worker may reuse an earlier account/Run authorization.
+        computer, current = await self.registry.holder(token)
+        if self.authorizer is not None:
+            await self.authorizer.authorize(computer, current, action)
         return await self._run_root(
             container, ["python3", "-I", SUPERVISOR, action, f"{SPOOL}/{name}"], float(duration)
         )

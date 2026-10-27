@@ -58,6 +58,7 @@ def upgrade() -> None:
         sa.Column("owner", sa.String(160), nullable=False),
         sa.Column("purpose", sa.String(16), nullable=False),
         sa.Column("epoch", sa.Integer(), nullable=False),
+        sa.Column("run_fencing_token", sa.Integer()),
         sa.Column("run_id", sa.String(128)),
         sa.Column("session_id", sa.String(128)),
         sa.Column("state", sa.String(16), nullable=False),
@@ -70,6 +71,10 @@ def upgrade() -> None:
             ["assistant_computers.tenant_id", "assistant_computers.user_id"],
         ),
         sa.CheckConstraint("epoch >= 1", name="ck_computer_lease_epoch"),
+        sa.CheckConstraint(
+            "run_fencing_token IS NULL OR (purpose = 'execute' AND run_fencing_token >= 0)",
+            name="ck_computer_run_fence",
+        ),
         sa.CheckConstraint(
             "state IN ('active','released','expired')", name="ck_computer_lease_state"
         ),

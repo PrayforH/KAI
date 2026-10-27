@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx
 
+from harness.computer.access import ComputerAuthorizer
 from harness.computer.models import (
     AssistantComputer,
     ComputerLease,
@@ -87,14 +88,22 @@ def verify_instance(info: dict[str, Any], computer: AssistantComputer) -> str:
 
 class DockerComputerLifecycle:
     def __init__(
-        self, registry: ComputerRegistry, docker: httpx.AsyncClient, limits: ComputerLimits
+        self,
+        registry: ComputerRegistry,
+        docker: httpx.AsyncClient,
+        limits: ComputerLimits,
+        *,
+        authorizer: ComputerAuthorizer | None = None,
     ) -> None:
         self.registry, self.docker, self.limits = registry, docker, limits
+        self.authorizer = authorizer
 
     async def lifecycle(self, token: ComputerLease, operation: str) -> str | None:
         async with self.registry.host_operation(token) as (computer, current):
             if computer.provider != "docker-computer":
                 raise ComputerLeaseLostError("computer is not managed by this host")
+            if self.authorizer is not None:
+                await self.authorizer.authorize(computer, current, operation)
             if operation == "ensure" and current.purpose is LeasePurpose.START:
                 return await self._ensure(computer)
             if operation != "reset" or current.purpose is not LeasePurpose.RECOVER:

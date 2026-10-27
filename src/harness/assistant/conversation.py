@@ -17,12 +17,11 @@ from harness.agui.response import final_response_text
 from harness.agui.service import AguiRunService
 from harness.application.agents import AgentService
 from harness.application.runs import RunService
+from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
 from harness.assistant.controls import CONTROL_HELP, RUN_LABELS, ControlIntent
 from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
 from harness.core.models import InputArtifact, Run
 from harness.core.ports import EventRepository
-
-PERSONAL_ASSISTANT_THREAD = "kai-personal-assistant-v1"
 
 
 def _previous_prompts(runs: list[Run]) -> list[str]:

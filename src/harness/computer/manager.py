@@ -98,11 +98,22 @@ class ComputerManager:
 
     @asynccontextmanager
     async def execution(
-        self, tenant: str, user: str, *, run_id: str, session_id: str
+        self,
+        tenant: str,
+        user: str,
+        *,
+        run_id: str,
+        session_id: str,
+        run_fencing_token: int | None = None,
     ) -> AsyncGenerator[ComputerAllocation]:
         computer = await self.ready(tenant, user)
         token = await self.registry.claim_execution(
-            tenant, user, owner=self.owner, run_id=run_id, session_id=session_id
+            tenant,
+            user,
+            owner=self.owner,
+            run_id=run_id,
+            session_id=session_id,
+            run_fencing_token=run_fencing_token,
         )
         computer = await self.registry.get(tenant, user)
         # Activation is outside the user-work try/finally: a failed/uncertain

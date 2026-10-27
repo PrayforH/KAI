@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     runtime_kernels: frozenset[AgentRuntimeType] = Field(
         default=frozenset(INSTALLED_AGENT_RUNTIMES), min_length=1
     )
+    # Explicit tenant/account rollout; ordinary tasks keep their existing backend.
+    assistant_computer_owners: dict[str, frozenset[str]] = Field(default_factory=dict)
+    assistant_computer_control_url: str = ""
+    assistant_computer_control_secret: SecretStr = SecretStr("")
+    assistant_computer_image: str = ""
     sandbox_provider: Literal[
         "local", "daytona", "e2b", "kubernetes", "cubesandbox", "opensandbox"
     ] = "local"
@@ -45,10 +50,12 @@ class Settings(BaseSettings):
     sandbox_network_access: dict[
         Literal["opensandbox", "cubesandbox"],
         tuple[Literal["none", "internal", "external"], ...],
-    ] = Field(default_factory=lambda: {
-        "opensandbox": ("none", "internal", "external"),
-        "cubesandbox": ("none",),
-    })
+    ] = Field(
+        default_factory=lambda: {
+            "opensandbox": ("none", "internal", "external"),
+            "cubesandbox": ("none",),
+        }
+    )
     # "declared" keeps the historical behaviour: profiles state a network level
     # but no backend applies it. "enforced" derives a host allow list per Run and
     # refuses the Run when the backend cannot apply it.
@@ -146,14 +153,12 @@ class Settings(BaseSettings):
     studio_builder_intent_model: str = ""
     studio_builder_intent_timeout_seconds: float = Field(default=12, ge=1, le=60)
 
-
     minimax_m3_base_url: str = ""
     minimax_m3_api_key: SecretStr = SecretStr("")
     minimax_m3_model: str = "MiniMax-M3"
     minimax_m3_auth_scheme: Literal["bearer", "x-api-key"] = "x-api-key"
     minimax_m3_compatibility: Literal["full", "degraded", "unsupported"] = "full"
     minimax_m3_capabilities: str = "streaming,tool_use,vision"
-
 
     anthropic_base_url: str = "https://api.anthropic.com"
     anthropic_api_key: SecretStr = SecretStr("")

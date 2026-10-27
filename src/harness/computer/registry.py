@@ -92,15 +92,27 @@ class ComputerRegistry:
         return await self._claim(tenant, user, owner=owner, purpose=LeasePurpose.START)
 
     async def claim_execution(
-        self, tenant: str, user: str, *, owner: str, run_id: str, session_id: str
+        self,
+        tenant: str,
+        user: str,
+        *,
+        owner: str,
+        run_id: str,
+        session_id: str,
+        run_fencing_token: int | None = None,
     ) -> ComputerLease:
         _identity(run_id, 128)
         _identity(session_id, 128)
+        if run_fencing_token is not None and (
+            type(run_fencing_token) is not int or run_fencing_token < 0
+        ):
+            raise ValueError("computer execution Run fence is invalid")
         return await self._claim(
             tenant,
             user,
             owner=owner,
             purpose=LeasePurpose.EXECUTE,
+            run_fencing_token=run_fencing_token,
             run_id=run_id,
             session_id=session_id,
         )
@@ -123,6 +135,7 @@ class ComputerRegistry:
         purpose: LeasePurpose,
         run_id: str | None = None,
         session_id: str | None = None,
+        run_fencing_token: int | None = None,
     ) -> ComputerLease:
         _identity(owner, 160)
         async with self._sessions.begin() as session:
@@ -169,6 +182,7 @@ class ComputerRegistry:
                 purpose=purpose.value,
                 epoch=computer.epoch,
                 run_id=run_id,
+                run_fencing_token=run_fencing_token,
                 session_id=session_id,
                 state=LeaseState.ACTIVE.value,
                 created_at=moment,

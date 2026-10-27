@@ -40,6 +40,7 @@ from harness.automations.pg_repositories import (
     PostgresAutomationTaskRepository,
 )
 from harness.automations.service import AutomationService
+from harness.computer.runtime import ComputerRuntime
 from harness.config import Settings
 from harness.context.checkpoint import ContextCheckpointService
 from harness.context.service import ContextService
@@ -67,8 +68,6 @@ from harness.feishu.media import FeishuMedia, FeishuResourceClient, MediaRejecte
 from harness.feishu.models import FeishuSettings
 from harness.feishu.repository import FeishuRepository
 from harness.feishu.service import FeishuService
-from harness.weixin.service import WeixinService
-from harness.weixin.media import WeixinMedia, WeixinMediaSettings
 from harness.governance.service import GovernanceService
 from harness.inputs.processors import DefaultInputProcessor
 from harness.knowledge.directory import PlatformUserDirectory
@@ -244,6 +243,8 @@ from harness.studio.service import AgentStudioService
 from harness.studio.skill_builder import ControlPlaneSkillConversationService
 from harness.studio.web_configuration import WebConfigurationService
 from harness.triggers.service import AgentTriggerService
+from harness.weixin.media import WeixinMedia, WeixinMediaSettings
+from harness.weixin.service import WeixinService
 from harness.worker.orchestrator import RunOrchestrator, SandboxResolver
 
 
@@ -680,7 +681,8 @@ def build_production_container(
     registry = PostgresAgentRegistry(sessions, skill_blobs)
     team_space_repository = PostgresTeamSpaceRepository(sessions)
     session_repository = PostgresSessionRepository(sessions)
-    runs = PostgresRunRepository(sessions)
+    computer_runtime = ComputerRuntime(settings, sessions, execution_enabled=execution_enabled)
+    runs = PostgresRunRepository(sessions, fence_computers=computer_runtime.enabled)
     approvals = PostgresApprovalRepository(sessions)
     artifact_repository = PostgresArtifactRepository(sessions)
     input_repository = PostgresInputArtifactRepository(sessions)
@@ -1373,6 +1375,7 @@ def build_production_container(
             # refused rather than served by the default. Without a snapshot the
             # deployment's single setting decides, which is how every session ran
             # before profiles carried a provider.
+            use_computer = await computer_runtime.matches(session)
             provider_id = default_name
             profile = None
             pinned_egress_enforcement = False
@@ -1401,6 +1404,13 @@ def build_production_container(
                 # is refused rather than silently executing weaker than declared.
                 if not provider_meets_enforcement_floor(provider_id, profile.minimum_enforcement):
                     raise RuntimeError("execution_profile_enforcement_below_minimum")
+
+            if use_computer:
+                if profile is not None:
+                    raise SandboxGovernanceError(
+                        "Personal Computer cannot override a pinned execution profile"
+                    )
+                provider_id = "docker-computer"
 
             # A Session's trust high-watermark sets the weakest backend it still
             # accepts, independent of any published execution profile: once
@@ -1431,7 +1441,10 @@ def build_production_container(
                     f"{provider_id} provides {enforcement.value}"
                 )
 
-            run_sandbox, run_backend = backends_for(provider_id)
+            if use_computer:
+                run_sandbox = run_backend = computer_runtime.provider(session, runs.get)
+            else:
+                run_sandbox, run_backend = backends_for(provider_id)
 
             # Set once the Agent's manifests are known; scoped() below applies it
             # to whichever provider this Run ends up with.
@@ -1440,6 +1453,10 @@ def build_production_container(
             def scoped(provider: SandboxProvider) -> SandboxProvider:
                 if egress is None or not egress.is_restrictive():
                     return provider
+                if use_computer:
+                    raise SandboxGovernanceError(
+                        "Personal Computer cannot enforce this Run's egress policy"
+                    )
                 return EgressScopedSandbox(provider, egress)
 
             if settings.sandbox_execution_mode != "worker_cli_deferred":
@@ -1458,6 +1475,12 @@ def build_production_container(
                 for version in (root, *children.values())
             )
             manifests = tuple(snapshot.manifest for snapshot in snapshots)
+            if use_computer and any(
+                manifest.spec.runtime != "claude-agent-sdk" for manifest in manifests
+            ):
+                raise SandboxGovernanceError(
+                    "Personal Computer currently requires the Worker-local SDK runtime"
+                )
             if settings.sandbox_egress_enforcement == "enforced" or pinned_egress_enforcement:
                 catalog_mcp = (await capability_catalogs.get(tenant_id)).catalog.mcp_servers
                 egress = sandbox_egress_policy(
@@ -1494,6 +1517,10 @@ def build_production_container(
                     for tool in snapshot.python_tool_snapshots
                 ),
             ):
+                if use_computer:
+                    raise SandboxGovernanceError(
+                        "Personal Computer cannot run a required remote CLI"
+                    )
                 return scoped(run_backend)
             return scoped(run_sandbox)
 
@@ -1728,6 +1755,7 @@ def build_production_container(
     )
 
     async def close() -> None:
+        await computer_runtime.close()
         if warm_sdk_pool is not None:
             await warm_sdk_pool.close()
         await redis.aclose()
@@ -1764,17 +1792,26 @@ def build_production_container(
         memory=memory_bank,
     )
     assistant = AssistantService(
-        PostgresAssistantRepository(sessions), agents=agent_service, auth=auth,
-        projects=project_service, agui=agui, runs=run_service, events=raw_event_repository,
+        PostgresAssistantRepository(sessions),
+        agents=agent_service,
+        auth=auth,
+        projects=project_service,
+        agui=agui,
+        runs=run_service,
+        events=raw_event_repository,
     )
     feishu_settings = FeishuSettings()
 
     async def channel_vision_route(tenant_id: str, configured_route: str = "") -> str:
         catalog = await model_configurations.list(tenant_id)
-        routes = [model for model in catalog.models
-                  if model.enabled and model.credential_configured
-                  and {"vision", "streaming", "tool_use"}.issubset(model.capabilities)
-                  and model.model_type in {"chat", "vision"}]
+        routes = [
+            model
+            for model in catalog.models
+            if model.enabled
+            and model.credential_configured
+            and {"vision", "streaming", "tool_use"}.issubset(model.capabilities)
+            and model.model_type in {"chat", "vision"}
+        ]
         if configured_route:
             routes = [model for model in routes if model.route_id == configured_route]
         if not routes:
@@ -1785,13 +1822,22 @@ def build_production_container(
 
     def feishu_factory(active: FeishuSettings) -> FeishuService:
         return FeishuService(
-            FeishuRepository(sessions, active.app_id), active,
-            assistant=assistant, auth=auth, agents=agent_service,
-            conversation=PersonalConversation(agui=agui, runs=run_service,
-                                              agents=agent_service, events=events),
-            media=FeishuMedia(FeishuResourceClient(active), input_service,
-                              DictationService(DictationSettings()), vision_route=lambda tenant: channel_vision_route(tenant, active.vision_model_route)),
+            FeishuRepository(sessions, active.app_id),
+            active,
+            assistant=assistant,
+            auth=auth,
+            agents=agent_service,
+            conversation=PersonalConversation(
+                agui=agui, runs=run_service, agents=agent_service, events=events
+            ),
+            media=FeishuMedia(
+                FeishuResourceClient(active),
+                input_service,
+                DictationService(DictationSettings()),
+                vision_route=lambda tenant: channel_vision_route(tenant, active.vision_model_route),
+            ),
         )
+
     container = ApiContainer(
         presentations=presentations,
         evolution=evolution,
@@ -1836,14 +1882,25 @@ def build_production_container(
         triggers=trigger_service,
         automations=automation_service,
         assistant=assistant,
-        weixin=WeixinService(sessions, mcp_credential_service.cipher,
-            PersonalConversation(agui=agui, runs=run_service, agents=agent_service, events=events), auth,
-            media=WeixinMedia(input_service, DictationService(DictationSettings()),
-                vision_route=lambda tenant: channel_vision_route(tenant, WeixinMediaSettings().vision_model_route))),
+        weixin=WeixinService(
+            sessions,
+            mcp_credential_service.cipher,
+            PersonalConversation(agui=agui, runs=run_service, agents=agent_service, events=events),
+            auth,
+            media=WeixinMedia(
+                input_service,
+                DictationService(DictationSettings()),
+                vision_route=lambda tenant: channel_vision_route(
+                    tenant, WeixinMediaSettings().vision_model_route
+                ),
+            ),
+        ),
         feishu=feishu_factory(feishu_settings),
         feishu_factory=feishu_factory,
         feishu_connections=FeishuConnectionControl(
-            sessions, mcp_credential_service.cipher, feishu_settings,
+            sessions,
+            mcp_credential_service.cipher,
+            feishu_settings,
         ),
         projects=project_service,
         approvals=approval_service,

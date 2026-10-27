@@ -103,7 +103,7 @@ OpenSandbox 官方提供桌面/VNC 示例，并指出 HTTPS 嵌入需要正确�
 
 ## 后续实施顺序与验收
 
-Computer V0 持续实现中：已完成注册、互斥租约、Manager、Docker 驱动与固定监督器，并在 79 验证两轮受控执行复用、心跳、旧进程停止及失联恢复保留工作盘。见[注册迭代](../assistant-computer-v0-20261027.md)与[Manager 组件验收](../assistant-computer-manager-20261027.md)。Worker 作用域、延迟分配、远端工作盘与产物基线已进一步接通，见[Worker 桥接验收](../assistant-computer-worker-20261027.md)。79 的确定性运行时已走真实编排及 Docker 执行，但没有使用生产账号或真实模型；本人助理尚未切换，下列完整验收还需业务授权、生产路由、清理归属及真实多端任务验证。生产仍为 0050。
+Computer V0 持续实现中：已完成注册、互斥租约、Manager、Docker 驱动与固定监督器，并在 79 验证两轮受控执行复用、心跳、旧进程停止及失联恢复保留工作盘。见[注册迭代](../assistant-computer-v0-20261027.md)与[Manager 组件验收](../assistant-computer-manager-20261027.md)。Worker 作用域、延迟分配、远端工作盘与产物基线已进一步接通，见[Worker 桥接验收](../assistant-computer-worker-20261027.md)。79 的确定性运行时已走真实编排及 Docker 执行，但没有使用生产账号或真实模型；账号及真实执行授权、生产可选路由和回收归属已接通，见[授权迭代](../assistant-computer-access-20261027.md)。本人助理尚待试点切换及真实多端任务验收；生产目前仍为 0050。
 
 | 里程碑 | 具体变化 | 验收标准 |
 | --- | --- | --- |

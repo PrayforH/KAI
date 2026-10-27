@@ -4,14 +4,16 @@ import hmac
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel, SecretStr, ValidationError
+from pydantic import BaseModel, Field, SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
+from harness.computer.access import CanonicalComputerAccess
 from harness.computer.control import MAX_BYTES, ControlAction, DockerComputerControl
 from harness.computer.host import ComputerLimits, DockerComputerLifecycle
 from harness.computer.models import (
@@ -29,6 +31,8 @@ class ControllerSettings(BaseSettings):
     database_url: str
     secret: SecretStr
     image: str
+    authorization: Literal["canonical", "probe"] = "canonical"
+    owners: dict[str, frozenset[str]] = Field(default_factory=dict)
     memory_bytes: int = 4 * 1024**3
     nano_cpus: int = 2_000_000_000
     docker_socket: str = "/var/run/docker.sock"
@@ -50,20 +54,31 @@ def create_app(settings: ControllerSettings) -> FastAPI:
     secret = settings.secret.get_secret_value()
     if len(secret) < 32:
         raise ValueError("computer controller requires a private authentication secret")
+    if (
+        settings.authorization == "probe"
+        and make_url(settings.database_url).database != "harness_computer_probe"
+    ):
+        raise ValueError("probe authorization requires the isolated Computer probe database")
     engine, sessions = create_database(settings.database_url)
+    access = (
+        CanonicalComputerAccess(sessions, settings.owners)
+        if settings.authorization == "canonical"
+        else None
+    )
     docker = httpx.AsyncClient(
         base_url="http://docker",
         transport=httpx.AsyncHTTPTransport(uds=settings.docker_socket),
         trust_env=False,
         timeout=30,
     )
-    controller = DockerComputerControl(ComputerRegistry(sessions), docker)
+    controller = DockerComputerControl(ComputerRegistry(sessions), docker, authorizer=access)
     host = DockerComputerLifecycle(
         controller.registry,
         docker,
         ComputerLimits(
             settings.image, memory_bytes=settings.memory_bytes, nano_cpus=settings.nano_cpus
         ),
+        authorizer=access,
     )
 
     @asynccontextmanager

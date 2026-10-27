@@ -1,8 +1,9 @@
 """Isolated Worker orchestration with deterministic runtime and real Computer.
 
-No model credentials, production chat, account or binding are used. Only the
-Computer registry persists in PostgreSQL; Run/events/artifacts are fixtures in
-memory. This verifies the Worker bridge, not real assistant/model acceptance.
+No model credentials or production identity are used. Probe mode uses fixture
+Run/events in memory; canonical mode persists fixture accounts, bindings and
+execution records in the isolated database and exercises node authorization.
+Neither mode is real assistant/model acceptance.
 """
 
 import argparse
@@ -28,16 +29,23 @@ from harness.adapters.memory import (
 )
 from harness.application.artifacts import ArtifactService
 from harness.application.events import EventService
+from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
 from harness.computer.control import HttpComputerControl
 from harness.computer.docker import DockerComputerDriver
 from harness.computer.registry import ComputerRegistry
 from harness.computer.sandbox import ComputerSandboxProvider
 from harness.computer.storage import AssistantComputerRow, ComputerLeaseRow
 from harness.core.errors import NotFoundError
-from harness.core.models import Run, RunStatus, Session
+from harness.core.models import AguiThreadBinding, Run, RunStatus, Session
+from harness.core.ports import EventRepository, RunRepository, SessionRepository
 from harness.runtime.base import RuntimeContext, RuntimeEvent
 from harness.runtime.fake import FakeRuntime
-from harness.storage.database import create_database
+from harness.sandbox.lease import SandboxLeaseService
+from harness.storage.database import create_database, create_schema
+from harness.storage.models import AguiThreadBindingRow, TenantMembershipRow, UserRow
+from harness.storage.platform_repositories import PostgresSessionRepository
+from harness.storage.repositories import PostgresEventRepository, PostgresRunRepository
+from harness.storage.sandbox_lease_repository import PostgresSandboxLeaseRepository
 from harness.worker.orchestrator import RunOrchestrator
 
 
@@ -89,19 +97,26 @@ async def probe(config_path: Path, output: Path) -> None:
     config = json.loads(config_path.read_text())
     if make_url(config["database_url"]).database != "harness_computer_probe":
         raise ValueError("Worker probe requires the isolated harness_computer_probe database")
+    canonical = config.get("authorization", "probe") == "canonical"
     engine, sessions = create_database(config["database_url"])
-    async with engine.begin() as connection:
-        await connection.run_sync(
-            lambda sync: AssistantComputerRow.metadata.create_all(
-                sync,
-                tables=[
-                    cast(Table, AssistantComputerRow.__table__),
-                    cast(Table, ComputerLeaseRow.__table__),
-                ],
+    if canonical:
+        tenant, user = config["tenant_id"], config["user_id"]
+        if not tenant.startswith("computer-access-probe-") or not user.startswith("fixture-owner"):
+            raise ValueError("canonical probe requires generated fixture identity")
+        await create_schema(engine)
+    else:
+        async with engine.begin() as connection:
+            await connection.run_sync(
+                lambda sync: AssistantComputerRow.metadata.create_all(
+                    sync,
+                    tables=[
+                        cast(Table, AssistantComputerRow.__table__),
+                        cast(Table, ComputerLeaseRow.__table__),
+                    ],
+                )
             )
-        )
+        tenant, user = "computer-worker-probe-" + uuid4().hex, "fixture-owner"
     registry = ComputerRegistry(sessions, lease_ttl_seconds=60)
-    tenant, user = "computer-worker-probe-" + uuid4().hex, "fixture-owner"
 
     def clock() -> datetime:
         return datetime.now(UTC)
@@ -128,9 +143,60 @@ async def probe(config_path: Path, output: Path) -> None:
         headers={"Authorization": "Bearer " + config["secret"]},
     ) as client:
         driver = DockerComputerDriver(HttpComputerControl(client), image=config["image"])
-        run_repository, session_repository = InMemoryRunRepository(), InMemorySessionRepository()
-        events_repository = InMemoryEventRepository()
+        run_repository: RunRepository
+        session_repository: SessionRepository
+        events_repository: EventRepository
+        sandbox_leases: SandboxLeaseService | None = None
+        if canonical:
+            run_repository = PostgresRunRepository(sessions, fence_computers=True)
+            session_repository = PostgresSessionRepository(sessions)
+            events_repository = PostgresEventRepository(sessions)
+            sandbox_leases = SandboxLeaseService(PostgresSandboxLeaseRepository(sessions))
+            binding = AguiThreadBinding(
+                tenant_id=tenant,
+                user_id=user,
+                thread_id=PERSONAL_ASSISTANT_THREAD,
+                session_id=session.session_id,
+                created_at=clock(),
+                updated_at=clock(),
+            )
+            async with sessions.begin() as db:
+                db.add(
+                    UserRow(
+                        user_id=user,
+                        email=tenant + "@fixture.invalid",
+                        display_name="fixture",
+                        created_at=clock(),
+                        updated_at=clock(),
+                    )
+                )
+                db.add(
+                    TenantMembershipRow(
+                        tenant_id=tenant, user_id=user, role="owner", created_at=clock()
+                    )
+                )
+                db.add(
+                    AguiThreadBindingRow(
+                        tenant_id=tenant,
+                        user_id=user,
+                        thread_id=binding.thread_id,
+                        session_id=session.session_id,
+                        payload=binding.model_dump(mode="json"),
+                    )
+                )
+            report["scope"] = (
+                "Real Worker, account/thread/Run/lease records in isolated PostgreSQL "
+                "and canonical node authorization; deterministic runtime; "
+                "no real model or production chats"
+            )
+        else:
+            run_repository, session_repository = (
+                InMemoryRunRepository(),
+                InMemorySessionRepository(),
+            )
+            events_repository = InMemoryEventRepository()
         await session_repository.add(session)
+        report["authorization"] = "canonical" if canonical else "probe"
         artifacts = ArtifactService(
             runs=run_repository,
             repository=InMemoryArtifactRepository(),
@@ -157,7 +223,9 @@ async def probe(config_path: Path, output: Path) -> None:
                 input={"prompt": "fixture", "round": index},
             )
             await run_repository.add(run)
-            sandbox = ComputerSandboxProvider(registry, driver, session, max_bytes=32 * 1024**2)
+            sandbox = ComputerSandboxProvider(
+                registry, driver, session, run_reader=run_repository.get, max_bytes=32 * 1024**2
+            )
             worker = RunOrchestrator(
                 sessions=session_repository,
                 runs=run_repository,
@@ -172,6 +240,7 @@ async def probe(config_path: Path, output: Path) -> None:
                 clock=clock,
                 artifacts=artifacts,
                 runtime_asset_stager=stage,
+                sandbox_leases=sandbox_leases,
             )
             result = await worker.execute(tenant, run.run_id)
             assert result.status is RunStatus.SUCCEEDED, result.error_code

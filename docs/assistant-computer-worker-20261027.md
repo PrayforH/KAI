@@ -2,6 +2,8 @@
 
 2026-10-27，北京时间。接续 [Manager 组件验收](assistant-computer-manager-20261027.md)。本轮接入通用 Worker 编排层并在 79 使用隔离电脑运行验收；生产配置尚未选用新 Provider，生产数据库仍为 0050。没有将确定性测试运行时的成功当作本人助理真实模型验收。
 
+后续进展：已接通账号授权、执行版本及生产可选路由，见[授权迭代](assistant-computer-access-20261027.md)。下文保留本检查点的范围。
+
 ## 实现
 
 新增 `ComputerSandboxProvider`，实现现有命令和文件工具接口，并提供 Run 作用域。Worker 的状态机拆为取得执行权和已分配环境内的执行两个阶段；可选的 Provider 作用域包住后者及清理过程，原 Provider 沿用原流程。

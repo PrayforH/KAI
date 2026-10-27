@@ -67,6 +67,10 @@ class ComputerLeaseRow(Base):
         ),
         Index("ix_computer_lease_expiry", "state", "expires_at"),
         CheckConstraint("epoch >= 1", name="ck_computer_lease_epoch"),
+        CheckConstraint(
+            "run_fencing_token IS NULL OR (purpose = 'execute' AND run_fencing_token >= 0)",
+            name="ck_computer_run_fence",
+        ),
         CheckConstraint("state IN ('active','released','expired')", name="ck_computer_lease_state"),
         CheckConstraint(
             "purpose IN ('start','execute','recover')", name="ck_computer_lease_purpose"
@@ -86,6 +90,7 @@ class ComputerLeaseRow(Base):
     owner: Mapped[str] = mapped_column(String(160))
     purpose: Mapped[str] = mapped_column(String(16))
     epoch: Mapped[int] = mapped_column(Integer)
+    run_fencing_token: Mapped[int | None] = mapped_column(Integer)
     run_id: Mapped[str | None] = mapped_column(String(128))
     session_id: Mapped[str | None] = mapped_column(String(128))
     state: Mapped[str] = mapped_column(String(16))

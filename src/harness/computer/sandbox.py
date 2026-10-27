@@ -8,7 +8,7 @@ and uploads only this Run's staged inputs. Scope failure cancels orchestration.
 import asyncio
 import shutil
 import tempfile
-from collections.abc import AsyncGenerator, Mapping, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -52,11 +52,13 @@ class ComputerSandboxProvider:
         driver: DockerComputerDriver,
         session: Session,
         *,
+        run_reader: Callable[[str, str], Awaitable[Run]] | None = None,
         local_root: Path | None = None,
         max_bytes: int = 512 * 1024**2,
         max_members: int = 10_000,
     ) -> None:
         self.registry, self.driver, self.session = registry, driver, session
+        self.run_reader = run_reader
         self.local_root = local_root
         self.max_bytes, self.max_members = max_bytes, max_members
         self._scopes: dict[str, _Scope] = {}
@@ -127,11 +129,19 @@ class ComputerSandboxProvider:
         assert lease.ready is not None
         manager = ComputerManager(self.registry, self.driver, owner=lease.handle.sandbox_id)
         try:
+            current_run = (
+                await self.run_reader(lease.run.tenant_id, lease.run.run_id)
+                if self.run_reader
+                else lease.run
+            )
+            if current_run.session_id != lease.run.session_id:
+                raise ValueError("Computer Run identity changed before acquisition")
             async with manager.execution(
                 self.session.tenant_id,
                 self.session.user_id,
                 run_id=lease.run.run_id,
                 session_id=lease.run.session_id,
+                run_fencing_token=current_run.fencing_token,
             ) as allocation:
                 workspace = ComputerWorkspace(
                     self.driver, allocation, max_bytes=self.max_bytes, max_members=self.max_members

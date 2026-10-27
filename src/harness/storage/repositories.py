@@ -6,6 +6,7 @@ from typing import Any, cast
 from sqlalchemy import CursorResult, func, select, tuple_, update
 from sqlalchemy.exc import IntegrityError
 
+from harness.computer.storage import ComputerLeaseRow
 from harness.core.errors import ConflictError, EventSequenceConflictError, NotFoundError
 from harness.core.events import RunEvent
 from harness.core.models import Run, RunStatus
@@ -14,8 +15,9 @@ from harness.storage.models import EventRow, RunRow
 
 
 class PostgresRunRepository:
-    def __init__(self, sessions: SessionFactory) -> None:
+    def __init__(self, sessions: SessionFactory, *, fence_computers: bool = False) -> None:
         self._sessions = sessions
+        self._fence_computers = fence_computers
 
     async def add(self, run: Run) -> None:
         async with self._sessions() as session:
@@ -74,22 +76,42 @@ class PostgresRunRepository:
         )
         async with self._sessions() as session:
             result = await session.execute(statement)
+            changed = bool(cast(CursorResult[Any], result).rowcount)
+            if changed and self._fence_computers and expected_status is not updated.status:
+                # Normal status transitions retain this attempt's computer.
+                # Same-status reclaim deliberately does not advance its grant:
+                # the stale Worker loses access immediately after the Run CAS.
+                await session.execute(
+                    update(ComputerLeaseRow)
+                    .where(
+                        ComputerLeaseRow.tenant_id == updated.tenant_id,
+                        ComputerLeaseRow.run_id == updated.run_id,
+                        ComputerLeaseRow.session_id == updated.session_id,
+                        ComputerLeaseRow.run_fencing_token == updated.fencing_token - 1,
+                        ComputerLeaseRow.state == "active",
+                    )
+                    .values(run_fencing_token=updated.fencing_token)
+                )
             await session.commit()
-            cursor = cast(CursorResult[Any], result)
-            return bool(cursor.rowcount)
+            return changed
 
     async def list_for_sessions(
         self, tenant_id: str, session_ids: list[str], *, limit: int
     ) -> list[Run]:
         if not session_ids:
             return []
-        statement = select(RunRow.payload).where(
-            RunRow.tenant_id == tenant_id,
-            RunRow.session_id.in_(session_ids),
-        ).order_by(
-            RunRow.updated_at.desc(),
-            RunRow.run_id.desc(),
-        ).limit(limit)
+        statement = (
+            select(RunRow.payload)
+            .where(
+                RunRow.tenant_id == tenant_id,
+                RunRow.session_id.in_(session_ids),
+            )
+            .order_by(
+                RunRow.updated_at.desc(),
+                RunRow.run_id.desc(),
+            )
+            .limit(limit)
+        )
         async with self._sessions() as session:
             payloads = (await session.execute(statement)).scalars().all()
             return [Run.model_validate(payload) for payload in payloads]
@@ -187,9 +209,7 @@ class PostgresEventRepository:
             # The event type lives inside the JSON payload (there is no
             # dedicated column yet), same access pattern as
             # latest_for_session_types.
-            statement = statement.where(
-                EventRow.payload["type"].as_string().in_(types)
-            )
+            statement = statement.where(EventRow.payload["type"].as_string().in_(types))
         async with self._sessions() as session:
             rows = (await session.execute(statement)).scalars().all()
             return [RunEvent.model_validate(row.payload) for row in rows]
@@ -218,10 +238,14 @@ class PostgresEventRepository:
             row = (await session.execute(statement)).scalar_one_or_none()
             return None if row is None else RunEvent.model_validate(row.payload)
 
-
     async def recent_for_session_types(
-        self, tenant_id: str, session_id: str, event_types: tuple[str, ...],
-        *, limit: int = 20, before: RunEvent | None = None,
+        self,
+        tenant_id: str,
+        session_id: str,
+        event_types: tuple[str, ...],
+        *,
+        limit: int = 20,
+        before: RunEvent | None = None,
         exclude_run_id: str | None = None,
     ) -> list[RunEvent]:
         statement = select(EventRow).where(
@@ -237,7 +261,9 @@ class PostgresEventRepository:
         if exclude_run_id is not None:
             statement = statement.where(EventRow.run_id != exclude_run_id)
         statement = statement.order_by(
-            EventRow.timestamp.desc(), EventRow.run_id.desc(), EventRow.sequence.desc(),
+            EventRow.timestamp.desc(),
+            EventRow.run_id.desc(),
+            EventRow.sequence.desc(),
         ).limit(limit)
         async with self._sessions() as session:
             rows = (await session.execute(statement)).scalars().all()

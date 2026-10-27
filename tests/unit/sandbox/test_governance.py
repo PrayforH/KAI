@@ -36,7 +36,9 @@ class FakeProvider:
             SandboxInstance(
                 sandbox_id=item,
                 created_at=self.created_at,
-                metadata={"harness.run": self.runs[item]} if item in self.runs else {},
+                metadata={"harness.run": self.runs[item], "harness.tenant": "tenant-a"}
+                if item in self.runs
+                else {},
             )
             for item in self.instances
         ]
@@ -249,9 +251,7 @@ async def test_ownership_follows_the_run_when_the_ids_differ() -> None:
     untracked, and the sweep would then have destroyed live Runs.
     """
 
-    provider = FakeProvider(
-        ["platform-sandbox-1"], runs={"platform-sandbox-1": "run-1"}
-    )
+    provider = FakeProvider(["platform-sandbox-1"], runs={"platform-sandbox-1": "run-1"})
     governance, leases, clock = service(provider, ttl=60)
     lease = await leases.acquire(
         tenant_id="tenant-a",
@@ -269,13 +269,14 @@ async def test_ownership_follows_the_run_when_the_ids_differ() -> None:
     assert report.live_leases == 1
     assert report.untracked == ()
     assert provider.reclaimed == []
+    assert report.missing == ()
+    stored = await leases.for_run("tenant-a", "run-1")
+    assert stored is not None and stored.state.value == "active"
 
 
 @pytest.mark.asyncio
 async def test_an_abandoned_run_sandbox_is_reclaimed_by_its_metadata() -> None:
-    provider = FakeProvider(
-        ["platform-sandbox-2"], runs={"platform-sandbox-2": "run-9"}
-    )
+    provider = FakeProvider(["platform-sandbox-2"], runs={"platform-sandbox-2": "run-9"})
     governance, leases, clock = service(provider, ttl=60)
     await leases.acquire(
         tenant_id="tenant-a",
@@ -293,3 +294,52 @@ async def test_an_abandoned_run_sandbox_is_reclaimed_by_its_metadata() -> None:
     assert provider.reclaimed == ["platform-sandbox-2"]
     closed = await leases.for_run("tenant-a", "run-9")
     assert closed is not None and closed.state.value == "reclaimed"
+
+
+@pytest.mark.asyncio
+async def test_other_backend_computer_leases_are_never_reconciled_as_missing():
+    governance, leases, clock = service(FakeProvider([]))
+    lease = await leases.acquire(
+        tenant_id="tenant-a",
+        session_id="computer-session",
+        run_id="computer-run",
+        owner="worker",
+        provider="docker-computer",
+        sandbox_id="computer-handle",
+    )
+    active = await governance.reclaim_orphans()
+    assert active.live_leases == 0 and active.missing == ()
+    assert await leases.for_run("tenant-a", "computer-run") == lease
+    clock[0] += timedelta(hours=2)
+    expired = await governance.reclaim_orphans()
+    assert expired.missing == () and expired.reclaimed == ()
+    assert await leases.for_run("tenant-a", "computer-run") == lease
+
+
+@pytest.mark.asyncio
+async def test_a_matching_run_label_from_another_tenant_is_not_ownership():
+    class ForeignTenant(FakeProvider):
+        async def inventory(self) -> list[SandboxInstance]:
+            return [
+                SandboxInstance(
+                    sandbox_id="foreign-instance",
+                    created_at=START,
+                    metadata={"harness.run": "run-1", "harness.tenant": "tenant-b"},
+                )
+            ]
+
+    provider = ForeignTenant([])
+    governance, leases, clock = service(provider)
+    await leases.acquire(
+        tenant_id="tenant-a",
+        session_id="session-a",
+        run_id="run-1",
+        owner="worker",
+        provider="opensandbox",
+        sandbox_id="local-handle",
+    )
+    report = await governance.report()
+    assert report.untracked == ("foreign-instance",) and report.missing == ("local-handle",)
+    clock[0] += timedelta(hours=2)
+    await governance.reclaim_orphans()
+    assert provider.reclaimed == []

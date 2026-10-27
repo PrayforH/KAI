@@ -46,6 +46,9 @@ _SANDBOX_ENFORCEMENT_BY_PROVIDER: dict[str, SandboxEnforcement] = {
     # OpenSandbox on the gVisor runtime delegates the kernel boundary to the
     # provider; the platform only picks the image and the egress policy.
     "opensandbox": SandboxEnforcement.DELEGATED,
+    # Docker enforces the container boundary; this is not the full gVisor /
+    # network-policy tier, nor an assertion of VM isolation.
+    "docker-computer": SandboxEnforcement.DELEGATED,
 }
 
 
