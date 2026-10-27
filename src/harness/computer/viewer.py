@@ -163,15 +163,40 @@ def create_viewer_app(
             token = request.headers["authorization"][7:]
         if not await authorized(token):
             raise HTTPException(403, "Desktop access requires its owner login")
+        control = await desktop_state(token)
         return {
             "enabled": True,
             "mode": "preview",
             "busy": busy.locked(),
             "input_frames": dict(input_frames),
             "desktop_url": settings.public_origin + "/assistant/computer",
+            "control": control,
         }
 
     app.add_api_route("/computer/status", status, methods=["GET"])
+
+    async def desktop_state(token: str | None) -> dict[str, object]:
+        """The shared desktop lease decides who may type or click."""
+
+        if not token:
+            return {"state": "observe", "epoch": 0}
+        try:
+            response = await auth.get(
+                "/v1/studio/assistant/computer/desktop",
+                headers={"Authorization": "Bearer " + token},
+                timeout=3,
+            )
+            if response.status_code != 200:
+                return {"state": "observe", "epoch": 0}
+            value = response.json()
+            if not isinstance(value, dict):
+                return {"state": "observe", "epoch": 0}
+            return {
+                "state": str(value.get("state", "observe")),
+                "epoch": int(value.get("epoch") or 0),
+            }
+        except (httpx.HTTPError, ValueError, TypeError):
+            return {"state": "observe", "epoch": 0}
 
     async def stream(websocket: WebSocket) -> None:
         token = websocket.cookies.get(settings.cookie_name)
@@ -183,6 +208,7 @@ def create_viewer_app(
             await websocket.close(code=1013)
             return
         async with busy:
+            control = {"state": "observe", "epoch": 0}
             process: asyncio.subprocess.Process | None = None
             tasks: list[asyncio.Task[None]] = []
             try:
@@ -211,6 +237,10 @@ def create_viewer_app(
                         # Check immediately before forwarding each input frame.
                         if time.monotonic() >= valid_until:
                             return
+                        # Only a confirmed human owner may inject input; the
+                        # observation stream stays open in every other state.
+                        if control["state"] != "human":
+                            continue
                         if data:
                             if data[0] in {4, 255}:
                                 input_frames["keyboard"] += 1
@@ -225,6 +255,7 @@ def create_viewer_app(
                         await asyncio.sleep(AUTH_CHECK_SECONDS)
                         if not await authorized(token):
                             return
+                        control.update(await desktop_state(token))
                         valid_until = time.monotonic() + AUTH_GRACE_SECONDS
 
                 tasks = [

@@ -86,6 +86,33 @@ class HttpComputerControl:
         ):
             raise RuntimeError("computer image validation acknowledgement is invalid")
 
+    async def desktop(
+        self,
+        token: ComputerLease,
+        operation: str,
+        payload: Mapping[str, object],
+        *,
+        expected_epoch: int,
+    ) -> dict[str, object]:
+        response = await self.client.post(
+            "/v1/computer/desktop",
+            json={
+                "token": token.model_dump(mode="json"),
+                "operation": operation,
+                "payload": dict(payload),
+                "expected_epoch": expected_epoch,
+            },
+            timeout=httpx.Timeout(90, connect=10),
+        )
+        if response.status_code in {403, 409}:
+            raise ComputerLeaseLostError("computer desktop refused this holder")
+        if response.status_code >= 400:
+            raise RuntimeError(f"computer desktop unavailable: HTTP {response.status_code}")
+        value = response.json()
+        if not isinstance(value, dict):
+            raise RuntimeError("computer desktop acknowledgement is invalid")
+        return value
+
     async def lifecycle(
         self, token: ComputerLease, operation: str, *, image: str | None = None
     ) -> str | None:

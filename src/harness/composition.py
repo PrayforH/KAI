@@ -40,6 +40,7 @@ from harness.automations.pg_repositories import (
     PostgresAutomationTaskRepository,
 )
 from harness.automations.service import AutomationService
+from harness.computer.desktop import DesktopControlService
 from harness.computer.runtime import ComputerRuntime
 from harness.config import Settings
 from harness.context.checkpoint import ContextCheckpointService
@@ -1573,10 +1574,26 @@ def build_production_container(
         quotas=enforced_quotas,
     )
 
-    async def runtime_builder_tools(run, session):
+    async def runtime_builder_tools(run, session, handle=None, sandbox=None):
+        from harness.runtime.platform_tools import PlatformToolOverlay
         from harness.studio.runtime_builder import builder_overlay
 
-        return await builder_overlay(container, events, run, session)
+        overlay = await builder_overlay(container, events, run, session)
+        computer_overlay = (
+            await computer_runtime.gui_overlay(session, sandbox, handle)
+            if handle is not None and sandbox is not None
+            else PlatformToolOverlay()
+        )
+        if not computer_overlay.tools:
+            return overlay
+        return PlatformToolOverlay(
+            tools=overlay.tools + computer_overlay.tools,
+            instructions=(
+                computer_overlay.instructions
+                if not overlay.instructions
+                else f"{overlay.instructions}\n\n{computer_overlay.instructions}"
+            ),
+        )
 
     worker = RunOrchestrator(
         platform_tools_factory=runtime_builder_tools,
@@ -1882,6 +1899,7 @@ def build_production_container(
         triggers=trigger_service,
         automations=automation_service,
         assistant=assistant,
+        computer_desktop=DesktopControlService(sessions),
         weixin=WeixinService(
             sessions,
             mcp_credential_service.cipher,

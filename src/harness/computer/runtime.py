@@ -7,7 +7,9 @@ import httpx
 
 from harness.computer.access import CanonicalComputerAccess
 from harness.computer.control import HttpComputerControl
+from harness.computer.desktop import DesktopControlService
 from harness.computer.docker import DockerComputerDriver
+from harness.computer.gui_tools import computer_gui_overlay
 from harness.computer.models import AssistantComputer
 from harness.computer.registry import ComputerRegistry
 from harness.computer.sandbox import ComputerSandboxProvider
@@ -16,6 +18,8 @@ from harness.computer.vm import VmComputerDriver
 from harness.config import Settings
 from harness.core.errors import NotFoundError
 from harness.core.models import Run, Session
+from harness.runtime.platform_tools import PlatformToolOverlay
+from harness.sandbox.base import SandboxHandle
 from harness.storage.database import SessionFactory
 
 DOCKER_PROVIDER = "docker-computer"
@@ -30,6 +34,7 @@ class ComputerRuntime:
         self.settings = settings
         self.client: httpx.AsyncClient | None = None
         self.drivers: dict[str, DockerComputerDriver] = {}
+        self.desktop = DesktopControlService(sessions)
         self.default_provider = DOCKER_PROVIDER
         if not execution_enabled or not self.enabled:
             return
@@ -103,9 +108,21 @@ class ComputerRuntime:
             driver,
             session,
             run_reader=read_run,
+            desktop=self.desktop,
             max_bytes=self.settings.workspace_archive_max_bytes,
             max_members=self.settings.workspace_archive_max_members,
         )
+
+    async def gui_overlay(
+        self, session: Session, sandbox: object, handle: object
+    ) -> PlatformToolOverlay:
+        """Desktop tools only for a live Computer run with its real handle."""
+
+        if self.desktop is None or not isinstance(sandbox, ComputerSandboxProvider):
+            return PlatformToolOverlay()
+        if not isinstance(handle, SandboxHandle) or handle.sandbox_id not in sandbox._leases:
+            return PlatformToolOverlay()
+        return computer_gui_overlay(self.desktop, sandbox, handle)
 
     async def close(self) -> None:
         if self.client is not None:

@@ -6,6 +6,7 @@ and uploads only this Run's staged inputs. Scope failure cancels orchestration.
 """
 
 import asyncio
+import logging
 import shutil
 import tempfile
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
@@ -14,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import uuid4
 
+from harness.computer.desktop import DesktopControlService
 from harness.computer.docker import WORKSPACE, DockerComputerDriver
 from harness.computer.manager import ComputerAllocation, ComputerManager
 from harness.computer.registry import ComputerRegistry
@@ -53,12 +55,14 @@ class ComputerSandboxProvider:
         session: Session,
         *,
         run_reader: Callable[[str, str], Awaitable[Run]] | None = None,
+        desktop: DesktopControlService | None = None,
         local_root: Path | None = None,
         max_bytes: int = 512 * 1024**2,
         max_members: int = 10_000,
     ) -> None:
         self.registry, self.driver, self.session = registry, driver, session
         self.run_reader = run_reader
+        self.desktop = desktop
         self.local_root = local_root
         self.max_bytes, self.max_members = max_bytes, max_members
         self._scopes: dict[str, _Scope] = {}
@@ -194,6 +198,21 @@ class ComputerSandboxProvider:
         _, workspace = await asyncio.shield(lease.ready)
         return workspace.fingerprints()
 
+    async def desktop_action(
+        self,
+        handle: SandboxHandle,
+        operation: str,
+        payload: Mapping[str, object],
+        *,
+        expected_epoch: int,
+    ) -> dict[str, object]:
+        """One visible-desktop action through the node's unified control gate."""
+
+        allocation, _ = await self._remote(handle)
+        return await self.driver.host.desktop(
+            allocation.token, operation, payload, expected_epoch=expected_epoch
+        )
+
     async def destroy(self, handle: SandboxHandle) -> None:
         lease = self._leases.pop(handle.sandbox_id, None)
         if lease is None:
@@ -204,3 +223,18 @@ class ComputerSandboxProvider:
                 await asyncio.shield(lease.task)
         finally:
             shutil.rmtree(lease.handle.path)
+            await self._release_desktop(handle)
+
+    async def _release_desktop(self, handle: SandboxHandle) -> None:
+        # A failed release never locks the owner out: takeover overrides a
+        # stale agent state, and the next Run simply cannot acquire until then.
+        if self.desktop is None:
+            return
+        try:
+            await self.desktop.release_agent(
+                self.session.tenant_id, self.session.user_id, owner=handle.sandbox_id
+            )
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "computer desktop release failed", exc_info=True
+            )

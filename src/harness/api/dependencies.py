@@ -55,6 +55,7 @@ from harness.automations.repositories import (
     InMemoryAutomationTaskRepository,
 )
 from harness.automations.service import AutomationService
+from harness.computer.desktop import DesktopControlService
 from harness.config import Settings
 from harness.context.repositories import InMemoryContextRepository
 from harness.context.service import ContextService
@@ -85,7 +86,6 @@ from harness.evolution.service import EvolutionService
 from harness.feishu.configuration import FeishuConnectionControl
 from harness.feishu.models import FeishuSettings
 from harness.feishu.service import FeishuService
-from harness.weixin.service import WeixinService
 from harness.governance.repositories import InMemoryGovernanceRepository
 from harness.governance.service import GovernanceService
 from harness.inputs.processors import DefaultInputProcessor
@@ -211,6 +211,7 @@ from harness.studio.skill_builder import (
 from harness.studio.web_configuration import WebConfigurationService
 from harness.triggers.repositories import InMemoryAgentTriggerRepository
 from harness.triggers.service import AgentTriggerService
+from harness.weixin.service import WeixinService
 from harness.worker.orchestrator import RunOrchestrator
 
 
@@ -293,6 +294,7 @@ class ApiContainer:
     auto_execute: bool
     presentations: PresentationService
     assistant: AssistantService | None = None
+    computer_desktop: "DesktopControlService | None" = None
     weixin: WeixinService | None = None
     feishu: FeishuService | None = None
     feishu_connections: FeishuConnectionControl | None = None

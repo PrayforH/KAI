@@ -21,15 +21,22 @@ from harness.computer.control import (
     ControlAction,
     DockerComputerControl,
 )
+from harness.computer.desktop import DesktopControlService
 from harness.computer.host import ComputerLimits, DockerComputerLifecycle
 from harness.computer.models import (
     ComputerLease,
     ComputerLeaseLostError,
     ComputerStartRejectedError,
+    LeasePurpose,
 )
 from harness.computer.registry import ComputerRegistry
 from harness.computer.vm import PROVIDER as VM_PROVIDER
-from harness.computer.vm_host import VmComputerControl, VmComputerLifecycle, VmComputerSpec
+from harness.computer.vm_host import (
+    VmComputerControl,
+    VmComputerLifecycle,
+    VmComputerSpec,
+    VmDesktopService,
+)
 from harness.core.errors import NotFoundError
 from harness.storage.database import create_database
 
@@ -64,6 +71,13 @@ class LifecycleRequest(BaseModel):
 class ImageCheckRequest(BaseModel):
     image: str
     provider: str | None = None
+
+
+class DesktopRequest(BaseModel):
+    token: ComputerLease
+    operation: str
+    payload: dict[str, Any]
+    expected_epoch: int
 
 
 def create_app(settings: ControllerSettings) -> FastAPI:
@@ -102,6 +116,8 @@ def create_app(settings: ControllerSettings) -> FastAPI:
             ),
         },
     )
+    desktop_service = DesktopControlService(sessions)
+    desktop_screen = VmDesktopService(vm_specs)
     host = ComputerLifecycleRouter(
         registry,
         {
@@ -126,6 +142,7 @@ def create_app(settings: ControllerSettings) -> FastAPI:
         try:
             yield
         finally:
+            await desktop_screen.close()
             await docker.aclose()
             await engine.dispose()
 
@@ -196,6 +213,36 @@ def create_app(settings: ControllerSettings) -> FastAPI:
             raise HTTPException(503, "Computer lifecycle could not be confirmed") from None
 
     app.add_api_route("/v1/computer/lifecycle", lifecycle, methods=["POST"])
+
+    async def desktop(request: Request):
+        try:
+            command = DesktopRequest.model_validate_json(await private_body(request))
+        except ValidationError:
+            raise HTTPException(400, "Computer desktop request is invalid") from None
+        try:
+            computer, current = await registry.holder(command.token)
+            if computer.provider != VM_PROVIDER:
+                raise ValueError("this computer has no desktop control surface")
+            if current.purpose is not LeasePurpose.EXECUTE:
+                raise ComputerLeaseLostError("desktop actions need a live execution lease")
+            if access is not None:
+                await access.authorize(computer, current, "exec")
+            state = await desktop_service.acquire_agent(
+                computer.tenant_id, computer.user_id, owner=current.owner
+            )
+            # The acquired epoch is authoritative: a takeover bumped it, so a
+            # caller still quoting its old epoch is fenced here.
+            if state.state != "agent" or state.owner != current.owner:
+                raise ComputerLeaseLostError("desktop control was not granted to this holder")
+            if command.expected_epoch != state.epoch:
+                raise ComputerLeaseLostError("desktop control epoch is stale")
+            return await desktop_screen.operate(computer, command.operation, command.payload)
+        except (ComputerLeaseLostError, NotFoundError):
+            raise HTTPException(409, "Computer desktop ownership was lost") from None
+        except (TimeoutError, httpx.HTTPError, RuntimeError, ValueError, OSError, EOFError):
+            raise HTTPException(503, "Computer desktop could not be reached") from None
+
+    app.add_api_route("/v1/computer/desktop", desktop, methods=["POST"])
     return app
 
 

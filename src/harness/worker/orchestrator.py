@@ -285,7 +285,8 @@ class RunOrchestrator:
         context_service: ContextService | None = None,
         sandbox_leases: SandboxLeaseService | None = None,
         platform_tools_factory: (
-            Callable[[Run, Session], Awaitable[PlatformToolOverlay]] | None
+            Callable[[Run, Session, SandboxHandle, SandboxProvider], Awaitable[PlatformToolOverlay]]
+            | None
         ) = None,
     ) -> None:
         if cancellation_poll_interval_seconds <= 0:
@@ -1614,7 +1615,7 @@ class RunOrchestrator:
                 )
             context = RuntimeContext(
                 platform_tools=(
-                    await self._platform_tools_factory(run, session)
+                    await self._platform_tools_factory(run, session, handle, active_sandbox)
                     if self._platform_tools_factory
                     else PlatformToolOverlay()
                 ),

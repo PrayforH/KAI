@@ -26,6 +26,7 @@ from harness.api.routes import (
     sessions,
     ui,
 )
+from harness.api.routes import computer as computer_routes
 from harness.assistant import api as assistant_routes
 from harness.automations import api as automations_routes
 from harness.config import Settings
@@ -39,7 +40,6 @@ from harness.core.manifest import ManifestValidationError
 from harness.dictation.realtime import RealtimeDictation
 from harness.dictation.service import DictationService, DictationSettings
 from harness.feishu import api as feishu_routes
-from harness.weixin import api as weixin_routes
 from harness.governance import api as governance_routes
 from harness.knowledge import api as knowledge_routes
 from harness.lifecycle import api as lifecycle_routes
@@ -54,6 +54,7 @@ from harness.sharing import groups_api as group_routes
 from harness.studio import api as studio_routes
 from harness.triggers import a2a as a2a_routes
 from harness.triggers import api as trigger_routes
+from harness.weixin import api as weixin_routes
 
 
 async def _http_error(_request: Request, error: Exception) -> JSONResponse:
@@ -366,6 +367,7 @@ def create_app(container: ApiContainer) -> FastAPI:
     app.include_router(trigger_routes.studio_router)
     app.include_router(automations_routes.router)
     app.include_router(assistant_routes.router)
+    app.include_router(computer_routes.router)
     app.include_router(feishu_routes.router)
     app.include_router(weixin_routes.router)
     app.include_router(projects_routes.router)

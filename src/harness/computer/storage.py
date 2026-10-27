@@ -100,3 +100,39 @@ class ComputerLeaseRow(Base):
     renewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ComputerDesktopLeaseRow(Base):
+    """One desktop control state per owner computer, separate from execution.
+
+    Ownership of keyboard/pointer is a product decision between the owner and
+    their assistant; it fences neither the work disk nor the execution lease.
+    """
+
+    __tablename__ = "computer_desktop_leases"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "user_id"],
+            ["assistant_computers.tenant_id", "assistant_computers.user_id"],
+        ),
+        CheckConstraint(
+            "state IN ('observe','agent','human','takeover_pending')",
+            name="ck_computer_desktop_state",
+        ),
+        CheckConstraint("epoch >= 0 AND revision >= 1", name="ck_computer_desktop_version"),
+        CheckConstraint(
+            "(state IN ('agent','human','takeover_pending')) = (expires_at IS NOT NULL)",
+            name="ck_computer_desktop_ttl",
+        ),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    computer_id: Mapped[str] = mapped_column(String(64))
+    state: Mapped[str] = mapped_column(String(32))
+    owner: Mapped[str | None] = mapped_column(String(160))
+    epoch: Mapped[int] = mapped_column(Integer)
+    revision: Mapped[int] = mapped_column(Integer)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

@@ -7,6 +7,7 @@ creates user disks; a fresh VM is explicit maintenance, not a Run side effect.
 """
 
 import asyncio
+import base64
 import json
 import re
 from collections.abc import Mapping
@@ -16,6 +17,21 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from harness.computer.access import ComputerAuthorizer
+from harness.computer.desktop_client import (
+    RfbClient,
+)
+from harness.computer.desktop_client import (
+    click as desktop_click,
+)
+from harness.computer.desktop_client import (
+    press_keys as desktop_press,
+)
+from harness.computer.desktop_client import (
+    scroll as desktop_scroll,
+)
+from harness.computer.desktop_client import (
+    type_text as desktop_type,
+)
 from harness.computer.models import (
     AssistantComputer,
     ComputerLease,
@@ -370,3 +386,159 @@ class VmComputerLifecycle:
             check.raise_for_status()
             await asyncio.sleep(0.1)
         raise RuntimeError("computer VM did not stop in time; it remains fenced")
+
+
+class DisplayTransport:
+    """SSH transport to one guest's forced display gate (viewer identity).
+
+    The RFB stream flows over the same authenticated channel the human viewer
+    uses; no VNC, X11 or CDP port is ever published.
+    """
+
+    def __init__(self, spec: VmComputerSpec) -> None:
+        seed = spec.seed()
+        self._argv = [
+            "ssh",
+            "-T",
+            "-F",
+            "/dev/null",
+            "-p",
+            str(spec.ssh_port),
+            "-i",
+            str(Path(spec.identity_dir) / "viewer"),
+            "-o",
+            "IdentitiesOnly=yes",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "GlobalKnownHostsFile=/dev/null",
+            "-o",
+            "UserKnownHostsFile=" + str(Path(spec.identity_dir) / "known_hosts"),
+            "-o",
+            "HostKeyAlias=" + seed.host_key_alias,
+            "-o",
+            "CheckHostIP=no",
+            "-o",
+            "ConnectTimeout=10",
+            "-o",
+            "ServerAliveInterval=15",
+            "-o",
+            "ServerAliveCountMax=4",
+            "--",
+            f"kai-view@{spec.ssh_host}",
+        ]
+
+    async def open(self) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        process = await asyncio.create_subprocess_exec(
+            *self._argv,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        assert process.stdin is not None and process.stdout is not None
+        header = await asyncio.wait_for(process.stdout.readexactly(12), timeout=20)
+        if not header.startswith(b"RFB 003."):
+            process.kill()
+            raise RuntimeError("desktop did not confirm the RFB transport")
+        return process.stdout, process.stdin
+
+
+GUI_OPERATIONS = frozenset({"screenshot", "move", "click", "type", "key", "scroll"})
+
+
+class VmDesktopService:
+    """Executes model desktop operations on one VM's visible screen.
+
+    Ownership was already decided by the desktop lease; this service only
+    carries the pixels and input events, keeping one live RFB session per
+    computer so consecutive actions stay cheap.
+    """
+
+    def __init__(self, specs: Mapping[str, VmComputerSpec]) -> None:
+        self._specs = dict(specs)
+        self._sessions: dict[str, RfbClient] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
+
+    def _spec(self, computer: AssistantComputer) -> VmComputerSpec:
+        spec = self._specs.get(computer.volume_ref)
+        if spec is None:
+            raise RuntimeError("computer desktop is not declared on this node")
+        return spec
+
+    def _lock(self, key: str) -> asyncio.Lock:
+        if key not in self._locks:
+            self._locks[key] = asyncio.Lock()
+        return self._locks[key]
+
+    async def operate(
+        self, computer: AssistantComputer, operation: str, payload: Mapping[str, object]
+    ) -> dict[str, object]:
+        if operation not in GUI_OPERATIONS:
+            raise ValueError("desktop operation is not supported")
+        spec = self._spec(computer)
+        async with self._lock(computer.volume_ref):
+            client = self._sessions.get(computer.volume_ref)
+            if client is None:
+                client = RfbClient(DisplayTransport(spec))
+                self._sessions[computer.volume_ref] = client
+            try:
+                return await self._dispatch(client, operation, payload)
+            except (TimeoutError, RuntimeError, ValueError, OSError, EOFError):
+                await client.close()
+                self._sessions.pop(computer.volume_ref, None)
+                raise
+
+    async def close(self) -> None:
+        for client in self._sessions.values():
+            await client.close()
+        self._sessions.clear()
+
+    async def _dispatch(
+        self, client: RfbClient, operation: str, payload: Mapping[str, object]
+    ) -> dict[str, object]:
+        if client.width == 0:
+            await client.connect()
+        if operation == "screenshot":
+            width, height, png = await client.screenshot()
+            return {
+                "width": width,
+                "height": height,
+                "png_base64": base64.b64encode(png).decode("ascii"),
+            }
+        x, y = self._point(payload)
+        if operation == "move":
+            await client.pointer(x, y, 0)
+            return {"moved": True}
+        if operation == "click":
+            button = str(payload.get("button", "left"))
+            if button not in {"left", "middle", "right"}:
+                raise ValueError("click button is invalid")
+            await desktop_click(client, x, y, button)
+            return {"clicked": True}
+        if operation == "scroll":
+            direction = str(payload.get("direction", ""))
+            amount = payload.get("amount", 3)
+            if not isinstance(amount, int) or not 1 <= amount <= 10:
+                raise ValueError("scroll amount is invalid")
+            await desktop_scroll(client, x, y, direction, amount)
+            return {"scrolled": True}
+        if operation == "type":
+            text = payload.get("text")
+            if not isinstance(text, str):
+                raise ValueError("type requires text")
+            await desktop_type(client, text)
+            return {"typed": len(text)}
+        names = payload.get("keys")
+        if not isinstance(names, list) or not all(isinstance(item, str) for item in names):
+            raise ValueError("key requires a list of key names")
+        await desktop_press(client, [str(item) for item in names])
+        return {"pressed": len(names)}
+
+    @staticmethod
+    def _point(payload: Mapping[str, object]) -> tuple[int, int]:
+        x, y = payload.get("x"), payload.get("y")
+        if type(x) is not int or type(y) is not int:
+            raise ValueError("pointer coordinates must be integers")
+        return x, y

@@ -31,6 +31,15 @@ class ComputerHost(ComputerControl, Protocol):
 
     async def check_image(self, image: str, *, provider: str | None = None) -> None: ...
 
+    async def desktop(
+        self,
+        token: ComputerLease,
+        operation: str,
+        payload: Mapping[str, object],
+        *,
+        expected_epoch: int,
+    ) -> dict[str, object]: ...
+
 
 class DockerComputerDriver:
     provider = "docker-computer"
