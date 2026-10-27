@@ -33,6 +33,7 @@ from harness.assistant.delegation import (
     AssistantDelegationGateway,
     assistant_delegation_overlay,
 )
+from harness.assistant.memory_tools import MemoryBankGateway, assistant_memory_overlay
 from harness.assistant.repository import PostgresAssistantRepository
 from harness.assistant.service import AssistantService
 from harness.auth.api_access import ApiAccessService
@@ -1601,10 +1602,19 @@ def build_production_container(
             if container.assistant is not None and session.agent_name
             else PlatformToolOverlay()
         )
-        merged = overlay.tools + computer_overlay.tools + delegation_overlay.tools
+        memory_overlay = (
+            assistant_memory_overlay(
+                MemoryBankGateway(container.memory_bank), run, session
+            )
+            if container.memory_bank is not None and session.agent_name
+            else PlatformToolOverlay()
+        )
+        merged = (
+            overlay.tools + computer_overlay.tools + delegation_overlay.tools + memory_overlay.tools
+        )
         instructions = "\n\n".join(
             layer.instructions
-            for layer in (overlay, computer_overlay, delegation_overlay)
+            for layer in (overlay, computer_overlay, delegation_overlay, memory_overlay)
             if layer.instructions
         )
         if not merged:
