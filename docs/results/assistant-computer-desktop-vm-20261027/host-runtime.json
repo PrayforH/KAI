@@ -1,0 +1,34 @@
+{
+  "containerId": "dd9bd5942568c44dc6e87caacd4510ec2446f8b34857f71e504bf71dad1de4f6",
+  "image": "sha256:f6ff82bbfc167157aca72e14a0812eb8aa2dad47dbe7405d12e9180273be9b70",
+  "user": "28010:28010",
+  "process": {
+    "Uid": "28010\t28010\t28010\t28010",
+    "Gid": "28010\t28010\t28010\t28010",
+    "CapEff": "0000000000000000",
+    "NoNewPrivs": "1",
+    "Seccomp": "2"
+  },
+  "hostKvm": {
+    "uid": 0,
+    "gid": 0,
+    "mode": "0o600"
+  },
+  "publishedPorts": {
+    "2222/tcp": [
+      {
+        "HostIp": "127.0.0.1",
+        "HostPort": "22079"
+      }
+    ]
+  },
+  "memoryBytes": 6442450944,
+  "nanoCpus": 2000000000,
+  "pidsLimit": 128,
+  "readOnlyRootfs": true,
+  "privileged": false,
+  "capDrop": [
+    "ALL"
+  ],
+  "capAdd": null
+}

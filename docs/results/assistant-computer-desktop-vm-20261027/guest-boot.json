@@ -1,0 +1,4 @@
+{
+  "guestSSHExit": 0,
+  "output": "6.1.0-54-cloud-amd64\nuid=1000(kai-admin) gid=1000(kai-admin) groups=1000(kai-admin),27(sudo)\nstatus: done\n15621\ntotal 12\ndrwxr-xr-x 3 kai         kai         4096 Oct 27 05:30 kai\ndrwxr-xr-x 3 kai-admin   kai-admin   4096 Oct 27 05:30 kai-admin\ndrwxr-xr-x 3 kai-desktop kai-desktop 4096 Oct 27 05:30 kai-desktop\n"
+}

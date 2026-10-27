@@ -1,0 +1,10 @@
+{
+  "ruff": "All checks passed",
+  "pyright": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "bashSyntaxExit": 0,
+  "composeConfigExit": 0,
+  "scope": "Two new probe scripts, guest installer and isolated VM compose; production application source unchanged"
+}

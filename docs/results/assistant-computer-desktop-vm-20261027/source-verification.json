@@ -1,0 +1,26 @@
+{
+  "deploy/assistant-79/computer-vm/Dockerfile": {
+    "sha256": "ff56e87c4f8a9d9e6da0f20e3576290685551e1891c7d7416d4d3296477cf9e8",
+    "matches79": true
+  },
+  "deploy/assistant-79/computer-vm/compose.probe.yaml": {
+    "sha256": "1e1283a77b918b8c8726dba7909e172243c82a7b8641eaaf1ea1ad2bddca526e",
+    "matches79": true
+  },
+  "deploy/assistant-79/computer-vm/guest-desktop.sh": {
+    "sha256": "914c5624266dc6954e07f32373eabb84f21660bf67d78904e5fe02dbfbe55d91",
+    "matches79": true
+  },
+  "scripts/probe_computer_desktop_guest.py": {
+    "sha256": "30b6f38395e221bd0fcece65a281e54eef54a1aaa83c34c3fef0679127b1b1bd",
+    "matches79": true
+  },
+  "scripts/probe_computer_vm_execution.py": {
+    "sha256": "6e24dc0ea373b8ea5af491f66e4dae06eb815fa333a9b74d0942f566d455fbf4",
+    "matches79": true
+  },
+  "src/harness/computer/supervisor.py": {
+    "sha256": "7a2d2c6c56669865ddd6b00f4aff84a23dfa84809730e8b5a4f93d519fea3a99",
+    "matches79": true
+  }
+}
