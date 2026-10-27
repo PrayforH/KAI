@@ -2,8 +2,9 @@
 
 import asyncio
 import sys
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -22,6 +23,11 @@ def gateway(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     def authenticate(request: httpx.Request) -> httpx.Response:
         if request.headers.get("authorization") != "Bearer fixture" or not state["active"]:
             return httpx.Response(401)
+        if request.url.path == "/v1/studio/assistant/computer/desktop":
+            return httpx.Response(
+                200,
+                json={"state": state.get("control", "human"), "epoch": state.get("epoch", 1)},
+            )
         return httpx.Response(
             200,
             json={
@@ -70,6 +76,7 @@ def test_metadata_requires_the_correct_owner_and_tenant(gateway: tuple[TestClien
         "busy": False,
         "input_frames": {"keyboard": 0, "pointer": 0},
         "desktop_url": ORIGIN + "/assistant/computer",
+        "control": {"state": "human", "epoch": 1},
     }
     state["user"] = "other"
     assert client.get("/computer/status").status_code == 403
@@ -92,14 +99,35 @@ def test_cross_origin_socket_never_opens_ssh(
     assert state["connections"] == 0
 
 
+def status_json(client: TestClient) -> dict[str, Any]:
+    # The unparameterized TestClient reports unknown members under strict
+    # typing; the casts keep the assertions themselves fully typed.
+    payload = cast(Any, client).get("/computer/status").json()
+    return cast(dict[str, Any], payload)
+
+
+def wait_for_control(client: TestClient, expected: str) -> None:
+    """The socket gate mirrors the lease on its next poll tick."""
+
+    deadline = time.monotonic() + 5
+    while True:
+        if str(status_json(client)["control"]["state"]) == expected:
+            break
+        assert time.monotonic() < deadline, f"desktop lease never reached {expected}"
+        time.sleep(0.02)
+    time.sleep(0.1)
+
+
 def test_binary_transport_is_exclusive_and_revocation_closes_it(
     gateway: tuple[TestClient, dict[str, Any]],
 ) -> None:
     client, state = gateway
     with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}) as socket:
         assert socket.receive_bytes() == b"RFB 003.008\n"
+        wait_for_control(client, "human")
         socket.send_bytes(b"PING")
         assert socket.receive_bytes() == b"PING"
+
         with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}):
                 pytest.fail("a second input owner was accepted")
@@ -107,6 +135,28 @@ def test_binary_transport_is_exclusive_and_revocation_closes_it(
         state["active"] = False
         assert socket.receive()["type"] == "websocket.close"
     assert client.get("/computer/status").status_code == 403
+
+
+def test_observation_gate_drops_input_and_forwards_after_takeover(
+    gateway: tuple[TestClient, dict[str, Any]],
+) -> None:
+    client, state = gateway
+    with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}) as socket:
+        assert socket.receive_bytes() == b"RFB 003.008\n"
+        # While the assistant owns the desktop (observe here) input is dropped;
+        # the five-byte forwarded frame later completes the child's trailing
+        # single-byte read, which closes the transport from the desktop side.
+        state["control"] = "observe"
+        socket.send_bytes(b"\x05AAA")
+        state["control"] = "human"
+        wait_for_control(client, "human")
+        socket.send_bytes(b"\x05BBB")
+        # The desktop echoes the first frame it actually received: the frame
+        # sent while observing was dropped, so the echo is the takeover one.
+        assert socket.receive_bytes() == b"\x05BBB"
+        assert status_json(client)["input_frames"] == {"keyboard": 0, "pointer": 1}
+        state["active"] = False
+        assert socket.receive()["type"] == "websocket.close"
 
 
 def test_unauthenticated_socket_never_opens_ssh(gateway: tuple[TestClient, dict[str, Any]]):
