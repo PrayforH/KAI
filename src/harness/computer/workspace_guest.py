@@ -14,9 +14,10 @@ import sys
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 CHUNK_BYTES = 2 * 1024**2
+BATCH_FILES = 64
 EXCLUDED = frozenset(
     {
         ".git",
@@ -201,6 +202,50 @@ class Workspace:
                 pass
         return {"aborted": True}
 
+    def upload_batch(self, raw: object) -> dict[str, Any]:
+        """Bounded transport batch; each file keeps its own atomic replacement.
+
+        A failed batch is not a multi-file transaction. Earlier completed files
+        stay committed, as with sequential uploads; no model tool starts until
+        the complete staging operation has succeeded.
+        """
+        if not isinstance(raw, list):
+            raise ValueError("invalid workspace batch size")
+        items = cast(list[object], raw)
+        if not 1 <= len(items) <= BATCH_FILES:
+            raise ValueError("invalid workspace batch size")
+        entries: list[dict[str, Any]] = []
+        total = 0
+        for value in items:
+            if not isinstance(value, dict):
+                raise ValueError("invalid workspace batch entry")
+            entry = cast(dict[str, Any], value)
+            if (
+                entry.get("offset") != 0
+                or not isinstance(entry.get("size"), int)
+                or isinstance(entry["size"], bool)
+                or not 0 <= entry["size"] <= CHUNK_BYTES
+            ):
+                raise ValueError("invalid workspace batch entry")
+            total += entry["size"]
+            if total > CHUNK_BYTES:
+                raise ValueError("workspace batch exceeds byte limit")
+            entries.append(entry)
+        try:
+            for entry in entries:
+                if not self.upload(entry)["complete"]:
+                    raise ValueError("incomplete workspace batch entry")
+        finally:
+            for entry in entries:
+                try:
+                    self.abort(entry["path"], entry["upload_id"])
+                except (OSError, ValueError, KeyError, TypeError):
+                    # The lease watchdog may interrupt an upload, and a later
+                    # entry's directory may not exist. Never leave cleanup as
+                    # a prerequisite for reporting the original failure.
+                    pass
+        return {"complete": True, "count": len(entries)}
+
     def invoke(self, operation: str, payload: dict[str, Any]) -> dict[str, Any]:
         if operation == "manifest":
             return self.manifest(payload["max_bytes"], payload["max_members"])
@@ -212,6 +257,8 @@ class Workspace:
             )
         if operation == "upload":
             return self.upload(payload)
+        if operation == "upload_batch":
+            return self.upload_batch(payload["entries"])
         if operation == "abort":
             return self.abort(payload["path"], payload["upload_id"])
         raise ValueError("unknown workspace operation")

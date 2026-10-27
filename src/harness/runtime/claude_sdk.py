@@ -135,7 +135,7 @@ _ANTHROPIC_AUTO_PERMISSION_MODELS = frozenset(
 )
 
 
-def _sandbox_tool_contract(tool_names: list[str]) -> str:
+def _sandbox_tool_contract(tool_names: list[str], *, workspace: str | None = None) -> str:
     mappings = [
         f"- {builtin} -> {proxy_tool_name(builtin)}"
         for builtin in sorted(SANDBOX_BUILTINS)
@@ -143,6 +143,14 @@ def _sandbox_tool_contract(tool_names: list[str]) -> str:
     ]
     if not mappings:
         return ""
+    location = (
+        f"\nThese file and command tools execute with working directory {json.dumps(workspace)}. "
+        "The SDK's local current directory is a control mirror, not the tools' working "
+        "directory. Do not use that local directory in file paths or shell commands. "
+        "Query pwd and HOME through the command tool when you need their actual values."
+        if workspace
+        else ""
+    )
     return (
         "\n\n## Current sandbox file tools\n"
         "Native filesystem tools are disabled in this session. Use the exact MCP tool "
@@ -150,6 +158,7 @@ def _sandbox_tool_contract(tool_names: list[str]) -> str:
         "This applies to resumed conversations too. A disabled native tool error does "
         "not mean the sandbox is unavailable; retry with its listed MCP replacement.\n"
         + "\n".join(mappings)
+        + location
         + "\nUse workspace-relative paths. For a requested report file, write it under "
         "outputs/, verify the file using an available read or command tool, and return "
         "the exact path for artifact collection. If publish_artifact is listed among "
@@ -1045,7 +1054,7 @@ class ClaudeSdkRuntime:
                 ),
                 prompt=(
                     f"{snapshot.system_prompt.rstrip()}\n\n{VISIBLE_EXECUTION_CONTRACT}\n{WEB_CONTRACT}"
-                    f"{_sandbox_tool_contract(subagent_tools)}"
+                    f"{_sandbox_tool_contract(subagent_tools, workspace=context.remote_workspace)}"
                 ),
                 tools=subagent_tools,
                 model="inherit",
@@ -1098,7 +1107,7 @@ class ClaudeSdkRuntime:
             system_prompt=(
                 f"{self._snapshot.system_prompt.rstrip()}\n\n{VISIBLE_EXECUTION_CONTRACT}\n{WEB_CONTRACT}"
                 f"{delegation_contract}{_knowledge_mode_contract(context)}"
-                f"{_sandbox_tool_contract(allowed_tools)}"
+                f"{_sandbox_tool_contract(allowed_tools, workspace=context.remote_workspace)}"
                 f"\n{context.platform_tools.instructions}"
                 f"\n{context.interaction_projection}"
             ),

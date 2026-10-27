@@ -86,35 +86,74 @@ class ComputerWorkspace:
         total = sum(len(data) for _, data, _ in entries)
         if total > self.max_bytes or len(entries) > self.max_members:
             raise ValueError("Computer workspace upload exceeds limits")
-        for path, data, mode in entries:
+        for path, _, _ in entries:
             workspace_relative_target("/home/kai/workspace", path)
-            identifier = uuid4().hex
-            digest = hashlib.sha256(data).hexdigest()
+        batch: list[tuple[str, bytes, int]] = []
+        batch_bytes = 0
+        for path, data, mode in entries:
+            if batch and (
+                batch_bytes + len(data) > workspace_guest.CHUNK_BYTES
+                or len(batch) >= workspace_guest.BATCH_FILES
+            ):
+                await self._upload_batch(batch)
+                batch, batch_bytes = [], 0
+            if len(data) <= workspace_guest.CHUNK_BYTES:
+                batch.append((path, data, mode))
+                batch_bytes += len(data)
+            else:
+                await self._upload_chunks(path, data, mode)
+        if batch:
+            await self._upload_batch(batch)
+
+    async def _upload_batch(self, entries: Sequence[tuple[str, bytes, int]]) -> None:
+        result = await self._call(
+            "upload_batch",
+            {
+                "entries": [
+                    {
+                        "path": path,
+                        "upload_id": uuid4().hex,
+                        "offset": 0,
+                        "size": len(data),
+                        "mode": mode,
+                        "sha256": hashlib.sha256(data).hexdigest(),
+                        "data": base64.b64encode(data).decode("ascii"),
+                    }
+                    for path, data, mode in entries
+                ]
+            },
+        )
+        if result.get("complete") is not True or result.get("count") != len(entries):
+            raise RuntimeError("Computer workspace batch acknowledgement is invalid")
+
+    async def _upload_chunks(self, path: str, data: bytes, mode: int) -> None:
+        identifier = uuid4().hex
+        digest = hashlib.sha256(data).hexdigest()
+        try:
+            for offset in range(0, max(1, len(data)), workspace_guest.CHUNK_BYTES):
+                chunk = data[offset : offset + workspace_guest.CHUNK_BYTES]
+                result = await self._call(
+                    "upload",
+                    {
+                        "path": path,
+                        "upload_id": identifier,
+                        "offset": offset,
+                        "size": len(data),
+                        "mode": mode,
+                        "sha256": digest,
+                        "data": base64.b64encode(chunk).decode("ascii"),
+                    },
+                )
+                if result.get("complete") is not (offset + len(chunk) == len(data)):
+                    raise RuntimeError("Computer workspace upload acknowledgement is invalid")
+        except BaseException:
             try:
-                for offset in range(0, max(1, len(data)), workspace_guest.CHUNK_BYTES):
-                    chunk = data[offset : offset + workspace_guest.CHUNK_BYTES]
-                    result = await self._call(
-                        "upload",
-                        {
-                            "path": path,
-                            "upload_id": identifier,
-                            "offset": offset,
-                            "size": len(data),
-                            "mode": mode,
-                            "sha256": digest,
-                            "data": base64.b64encode(chunk).decode("ascii"),
-                        },
-                    )
-                    if result.get("complete") is not (offset + len(chunk) == len(data)):
-                        raise RuntimeError("Computer workspace upload acknowledgement is invalid")
-            except BaseException:
-                try:
-                    await self._call("abort", {"path": path, "upload_id": identifier})
-                except Exception:
-                    # A lost lease must never be bypassed to clean up a user's
-                    # temporary upload; it is outside manifest/publication.
-                    pass
-                raise
+                await self._call("abort", {"path": path, "upload_id": identifier})
+            except Exception:
+                # A lost lease must never be bypassed to clean up a user's
+                # temporary upload; it is outside manifest/publication.
+                pass
+            raise
 
     async def stage(self, local: Path) -> None:
         """Only stage this fresh Run directory; never a prior Session snapshot."""

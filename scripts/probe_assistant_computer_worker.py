@@ -9,7 +9,8 @@ Neither mode is real assistant/model acceptance.
 import argparse
 import asyncio
 import json
-from collections.abc import AsyncIterator
+import time
+from collections.abc import AsyncIterator, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -32,6 +33,7 @@ from harness.application.events import EventService
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
 from harness.computer.control import HttpComputerControl
 from harness.computer.docker import DockerComputerDriver
+from harness.computer.manager import ComputerAllocation
 from harness.computer.registry import ComputerRegistry
 from harness.computer.sandbox import ComputerSandboxProvider
 from harness.computer.storage import AssistantComputerRow, ComputerLeaseRow
@@ -40,6 +42,7 @@ from harness.core.models import AguiThreadBinding, Run, RunStatus, Session
 from harness.core.ports import EventRepository, RunRepository, SessionRepository
 from harness.runtime.base import RuntimeContext, RuntimeEvent
 from harness.runtime.fake import FakeRuntime
+from harness.sandbox.base import SandboxCommandResult
 from harness.sandbox.lease import SandboxLeaseService
 from harness.storage.database import create_database, create_schema
 from harness.storage.models import AguiThreadBindingRow, TenantMembershipRow, UserRow
@@ -47,6 +50,44 @@ from harness.storage.platform_repositories import PostgresSessionRepository
 from harness.storage.repositories import PostgresEventRepository, PostgresRunRepository
 from harness.storage.sandbox_lease_repository import PostgresSandboxLeaseRepository
 from harness.worker.orchestrator import RunOrchestrator
+
+
+class TimedComputerDriver(DockerComputerDriver):
+    """Record bounded file-plane timings, never command content or credentials."""
+
+    def __init__(self, control: HttpComputerControl, image: str):
+        super().__init__(control, image=image)
+        self.operations: dict[str, dict[str, float | int]] = {}
+
+    async def execute(
+        self,
+        allocation: ComputerAllocation,
+        argv: Sequence[str],
+        *,
+        environment: Mapping[str, str] | None = None,
+        timeout_seconds: float = 30,
+        stdin: bytes | None = None,
+    ) -> SandboxCommandResult:
+        operation = (
+            argv[-1]
+            if len(argv) == 5
+            and tuple(argv[:3]) == ("python3", "-I", "-c")
+            and argv[-1] in {"manifest", "upload", "upload_batch", "stat", "read", "abort"}
+            else "command"
+        )
+        started = time.monotonic()
+        try:
+            return await super().execute(
+                allocation,
+                argv,
+                environment=environment,
+                timeout_seconds=timeout_seconds,
+                stdin=stdin,
+            )
+        finally:
+            metric = self.operations.setdefault(operation, {"calls": 0, "seconds": 0.0})
+            metric["calls"] += 1
+            metric["seconds"] += time.monotonic() - started
 
 
 class ToolsRuntime(FakeRuntime):
@@ -66,6 +107,9 @@ class ToolsRuntime(FakeRuntime):
             source = (
                 "from pathlib import Path; import os,json; "
                 "assert Path('inputs/staged.txt').read_text()=='current-run-input'; "
+                "assert sum(p.read_bytes()==b'fixture-resource\\n'*1024 "
+                "for p in Path('inputs/assets').glob('*.txt'))=="
+                f"{context.run.input['staging_files']}; "
                 "Path('outputs').mkdir(exist_ok=True); "
                 "Path('outputs/first.txt').write_text('first'); "
                 "Path('project.txt').write_text('retained-project'); "
@@ -77,6 +121,7 @@ class ToolsRuntime(FakeRuntime):
             assert result.exit_code == 0
             self.report["taskUids"] = json.loads(result.stdout)["uids"]
             assert self.report["taskUids"] == [28000, 28000, 28000]
+            self.report["stagedFixtureFilesVerified"] = context.run.input["staging_files"]
         else:
             source = (
                 "from pathlib import Path; import subprocess; "
@@ -93,7 +138,9 @@ class ToolsRuntime(FakeRuntime):
             yield event
 
 
-async def probe(config_path: Path, output: Path) -> None:
+async def probe(config_path: Path, output: Path, staging_files: int = 0) -> None:
+    if not 0 <= staging_files <= 1000:
+        raise ValueError("staging fixture file count exceeds probe bounds")
     config = json.loads(config_path.read_text())
     if make_url(config["database_url"]).database != "harness_computer_probe":
         raise ValueError("Worker probe requires the isolated harness_computer_probe database")
@@ -142,7 +189,7 @@ async def probe(config_path: Path, output: Path) -> None:
         trust_env=False,
         headers={"Authorization": "Bearer " + config["secret"]},
     ) as client:
-        driver = DockerComputerDriver(HttpComputerControl(client), image=config["image"])
+        driver = TimedComputerDriver(HttpComputerControl(client), image=config["image"])
         run_repository: RunRepository
         session_repository: SessionRepository
         events_repository: EventRepository
@@ -209,6 +256,11 @@ async def probe(config_path: Path, output: Path) -> None:
         ) -> tuple[str, ...]:
             (workspace / "inputs").mkdir(exist_ok=True)
             (workspace / "inputs/staged.txt").write_text("current-run-input")
+            if staging_files:
+                assets = workspace / "inputs/assets"
+                assets.mkdir()
+                for index in range(staging_files):
+                    (assets / f"{index}.txt").write_bytes(b"fixture-resource\n" * 1024)
             return ()
 
         async def execute(index: int, runtime: FakeRuntime) -> Run:
@@ -220,7 +272,7 @@ async def probe(config_path: Path, output: Path) -> None:
                 idempotency_key=str(index),
                 created_at=clock(),
                 updated_at=clock(),
-                input={"prompt": "fixture", "round": index},
+                input={"prompt": "fixture", "round": index, "staging_files": staging_files},
             )
             await run_repository.add(run)
             sandbox = ComputerSandboxProvider(
@@ -299,6 +351,7 @@ async def probe(config_path: Path, output: Path) -> None:
                 await driver.recover(computer, token)
                 await registry.complete_recovery(token, provider_ref=None)
                 report["fixtureInstanceRemoved"] = True
+            report["filePlaneOperations"] = driver.operations
             output.write_text(json.dumps(report, indent=2) + "\n")
             await engine.dispose()
 
@@ -307,5 +360,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--staging-files", type=int, default=0)
     args = parser.parse_args()
-    asyncio.run(probe(args.config, args.output))
+    asyncio.run(probe(args.config, args.output, args.staging_files))

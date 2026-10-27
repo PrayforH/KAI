@@ -10,7 +10,7 @@ import pytest
 from harness.computer.docker import DockerComputerDriver
 from harness.computer.manager import ComputerAllocation
 from harness.computer.workspace import ComputerWorkspace
-from harness.computer.workspace_guest import CHUNK_BYTES, Workspace, parts
+from harness.computer.workspace_guest import BATCH_FILES, CHUNK_BYTES, Workspace, parts
 from harness.sandbox.base import SandboxCommandResult
 
 
@@ -61,13 +61,107 @@ async def test_chunked_transfer_is_atomic_and_preserves_executable_mode(tmp_path
     content = b"tool-data" * (CHUNK_BYTES // 8 + 1)
     await workspace.capture_baseline()
     await workspace.upload([("tools/fixture", content, 0o700), ("empty", b"", 0o600)])
-    assert host.calls.count("upload") == 3
+    assert host.calls.count("upload") == 2
+    assert host.calls.count("upload_batch") == 1
     assert await workspace.download("tools/fixture", max_bytes=len(content)) == content
     assert await workspace.download("empty", max_bytes=0) == b""
     await workspace.collect(local)
     assert (local / "tools/fixture").read_bytes() == content
     assert (local / "tools/fixture").stat().st_mode & 0o777 == 0o700
     assert not list(root.rglob("*.kai-upload-*"))
+
+
+@pytest.mark.asyncio
+async def test_small_files_use_bounded_batches_and_retain_exact_contents(tmp_path: Path):
+    host, workspace = plane(tmp_path)
+    workspace.max_members = 300
+    entries = [(f"inputs/{i}.txt", f"file-{i}".encode(), 0o600) for i in range(200)]
+    await workspace.upload(entries)
+    assert host.calls == ["upload_batch"] * 4
+    for path, data, mode in entries:
+        assert (tmp_path / path).read_bytes() == data
+        assert (tmp_path / path).stat().st_mode & 0o777 == mode
+
+
+@pytest.mark.asyncio
+async def test_batching_respects_byte_limit_and_does_not_drop_empty_files(tmp_path: Path):
+    host, workspace = plane(tmp_path)
+    entries = [("one", b"a" * CHUNK_BYTES, 0o700), ("two", b"b", 0o600), ("empty", b"", 0o600)]
+    await workspace.upload(entries)
+    assert host.calls == ["upload_batch", "upload_batch"]
+    assert (tmp_path / "one").read_bytes() == entries[0][1]
+    assert (tmp_path / "two").read_bytes() == b"b"
+    assert (tmp_path / "empty").is_file() and (tmp_path / "empty").stat().st_size == 0
+
+
+@pytest.mark.asyncio
+async def test_staging_rejects_all_invalid_paths_before_any_remote_write(tmp_path: Path):
+    host, workspace = plane(tmp_path)
+    with pytest.raises(ValueError):
+        await workspace.upload([("valid", b"data", 0o600), ("../escape", b"bad", 0o600)])
+    assert host.calls == []
+    assert not (tmp_path / "valid").exists()
+
+
+def batch_entry(path: str, data: bytes) -> dict[str, Any]:
+    return {
+        "path": path,
+        "upload_id": "b" * 32,
+        "offset": 0,
+        "size": len(data),
+        "mode": 0o600,
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "data": base64.b64encode(data).decode(),
+    }
+
+
+@pytest.mark.parametrize("failure", ["checksum", "incomplete", "symlink"])
+def test_failed_batch_preserves_original_and_cleans_temporary_upload(tmp_path: Path, failure: str):
+    root, outside = tmp_path / "root", tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    (outside / "secret").write_bytes(b"private")
+    (root / "report").write_bytes(b"original")
+    first = batch_entry("ok", b"completed")
+    bad = batch_entry("report", b"replacement")
+    if failure == "checksum":
+        bad["sha256"] = "0" * 64
+    elif failure == "incomplete":
+        bad["size"] += 1
+    else:
+        (root / "escape").symlink_to(outside, target_is_directory=True)
+        bad["path"] = "escape/secret"
+    with pytest.raises((OSError, ValueError)):
+        Workspace(root).upload_batch([first, bad])
+    # The batch is not a transaction: completed earlier files stay committed.
+    assert (root / "ok").read_bytes() == b"completed"
+    assert (root / "report").read_bytes() == b"original"
+    assert (outside / "secret").read_bytes() == b"private"
+    assert not list(root.rglob("*.kai-upload-*"))
+
+
+@pytest.mark.parametrize("failure", ["count", "total_bytes", "large_file", "offset"])
+def test_guest_refuses_unbounded_batch_before_writing(tmp_path: Path, failure: str):
+    entry = batch_entry("file", b"test")
+    entries = [entry]
+    if failure == "count":
+        entries *= BATCH_FILES + 1
+    elif failure == "total_bytes":
+        entries = [batch_entry(str(i), b"x" * (CHUNK_BYTES // 2 + 1)) for i in range(2)]
+    elif failure == "large_file":
+        entry["size"] = CHUNK_BYTES + 1
+    else:
+        entry["offset"] = 1
+    with pytest.raises(ValueError):
+        Workspace(tmp_path).upload_batch(entries)
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("raw", [{}, [None], [{"offset": 0, "size": True}], []])
+def test_guest_refuses_malformed_batch(tmp_path: Path, raw: object):
+    with pytest.raises(ValueError):
+        Workspace(tmp_path).upload_batch(raw)
+    assert list(tmp_path.iterdir()) == []
 
 
 @pytest.mark.asyncio
