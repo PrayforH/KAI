@@ -400,7 +400,10 @@ def create_viewer_app(
                             elif kind == RFB_POINTER:
                                 input_frames["pointer"] += 1
                             input_stream.write(chunk)
-                            await input_stream.drain()
+                            # A client that vanishes mid-frame leaves the SSH
+                            # window full; an unbounded drain would sit here
+                            # forever and the disconnect would never be seen.
+                            await asyncio.wait_for(input_stream.drain(), timeout=5)
                         if policy.resync_required:
                             # A half-sent input message crossed the takeover
                             # boundary; only a fresh connection can realign
