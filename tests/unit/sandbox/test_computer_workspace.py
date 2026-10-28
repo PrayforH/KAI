@@ -365,3 +365,40 @@ async def test_collection_refuses_local_mirror_symlink_escape(tmp_path: Path):
     with pytest.raises(ValueError, match="escaped"):
         await workspace.collect(local)
     assert list(outside.iterdir()) == []
+
+
+@pytest.mark.asyncio
+async def test_multi_chunk_collect_downloads_every_chunk_in_order(tmp_path: Path):
+    """A file larger than one 2MiB chunk crosses several read requests."""
+
+    root, local = tmp_path / "remote", tmp_path / "local"
+    root.mkdir()
+    local.mkdir()
+    host, workspace = plane(root)
+    content = bytes(range(256)) * (CHUNK_BYTES // 256) + b"tail-4k"  # 2MiB + tail
+    await workspace.capture_baseline()
+    await workspace.upload([("outputs/film.mp4", content, 0o600)])
+    host.calls.clear()
+    await workspace.collect(local)
+    mirrored = (local / "outputs/film.mp4").read_bytes()
+    assert mirrored == content
+    # One stat per chunk plus the manifest: the remainder is requested by offset.
+    assert host.calls.count("read") == 2
+
+
+@pytest.mark.asyncio
+async def test_collect_keeps_the_previous_turn_and_replaces_changed_files(tmp_path: Path):
+    root, local = tmp_path / "remote", tmp_path / "local"
+    root.mkdir()
+    local.mkdir()
+    host, workspace = plane(root)
+    await workspace.capture_baseline()
+    await workspace.upload([("outputs/a.txt", b"first", 0o600)])
+    await workspace.collect(local)
+    assert (local / "outputs/a.txt").read_bytes() == b"first"
+    # Next turn: a.txt changed, b.txt is new; both must mirror, nothing lost.
+    (root / "outputs/a.txt").write_bytes(b"second")
+    (root / "outputs/b.txt").write_bytes(b"new")
+    await workspace.collect(local)
+    assert (local / "outputs/a.txt").read_bytes() == b"second"
+    assert (local / "outputs/b.txt").read_bytes() == b"new"
