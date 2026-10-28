@@ -120,7 +120,7 @@ async def test_screenshot_acquires_ownership_and_returns_image(
     )
     overlay = computer_gui_overlay(desktop, provider, provider.handle)
     tools = {tool.name: tool.handler for tool in overlay.tools}
-    result = await tools["computer_screenshot"]({})
+    await tools["computer_screenshot"]({})
     assert provider.calls == [("screenshot", {}, 1)]
 
 
@@ -131,7 +131,9 @@ async def test_screenshot_forwards_region_and_scale(
     """Dropping the arguments here turns every cropped view into a full one."""
 
     desktop = await prepared(database)
-    provider = StubProvider([{"width": 400, "height": 300, "png_base64": "aGVsbG8="}], root=tmp_path)
+    provider = StubProvider(
+        [{"width": 400, "height": 300, "png_base64": "aGVsbG8="}], root=tmp_path
+    )
     overlay = computer_gui_overlay(desktop, provider, provider.handle)
     tools = {tool.name: tool.handler for tool in overlay.tools}
     payload = {"region": {"x": 0, "y": 0, "width": 400, "height": 300}, "scale": 0.5}
