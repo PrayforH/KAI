@@ -67,9 +67,13 @@ async def test_takeover_fences_agent_and_settles_to_human(database: DatabaseFixt
     human = await service.view("tenant-a", "user-a")
     assert human.state is DesktopState.HUMAN
     assert human.epoch == pending.epoch
-    # While the human actively owns the desktop, the fenced agent owner
-    # cannot renew its claim; after the human TTL lapses, observe returns.
-    await service.refresh_human("tenant-a", "user-a")
+    # Settling starts the human window; the very next read must not fall back
+    # to observation, or the takeover would last a single poll.
+    again = await service.view("tenant-a", "user-a")
+    assert again.state is DesktopState.HUMAN
+    assert again.expires_at is not None
+    assert again.expires_at > datetime.now(UTC) + timedelta(seconds=60)
+    # While the human owns the desktop, the fenced agent owner is refused.
     with pytest.raises(DesktopOccupiedError):
         await service.acquire_agent("tenant-a", "user-a", owner="worker-1")
 
@@ -125,3 +129,25 @@ async def test_desktop_row_requires_a_registered_computer(database: DatabaseFixt
 
     with pytest.raises(NotFoundError):
         await service.view("tenant-a", "nobody")
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_keeps_an_active_takeover_alive(database: DatabaseFixture):
+    service = await seeded(database)
+    await service.request_human("tenant-a", "user-a")
+    async with service._sessions.begin() as session:
+        from harness.computer.storage import ComputerDesktopLeaseRow as Row
+
+        row = await session.scalar(select(Row).where(Row.tenant_id == "tenant-a"))
+        row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    human = await service.view("tenant-a", "user-a")
+    assert human.state is DesktopState.HUMAN
+    # The viewer refreshes on every poll; the window must stay open and the
+    # agent must stay fenced.
+    for _ in range(3):
+        refreshed = await service.refresh_human("tenant-a", "user-a")
+        assert refreshed.state is DesktopState.HUMAN
+        assert refreshed.expires_at is not None
+        assert refreshed.expires_at > datetime.now(UTC) + timedelta(seconds=60)
+    with pytest.raises(DesktopOccupiedError):
+        await service.acquire_agent("tenant-a", "user-a", owner="worker-1")

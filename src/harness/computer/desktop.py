@@ -174,19 +174,26 @@ class DesktopControlService:
 
     @staticmethod
     def _settle(row: Row, moment: datetime) -> bool:
-        """Lazy transitions for expired pending/human/agent rows."""
+        """Lazy transitions for expired pending/human/agent rows.
+
+        Settling into human *starts* the human window: the pending grace is a
+        transition delay, not the usable takeover period. Without this the row
+        would immediately look expired again and the very next read would drop
+        the user back to observation, which also un-fenced the agent.
+        """
 
         expiry = row.expires_at
         if expiry is None or expiry > moment:
             return False
         previous = row.state
+        root = previous == DesktopState.TAKEOVER_PENDING.value
         row.state = (
-            DesktopState.HUMAN.value
-            if previous == DesktopState.TAKEOVER_PENDING.value
-            else DesktopState.OBSERVE.value
+            DesktopState.HUMAN.value if root else DesktopState.OBSERVE.value
         )
         row.owner = None
-        if row.state == DesktopState.OBSERVE.value:
+        if root:
+            row.expires_at = moment + timedelta(seconds=HUMAN_TTL_SECONDS)
+        else:
             row.epoch += 1
             row.expires_at = None
         row.revision += 1

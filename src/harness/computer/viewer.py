@@ -190,10 +190,17 @@ def create_viewer_app(
             if response.status_code != 200:
                 return observe
             value: dict[str, Any] = response.json()
-            return {
-                "state": str(value.get("state", "observe")),
-                "epoch": int(value.get("epoch") or 0),
-            }
+            state = str(value.get("state", "observe"))
+            if state == "human":
+                # An open viewer is proof the owner is present; refresh the
+                # takeover TTL so an active session never lapses mid-work.
+                with contextlib.suppress(httpx.HTTPError, ValueError):
+                    await auth.post(
+                        "/v1/studio/assistant/computer/desktop/heartbeat",
+                        headers={"Authorization": "Bearer " + token},
+                        timeout=3,
+                    )
+            return {"state": state, "epoch": int(value.get("epoch") or 0)}
         except (httpx.HTTPError, ValueError, TypeError):
             return observe
 

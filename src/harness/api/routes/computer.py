@@ -57,6 +57,24 @@ async def takeover(
         raise _not_found(error) from None
 
 
+@router.post("/desktop/heartbeat")
+async def heartbeat(
+    identity: Annotated[Identity, Depends(require_identity)],
+    service: Service,
+) -> DesktopControl:
+    """Keep an active human takeover alive while the owner is using it.
+
+    The takeover TTL is a safety net for an abandoned session, not a hard
+    limit during work: an open viewer refreshes it on every poll.
+    """
+
+    ensure_permission(identity, "tasks:write")
+    try:
+        return await service.refresh_human(identity.tenant_id, identity.user_id)
+    except NotFoundError as error:
+        raise _not_found(error) from None
+
+
 @router.post("/desktop/return")
 async def return_control(
     identity: Annotated[Identity, Depends(require_identity)],
