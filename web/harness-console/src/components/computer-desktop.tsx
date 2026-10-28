@@ -117,8 +117,10 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
       {state === "unauthorized" ? <Link href="/login">登录 KAI</Link>
         : state === "disconnected" ? <button onClick={() => setRevision(value => value + 1)}>重新连接</button> : null}
     </div>}
-    {state === "connected" && control !== "human" && <div className={styles.overlay} style={{ pointerEvents: "none" }}>
-      <p>{control === "agent" ? "助理正在操作这台电脑" : control === "takeover_pending" ? "正在切换控制权…" : "观察模式：点击「接管」获得键盘和鼠标"}</p>
+    {state === "connected" && control !== "human" && <div className={styles.notice} role="status">
+      {control === "agent" ? "助理正在操作这台电脑 · 点「接管」可随时接手"
+        : control === "takeover_pending" ? "正在切换控制权…"
+        : "观察中 · 画面实时更新，点「接管」获得键盘和鼠标"}
     </div>}
   </section>;
 }

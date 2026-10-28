@@ -22,6 +22,9 @@
 .screen > div { height: 100%; }
 .overlay { position: absolute; inset: 46px 0 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 8px; background: #171b1c; color: #e3e8e5; font-size: 13px; }
 .overlay p { margin: 0 0 8px; }
+/* A hint must never cover the picture: the observation stream keeps rendering
+   behind it, so this is a small translucent badge, not a full-screen panel. */
+.notice { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); max-width: min(560px, 90%); padding: 7px 12px; border-radius: 999px; background: rgba(23, 27, 28, 0.78); color: #e3e8e5; font-size: 12px; line-height: 1.35; text-align: center; pointer-events: none; backdrop-filter: blur(3px); }
 .overlay a { color: #a8d2bf; }
 .entry:focus-visible, .toolbar button:focus-visible, .back:focus-visible, .overlay button:focus-visible { outline: 2px solid var(--rail); outline-offset: 3px; }
 @media (max-width: 540px) { .toolbar { padding: 0 8px; gap: 7px; } .connection { font-size: 10px; } .preview { display: none; } }
