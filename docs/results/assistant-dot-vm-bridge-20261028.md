@@ -104,3 +104,54 @@ Web：`tsc --noEmit` 通过；`npm run build` 生产构建通过（含接管/交
 **发现三个会让部署直接失败的真实差异**（已写入 runbook §8.1）：工作盘挂载点、root 盘是目录而非单文件、控制服务未挂 identities 目录（VM provider 需只读挂入才能调用 guest gate）。这三点若无本轮实测，部署时会在 `verify_vm_instance` 与首次 gate 调用处失败。
 
 结论：生产零变更，账号/绑定/聊天记录/工作卷/root 盘/浏览器 profile 均未触碰；上线路径已收敛为一组可直接粘贴的配置值。
+
+## 8. 79 实际部署（2026-10-28 08:33 起）
+
+通道恢复后按 runbook 执行，**生产已切换**。逐服务、可回滚、数据零丢失。
+
+### 8.1 镜像（在 79 上从运行中的 r21 镜像增量构建）
+
+| 镜像 | ID | 说明 |
+| --- | --- | --- |
+| `kai/assistant-api:20261028-dot4` | `3d03e971deb8`（api/worker/control 共用） | r21 镜像叠加 `src/harness` + `migrations`，并加 `openssh-client`（VM 控制通道需要 ssh） |
+| `kai/assistant-web:20261028-dot1` | `b467960e5059` | 生产构建；产物内实测含「交还助理/由你控制/观察模式」文案 |
+
+过程中修正两个真实阻塞：
+1. **lockfile 是 darwin/arm64 生成的**，缺 sharp 的 linux 可选依赖，`npm ci` 在 amd64 上直接失败 → 在 `node:22-alpine` 内由同一 `package.json` 重建 lock（`f92a5889`），本机 `npm ci` + `tsc` 复验通过。
+2. **`deploy/assistant-79/api.Dockerfile` 的基座 r54 缺 `qrcode`**，新镜像 api 在 import 阶段崩溃循环（restarts=4）。改为以**运行中的 r21 镜像**为基座叠加（依赖集完全一致），并用 `from harness.api.app import create_app` 验证导入。
+
+### 8.2 数据库
+
+- 备份：`/data/kai-dot-20261028/private/`（compose 0600、库 153 MB gz；compose sha 前后一致核对）。
+- **克隆库演练**：`harness_dot_drill` 由生产 dump 恢复后 0051→0053 成功，users/sessions/runs/artifacts/tenant_memberships/assistant_computers/leases 行数与生产逐项一致。
+- **正式库**：活跃 Run=0 的窗口内 0051→**0053** 成功（0052 加列、0053 建 `computer_desktop_leases`）。
+
+### 8.3 配置与顺序
+
+按"先服务、后数据"：control（新镜像 + VM 声明 + identities 只读挂载）→ api → worker → **switch 注册行** → web。
+
+`switch_provider`（本轮新增维护操作，4 项测试）把该 owner 的行从 `docker-computer` 改为 `vm-computer`、卷改为 `kai-computer-guestbase-a-20261027`、清空 `provider_ref` 交给新 provider 首次授权启动挂载；旧 instance/卷未删除（回滚点）。
+
+### 8.4 真实验收（真模型、真产品路径）
+
+通过渠道同一条提交路径（`PersonalConversation.submit`）在本人助理线程发起真实 Run：
+
+| 项 | 结果 |
+| --- | --- |
+| 桌面控制权（真实 owner 会话 + 真实 API） | **通过**：`observe → takeover_pending → human(epoch 10) → return → observe(epoch 11)`；epoch 每次交接递增 |
+| Run 路由到 VM | **通过**：`assistant_computers.provider=vm-computer`，执行经 control → guest `ssh_gate` |
+| Agent 在 VM 内创建文件 | **通过**：`run_86e8ce07…` 成功，模型回读确认 `/home/kai/workspace/dot-accept-CHARLIE085756.txt`（23 字节，644，内容 `DOTALPHA=CHARLIE085756`） |
+| Agent 截图（同一桌面） | **失败**：`computer_screenshot` 三次 503 |
+
+### 8.5 未解决缺陷：截图 503
+
+已定位到显示通道（`DisplayTransport` → guest `display_gate` → `/run/kai-desktop/vnc.sock`），但**根因未确定**：
+- 人工查看通道（viewer websocket，同一 gate）实测**正常**（收到 `RFB 003.008`），说明桌面存活、gate 授权关系有效；
+- 从 control 容器手工执行同一 ssh 命令得到 `rc=0` 且零字节输出，与"gate 立即退出"一致；
+- 原实现把 gate 的 stderr 丢弃、异常统一吞成 503，**无任何日志**，因此无法再进一步。
+
+已修复可观测性并对齐参数（`2645b4dc`、`93a0daad`）：control 每个失败动作记一行受限日志；transport 保留 gate stderr 并在缺 banner 时报出原因；ssh 选项与最小环境对齐已验证可用的 viewer。
+
+### 8.6 阻塞
+
+09:00 后本机网络切到手机热点（172.20.10.2），`172.20.x` 内网全不可达（含 173/174），**无法继续部署修复与复验**。最后一次观测到生产状态：api/worker/control = dot4 healthy、web = dot1 healthy、DB 0053、VM 运行、真实 Run 成功。
