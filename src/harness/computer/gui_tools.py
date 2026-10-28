@@ -89,8 +89,10 @@ def computer_gui_overlay(
         except (RuntimeError, ValueError) as error:
             return _text(f"桌面操作未完成：{error}")
 
-    async def screenshot(_arguments: dict[str, Any]) -> dict[str, Any]:
-        result = await act("screenshot", {})
+    async def screenshot(arguments: dict[str, Any]) -> dict[str, Any]:
+        # Forward region/scale untouched: the node validates them, and dropping
+        # them here silently turns every cropped view into a full-screen one.
+        result = await act("screenshot", dict(arguments))
         content: dict[str, Any] | None = result.get("content")  # type: ignore[assignment]
         if content is not None:
             return result

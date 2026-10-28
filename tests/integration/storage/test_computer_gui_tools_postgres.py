@@ -122,6 +122,23 @@ async def test_screenshot_acquires_ownership_and_returns_image(
     tools = {tool.name: tool.handler for tool in overlay.tools}
     result = await tools["computer_screenshot"]({})
     assert provider.calls == [("screenshot", {}, 1)]
+
+
+@pytest.mark.asyncio
+async def test_screenshot_forwards_region_and_scale(
+    database: DatabaseFixture, tmp_path: Any
+) -> None:
+    """Dropping the arguments here turns every cropped view into a full one."""
+
+    desktop = await prepared(database)
+    provider = StubProvider([{"width": 400, "height": 300, "png_base64": "aGVsbG8="}], root=tmp_path)
+    overlay = computer_gui_overlay(desktop, provider, provider.handle)
+    tools = {tool.name: tool.handler for tool in overlay.tools}
+    payload = {"region": {"x": 0, "y": 0, "width": 400, "height": 300}, "scale": 0.5}
+    result = await tools["computer_screenshot"](payload)
+    assert provider.calls == [("screenshot", payload, 1)]
+    text = result["content"][1]["text"]
+    assert "400x300" in text and "tokens" in text
     image = result["content"][0]
     assert image == {"type": "image", "data": "aGVsbG8=", "mimeType": "image/png"}
     state = await desktop.view("tenant-a", "user-a")
