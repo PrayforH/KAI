@@ -14,6 +14,7 @@ PROVIDER = "vm-computer"
 
 class VmComputerDriver(DockerComputerDriver):
     provider = PROVIDER
+    image_office = True  # the guest base installs ~/.venvs/office
 
     async def recover(self, computer: AssistantComputer, token: ComputerLease) -> str | None:
         self._validate(computer, token, LeasePurpose.RECOVER)

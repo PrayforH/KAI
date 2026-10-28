@@ -43,6 +43,10 @@ class ComputerHost(ComputerControl, Protocol):
 
 class DockerComputerDriver:
     provider = "docker-computer"
+    # What this provider's image actually ships. The office interpreter is a
+    # property of the computer image, not of the transport; only a provider
+    # whose image carries it may promise it to the model.
+    image_office = False
 
     def __init__(self, host: ComputerHost, *, image: str) -> None:
         if not image.strip():

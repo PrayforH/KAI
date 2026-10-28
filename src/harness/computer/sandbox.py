@@ -112,6 +112,12 @@ class ComputerSandboxProvider:
             raise UnsupportedEgressError("Computer cannot enforce this Run's network policy")
         return await self.provision(run)
 
+    @property
+    def image_office(self) -> bool:
+        """Whether this provider's computer image ships the office runtime."""
+
+        return bool(getattr(self.driver, "image_office", False))
+
     def owns(self, handle: SandboxHandle) -> bool:
         lease = self._leases.get(handle.sandbox_id)
         return lease is not None and lease.handle == handle
