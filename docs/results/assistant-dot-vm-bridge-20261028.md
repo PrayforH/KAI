@@ -155,3 +155,38 @@ Web：`tsc --noEmit` 通过；`npm run build` 生产构建通过（含接管/交
 ### 8.6 阻塞
 
 09:00 后本机网络切到手机热点（172.20.10.2），`172.20.x` 内网全不可达（含 173/174），**无法继续部署修复与复验**。最后一次观测到生产状态：api/worker/control = dot4 healthy、web = dot1 healthy、DB 0053、VM 运行、真实 Run 成功。
+
+## 9. 部署收尾与最终验收（dot5/dot6）
+
+部署后又在真机上发现并修复两个真实缺陷，均"旧代码失败、新代码通过"：
+
+**缺陷 1：截图恒 503（`cec558cb`）** — `DisplayTransport.open()` 为快速失败先读走 12 字节 RFB banner 并丢弃，`RfbClient.connect()` 又去读 12 字节；服务端已在等客户端版本应答，于是每次截图阻塞到 20 秒超时。viewer 不触发是因为它把读到的 banner 直接转发浏览器。修复：transport 保存 banner 供客户端复用。回归测试在旧代码上失败、新代码通过。
+
+**缺陷 2：接管形同虚设（`7ee0f92d`）** — `takeover_pending → human` 定格时没有启动人工窗口的 TTL，行仍是"已过期"，下一次读取立刻回落 `observe`；因此 Agent 从未真正被挡（实测：人工接管期间模型仍截图成功）。修复：定格 human 时以当下为起点重设 TTL；并新增显式心跳 `POST /desktop/heartbeat`，viewer 观察到 human 时续期，避免人工正在操作时 5 分钟自动失效。
+
+修复后**同一路径复测**（真实模型）：
+
+| 验收项 | 证据 |
+| --- | --- |
+| 接管期间 Agent 被 fence | 运行中 `desktop state during run: human`；模型原样转述工具返回「用户正在控制电脑；请等待交还后再试。」，未重试、未改文件 |
+| 交还后恢复 | `returned: observe` |
+| 观察态 Agent 截图 | 模型描述 1280×800 桌面（KAI 欢迎页、四个应用磁贴、时间 10:12），与右侧电脑同一画面 |
+| 同一台机 | 模型报告 hostname `kai-aaaaaaaaaaaaaaaaaaaa`，与桌面主机名一致 |
+| 同一工作盘（Agent→人工） | `dot-accept-ECHO101217.txt`（20 字节）落在 `/home/kai/workspace`，宿主侧同卷可读 |
+| 同一工作盘（人工→Agent） | 人工改写为 `HUMAN_EDIT=EDITED_BY_USER_1009`（31 字节、MD5 `13c13f87…`）后，模型读回该内容并指出"是盘上被改过，不是从对话回忆" |
+| VM 重启保留 | `docker restart` 后 serial 日志显示 guest 正常启动；模型再读同一 mtime/MD5，文件与桌面均在 |
+| Worker 重启保留 | `RestartCount=0`、healthy；注册行仍 attached（ref `688eeadc…`, idle）、无残留租约；随后运行正常 |
+| 人工控制持久性 | 收尾快照：`desktop=human epoch 39`，viewer 指针帧 7140→7225，即本人正在浏览器接管中使用；Agent 保持 fence |
+| 主题/壁纸保留 | 截图显示重开后的 KAI 主题欢迎页（紫星、应用磁贴、日期/时间）仍生效 |
+
+**数据核对**（部署前后）：users 12、artifacts 220、projects 1、tenant_memberships 12 未变；sessions 281、runs 833 为真实使用与本轮验收新增；飞书/微信绑定与聊天记录未触碰；旧 Docker Computer 容器与两套卷均保留（回滚点）。
+
+**运行镜像**：`kai/assistant-api:20261028-dot6`（api/worker/control 三处）+ `kai/assistant-web:20261028-dot1`；DB `0053`；`HARNESS_ASSISTANT_COMPUTER_DEFAULT_PROVIDER=vm-computer`。
+
+### 未验证 / 已知边界
+
+- 飞书/微信真实消息通道未发消息验证（本轮提交走的是**渠道同一条** `PersonalConversation.submit` 代码路径，传输层未触发）。
+- 浏览器整页刷新后的 noVNC 重连未做 UI 级点击验证；viewer websocket 已实测可拿到 RFB banner。
+- 登录失效关闭输入为单元测试覆盖，未在本轮真机吊销会话复测。
+- 会话侧未提供可编程 token 预算接口（300,000,000 无法由我设定生效）。
+- M5（OpenSandbox SDK 薄适配、IME/剪贴板）、M6、出站原生文件交付（Outbox 渠道上传）未实施。
