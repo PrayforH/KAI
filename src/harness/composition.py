@@ -45,6 +45,7 @@ from harness.automations.pg_repositories import (
     PostgresAutomationTaskRepository,
 )
 from harness.automations.service import AutomationService
+from harness.computer.conventions import computer_conventions_overlay
 from harness.computer.desktop import DesktopControlService
 from harness.computer.runtime import ComputerRuntime
 from harness.config import Settings
@@ -1595,6 +1596,11 @@ def build_production_container(
             if handle is not None and sandbox is not None
             else PlatformToolOverlay()
         )
+        conventions_overlay = (
+            computer_conventions_overlay()
+            if handle is not None and sandbox is not None
+            else PlatformToolOverlay()
+        )
         delegation_overlay = (
             assistant_delegation_overlay(
                 AssistantDelegationGateway(container.assistant), run, session
@@ -1610,11 +1616,20 @@ def build_production_container(
             else PlatformToolOverlay()
         )
         merged = (
-            overlay.tools + computer_overlay.tools + delegation_overlay.tools + memory_overlay.tools
+            overlay.tools
+            + computer_overlay.tools
+            + delegation_overlay.tools
+            + memory_overlay.tools
         )
         instructions = "\n\n".join(
             layer.instructions
-            for layer in (overlay, computer_overlay, delegation_overlay, memory_overlay)
+            for layer in (
+                overlay,
+                computer_overlay,
+                conventions_overlay,
+                delegation_overlay,
+                memory_overlay,
+            )
             if layer.instructions
         )
         if not merged:
