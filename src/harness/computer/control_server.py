@@ -1,10 +1,13 @@
 """Dedicated internal Computer control service; never exposed by the user sandbox."""
 
+import asyncio
+import contextlib
 import hmac
 import logging
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 import httpx
@@ -12,6 +15,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field, SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy import and_, select
 from sqlalchemy.engine import make_url
 
 from harness.computer.access import CanonicalComputerAccess
@@ -22,15 +26,22 @@ from harness.computer.control import (
     ControlAction,
     DockerComputerControl,
 )
-from harness.computer.desktop import DesktopControlService, DesktopOccupiedError
+from harness.computer.desktop import (
+    DRAIN_POLL_SECONDS,
+    DesktopControlService,
+    DesktopOccupiedError,
+    DesktopState,
+)
 from harness.computer.host import ComputerLimits, DockerComputerLifecycle
 from harness.computer.models import (
+    AssistantComputer,
     ComputerLease,
     ComputerLeaseLostError,
     ComputerStartRejectedError,
     LeasePurpose,
 )
 from harness.computer.registry import ComputerRegistry
+from harness.computer.storage import AssistantComputerRow, ComputerDesktopLeaseRow
 from harness.computer.vm import PROVIDER as VM_PROVIDER
 from harness.computer.vm_host import (
     VmComputerControl,
@@ -79,6 +90,67 @@ class DesktopRequest(BaseModel):
     operation: str
     payload: dict[str, Any]
     expected_epoch: int
+
+
+async def drain_pending_takeovers(
+    desktop_leases: DesktopControlService,
+    screen: VmDesktopService,
+    sessions: Any,
+    *,
+    limit: int = 8,
+) -> int:
+    """Stop and drain this node's actions for every pending takeover.
+
+    The desktop lease row is the authority: the node may publish human
+    ownership only for a drain it actually performed, and a pending window
+    that expires first falls back to observation through the lease itself.
+    Returns how many pending takeovers were confirmed.
+    """
+
+    served = screen.served
+    if not served:
+        return 0
+    async with sessions() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(ComputerDesktopLeaseRow, AssistantComputerRow)
+                    .join(
+                        AssistantComputerRow,
+                        and_(
+                            AssistantComputerRow.tenant_id == ComputerDesktopLeaseRow.tenant_id,
+                            AssistantComputerRow.user_id == ComputerDesktopLeaseRow.user_id,
+                        ),
+                    )
+                    .where(
+                        ComputerDesktopLeaseRow.state == DesktopState.TAKEOVER_PENDING.value,
+                        AssistantComputerRow.provider == VM_PROVIDER,
+                        AssistantComputerRow.volume_ref.in_(served),
+                    )
+                    .limit(limit)
+                )
+            )
+            .all()
+        )
+    confirmed = 0
+    for lease, computer in rows:
+        screen.cancel(computer.volume_ref)
+        remaining = (
+            (lease.expires_at - datetime.now(UTC)).total_seconds()
+            if lease.expires_at is not None
+            else 0
+        )
+        # The stop request lands between keystrokes; the busy flag clearing
+        # is the drain acknowledgement for this computer's queue.
+        if remaining <= 0 or not await screen.wait_drained(
+            computer.volume_ref, timeout=max(0.0, remaining)
+        ):
+            continue
+        state = await desktop_leases.confirm_human(
+            lease.tenant_id, lease.user_id, expected_epoch=lease.epoch
+        )
+        confirmed += state.state == DesktopState.HUMAN.value
+    return confirmed
 
 
 def create_app(settings: ControllerSettings) -> FastAPI:
@@ -138,14 +210,56 @@ def create_app(settings: ControllerSettings) -> FastAPI:
         },
     )
 
+    def desktop_guard(token: ComputerLease, expected_epoch: int):
+        """The one authorization rule for desktop actions, pre-check and re-check."""
+
+        async def guard() -> AssistantComputer:
+            computer, current = await registry.holder(token)
+            if computer.provider != VM_PROVIDER:
+                raise ValueError("this computer has no desktop control surface")
+            if current.purpose is not LeasePurpose.EXECUTE:
+                raise ComputerLeaseLostError("desktop actions need a live execution lease")
+            if access is not None:
+                await access.authorize(computer, current, "exec")
+            # Renew-only: the worker acquires explicitly; the gate never
+            # grants input ownership from observation by itself.
+            state = await desktop_service.renew_agent(
+                computer.tenant_id, computer.user_id, owner=current.owner
+            )
+            # The acquired epoch is authoritative: a takeover bumped it, so a
+            # caller still quoting its old epoch is fenced here.
+            if state.state != "agent" or state.owner != current.owner:
+                raise ComputerLeaseLostError("desktop control was not granted to this holder")
+            if expected_epoch != state.epoch:
+                raise ComputerLeaseLostError("desktop control epoch is stale")
+            return computer
+
+        return guard
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+        watcher = asyncio.create_task(takeover_drain())
         try:
             yield
         finally:
+            watcher.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await watcher
             await desktop_screen.close()
             await docker.aclose()
             await engine.dispose()
+
+    async def takeover_drain() -> None:
+        while True:
+            try:
+                await drain_pending_takeovers(desktop_service, desktop_screen, sessions)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "computer takeover drain failed", exc_info=True
+                )
+            await asyncio.sleep(DRAIN_POLL_SECONDS)
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     # Exposed for test doubles only; production code goes through the routes.
@@ -226,26 +340,13 @@ def create_app(settings: ControllerSettings) -> FastAPI:
             raise HTTPException(400, "Computer desktop request is invalid") from None
         try:
             screen: VmDesktopService = request.app.state.desktop_screen
-            desktop_leases: DesktopControlService = request.app.state.desktop_service
-            computer, current = await registry.holder(command.token)
-            if computer.provider != VM_PROVIDER:
-                raise ValueError("this computer has no desktop control surface")
-            if current.purpose is not LeasePurpose.EXECUTE:
-                raise ComputerLeaseLostError("desktop actions need a live execution lease")
-            if access is not None:
-                await access.authorize(computer, current, "exec")
-            # Renew-only: the worker acquires explicitly; the gate never
-            # grants input ownership from observation by itself.
-            state = await desktop_leases.renew_agent(
-                computer.tenant_id, computer.user_id, owner=current.owner
+            guard = desktop_guard(command.token, command.expected_epoch)
+            computer = await guard()
+            # operate re-runs the same guard inside the action lock: a queued
+            # action is only executed while its lease and epoch still hold.
+            return await screen.operate(
+                computer, command.operation, command.payload, revalidate=guard
             )
-            # The acquired epoch is authoritative: a takeover bumped it, so a
-            # caller still quoting its old epoch is fenced here.
-            if state.state != "agent" or state.owner != current.owner:
-                raise ComputerLeaseLostError("desktop control was not granted to this holder")
-            if command.expected_epoch != state.epoch:
-                raise ComputerLeaseLostError("desktop control epoch is stale")
-            return await screen.operate(computer, command.operation, command.payload)
         except (ComputerLeaseLostError, DesktopOccupiedError, NotFoundError):
             raise HTTPException(409, "Computer desktop ownership was lost") from None
         except (

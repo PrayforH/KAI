@@ -11,7 +11,7 @@ import base64
 import contextlib
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -489,15 +489,23 @@ GUI_OPERATIONS = frozenset({"screenshot", "move", "click", "type", "key", "scrol
 class VmDesktopService:
     """Executes model desktop operations on one VM's visible screen.
 
-    Ownership was already decided by the desktop lease; this service only
-    carries the pixels and input events, keeping one live RFB session per
-    computer so consecutive actions stay cheap.
+    This is the computer's action coordinator: one lock per screen serializes
+    the queue, a dequeued action re-verifies its authorization before it
+    executes, and a takeover asks the in-flight input to stop between
+    keystrokes. The drain acknowledgement is the busy flag clearing — only
+    then may the desktop lease publish human ownership.
     """
 
     def __init__(self, specs: Mapping[str, VmComputerSpec]) -> None:
         self._specs = dict(specs)
         self._sessions: dict[str, RfbClient] = {}
         self._locks: dict[str, asyncio.Lock] = {}
+        self._stopping: dict[str, asyncio.Event] = {}
+        self._busy: dict[str, asyncio.Event] = {}
+
+    @property
+    def served(self) -> list[str]:
+        return list(self._specs)
 
     def _spec(self, computer: AssistantComputer) -> VmComputerSpec:
         spec = self._specs.get(computer.volume_ref)
@@ -510,23 +518,68 @@ class VmDesktopService:
             self._locks[key] = asyncio.Lock()
         return self._locks[key]
 
+    def _stop_event(self, key: str) -> asyncio.Event:
+        if key not in self._stopping:
+            self._stopping[key] = asyncio.Event()
+        return self._stopping[key]
+
+    def _busy_event(self, key: str) -> asyncio.Event:
+        if key not in self._busy:
+            event = asyncio.Event()
+            event.set()  # idle until an action starts
+            self._busy[key] = event
+        return event
+
+    def cancel(self, volume_ref: str) -> None:
+        """Ask this computer's in-flight input to stop between keystrokes."""
+
+        if volume_ref in self._specs:
+            self._stop_event(volume_ref).set()
+
+    async def wait_drained(self, volume_ref: str, *, timeout: float) -> bool:
+        """True once no action of this computer is executing (or it stopped)."""
+
+        if volume_ref not in self._specs:
+            raise RuntimeError("computer desktop is not declared on this node")
+        try:
+            await asyncio.wait_for(self._busy_event(volume_ref).wait(), timeout)
+        except TimeoutError:
+            return False
+        return True
+
     async def operate(
-        self, computer: AssistantComputer, operation: str, payload: Mapping[str, object]
+        self,
+        computer: AssistantComputer,
+        operation: str,
+        payload: Mapping[str, object],
+        *,
+        revalidate: Callable[[], Awaitable[None]],
     ) -> dict[str, object]:
         if operation not in GUI_OPERATIONS:
             raise ValueError("desktop operation is not supported")
         spec = self._spec(computer)
-        async with self._lock(computer.volume_ref):
-            client = self._sessions.get(computer.volume_ref)
+        key = computer.volume_ref
+        async with self._lock(key):
+            # The queue wait may have spanned a takeover, a lease handover or
+            # a recovery; a dequeued action is only executed while its
+            # authorization still holds.
+            await revalidate()
+            client = self._sessions.get(key)
             if client is None:
                 client = RfbClient(DisplayTransport(spec))
-                self._sessions[computer.volume_ref] = client
+                self._sessions[key] = client
+            stop = self._stop_event(key)
+            stop.clear()
+            busy = self._busy_event(key)
+            busy.clear()
             try:
-                return await self._dispatch(client, operation, payload)
+                return await self._dispatch(client, operation, payload, stop=stop)
             except (TimeoutError, RuntimeError, ValueError, OSError, EOFError):
                 await client.close()
-                self._sessions.pop(computer.volume_ref, None)
+                self._sessions.pop(key, None)
                 raise
+            finally:
+                busy.set()
 
     async def close(self) -> None:
         for client in self._sessions.values():
@@ -534,7 +587,12 @@ class VmDesktopService:
         self._sessions.clear()
 
     async def _dispatch(
-        self, client: RfbClient, operation: str, payload: Mapping[str, Any]
+        self,
+        client: RfbClient,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        stop: asyncio.Event | None = None,
     ) -> dict[str, object]:
         if client.width == 0:
             await client.connect()
@@ -579,7 +637,7 @@ class VmDesktopService:
             text = payload.get("text")
             if not isinstance(text, str):
                 raise ValueError("type requires text")
-            await desktop_type(client, text)
+            await desktop_type(client, text, abort=None if stop is None else stop.is_set)
             return {"typed": len(text)}
         names = payload.get("keys")
         if not isinstance(names, list):
@@ -589,7 +647,7 @@ class VmDesktopService:
         keys: list[str] = [item for item in cast(list[Any], names) if isinstance(item, str)]
         if len(keys) != len(cast(list[object], names)):
             raise ValueError("key requires a list of key names")
-        await desktop_press(client, keys)
+        await desktop_press(client, keys, abort=None if stop is None else stop.is_set)
         return {"pressed": len(keys)}
 
     @staticmethod

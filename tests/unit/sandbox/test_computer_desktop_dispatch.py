@@ -10,7 +10,8 @@ from typing import Any, cast
 
 import pytest
 
-from harness.computer.desktop_client import RfbClient
+from harness.computer.desktop_client import RfbClient, TypingAbortError, press_keys
+from harness.computer.models import ComputerLeaseLostError
 from harness.computer.vm_host import VmDesktopService
 
 
@@ -87,7 +88,7 @@ async def test_unknown_operation_is_rejected_before_touching_the_desktop():
 
 def test_operate_rejects_unsupported_operation():
     with pytest.raises(ValueError, match="not supported"):
-        asyncio.run(service().operate(cast(Any, object()), "nope", {}))
+        asyncio.run(service().operate(cast(Any, object()), "nope", {}, revalidate=noop))
 
 
 @pytest.mark.asyncio
@@ -120,3 +121,114 @@ async def test_screenshot_rejects_a_malformed_region():
     for bad in ({"x": 1, "y": 2}, {"x": "1", "y": 2, "width": 3, "height": 4}, "nope"):
         with pytest.raises(ValueError, match="region"):
             await service_._dispatch(cast(RfbClient, FakeClient()), "screenshot", {"region": bad})
+
+
+async def noop() -> None:
+    return None
+
+
+@pytest.mark.asyncio
+async def test_dequeued_action_revalidates_before_it_executes():
+    service_ = service()
+    service_._sessions["v"] = cast(RfbClient, FakeClient())  # already connected
+    checked: list[bool] = []
+
+    async def guard() -> None:
+        checked.append(True)
+
+    result = await service_.operate(
+        cast(Any, type("C", (), {"volume_ref": "v"})()),
+        "type",
+        {"text": "ok"},
+        revalidate=guard,
+    )
+    assert result == {"typed": 2} and checked == [True]
+
+
+@pytest.mark.asyncio
+async def test_a_queued_action_is_refused_when_its_lease_was_fenced():
+    service_ = service()
+    client = FakeClient()
+    service_._sessions["v"] = cast(RfbClient, client)  # already connected
+
+    async def fenced() -> None:
+        raise ComputerLeaseLostError("desktop control epoch is stale")
+
+    with pytest.raises(ComputerLeaseLostError):
+        await service_.operate(
+            cast(Any, type("C", (), {"volume_ref": "v"})()),
+            "type",
+            {"text": "no"},
+            revalidate=fenced,
+        )
+    assert client.keys == []  # a fenced action never reaches the desktop
+
+
+@pytest.mark.asyncio
+async def test_takeover_stops_inflight_typing_between_keystrokes():
+    service_ = service()
+
+    class SlowClient(FakeClient):
+        async def key(self, keysym: int, *, down: bool) -> None:
+            await asyncio.sleep(0.004)
+            await super().key(keysym, down=down)
+
+    slow = SlowClient()
+    stop = asyncio.Event()
+    task = asyncio.create_task(
+        service_._dispatch(cast(RfbClient, slow), "type", {"text": "a" * 200}, stop=stop)
+    )
+    await asyncio.sleep(0.05)
+    typed_before = len(slow.keys) // 2
+    assert typed_before > 0
+    stop.set()
+    with pytest.raises(TypingAbortError, match="characters"):
+        await task
+    typed_after = len(slow.keys) // 2
+    assert typed_after < 200
+    # The stop must land within a keystroke, not after the whole text.
+    assert typed_after - typed_before <= 2
+    assert service_._busy_event("v").is_set()
+
+
+@pytest.mark.asyncio
+async def test_aborted_key_combination_releases_its_modifiers():
+    service_ = service()
+    client = FakeClient()
+    stop = asyncio.Event()
+    stop.set()
+
+    with pytest.raises(TypingAbortError):
+        await service_._dispatch(
+            cast(RfbClient, client), "key", {"keys": ["ctrl", "c"]}, stop=stop
+        )
+    # Nothing was sent: the abort fired before the first key went down.
+    assert client.keys == []
+
+
+@pytest.mark.asyncio
+async def test_modifier_release_survives_an_abort_mid_combination():
+    class Recording(FakeClient):
+        downs = 0
+
+        async def key(self, keysym: int, *, down: bool) -> None:
+            await super().key(keysym, down=down)
+            if down:
+                self.downs += 1
+
+    client = Recording()
+    abort_calls = {"count": 0}
+
+    def abort() -> bool:
+        abort_calls["count"] += 1
+        return abort_calls["count"] > 1  # allow ctrl down, then abort
+
+    with pytest.raises(TypingAbortError):
+        await press_keys(cast(RfbClient, client), ["ctrl", "alt", "c"], abort=abort)
+    # ctrl was pressed and released again; alt and c never went down.
+    assert client.downs == 1
+    assert client.keys == [(0xFFE3, True), (0xFFE3, False)]
+
+
+def test_drain_wait_is_immediate_when_the_screen_is_idle():
+    assert asyncio.run(service().wait_drained("v", timeout=0.1)) is True

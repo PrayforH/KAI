@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
-from harness.computer.control_server import ControllerSettings, create_app
+from harness.computer.control_server import ControllerSettings, create_app, drain_pending_takeovers
 from harness.computer.desktop import DesktopControlService, DesktopState
 from harness.computer.models import ComputerLease
 from harness.computer.registry import ComputerRegistry
@@ -127,10 +127,29 @@ async def seed(sessions: SessionFactory) -> ComputerLease:
 class StubScreen:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
+        self.cancels = 0
+        self.drain_ok = True
+
+    @property
+    def served(self) -> list[str]:
+        return ["kai-computer-fixture"]
+
+    def cancel(self, volume_ref: str) -> None:
+        self.cancels += 1
+
+    async def wait_drained(self, volume_ref: str, *, timeout: float) -> bool:
+        return self.drain_ok
 
     async def operate(
-        self, computer: Any, operation: str, payload: dict[str, Any]
+        self,
+        computer: Any,
+        operation: str,
+        payload: dict[str, Any],
+        *,
+        revalidate: Any = None,
     ) -> dict[str, object]:
+        if revalidate is not None:
+            await revalidate()  # the real screen re-checks inside its lock
         self.calls.append((computer.computer_id, operation))
         return {"ok": True}
 
@@ -227,3 +246,34 @@ async def test_gate_rejects_stale_epochs_released_desktops_and_wrong_secret(
             headers={"Authorization": "Bearer wrong-secret"},
         )
         assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_takeover_drain_confirms_human_only_after_the_screen_stops(
+    database: DatabaseFixture,
+) -> None:
+    _, sessions = database
+    lease = await prepare(sessions)
+    desktop = DesktopControlService(sessions)
+    await desktop.acquire_agent(lease.tenant_id, lease.user_id, owner=lease.owner)
+    await desktop.request_human(lease.tenant_id, lease.user_id)
+    stub = StubScreen()
+    # A confirmed drain publishes human ownership once and cancels the screen.
+    assert await drain_pending_takeovers(desktop, stub, sessions) == 1
+    assert stub.cancels == 1
+    state = await desktop.view(lease.tenant_id, lease.user_id)
+    assert state.state is DesktopState.HUMAN
+    # Nothing pending remains; a stale re-run must confirm nothing.
+    assert await drain_pending_takeovers(desktop, stub, sessions) == 0
+
+    # A screen that cannot stop leaves the takeover unconfirmed: the window
+    # falls back to observation through the lease itself.
+    await desktop.release_human(lease.tenant_id, lease.user_id)
+    await desktop.acquire_agent(lease.tenant_id, lease.user_id, owner=lease.owner)
+    await desktop.request_human(lease.tenant_id, lease.user_id)
+    stuck = StubScreen()
+    stuck.drain_ok = False
+    assert await drain_pending_takeovers(desktop, stuck, sessions) == 0
+    assert (await desktop.view(lease.tenant_id, lease.user_id)).state is (
+        DesktopState.TAKEOVER_PENDING
+    )

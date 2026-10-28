@@ -11,7 +11,7 @@ still works; a guest offering the None security type needs no shared secret.
 import asyncio
 import ctypes
 import struct
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from io import BytesIO
 from typing import Protocol
 
@@ -22,6 +22,10 @@ SERVER_OK = 0
 SEC_NONE = 1
 SEC_VNC_AUTH = 2
 RAW_ENCODING = 0
+
+
+class TypingAbortError(RuntimeError):
+    """The coordinator asked this in-flight input to stop before finishing."""
 
 
 class DesktopTransport(Protocol):
@@ -373,10 +377,20 @@ async def scroll(client: RfbClient, x: int, y: int, direction: str, amount: int 
         await asyncio.sleep(0.02)
 
 
-async def type_text(client: RfbClient, text: str, *, limit: int = 2000) -> None:
+async def type_text(
+    client: RfbClient,
+    text: str,
+    *,
+    limit: int = 2000,
+    abort: Callable[[], bool] | None = None,
+) -> None:
     if not text or len(text) > limit:
         raise ValueError("text length is outside the allowed range")
-    for character in text:
+    for index, character in enumerate(text):
+        # The coordinator checks between characters: a takeover stops the
+        # stream within one keystroke instead of after the whole text.
+        if abort is not None and abort():
+            raise TypingAbortError(f"input stopped after {index} of {len(text)} characters")
         keysym = keysym_for(character)
         if keysym is None:
             raise ValueError("text contains a character with no keysym")
@@ -385,7 +399,9 @@ async def type_text(client: RfbClient, text: str, *, limit: int = 2000) -> None:
         await asyncio.sleep(0.005)
 
 
-async def press_keys(client: RfbClient, names: list[str]) -> None:
+async def press_keys(
+    client: RfbClient, names: list[str], *, abort: Callable[[], bool] | None = None
+) -> None:
     if not 1 <= len(names) <= 4:
         raise ValueError("key combination length is outside the allowed range")
     keysyms: list[int] = []
@@ -394,7 +410,17 @@ async def press_keys(client: RfbClient, names: list[str]) -> None:
         if keysym is None:
             raise ValueError("unknown key name")
         keysyms.append(keysym)
-    for keysym in keysyms:
-        await client.key(keysym, down=True)
-    for keysym in reversed(keysyms):
-        await client.key(keysym, down=False)
+    pressed: list[int] = []
+    try:
+        for keysym in keysyms:
+            if abort is not None and abort():
+                raise TypingAbortError("key combination stopped before completion")
+            await client.key(keysym, down=True)
+            pressed.append(keysym)
+        for keysym in reversed(pressed):
+            await client.key(keysym, down=False)
+        pressed.clear()
+    finally:
+        # An aborted combination must never leave a stuck modifier behind.
+        for keysym in reversed(pressed):
+            await client.key(keysym, down=False)

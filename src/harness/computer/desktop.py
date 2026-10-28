@@ -9,9 +9,11 @@ touch the visible desktop. State lives in one locked row per computer:
 
 Every transition that changes who may send input bumps ``epoch``; each GUI
 action binds the epoch it observed, so a stale sender cannot act on a desktop
-it no longer owns. ``takeover_pending`` blocks new input on both sides until
-the grace passes, then settles to ``human``; in-flight actions are short
-(screenshots and clicks) and simply finish.
+it no longer owns. ``takeover_pending`` blocks new input on both sides while
+the node stops and drains the actions it still holds; only the node's drain
+acknowledgement publishes ``human`` (``confirm_human``). A pending window
+that expires without that acknowledgement falls back to observation, so a
+takeover can never succeed on the strength of a timer alone.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -25,7 +27,8 @@ from harness.computer.storage import ComputerDesktopLeaseRow as Row
 from harness.core.errors import ConflictError, NotFoundError
 from harness.storage.database import SessionFactory
 
-PENDING_GRACE_SECONDS = 2
+DRAIN_WINDOW_SECONDS = 5
+DRAIN_POLL_SECONDS = 0.2
 HUMAN_TTL_SECONDS = 300
 AGENT_TTL_SECONDS = 120
 
@@ -129,7 +132,7 @@ class DesktopControlService:
             return DesktopControl.model_validate(row)
 
     async def request_human(self, tenant_id: str, user_id: str) -> DesktopControl:
-        """Takeover blocks both sides immediately, then settles to human."""
+        """Takeover blocks both sides until the node confirms the drain."""
 
         async with self._sessions.begin() as session:
             moment = datetime.now(UTC)
@@ -146,7 +149,36 @@ class DesktopControlService:
             row.owner = None
             row.epoch += 1
             row.revision += 1
-            row.expires_at = moment + timedelta(seconds=PENDING_GRACE_SECONDS)
+            row.expires_at = moment + timedelta(seconds=DRAIN_WINDOW_SECONDS)
+            row.updated_at = moment
+            return DesktopControl.model_validate(row)
+
+    async def confirm_human(
+        self, tenant_id: str, user_id: str, *, expected_epoch: int
+    ) -> DesktopControl:
+        """Publish human ownership once, guarded by the pending epoch.
+
+        The node's drain acknowledgement carries the epoch it observed while
+        pending. A stale acknowledgement — after the window fell back to
+        observation or the user re-requested takeover — must not publish an
+        old drain over newer state, so the epoch acts as the CAS token.
+        """
+
+        async with self._sessions.begin() as session:
+            moment = datetime.now(UTC)
+            row = await self._row(session, tenant_id, user_id)
+            if row.state == DesktopState.HUMAN.value:
+                row.expires_at = moment + timedelta(seconds=HUMAN_TTL_SECONDS)
+                row.revision += 1
+                row.updated_at = moment
+                return DesktopControl.model_validate(row)
+            if row.state != DesktopState.TAKEOVER_PENDING.value or row.epoch != expected_epoch:
+                return DesktopControl.model_validate(row)
+            row.state = DesktopState.HUMAN.value
+            row.owner = None
+            row.epoch += 1
+            row.revision += 1
+            row.expires_at = moment + timedelta(seconds=HUMAN_TTL_SECONDS)
             row.updated_at = moment
             return DesktopControl.model_validate(row)
 
@@ -176,27 +208,20 @@ class DesktopControlService:
     def _settle(row: Row, moment: datetime) -> bool:
         """Lazy transitions for expired pending/human/agent rows.
 
-        Settling into human *starts* the human window: the pending grace is a
-        transition delay, not the usable takeover period. Without this the row
-        would immediately look expired again and the very next read would drop
-        the user back to observation, which also un-fenced the agent.
+        Every expiry lands back in observation: a pending window whose drain
+        was never confirmed is a failed takeover, not a success, and an
+        expired human or agent ownership is an abandoned one. The epoch bump
+        keeps every stale sender fenced across the fall-back.
         """
 
         expiry = row.expires_at
         if expiry is None or expiry > moment:
             return False
-        previous = row.state
-        root = previous == DesktopState.TAKEOVER_PENDING.value
-        row.state = (
-            DesktopState.HUMAN.value if root else DesktopState.OBSERVE.value
-        )
+        row.state = DesktopState.OBSERVE.value
         row.owner = None
-        if root:
-            row.expires_at = moment + timedelta(seconds=HUMAN_TTL_SECONDS)
-        else:
-            row.epoch += 1
-            row.expires_at = None
+        row.epoch += 1
         row.revision += 1
+        row.expires_at = None
         row.updated_at = moment
         return True
 

@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from harness.computer.desktop import (
     AGENT_TTL_SECONDS,
-    PENDING_GRACE_SECONDS,
+    DRAIN_WINDOW_SECONDS,
     DesktopControlService,
     DesktopOccupiedError,
     DesktopState,
@@ -51,24 +51,34 @@ async def test_second_agent_cannot_acquire_while_one_owns(database: DatabaseFixt
 
 
 @pytest.mark.asyncio
-async def test_takeover_fences_agent_and_settles_to_human(database: DatabaseFixture):
+async def test_takeover_fences_agent_and_needs_the_node_confirmation(database: DatabaseFixture):
     service = await seeded(database)
     agent = await service.acquire_agent("tenant-a", "user-a", owner="worker-1")
     pending = await service.request_human("tenant-a", "user-a")
     assert pending.state is DesktopState.TAKEOVER_PENDING
     # The epoch bump fences the agent's bound epoch immediately.
     assert pending.epoch == agent.epoch + 1 and pending.owner is None
-    # Grace expiry settles to human on the next observation.
+    # A pending window that expires without the node's drain acknowledgement
+    # is a failed takeover: it falls back to observation, never to human.
     async with service._sessions.begin() as session:
         from harness.computer.storage import ComputerDesktopLeaseRow as Row
 
         row = await session.scalar(select(Row).where(Row.tenant_id == "tenant-a"))
         row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
-    human = await service.view("tenant-a", "user-a")
+    failed = await service.view("tenant-a", "user-a")
+    assert failed.state is DesktopState.OBSERVE
+    assert failed.epoch == pending.epoch + 1
+
+    # A confirmed drain publishes human ownership exactly once, guarded by
+    # the epoch the node observed while pending.
+    pending = await service.request_human("tenant-a", "user-a")
+    stale = await service.confirm_human("tenant-a", "user-a", expected_epoch=pending.epoch + 5)
+    assert stale.state is DesktopState.TAKEOVER_PENDING
+    human = await service.confirm_human("tenant-a", "user-a", expected_epoch=pending.epoch)
     assert human.state is DesktopState.HUMAN
-    assert human.epoch == pending.epoch
-    # Settling starts the human window; the very next read must not fall back
-    # to observation, or the takeover would last a single poll.
+    assert human.epoch == pending.epoch + 1
+    # The confirmation starts the human window; the very next read must not
+    # fall back to observation, or the takeover would last a single poll.
     again = await service.view("tenant-a", "user-a")
     assert again.state is DesktopState.HUMAN
     assert again.expires_at is not None
@@ -117,8 +127,8 @@ async def test_agent_ttl_expiry_falls_back_to_observe(database: DatabaseFixture)
 
 
 @pytest.mark.asyncio
-async def test_pending_grace_is_short_and_deliberate(database: DatabaseFixture):
-    assert 0 < PENDING_GRACE_SECONDS <= 5
+async def test_drain_window_is_bounded_and_deliberate(database: DatabaseFixture):
+    assert 0 < DRAIN_WINDOW_SECONDS <= 5
 
 
 @pytest.mark.asyncio
@@ -134,13 +144,8 @@ async def test_desktop_row_requires_a_registered_computer(database: DatabaseFixt
 @pytest.mark.asyncio
 async def test_heartbeat_keeps_an_active_takeover_alive(database: DatabaseFixture):
     service = await seeded(database)
-    await service.request_human("tenant-a", "user-a")
-    async with service._sessions.begin() as session:
-        from harness.computer.storage import ComputerDesktopLeaseRow as Row
-
-        row = await session.scalar(select(Row).where(Row.tenant_id == "tenant-a"))
-        row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
-    human = await service.view("tenant-a", "user-a")
+    pending = await service.request_human("tenant-a", "user-a")
+    human = await service.confirm_human("tenant-a", "user-a", expected_epoch=pending.epoch)
     assert human.state is DesktopState.HUMAN
     # The viewer refreshes on every poll; the window must stay open and the
     # agent must stay fenced.
