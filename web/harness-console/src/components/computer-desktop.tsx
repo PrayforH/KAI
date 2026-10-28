@@ -26,7 +26,11 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
   const applyControl = (value: ControlState) => {
     controlRef.current = value;
     setControl(value);
-    if (client.current) client.current.viewOnly = value !== "human";
+    if (!client.current) return;
+    client.current.viewOnly = value !== "human";
+    // noVNC sends keys only while its canvas holds focus; mouse needs no focus,
+    // which is why a takeover used to leave the keyboard dead.
+    if (value === "human") client.current.focus();
   };
   useEffect(() => {
     let disposed = false;
@@ -107,7 +111,7 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
         {onClose && <button onClick={onClose} aria-label="收起电脑">×</button>}
       </div>
     </header>
-    <div className={styles.screen} ref={screen} tabIndex={0} onFocus={() => { if (controlRef.current === "human") client.current?.focus(); }} aria-label="远程电脑桌面" onPaste={event => {
+    <div className={styles.screen} ref={screen} tabIndex={0} onPointerDown={() => client.current?.focus()} onFocus={() => client.current?.focus()} aria-label="远程电脑桌面" onPaste={event => {
       if (controlRef.current !== "human") { event.preventDefault(); return; }
       const text = event.clipboardData.getData("text/plain");
       if (text && client.current) { client.current.clipboardPasteFrom(text); event.preventDefault(); }
