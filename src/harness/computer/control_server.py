@@ -1,6 +1,7 @@
 """Dedicated internal Computer control service; never exposed by the user sandbox."""
 
 import hmac
+import logging
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -247,7 +248,21 @@ def create_app(settings: ControllerSettings) -> FastAPI:
             return await screen.operate(computer, command.operation, command.payload)
         except (ComputerLeaseLostError, DesktopOccupiedError, NotFoundError):
             raise HTTPException(409, "Computer desktop ownership was lost") from None
-        except (TimeoutError, httpx.HTTPError, RuntimeError, ValueError, OSError, EOFError):
+        except (
+            TimeoutError,
+            httpx.HTTPError,
+            RuntimeError,
+            ValueError,
+            OSError,
+            EOFError,
+        ) as error:
+            # The client never sees provider detail; the operator needs one
+            # line naming the failure class and a bounded message.
+            logging.getLogger(__name__).warning(
+                "computer desktop action failed: %s: %s",
+                type(error).__name__,
+                str(error)[:300],
+            )
             raise HTTPException(503, "Computer desktop could not be reached") from None
 
     app.add_api_route("/v1/computer/desktop", desktop, methods=["POST"])

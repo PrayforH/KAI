@@ -8,6 +8,7 @@ creates user disks; a fresh VM is explicit maintenance, not a Run side effect.
 
 import asyncio
 import base64
+import contextlib
 import json
 import re
 from collections.abc import Mapping
@@ -438,12 +439,30 @@ class DisplayTransport:
             *self._argv,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
         )
         assert process.stdin is not None and process.stdout is not None
-        header = await asyncio.wait_for(process.stdout.readexactly(12), timeout=20)
+        try:
+            header = await asyncio.wait_for(process.stdout.readexactly(12), timeout=20)
+        except (TimeoutError, asyncio.IncompleteReadError, EOFError):
+            # The gate may exit before sending anything (no display service, a
+            # refused sudo rule, a stale socket). Its stderr is the only clue;
+            # it carries no key material, and the tail is bounded.
+            detail = ""
+            if process.stderr is not None:
+                try:
+                    raw = await asyncio.wait_for(process.stderr.read(2048), timeout=2)
+                    detail = raw.decode(errors="replace").strip().splitlines()[-1][:200]
+                except (TimeoutError, asyncio.IncompleteReadError):
+                    detail = ""
+            with contextlib.suppress(ProcessLookupError):
+                process.kill()
+            raise RuntimeError(
+                "desktop gate produced no RFB banner" + (f": {detail}" if detail else "")
+            ) from None
         if not header.startswith(b"RFB 003."):
-            process.kill()
+            with contextlib.suppress(ProcessLookupError):
+                process.kill()
             raise RuntimeError("desktop did not confirm the RFB transport")
         return process.stdout, process.stdin
 
