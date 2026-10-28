@@ -538,17 +538,19 @@ class VmDesktopService:
                 "height": height,
                 "png_base64": base64.b64encode(png).decode("ascii"),
             }
-        x, y = self._point(payload)
-        if operation == "move":
-            await client.pointer(x, y, 0)
-            return {"moved": True}
-        if operation == "click":
-            button = str(payload.get("button", "left"))
-            if button not in {"left", "middle", "right"}:
-                raise ValueError("click button is invalid")
-            await desktop_click(client, x, y, button)
-            return {"clicked": True}
-        if operation == "scroll":
+        if operation in {"move", "click", "scroll"}:
+            # Only pointer operations carry coordinates; typing and key presses
+            # act on whatever already has focus.
+            x, y = self._point(payload)
+            if operation == "move":
+                await client.pointer(x, y, 0)
+                return {"moved": True}
+            if operation == "click":
+                button = str(payload.get("button", "left"))
+                if button not in {"left", "middle", "right"}:
+                    raise ValueError("click button is invalid")
+                await desktop_click(client, x, y, button)
+                return {"clicked": True}
             direction = str(payload.get("direction", ""))
             amount = payload.get("amount", 3)
             if not isinstance(amount, int) or not 1 <= amount <= 10:
