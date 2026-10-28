@@ -198,3 +198,15 @@ Web：`tsc --noEmit` 通过；`npm run build` 生产构建通过（含接管/交
 修复：改为底部居中的半透明胶囊提示（`pointer-events:none`、`backdrop-filter`），画面在任何非人工状态下都可见。已上线 `kai/assistant-web:20261028-dot2`（`dfb4392be1ad`），并在运行镜像内核对到新文案与 CSS。
 
 **教训**：Agent 侧截图、viewer websocket、单测都"通过"，但没有一条能发现"人被自己的遮罩挡住了"——这类问题只有真人看屏幕才会暴露。自动化证据覆盖的是"数据面"，UI 遮挡属于"呈现面"，两者不能互相替代。
+
+## 11. 两个键盘通道缺陷（`3e4780ca`、`aa3047f0` 后续）
+
+真机反馈："鼠标和截图正常，键盘/文字注入挂了"。判据来自 viewer 的 `input_frames`：打字后 `keyboard` 计数停在 588 不动，说明按键根本没离开浏览器（不是服务端拦、也不是 guest 收不到）。
+
+**A. 浏览器侧（`auto` 焦点丢失）** — noVNC 只有 canvas 持有焦点时才发 KeyEvent，而鼠标事件不需要焦点，所以表现为"能点不能打"。我原来的 `onFocus` 只在 `controlRef === "human"` 时转交焦点，但接管后要等 2 秒轮询才从 `takeover_pending` 翻到 `human`；在这期间第一次点进画面不会转交焦点，之后 div 已持有焦点、`focus` 事件不再触发，键盘就永久哑了。修复：接管生效时主动 `focus()`，且每次 `pointerdown` 都重申焦点；输入策略仍只由服务端门决定（`web:20261028-dot3`）。
+
+**B. Agent 侧（503）** — `VmDesktopService._dispatch` 对**所有非截图动作**都先解析坐标，`type`/`key` 载荷没有 `x/y` → `ValueError` → 503；`click/move/scroll` 带坐标所以正常。修复：坐标只对指针类动作必填（`assistant-api:20261028-dot7`）。新增 5 项 dispatch 测试，其中 type/key 两项在旧代码上失败。
+
+线上自证（不经模型、不干扰焦点窗口）：控制服务内直接调用 `screenshot / move / key{shift}` → `screenshot 1280x800`、`move {'moved': True}`、`key {'pressed': 1}`，三个通道全通。
+
+**仍未由真人复验**：刷新后的浏览器端键盘（需在页面里实际打字，判据是 `input_frames.keyboard` 增长）。
