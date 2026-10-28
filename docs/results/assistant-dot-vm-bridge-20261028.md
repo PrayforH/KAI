@@ -83,3 +83,24 @@ Web：`tsc --noEmit` 通过；`npm run build` 生产构建通过（含接管/交
 4. **M4（记忆作用域/修正、Outbox 原生文件交付）、M5（OpenSandbox SDK 薄适配、IME/剪贴板）、M6（本地电脑/连接器/语音）**：本轮未实施，按方案保留后续。
 5. **分支 pyright 基线陈账 929 条**：属上游分支债，建议后续单独跑一轮基线重建。
 6. **M4 记忆工具的模型实测**：工具与网关有单元测试，真实模型调用（尤其 channel 用户'更正记忆'对话）未验证。
+
+## 7. 79 通道恢复与部署决策（08:33–08:38）
+
+08:33 经用户提供的 root 凭据恢复 SSH（`sshpass` + ControlMaster，本会话内复用，未写入任何仓库文件）。两台机器一致确认当时**北京时间 08:33**，距截止 27 分钟。
+
+按执行合同"08:30 后不开始大迁移"，**未执行部署**。一次完整上线包含：构建 api/web 镜像 → 传输/加载 → DB 0051→0053 → adopt → 改三个服务配置 → 逐个重启 → 端到端验收，实测需 60–90 分钟；在 08:33 开工必然跨过 09:00，留下半迁移状态，与"不强杀写盘、不遗留半迁移、不破坏原部署"直接冲突。因此改为**只读采集**，把部署所需的精确值固化进 runbook §8。
+
+只读采集（全部为 `docker ps/inspect/images/exec env`、`ls`、一次 `select version_num`）：
+
+| 事实 | 值 |
+| --- | --- |
+| 生产容器启动时长 | web 13h / viewer 15h / feishu·weixin·worker·api·control 20h / https 46h / pg·minio·redis 2 周 —— 全未重启 |
+| DB 版本 | **0051**（部署时需 0052→0053） |
+| VM 容器 | `kai-computer-owner-preview-20261027` Up 13h，`preserve:true` |
+| 旧 Docker Computer | `kai-computer-76649d1...` Up 20h，卷保留 |
+| VM 工作盘挂载点 | `/shared/home`（非模板的 `/data/kai-home`） |
+| VM root 盘 | bind 目录 `/data/kai-computer-guestbase-20261027/clones/a` → `/vm` |
+
+**发现三个会让部署直接失败的真实差异**（已写入 runbook §8.1）：工作盘挂载点、root 盘是目录而非单文件、控制服务未挂 identities 目录（VM provider 需只读挂入才能调用 guest gate）。这三点若无本轮实测，部署时会在 `verify_vm_instance` 与首次 gate 调用处失败。
+
+结论：生产零变更，账号/绑定/聊天记录/工作卷/root 盘/浏览器 profile 均未触碰；上线路径已收敛为一组可直接粘贴的配置值。
