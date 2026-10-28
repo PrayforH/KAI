@@ -417,6 +417,8 @@ class DisplayTransport:
             "-o",
             "StrictHostKeyChecking=yes",
             "-o",
+            "UpdateHostKeys=no",
+            "-o",
             "GlobalKnownHostsFile=/dev/null",
             "-o",
             "UserKnownHostsFile=" + str(Path(spec.identity_dir) / "known_hosts"),
@@ -440,6 +442,9 @@ class DisplayTransport:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            # Match the proven viewer transport: a minimal environment keeps
+            # ssh from picking up unrelated proxy or agent settings.
+            env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"},
         )
         assert process.stdin is not None and process.stdout is not None
         try:
