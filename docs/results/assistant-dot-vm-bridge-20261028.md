@@ -240,3 +240,18 @@ Web：`tsc --noEmit` 通过；`npm run build` 生产构建通过（含接管/交
 ### 仍未做（第 1 档）
 
 guest 内 Chromium 的 CDP 结构化通道（读 DOM/无障碍文本、按选择器动作，几百 tokens 且不受分辨率影响）尚未实施——它是这一轮里结构性最大的一块，属于方案 M5/M6 切片。
+
+## 13. 办公运行时固化（第 1 项，`assistant-api:dot12`）
+
+问题：guest 的系统 Python 由 PEP 668 管理，`pip install --user` 被拒；每次做 Word/Excel/PPT 都要临时建 venv。
+
+**做法**：
+1. 在 guest 内固定 venv `/home/kai/.venvs/office`，装 `python-docx 1.2.0 / openpyxl 3.1.5 / python-pptx 1.0.2`（清华源）。注意该 venv **没有生成 `bin/pip`**，装包要用 `<venv>/bin/python -m pip`。
+2. 新增 `computer/conventions.py`：把"工作目录、Office 解释器、装包方式、exec 输出有上限"作为**会话级约定**注入每个 computer Run 的指令，避免模型每轮重新摸索或重复安装。
+3. 清掉上一轮探针目录 `office-probe/`。
+
+**真机验证（零提示任务）**：让它"把三行数据做成 Excel 放到 outputs/"，它直接用已有 openpyxl（明确说"没有安装任何库"），产出 `/home/kai/workspace/outputs/yunwei-20261028.xlsx`（5282 B），并通过回读校验表头加粗、列宽、数值为数字类型、冻结首行。
+
+**产物可见性已确认**：该 run 的 `artifacts` 行记录了 `yunwei-20261028.xlsx`，即在网页文件面可见、可下载——这条把"做表格"闭环到交付，而不只是落在盘上。
+
+**未做**：把三库烤进 guest 基础镜像 v6（当前是"镜像 + 首次使用前的一次性 venv"），新电脑开箱仍需要一次固化；随镜像发布的清单里需要补 `/home/kai/.venvs/office`。
