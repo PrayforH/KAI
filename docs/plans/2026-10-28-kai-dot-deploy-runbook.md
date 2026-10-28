@@ -107,3 +107,55 @@ Computer control 服务（新参数，重启该容器即可）：
 
 - 本机无 `/tmp/kai79-desktop-style-20261027.sock`，直连密钥（id_ed25519_173/174、sapling_v20_79_vm_20261025）均被 79 拒绝（Permission denied (publickey)）。
 - 已完成：代码、迁移、adopt 脚本、runbook；阻塞在通道恢复。恢复后按 §0→§6 顺序执行，预计 60–90 分钟内完成部署与验收。
+
+## 8. 79 实际值（2026-10-28 08:35 只读采集，直接替换上文占位符）
+
+以下为在 79 上 `docker inspect` 实测所得，与本文档 §4 模板存在**三处会导致部署失败的真实差异**，执行时必须按本节取值。
+
+### 8.1 差异与修正
+
+| 项 | 模板默认 | 79 实测 | 后果 |
+| --- | --- | --- | --- |
+| 工作盘挂载点 | `/data/kai-home` | **`/shared/home`** | 挂载校验失败，`verify_vm_instance` 拒绝 |
+| root 盘 | 单文件 `/vm/root.qcow2` | bind 的是**目录** `/data/.../clones/a` → `/vm`，盘文件在目录内 | 需把 `root_disk_source` 指到目录、`root_disk_target=/vm` |
+| runner 镜像 | compose 参考 | `sha256:f6ff82bbfc167157aca72e14a0812eb8aa2dad47dbe7405d12e9180273be9b70`（`kai/computer-vm-runner:20261027-v2`） | 必须逐字一致 |
+
+另：控制服务容器当前**只挂 `docker.sock`**，没有 identities 目录；VM provider 需要只读挂入 `control` 与 `known_hosts` 所在目录，否则每次 gate 调用都会因缺密钥失败（明确报错，不会静默成功）。
+
+### 8.2 可直接采用的配置
+
+registry adopt：
+- tenant `local`，user `user_1c16a8994ff548c298c356fd8385eb76`
+- computer_id / incarnation：取 identities 目录名 `computer_<32hex>-<32hex>`
+- volume_ref：`kai-computer-guestbase-a-20261027`
+- image：`sha256:f6ff82bbfc167157aca72e14a0812eb8aa2dad47dbe7405d12e9180273be9b70`
+
+`HARNESS_COMPUTER_CONTROL_VM_COMPUTERS`（单元素）：
+```json
+{
+  "volume_ref": "kai-computer-guestbase-a-20261027",
+  "container_name": "kai-computer-owner-preview-20261027",
+  "ssh_host": "kai-computer-owner-preview-20261027",
+  "ssh_port": 2222,
+  "runner_image": "sha256:f6ff82bbfc167157aca72e14a0812eb8aa2dad47dbe7405d12e9180273be9b70",
+  "guest_base_digest": "sha256:f6ff82bbfc167157aca72e14a0812eb8aa2dad47dbe7405d12e9180273be9b70",
+  "root_disk_source": "/data/kai-computer-guestbase-20261027/clones/a",
+  "root_disk_target": "/vm",
+  "work_target": "/shared/home",
+  "identity_dir": "<identities 根>/computer_<32hex>-<32hex>",
+  "kvm_device": "/data/kai-computer-guestbase-20261027/kvm-device",
+  "network": "kai-79-20261013_default",
+  "adopt": true
+}
+```
+
+控制服务容器需追加：`-v <identities 根>:<identities 根>:ro`（仅该目录，不挂私钥到 Worker）。
+
+### 8.3 现状（本轮未做任何变更）
+
+- compose 项目 `kai-79-20261013`，文件 `/data/kai-79-20261013/compose.private.json`（0600，59 KB，Oct 27 19:46）。
+- Web `kai/assistant-web:20261027-r21-computer-theme-split`（7aff0a349108）；API/Worker/control 均 `kai/assistant-api:20261027-r21-computer-transfer`，运行 20 小时 healthy。
+- VM 容器 `kai-computer-owner-preview-20261027` 运行 13 小时，`kai.computer.preserve:true`；base `guest-desktop-v2.qcow2` 只读 bind 为 `/base/sealed.qcow2`。
+- 旧 Docker Computer `kai-computer-76649d1de93843289142040974d587f9` 仍在运行，卷 `kai-computer-76649d1...` 与 `-control` 保留。
+- 数据库：`harness_174_20260908`（host `postgres`），本轮**未查询版本、未迁移**。
+- 账号/绑定/聊天记录/工作卷/root 盘/浏览器 profile：全部未触碰。
