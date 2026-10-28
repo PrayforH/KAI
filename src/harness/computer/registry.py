@@ -150,6 +150,69 @@ class ComputerRegistry:
         except IntegrityError as error:
             raise ConflictError("owner computer identity already exists") from error
 
+    async def switch_provider(
+        self,
+        tenant: str,
+        user: str,
+        *,
+        computer_id: str,
+        provider: str,
+        image: str,
+        volume_ref: str,
+    ) -> AssistantComputer:
+        """Maintenance entry: move one owner's computer to a different provider.
+
+        This is the only way an existing owner row changes machine. It requires
+        the computer to be idle with no live holder (a running Run must finish
+        or be fenced first), keeps the stable ``computer_id`` and its history,
+        and detaches the provider instance so the new provider's first
+        authorized start attaches its own. The previous work disk is left
+        untouched on the node; nothing is deleted or overwritten here.
+        """
+
+        _identity(provider, 64)
+        _identity(image, 512)
+        _identity(volume_ref, 128)
+        async with self._sessions.begin() as session:
+            computer = await self._get(session, tenant, user, lock=True)
+            moment = await _now(session)
+            if computer.computer_id != computer_id:
+                raise ConflictError("owner computer identity does not match")
+            live = await session.scalar(
+                select(Lease).where(
+                    Lease.tenant_id == tenant,
+                    Lease.user_id == user,
+                    Lease.epoch == computer.epoch,
+                    Lease.state == LeaseState.ACTIVE.value,
+                )
+            )
+            if live is not None:
+                raise ComputerBusyError("computer has a live holder; finish or fence it first")
+            if computer.state not in {
+                ComputerState.IDLE.value,
+                ComputerState.REGISTERED.value,
+                ComputerState.FAILED.value,
+            }:
+                raise ComputerRecoveryRequiredError("computer must be idle before switching")
+            if (computer.provider, computer.image, computer.volume_ref) == (
+                provider,
+                image,
+                volume_ref,
+            ) and computer.provider_ref is not None:
+                return AssistantComputer.model_validate(computer)
+            computer.provider = provider
+            if computer.image != image:
+                computer.retired_images = list(
+                    dict.fromkeys([*computer.retired_images, computer.image])
+                )
+                computer.image = image
+            computer.volume_ref = volume_ref
+            computer.provider_ref = None
+            computer.volume_ready = True
+            computer.last_active_at = moment
+            _touch(computer, moment, ComputerState.REGISTERED)
+            return AssistantComputer.model_validate(computer)
+
     async def claim_start(self, tenant: str, user: str, *, owner: str) -> ComputerLease:
         return await self._claim(tenant, user, owner=owner, purpose=LeasePurpose.START)
 
