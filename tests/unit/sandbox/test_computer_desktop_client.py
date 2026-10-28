@@ -227,8 +227,12 @@ async def test_region_screenshot_requests_only_that_rectangle():
     await server
     assert (width, height) == (40, 2)
     assert png.startswith(b"\x89PNG")
-    # The update request must name the same rectangle the caller asked for.
-    assert struct.unpack(">BBHHHH", bytes(sent[-10:])) == (3, 10, 20, 40, 2, 0)
+    # FramebufferUpdateRequest: type, incremental, x, y, width, height.
+    message_type, incremental, x, y, width_, height_ = struct.unpack(
+        ">BBHHHH", bytes(sent[-10:])
+    )
+    assert (message_type, incremental) == (3, 0)
+    assert (x, y, width_, height_) == (10, 20, 40, 2)
     await client.close()
 
 

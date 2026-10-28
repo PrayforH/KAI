@@ -257,8 +257,10 @@ class RfbClient:
         self._frame[:] = bytes(len(self._frame))
         covered_pixels = 0
         expected_pixels = box_width * box_height
+        # FramebufferUpdateRequest is type, incremental, x, y, width, height.
+        # Non-incremental (0) forces a full repaint of the requested rectangle.
         await self._send(
-            struct.pack(">BBHHHH", 3, left, top, box_width, box_height, 0)
+            struct.pack(">BBHHHH", 3, 0, left, top, box_width, box_height)
         )
         for _ in range(64):
             header = await self._expect(4)
