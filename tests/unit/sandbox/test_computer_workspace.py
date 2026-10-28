@@ -250,6 +250,97 @@ def test_file_changed_between_chunks_is_rejected(tmp_path: Path):
         guest.read("report", 0, 8, info["signature"])
 
 
+# The 79 work disk is 9P with msize=262144; read() may return one transport
+# response at a time. Production 2026-10-28: every file larger than one
+# response truncated, including run_d805423e's 1.25MB PDF and its 6-byte
+# probe (which died on the changed-set download before its own read).
+NINE_P_RESPONSE = 262104
+
+
+@pytest.mark.asyncio
+async def test_download_survives_transport_sized_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A guest whose reads return one transport response still delivers."""
+
+    root, local = tmp_path / "remote", tmp_path / "local"
+    root.mkdir()
+    local.mkdir()
+    real_read = os.read
+
+    def transport_read(fd: int, count: int) -> bytes:
+        return real_read(fd, min(count, NINE_P_RESPONSE))
+
+    monkeypatch.setattr("harness.computer.workspace_guest.os.read", transport_read)
+    host, workspace = plane(root)
+    content = bytes(range(256)) * 1500  # > one transport response, < one chunk
+    await workspace.capture_baseline()
+    await workspace.upload([("outputs/report.pdf", content, 0o600)])
+    assert await workspace.download("outputs/report.pdf", max_bytes=len(content)) == content
+    assert host.calls.count("read") == 1  # one request, filled by guest retries
+    await workspace.collect(local)
+    assert (local / "outputs/report.pdf").read_bytes() == content
+
+
+class ShortReadingPlane(UserFilePlane):
+    """A guest still running the pre-fix single os.read."""
+
+    def __init__(self, root: Path):
+        super().__init__(root)
+        self.responses: dict[str, int] = {}
+
+    def invoke(self, operation: str, payload: dict[str, Any]) -> dict[str, Any]:
+        result = super().invoke(operation, payload)
+        if operation == "read" and "data" in result:
+            data = base64.b64decode(result["data"])
+            result["data"] = base64.b64encode(data[:NINE_P_RESPONSE]).decode("ascii")
+        return result
+
+
+@pytest.mark.asyncio
+async def test_download_requests_the_remainder_from_a_short_reading_guest(tmp_path: Path):
+    """The host keeps asking until the manifest size is reached, not once."""
+
+    root, local = tmp_path / "remote", tmp_path / "local"
+    root.mkdir()
+    local.mkdir()
+    plane_host = ShortReadingPlane(root)
+    workspace = ComputerWorkspace(
+        cast(DockerComputerDriver, plane_host),
+        cast(ComputerAllocation, object()),
+        max_bytes=CHUNK_BYTES * 4,
+        max_members=100,
+    )
+    content = bytes(range(256)) * (CHUNK_BYTES // 200)
+    await workspace.capture_baseline()
+    await workspace.upload([("outputs/report.pdf", content, 0o600)])
+    plane_host.calls.clear()
+    assert await workspace.download("outputs/report.pdf", max_bytes=len(content)) == content
+    assert plane_host.calls.count("read") > 1
+    await workspace.collect(local)
+    assert (local / "outputs/report.pdf").read_bytes() == content
+
+
+@pytest.mark.asyncio
+async def test_download_with_a_stale_manifest_rejects_before_reading(tmp_path: Path):
+    """collect passes manifest metadata; a changed file is refused, not mixed."""
+
+    root, local = tmp_path / "remote", tmp_path / "local"
+    root.mkdir()
+    local.mkdir()
+    host, workspace = plane(root)
+    content = b"x" * 4096
+    await workspace.capture_baseline()
+    await workspace.upload([("outputs/brief", content, 0o600)])
+    manifest = await workspace.manifest()
+    (root / "outputs/brief").write_bytes(b"y" * 4096)
+    with pytest.raises(RuntimeError, match="could not be confirmed"):
+        await workspace.download(
+            "outputs/brief", max_bytes=4096, metadata=manifest["outputs/brief"]
+        )
+    assert (local / "outputs/brief").exists() is False
+
+
 def test_fifo_is_refused_without_blocking_and_dependencies_are_not_scanned(tmp_path: Path):
     guest = Workspace(tmp_path)
     os.mkfifo(tmp_path / "pipe")

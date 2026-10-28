@@ -145,10 +145,19 @@ class Workspace:
             if signature(os.fstat(fd)) != expected:
                 raise ValueError("workspace file changed before transfer")
             os.lseek(fd, offset, os.SEEK_SET)
-            data = os.read(fd, length)
+            # POSIX allows read() to return less than requested at any time,
+            # and this work disk is 9P: one read spans many transport-sized
+            # responses. Keep reading until the span or the file is exhausted
+            # instead of treating the first short read as the whole answer.
+            data = bytearray()
+            while len(data) < length:
+                block = os.read(fd, length - len(data))
+                if not block:
+                    break
+                data.extend(block)
             if signature(os.fstat(fd)) != expected:
                 raise ValueError("workspace file changed during transfer")
-            return {"data": base64.b64encode(data).decode("ascii")}
+            return {"data": base64.b64encode(bytes(data)).decode("ascii")}
 
     def upload(self, payload: dict[str, Any]) -> dict[str, bool]:
         values = parts(payload["path"])

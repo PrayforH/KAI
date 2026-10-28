@@ -189,19 +189,22 @@ class ComputerWorkspace:
         if not 0 <= size <= min(max_bytes, self.max_bytes):
             raise ValueError("Computer workspace file exceeds download limit")
         content = bytearray()
-        for offset in range(0, size, workspace_guest.CHUNK_BYTES):
+        while len(content) < size:
             value = await self._call(
                 "read",
                 {
                     "path": path,
-                    "offset": offset,
-                    "length": min(workspace_guest.CHUNK_BYTES, size - offset),
+                    "offset": len(content),
+                    "length": min(workspace_guest.CHUNK_BYTES, size - len(content)),
                     "signature": info.signature,
                 },
             )
             data = base64.b64decode(value["data"], validate=True)
-            if len(data) != min(workspace_guest.CHUNK_BYTES, size - offset):
-                raise RuntimeError("Computer workspace download was truncated")
+            if not data:
+                # A read that returns nothing before the manifest size means
+                # the file is gone from under its own signature; the digest
+                # comparison below turns that into the exact verdict.
+                break
             content.extend(data)
         if hashlib.sha256(content).hexdigest() != info.sha256:
             raise RuntimeError("Computer workspace file changed during download")
