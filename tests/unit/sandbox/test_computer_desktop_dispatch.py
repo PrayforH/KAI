@@ -232,3 +232,15 @@ async def test_modifier_release_survives_an_abort_mid_combination():
 
 def test_drain_wait_is_immediate_when_the_screen_is_idle():
     assert asyncio.run(service().wait_drained("v", timeout=0.1)) is True
+
+
+def test_drain_and_stop_events_survive_repeated_calls():
+    """The takeover watcher polls every tick; the events must be stable."""
+
+    service_ = service()
+    assert asyncio.run(service_.wait_drained("v", timeout=0.1)) is True
+    assert asyncio.run(service_.wait_drained("v", timeout=0.1)) is True
+    service_.cancel("v")
+    service_.cancel("v")
+    assert service_._stop_event("v").is_set()
+    assert asyncio.run(service_.wait_drained("v", timeout=0.1)) is True

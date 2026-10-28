@@ -519,12 +519,14 @@ class VmDesktopService:
         return self._locks[key]
 
     def _stop_event(self, key: str) -> asyncio.Event:
-        if key not in self._stopping:
-            self._stopping[key] = asyncio.Event()
-        return self._stopping[key]
+        event = self._stopping.get(key)
+        if event is None:
+            event = self._stopping[key] = asyncio.Event()
+        return event
 
     def _busy_event(self, key: str) -> asyncio.Event:
-        if key not in self._busy:
+        event = self._busy.get(key)
+        if event is None:
             event = asyncio.Event()
             event.set()  # idle until an action starts
             self._busy[key] = event
