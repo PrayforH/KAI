@@ -26,6 +26,154 @@ from harness.computer.vm_keys import VmSeedStore
 
 AUTH_CHECK_SECONDS = 1
 AUTH_GRACE_SECONDS = 3
+RFB_FRAME_LIMIT = 65536
+
+# Client message kinds. "negotiate" traffic (handshake, pixel format,
+# encodings, refresh requests) is read-only and keeps the observation stream
+# alive; the rest writes to the desktop and needs a confirmed human owner.
+RFB_NEGOTIATE = "negotiate"
+RFB_KEYBOARD = "keyboard"
+RFB_POINTER = "pointer"
+RFB_CUT = "cut"
+
+# Fixed client message spans after the handshake, by RFB 3.3.8 type, plus
+# QEMU's extended key event (255) that noVNC sends when the server offers it.
+_RFB_FIXED_SPANS = {0: 20, 3: 10, 4: 8, 5: 6}
+_RFB_INPUT_LABELS = {4: RFB_KEYBOARD, 5: RFB_POINTER}
+_RFB_QEMU_EXTENDED = 255
+
+
+class RfbClientFilter:
+    """Splits the browser's byte stream into complete RFB client messages.
+
+    Splitting happens on protocol boundaries, never on WebSocket fragment
+    edges: one incoming frame may carry several messages and one message may
+    span frames. An input message (keyboard, pointer, clipboard) is decided
+    when it completes: while input is not allowed the whole message is
+    consumed and dropped, which keeps the stream aligned. The one unsafe case
+    is a half-sent input message crossing a takeover boundary — completing it
+    would inject bytes typed by the previous owner, and eating its tail would
+    desync the stream — so the filter asks the caller to close the connection
+    and let the browser reconnect with a clean handshake. Anything the
+    protocol does not define fails the connection instead of forwarding
+    unknown bytes to the desktop.
+    """
+
+    def __init__(self, server_banner: bytes) -> None:
+        # "RFB 003.008\n": the seven version digits start at offset 4.
+        self._modern = server_banner[4:11] >= b"003.007"
+        self._handshake: list[int] = [12]
+        self._client_init = False  # the queued final byte is the shared flag
+        self._buffer = bytearray()
+        self._pos = 0
+        self._span: int | None = None
+        self._label: str | None = None
+        self._handshake_message = False
+        self._input_allowed = False
+        self._started = False
+        self.resync_required = False
+
+    def feed(self, chunk: bytes, *, input_allowed: bool) -> list[tuple[str, bytes]]:
+        became_allowed = input_allowed and self._started and not self._input_allowed
+        self._input_allowed = input_allowed
+        self._started = True
+        if became_allowed and self._pending_input():
+            self.resync_required = True
+            return []
+        self._buffer.extend(chunk)
+        if len(self._buffer) > RFB_FRAME_LIMIT * 2:
+            raise ValueError("desktop input exceeded the message buffer")
+        messages: list[tuple[str, bytes]] = []
+        while True:
+            item = self._next()
+            if item is None:
+                break
+            if item[0] is not None:
+                messages.append(item)
+        del self._buffer[: self._pos]
+        self._pos = 0
+        return messages
+
+    def _pending_input(self) -> bool:
+        return self._span is not None and self._label not in (None, RFB_NEGOTIATE)
+
+    def _next(self) -> tuple[str | None, bytes] | None:
+        if self._span is None:
+            if self._handshake:
+                self._span, self._label = self._handshake[0], RFB_NEGOTIATE
+                self._handshake_message = True
+            else:
+                if len(self._buffer) - self._pos < 1:
+                    return None
+                self._open()
+                if self._span is None:
+                    return None  # the message header is still incomplete
+        if len(self._buffer) - self._pos < self._span:
+            return None
+        message = bytes(self._buffer[self._pos : self._pos + self._span])
+        self._pos += self._span
+        label = self._label
+        self._span = self._label = None
+        if self._handshake_message:
+            self._handshake_message = False
+            self._handshake.pop(0)
+            self._advance_handshake(message)
+            return RFB_NEGOTIATE, message
+        if label is not None and label != RFB_NEGOTIATE and not self._input_allowed:
+            return None, message  # input without a confirmed human owner
+        return label or RFB_NEGOTIATE, message
+
+    def _advance_handshake(self, message: bytes) -> None:
+        if self._handshake:
+            return  # e.g. a VNC authentication response span is already queued
+        if self._client_init:
+            self._client_init = False  # the shared flag ends every handshake
+            return
+        if len(message) == 12:
+            if not message.startswith(b"RFB 003."):
+                raise ValueError("desktop client sent an invalid version reply")
+            if self._modern:
+                self._handshake.append(1)  # security type choice
+            else:
+                self._queue_client_init()
+            return
+        if len(message) == 1 and message[0] == 2:
+            self._handshake.append(16)  # VNC authentication challenge response
+            return
+        if len(message) == 1 or len(message) == 16:
+            self._queue_client_init()  # a non-VNC choice, or the VNC response
+            return
+        raise ValueError("desktop client handshake left the negotiated protocol")
+
+    def _queue_client_init(self) -> None:
+        self._handshake.append(1)
+        self._client_init = True
+
+    def _open(self) -> None:
+        kind = self._buffer[self._pos]
+        if kind in _RFB_FIXED_SPANS:
+            span, label = _RFB_FIXED_SPANS[kind], _RFB_INPUT_LABELS.get(kind, RFB_NEGOTIATE)
+        elif kind == 2:
+            if len(self._buffer) - self._pos < 4:
+                return
+            span = 4 + 4 * int.from_bytes(self._buffer[self._pos + 2 : self._pos + 4], "big")
+            label = RFB_NEGOTIATE
+        elif kind == 6:
+            if len(self._buffer) - self._pos < 8:
+                return
+            span = 8 + int.from_bytes(self._buffer[self._pos + 4 : self._pos + 8], "big")
+            label = RFB_CUT
+        elif kind == _RFB_QEMU_EXTENDED:
+            if len(self._buffer) - self._pos < 2:
+                return
+            if self._buffer[self._pos + 1] != 0:
+                raise ValueError("desktop client sent an unknown extended key event")
+            span, label = 16, RFB_KEYBOARD
+        else:
+            raise ValueError("desktop client sent an unknown RFB message type")
+        if span < 1 or span > RFB_FRAME_LIMIT:
+            raise ValueError("desktop client message length is out of range")
+        self._span, self._label = span, label
 
 
 class ViewerSettings(BaseModel):
@@ -233,27 +381,31 @@ def create_viewer_app(
                         await websocket.send_bytes(data)
 
                 async def to_desktop() -> None:
+                    policy = RfbClientFilter(header)
                     while True:
                         message = await websocket.receive()
                         if message["type"] == "websocket.disconnect":
                             return
                         data = message.get("bytes")
-                        if not isinstance(data, bytes) or len(data) > 65536:
+                        if not isinstance(data, bytes) or len(data) > RFB_FRAME_LIMIT:
                             raise ValueError("desktop input exceeds frame size")
-                        # Check immediately before forwarding each input frame.
+                        # Check immediately before forwarding anything.
                         if time.monotonic() >= valid_until:
                             return
-                        # Only a confirmed human owner may inject input; the
-                        # observation stream stays open in every other state.
-                        if control["state"] != "human":
-                            continue
-                        if data:
-                            if data[0] in {4, 255}:
+                        for kind, chunk in policy.feed(
+                            data, input_allowed=control["state"] == "human"
+                        ):
+                            if kind == RFB_KEYBOARD:
                                 input_frames["keyboard"] += 1
-                            elif data[0] == 5:
+                            elif kind == RFB_POINTER:
                                 input_frames["pointer"] += 1
-                        input_stream.write(data)
-                        await input_stream.drain()
+                            input_stream.write(chunk)
+                            await input_stream.drain()
+                        if policy.resync_required:
+                            # A half-sent input message crossed the takeover
+                            # boundary; only a fresh connection can realign
+                            # the protocol stream.
+                            raise ValueError("desktop input crossed a control change")
 
                 async def watch_authorization() -> None:
                     nonlocal valid_until

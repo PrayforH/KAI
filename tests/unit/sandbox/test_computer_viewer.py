@@ -15,6 +15,25 @@ from harness.computer import viewer
 
 ORIGIN = "https://kai.example.test"
 
+# A complete RFB 3.8 client handshake with the None security type.
+VERSION = b"RFB 003.008\n"
+HANDSHAKE = VERSION + b"\x01" + b"\x01"  # version reply, security choice, ClientInit
+UPDATE_REQUEST = b"\x03\x00\x00\x00\x00\x00\x00\x20\x00\x20"  # FramebufferUpdateRequest
+KEY_A_DOWN = b"\x04\x01\x00\x00\x00\x00\x00\x41"  # KeyEvent, keysym 'a'
+POINTER_EVENT = b"\x05\x01\x00\x0a\x00\x14"  # PointerEvent, left button held
+# A complete SetPixelFormat whose first bytes happen to collide with a
+# half-sent pointer event's tail: negotiation is read-only and passes.
+PIXEL_FORMAT_TAIL = bytes(20)
+
+ECHO_SCRIPT = """import os
+os.write(1, b'RFB 003.008\\n')
+while True:
+    data = os.read(0, 4096)
+    if not data:
+        break
+    os.write(1, data)
+"""
+
 
 @pytest.fixture
 def gateway(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -39,12 +58,16 @@ def gateway(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     async def connect(_self: viewer.DesktopSsh) -> asyncio.subprocess.Process:
         state["connections"] += 1
         # A real child with pipe lifetime, no SSH keys or external desktop.
+        script = state.get(
+            "script",
+            "import os; os.write(1,b'RFB 003.008\\n'); "
+            "data=os.read(0,4); os.write(1,data); os.read(0,1)",
+        )
         return await asyncio.create_subprocess_exec(
             sys.executable,
             "-u",
             "-c",
-            "import os; os.write(1,b'RFB 003.008\\n'); "
-            "data=os.read(0,4); os.write(1,data); os.read(0,1)",
+            script,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
         )
@@ -123,10 +146,12 @@ def test_binary_transport_is_exclusive_and_revocation_closes_it(
 ) -> None:
     client, state = gateway
     with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}) as socket:
-        assert socket.receive_bytes() == b"RFB 003.008\n"
+        assert socket.receive_bytes() == VERSION
         wait_for_control(client, "human")
-        socket.send_bytes(b"PING")
-        assert socket.receive_bytes() == b"PING"
+        socket.send_bytes(HANDSHAKE + UPDATE_REQUEST)
+        # The child echoes the first four bytes it receives, completing the
+        # round trip through protocol-valid traffic.
+        assert socket.receive_bytes() == VERSION[:4]
 
         with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}):
@@ -137,26 +162,81 @@ def test_binary_transport_is_exclusive_and_revocation_closes_it(
     assert client.get("/computer/status").status_code == 403
 
 
+def drain(socket: Any, expected: bytes) -> bytes:
+    """Collect echoed bytes until the expected stream length is reached."""
+
+    received = bytearray()
+    deadline = time.monotonic() + 5
+    while len(received) < len(expected):
+        assert time.monotonic() < deadline, "desktop echo stalled"
+        received.extend(socket.receive_bytes())
+    assert bytes(received) == expected
+    return bytes(received)
+
+
 def test_observation_gate_drops_input_and_forwards_after_takeover(
     gateway: tuple[TestClient, dict[str, Any]],
 ) -> None:
     client, state = gateway
+    state["script"] = ECHO_SCRIPT
+    state["control"] = "observe"
     with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}) as socket:
-        assert socket.receive_bytes() == b"RFB 003.008\n"
-        # While the assistant owns the desktop (observe here) input is dropped;
-        # the five-byte forwarded frame later completes the child's trailing
-        # single-byte read, which closes the transport from the desktop side.
-        state["control"] = "observe"
-        socket.send_bytes(b"\x05AAA")
+        assert socket.receive_bytes() == VERSION
+        # Observation must keep the read-only protocol alive: the handshake
+        # crosses in complete messages even though the lease is not human.
+        socket.send_bytes(HANDSHAKE[:17])
+        socket.send_bytes(HANDSHAKE[17:])
+        socket.send_bytes(POINTER_EVENT)  # a complete input event: dropped
+        socket.send_bytes(UPDATE_REQUEST)
+        drain(socket, HANDSHAKE + UPDATE_REQUEST)
+        assert status_json(client)["input_frames"] == {"keyboard": 0, "pointer": 0}
+
         state["control"] = "human"
         wait_for_control(client, "human")
-        socket.send_bytes(b"\x05BBB")
-        # The desktop echoes the first frame it actually received: the frame
-        # sent while observing was dropped, so the echo is the takeover one.
-        assert socket.receive_bytes() == b"\x05BBB"
-        assert status_json(client)["input_frames"] == {"keyboard": 0, "pointer": 1}
+        socket.send_bytes(KEY_A_DOWN)
+        socket.send_bytes(POINTER_EVENT)
+        drain(socket, KEY_A_DOWN + POINTER_EVENT)
+        assert status_json(client)["input_frames"] == {"keyboard": 1, "pointer": 1}
         state["active"] = False
         assert socket.receive()["type"] == "websocket.close"
+
+
+def test_input_bytes_from_observation_never_complete_after_a_takeover(
+    gateway: tuple[TestClient, dict[str, Any]],
+) -> None:
+    client, state = gateway
+    state["script"] = ECHO_SCRIPT
+    state["control"] = "observe"
+    with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}) as socket:
+        assert socket.receive_bytes() == VERSION
+        socket.send_bytes(HANDSHAKE)
+        drain(socket, HANDSHAKE)
+        socket.send_bytes(POINTER_EVENT[:2])  # half an event while observing
+        state["control"] = "human"
+        wait_for_control(client, "human")
+        # Completing a half-sent event would inject bytes typed by the
+        # previous state and eating its tail would desync the stream, so the
+        # viewer closes the connection instead; the browser reconnects with
+        # a clean handshake, which every other test re-exercises.
+        socket.send_bytes(UPDATE_REQUEST)
+        try:
+            closed = socket.receive()
+            assert closed["type"] in {"websocket.close", "websocket.disconnect"}
+        except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError):
+            pass  # the test client surfaces the teardown in several shapes
+        assert status_json(client)["input_frames"] == {"keyboard": 0, "pointer": 0}
+
+
+def test_unknown_client_messages_fail_closed(
+    gateway: tuple[TestClient, dict[str, Any]],
+) -> None:
+    client, state = gateway
+    state["script"] = ECHO_SCRIPT
+    with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}) as socket:
+        assert socket.receive_bytes() == VERSION
+        socket.send_bytes(HANDSHAKE + b"\x51\x00\x00")  # undefined message type
+        assert socket.receive()["type"] == "websocket.close"
+    state["active"] = False
 
 
 def test_unauthenticated_socket_never_opens_ssh(gateway: tuple[TestClient, dict[str, Any]]):
