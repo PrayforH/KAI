@@ -153,7 +153,11 @@ class RfbClient:
     async def connect(self) -> None:
         reader, writer = await self._transport.open()
         self._reader, self._writer = reader, writer
-        server = await self._expect(12)
+        # A transport may have consumed the banner to fail fast on a dead
+        # desktop; reading it twice would deadlock against the server, which is
+        # waiting for our version reply.
+        preloaded = getattr(self._transport, "banner", None)
+        server = preloaded if isinstance(preloaded, bytes) else await self._expect(12)
         if not server.startswith(b"RFB 003."):
             raise RuntimeError("desktop did not confirm the RFB transport")
         await self._send(server)  # Echo the server's version; 3.3-3.8 all supported.

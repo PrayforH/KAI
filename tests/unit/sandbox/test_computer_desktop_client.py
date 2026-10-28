@@ -160,3 +160,34 @@ def test_keysym_mapping_covers_named_and_unicode():
     assert keysym_for("a") == ord("a")
     assert keysym_for("中") == 0x01000000 + 0x4E2D
     assert keysym_for("not-a-key") is None
+
+
+@pytest.mark.asyncio
+async def test_client_reuses_a_banner_the_transport_already_read():
+    """A transport that pre-reads the banner must not be read twice.
+
+    Reading it again deadlocks: the server has already sent the banner and is
+    waiting for the client's version reply. This regressed the deployed desktop
+    gate, where the transport reads the banner to fail fast on a dead desktop.
+    """
+
+    reader = asyncio.StreamReader()
+    sent = bytearray()
+
+    class PreloadedTransport:
+        banner = b"RFB 003.008\n"
+
+        async def open(self):
+            return reader, _FakeWriter(sent.extend)
+
+    client = RfbClient(PreloadedTransport())
+    connect_task = asyncio.create_task(client.connect())
+    await asyncio.sleep(0.05)
+    # No second banner is fed; only the post-banner handshake follows.
+    reader.feed_data(bytes([1, 1]) + struct.pack(">I", 0))
+    pixel_format = struct.pack(">BBBBHHHBBB3x", 32, 24, 0, 1, 255, 255, 255, 16, 8, 0)
+    reader.feed_data(struct.pack(">HH", 8, 6) + pixel_format + struct.pack(">I", 0))
+    await asyncio.wait_for(connect_task, timeout=5)
+    assert (client.width, client.height) == (8, 6)
+    assert bytes(sent).startswith(b"RFB 003.008\n")
+    await client.close()

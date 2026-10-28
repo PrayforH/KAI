@@ -401,6 +401,9 @@ class DisplayTransport:
 
     def __init__(self, spec: VmComputerSpec) -> None:
         seed = spec.seed()
+        # The gate's first bytes are consumed here to fail fast on a dead
+        # desktop; the client must use them instead of reading again.
+        self.banner: bytes | None = None
         self._argv = [
             "ssh",
             "-T",
@@ -469,6 +472,7 @@ class DisplayTransport:
             with contextlib.suppress(ProcessLookupError):
                 process.kill()
             raise RuntimeError("desktop did not confirm the RFB transport")
+        self.banner = header
         return process.stdout, process.stdin
 
 
