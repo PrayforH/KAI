@@ -74,4 +74,9 @@
 - 产品项核对：助理页 artifact 卡片机制已在（artifact.ready → harness_present_artifact 投影 live+reload，
   ArtifactSummaryRow/ArtifactCard 绑定真实 artifact + 认证下载）；addendum 的"简短结论+结果卡+先真交付再显完成"
   的数据面已满足，主流呈现的进一步简化属 UI 改造，留待单独一轮（不冒险在无人值守夜改前端）。
-- 待办：P1-B/C/D/E、P2 按 review 顺序继续；08:45 收尾。
+- 2026-10-29 04:15 `8bc00664` P1-C 后台窄授权：live objective（objective 线程 + objective 行 active）继承
+  本人电脑的窄 capability，pause/complete/cancel 立即失效；杂散任务线程仍然绝不路由。18 集成测试过；dot16 已部署。
+- 2026-10-29 04:45 `9150468c` P1-E 镜像能力清单：office 约定按 provider 能力声明注入（VmComputerDriver
+  image_office=True，Docker 驱动 False），基础约定不再向没有 office 运行时的镜像承诺解释器。348 单测过；dot17 已部署，
+  viewer 全部回归复测通过（帧/接管 0.39s/重连 5/5）。
+- 待办：P1-B BrowserTools、P1-D Outbox 交付、P2 按 review 顺序继续；08:30 后不迁移，08:45 收尾。
