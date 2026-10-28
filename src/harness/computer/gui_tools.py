@@ -29,6 +29,15 @@ def _text(message: str) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": message}]}
 
 
+def _tokens(result: dict[str, Any]) -> int:
+    """Rough vision cost of this frame; pixels over 750 is the usual estimate."""
+
+    width, height = result.get("width"), result.get("height")
+    if not isinstance(width, int) or not isinstance(height, int):
+        return 0
+    return round(width * height / 750)
+
+
 Handler = Any
 
 
@@ -100,8 +109,9 @@ def computer_gui_overlay(
                     "text": (
                         f"画面 {result.get('width')}x{result.get('height')}"
                         f"（桌面 {result.get('desktop_width')}x{result.get('desktop_height')}"
-                        f"，scale {result.get('scale')}）；"
+                        f"，scale {result.get('scale')}，约 {_tokens(result)} tokens）；"
                         "坐标动作一律使用桌面像素，不是这张图的像素。"
+                        "只看局部时用 region 或更低的 scale，能显著降低开销。"
                     ),
                 },
             ]
