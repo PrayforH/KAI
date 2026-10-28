@@ -1,11 +1,18 @@
-"""Canonical account, personal-thread and Worker ownership checks for Computers."""
+"""Canonical account, personal-thread and Worker ownership checks for Computers.
+
+A background objective created by the personal assistant inherits a narrow
+capability on the owner's own computer: its execution run is authorized only
+while that objective is still active, and never beyond the computer the user
+already owns. Nothing else opens for ordinary task sessions.
+"""
 
 from collections.abc import Mapping
-from typing import Protocol
+from typing import Any, Protocol
 
 from sqlalchemy import and_, func, select
 
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
+from harness.assistant.storage import ObjectiveRow
 from harness.computer.models import (
     AssistantComputer,
     ComputerLease,
@@ -54,6 +61,35 @@ class CanonicalComputerAccess:
     def __init__(self, sessions: SessionFactory, owners: Mapping[str, frozenset[str]]) -> None:
         self.sessions, self.owners = sessions, owners
 
+    async def _delegated_objective_active(
+        self, session: Session, binding: AguiThreadBindingRow | None
+    ) -> bool:
+        """True while this session runs one of the owner's live objectives.
+
+        The capability is the objective record itself: same owner, own
+        computer (checked by the caller), and only for as long as the
+        objective stays active. A paused, completed or cancelled objective
+        loses computer access immediately on the next action.
+        """
+
+        if binding is None or binding.archived_at is not None:
+            return False
+        if binding.tenant_id != session.tenant_id or binding.user_id != session.user_id:
+            return False
+        if binding.thread_id == PERSONAL_ASSISTANT_THREAD:
+            return False
+        if session.session_id not in binding.session_ids:
+            return False
+        async with self.sessions() as db:
+            objective = await db.scalar(
+                select(ObjectiveRow).where(
+                    ObjectiveRow.tenant_id == session.tenant_id,
+                    ObjectiveRow.user_id == session.user_id,
+                    ObjectiveRow.status == "active",
+                )
+            )
+        return objective is not None
+
     async def is_personal_session(self, session: Session) -> bool:
         """A normal task is not selected merely because its user owns a computer."""
         if session.user_id not in self.owners.get(session.tenant_id, frozenset()):
@@ -72,6 +108,10 @@ class CanonicalComputerAccess:
             record = AguiThreadBinding.model_validate(binding.payload)
             if session.session_id not in record.session_ids:
                 return False
+            if record.thread_id != PERSONAL_ASSISTANT_THREAD:
+                # An objective thread of this owner with a live objective
+                # routes to the computer too; anything else never does.
+                return await self._delegated_objective_active(session, binding)
             stored = await db.get(SessionRow, (session.tenant_id, session.session_id))
             if (
                 not _bound(session, binding)
@@ -127,6 +167,10 @@ class CanonicalComputerAccess:
             else {"provisioning", "running"}
         )
         async with self.sessions() as db:
+            if await self._delegated_chain(
+                db, computer, lease, operation, allowed
+            ):
+                return
             rows = (
                 await db.execute(
                     select(
@@ -233,3 +277,125 @@ class CanonicalComputerAccess:
                 or run_fence != run.fencing_token
             ):
                 raise _denied()
+
+    async def _delegated_chain(
+        self,
+        db: Any,
+        computer: AssistantComputer,
+        lease: ComputerLease,
+        operation: str,
+        allowed: set[str],
+    ) -> bool:
+        """The narrow background-objective capability on the owner's computer.
+
+        One live objective per owner at a time grants its execution run the
+        same computer the owner already has, for exactly the purposes the run
+        requested. The objective going inactive (paused, completed,
+        cancelled) or the objective thread being archived closes the grant on
+        the very next action; nothing else about the chain relaxes.
+        """
+
+        rows = (
+            (
+                await db.execute(
+                    select(
+                        SandboxLeaseRow,
+                        SessionRow,
+                        RunRow,
+                        AguiThreadBindingRow,
+                        ComputerLeaseRow.run_fencing_token,
+                    )
+                    .select_from(SandboxLeaseRow)
+                    .join(
+                        SessionRow,
+                        and_(
+                            SessionRow.tenant_id == SandboxLeaseRow.tenant_id,
+                            SessionRow.session_id == SandboxLeaseRow.session_id,
+                        ),
+                    )
+                    .join(
+                        RunRow,
+                        and_(
+                            RunRow.tenant_id == SandboxLeaseRow.tenant_id,
+                            RunRow.run_id == SandboxLeaseRow.run_id,
+                            RunRow.session_id == SandboxLeaseRow.session_id,
+                        ),
+                    )
+                    .join(UserRow, UserRow.user_id == SessionRow.user_id)
+                    .join(
+                        TenantMembershipRow,
+                        and_(
+                            TenantMembershipRow.tenant_id == SessionRow.tenant_id,
+                            TenantMembershipRow.user_id == SessionRow.user_id,
+                        ),
+                    )
+                    .join(
+                        AguiThreadBindingRow,
+                        and_(
+                            AguiThreadBindingRow.tenant_id == SessionRow.tenant_id,
+                            AguiThreadBindingRow.user_id == SessionRow.user_id,
+                            AguiThreadBindingRow.thread_id != PERSONAL_ASSISTANT_THREAD,
+                        ),
+                    )
+                    .join(
+                        ObjectiveRow,
+                        and_(
+                            ObjectiveRow.tenant_id == computer.tenant_id,
+                            ObjectiveRow.user_id == computer.user_id,
+                            ObjectiveRow.status == "active",
+                            # The objective that owns exactly this thread.
+                            ObjectiveRow.payload["threadId"].as_string()
+                            == AguiThreadBindingRow.thread_id,
+                        ),
+                    )
+                    .join(ComputerLeaseRow, ComputerLeaseRow.lease_id == lease.lease_id)
+                    .where(
+                        ComputerLeaseRow.tenant_id == computer.tenant_id,
+                        ComputerLeaseRow.computer_id == computer.computer_id,
+                        ComputerLeaseRow.epoch == lease.epoch,
+                        ComputerLeaseRow.owner == lease.owner,
+                        ComputerLeaseRow.state == "active",
+                        ComputerLeaseRow.expires_at > func.clock_timestamp(),
+                        SandboxLeaseRow.tenant_id == computer.tenant_id,
+                        SandboxLeaseRow.sandbox_id == lease.owner,
+                        SandboxLeaseRow.provider == computer.provider,
+                        SandboxLeaseRow.state == "active",
+                        SandboxLeaseRow.expires_at > func.clock_timestamp(),
+                        SessionRow.user_id == computer.user_id,
+                        UserRow.disabled.is_(False),
+                        RunRow.status.in_(allowed),
+                    )
+                    .limit(2)
+                )
+            )
+            .all()
+        )
+        if len(rows) != 1:
+            return False
+        sandbox, session_row, run_row, binding, run_fence = rows[0]
+        record = AguiThreadBinding.model_validate(binding.payload)
+        if record.archived_at is not None:
+            return False
+        session = Session.model_validate(session_row.payload)
+        run = Run.model_validate(run_row.payload)
+        if (
+            record.tenant_id != session.tenant_id
+            or record.user_id != session.user_id
+            or session.session_id not in record.session_ids
+            or session.tenant_id != computer.tenant_id
+            or session.user_id != computer.user_id
+            or run.run_id != run_row.run_id
+            or run.session_id != session.session_id
+            or run.tenant_id != computer.tenant_id
+            or run.fencing_token != run_row.fencing_token
+            or run.status.value != run_row.status
+        ):
+            return False
+        if lease.purpose is LeasePurpose.EXECUTE and (
+            lease.run_id != run.run_id
+            or lease.session_id != session.session_id
+            or run_fence is None
+            or run_fence != run.fencing_token
+        ):
+            return False
+        return True

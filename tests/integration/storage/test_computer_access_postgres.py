@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import Table, delete, text, update
 
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
+from harness.assistant.storage import ObjectiveRow
 from harness.computer.access import CanonicalComputerAccess
 from harness.computer.models import ComputerLeaseLostError
 from harness.computer.registry import ComputerRegistry
@@ -287,3 +288,141 @@ async def test_revoked_account_is_refused_before_any_docker_request(database: Da
         controller = DockerComputerControl(registry, docker, authorizer=access)
         with pytest.raises(ComputerLeaseLostError):
             await controller.call(token, "exec", {"argv": ["private-fixture"]})
+
+
+async def seed_objective_run(database: DatabaseFixture):
+    """A background objective run on its own thread, for the same owner."""
+    _, sessions = database
+    user, tenant, handle = "fixture-user", "fixture-tenant", "computer-run-" + "b" * 32
+    objective_id = "objective_" + "f" * 32
+    thread_id = "assistant_" + objective_id
+    session = Session(
+        tenant_id=tenant,
+        user_id=user,
+        session_id="objective-session",
+        agent_name="assistant",
+        agent_version="1",
+        created_at=NOW,
+    )
+    binding = AguiThreadBinding(
+        tenant_id=tenant,
+        user_id=user,
+        thread_id=thread_id,
+        session_id=session.session_id,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    async with sessions.begin() as db:
+        db.add(UserRow(
+            user_id=user,
+            email="objective@invalid.local",
+            display_name="fixture",
+            created_at=NOW,
+            updated_at=NOW,
+        ))
+        db.add(TenantMembershipRow(tenant_id=tenant, user_id=user, role="owner", created_at=NOW))
+        db.add(SessionRow(
+            tenant_id=tenant,
+            session_id=session.session_id,
+            user_id=user,
+            payload=session.model_dump(mode="json"),
+        ))
+        db.add(AguiThreadBindingRow(
+            tenant_id=tenant,
+            user_id=user,
+            thread_id=binding.thread_id,
+            session_id=binding.session_id,
+            payload=binding.model_dump(mode="json"),
+        ))
+        db.add(ObjectiveRow(
+            objective_id=objective_id,
+            tenant_id=tenant,
+            user_id=user,
+            status="active",
+            revision=1,
+            created_at=NOW,
+            updated_at=NOW,
+            payload={"threadId": thread_id, "status": "active"},
+        ))
+    runs = PostgresRunRepository(sessions, fence_computers=True)
+    run = Run(
+        tenant_id=tenant,
+        session_id=session.session_id,
+        run_id="objective-run",
+        status=RunStatus.RUNNING,
+        fencing_token=4,
+        idempotency_key="objective-key",
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    await runs.add(run)
+    sandbox_leases = SandboxLeaseService(PostgresSandboxLeaseRepository(sessions))
+    await sandbox_leases.acquire(
+        tenant_id=tenant,
+        session_id=session.session_id,
+        run_id=run.run_id,
+        owner="run-fence:2",
+        provider="docker-computer",
+        sandbox_id=handle,
+    )
+    registry = ComputerRegistry(sessions)
+    await registry.ensure(tenant, user, provider="docker-computer", image="sha256:" + "a" * 64)
+    start = await registry.claim_start(tenant, user, owner=handle)
+    await registry.complete_start(start, provider_ref="physical-fixture")
+    token = await registry.claim_execution(
+        tenant,
+        user,
+        owner=handle,
+        run_id=run.run_id,
+        session_id=session.session_id,
+        run_fencing_token=run.fencing_token,
+    )
+    return access_for(sessions), registry, token, objective_id
+
+
+def access_for(sessions) -> CanonicalComputerAccess:
+    return CanonicalComputerAccess(sessions, {"fixture-tenant": frozenset({"fixture-user"})})
+
+
+@pytest.mark.asyncio
+async def test_a_live_objective_inherits_the_narrow_computer_capability(
+    database: DatabaseFixture,
+):
+    access, registry, token, objective_id = await seed_objective_run(database)
+    computer = await registry.get("fixture-tenant", "fixture-user")
+    await access.authorize(computer, token, "exec")
+    await access.authorize(computer, token, "renew")
+
+
+@pytest.mark.asyncio
+async def test_an_inactive_objective_loses_the_capability_immediately(
+    database: DatabaseFixture,
+):
+    _, sessions = database
+    access, registry, token, objective_id = await seed_objective_run(database)
+    computer = await registry.get("fixture-tenant", "fixture-user")
+    async with sessions.begin() as db:
+        await db.execute(
+            update(ObjectiveRow)
+            .where(ObjectiveRow.objective_id == objective_id)
+            .values(status="paused")
+        )
+    with pytest.raises(ComputerLeaseLostError):
+        await access.authorize(computer, token, "exec")
+
+
+@pytest.mark.asyncio
+async def test_a_personal_session_of_another_thread_still_never_routes(
+    database: DatabaseFixture,
+):
+    _, sessions = database
+    access, registry, _, _ = await seed_objective_run(database)
+    other = Session(
+        tenant_id="fixture-tenant",
+        user_id="fixture-user",
+        session_id="stray-session",
+        agent_name="assistant",
+        agent_version="1",
+        created_at=NOW,
+    )
+    assert not await access.is_personal_session(other)
