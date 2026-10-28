@@ -246,3 +246,36 @@ def test_unauthenticated_socket_never_opens_ssh(gateway: tuple[TestClient, dict[
         with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}):
             pytest.fail("anonymous socket was accepted")
     assert state["connections"] == 0
+
+
+def test_input_grant_never_survives_an_unobserved_generation(
+    gateway: tuple[TestClient, dict[str, Any]],
+) -> None:
+    client, state = gateway
+    state["script"] = ECHO_SCRIPT
+    state["control"] = "observe"
+    with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}) as socket:
+        assert socket.receive_bytes() == VERSION
+        socket.send_bytes(HANDSHAKE)
+        drain(socket, HANDSHAKE)
+        # Grant: this connection observes the human generation itself.
+        state["control"] = "human"
+        state["epoch"] = 5
+        wait_for_control(client, "human")
+        time.sleep(0.3)  # the connection's own poll picks up epoch 5
+        socket.send_bytes(KEY_A_DOWN)
+        drain(socket, KEY_A_DOWN)
+        # The lease moves under the connection (re-takeover elsewhere landed
+        # on epoch 7): input stops and the connection closes instead of
+        # inheriting the new generation.
+        state["epoch"] = 7
+        wait_for_control(client, "human")
+        time.sleep(1.2)  # several of the connection's own poll ticks
+        socket.send_bytes(KEY_A_DOWN)
+        try:
+            closed = socket.receive()
+            assert closed["type"] in {"websocket.close", "websocket.disconnect"}
+        except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError):
+            pass  # the test client surfaces the teardown in several shapes
+        assert status_json(client)["input_frames"]["keyboard"] == 1
+        state["active"] = False

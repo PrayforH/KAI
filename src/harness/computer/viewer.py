@@ -363,6 +363,11 @@ def create_viewer_app(
             return
         async with busy:
             control: dict[str, str | int] = {"state": "observe", "epoch": 0}
+            # The input generation this connection was granted at. It is set
+            # only by this connection's own poll observing ``human``, so a
+            # connection never inherits input rights across a takeover,
+            # return or expiry it did not observe itself.
+            granted_epoch: int | None = None
             process: asyncio.subprocess.Process | None = None
             tasks: list[asyncio.Task[None]] = []
             try:
@@ -393,7 +398,11 @@ def create_viewer_app(
                         if time.monotonic() >= valid_until:
                             return
                         for kind, chunk in policy.feed(
-                            data, input_allowed=control["state"] == "human"
+                            data,
+                            input_allowed=(
+                                control["state"] == "human"
+                                and granted_epoch == control["epoch"]
+                            ),
                         ):
                             if kind == RFB_KEYBOARD:
                                 input_frames["keyboard"] += 1
@@ -411,12 +420,23 @@ def create_viewer_app(
                             raise ValueError("desktop input crossed a control change")
 
                 async def watch_authorization() -> None:
-                    nonlocal valid_until
+                    nonlocal valid_until, granted_epoch
                     while True:
                         await asyncio.sleep(AUTH_CHECK_SECONDS)
                         if not await authorized(token):
                             return
                         control.update(await desktop_state(token))
+                        if control["state"] == "human":
+                            epoch = int(control.get("epoch") or 0)
+                            if granted_epoch is None:
+                                granted_epoch = epoch
+                            elif granted_epoch != epoch:
+                                # The generation moved under this connection
+                                # (return and re-takeover elsewhere); its
+                                # grant is stale, so reconnect to re-bind.
+                                raise ValueError("desktop input generation changed")
+                        else:
+                            granted_epoch = None
                         valid_until = time.monotonic() + AUTH_GRACE_SECONDS
 
                 tasks = [
