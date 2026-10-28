@@ -7,10 +7,10 @@ current registry holder independently of this client's cached allocation.
 """
 
 import base64
-import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from typing import Protocol, cast
+from typing import Protocol
 
+from harness.computer import gate_ack
 from harness.computer.control import ComputerControl, ControlAction
 from harness.computer.manager import ComputerAllocation
 from harness.computer.models import (
@@ -75,18 +75,7 @@ class DockerComputerDriver:
 
     async def _ack(self, token: ComputerLease, action: ControlAction, *, active: bool) -> None:
         result = await self.host.call(token, action, {})
-        try:
-            value = json.loads(result.stdout)
-        except ValueError:
-            raise RuntimeError("computer control acknowledgement is invalid") from None
-        saved = cast(dict[str, object], value) if isinstance(value, dict) else {}
-        if (
-            result.exit_code != 0
-            or saved.get("epoch") != token.epoch
-            or saved.get("lease_id") != token.lease_id
-            or saved.get("active") is not active
-        ):
-            raise RuntimeError("computer control acknowledgement does not match its lease")
+        gate_ack.validate(result, epoch=token.epoch, lease_id=token.lease_id, active=active)
 
     async def connect(self, computer: AssistantComputer, token: ComputerLease) -> None:
         self._validate(computer, token, LeasePurpose.EXECUTE)

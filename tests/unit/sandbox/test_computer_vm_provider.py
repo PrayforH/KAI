@@ -1,14 +1,20 @@
 """VM provider construction, declaration parsing and container verification."""
 
+import json
+from typing import cast
+from unittest.mock import patch
+
 import pytest
 from pydantic import SecretStr
 
 from harness.computer.control_server import ControllerSettings, create_app
+from harness.computer.models import ComputerLease, LeasePurpose, LeaseState
 from harness.computer.runtime import ComputerRuntime
 from harness.computer.vm import PROVIDER as VM_PROVIDER
 from harness.computer.vm import VmComputerDriver
-from harness.computer.vm_host import VmComputerSpec, verify_vm_instance
+from harness.computer.vm_host import VmComputerLifecycle, VmComputerSpec, verify_vm_instance
 from harness.config import Settings
+from harness.sandbox.base import SandboxCommandResult
 from harness.storage.database import create_database
 
 BASE = "sha256:" + "b" * 64
@@ -158,3 +164,119 @@ def test_control_server_builds_vm_routes_from_declaration():
     )
     app = create_app(settings)
     assert app is not None
+
+
+def recovery_token() -> ComputerLease:
+    from datetime import UTC, datetime, timedelta
+
+    moment = datetime.now(UTC)
+    return ComputerLease(
+        lease_id="computer_lease_" + "e" * 32,
+        computer_id="computer_" + "c" * 32,
+        tenant_id="tenant",
+        user_id="user",
+        owner="worker-fixture",
+        purpose=LeasePurpose.RECOVER,
+        epoch=7,
+        run_id=None,
+        session_id=None,
+        state=LeaseState.ACTIVE,
+        created_at=moment,
+        renewed_at=moment,
+        expires_at=moment + timedelta(seconds=300),
+        finished_at=None,
+    )
+
+
+class RecoveryFixture:
+    """Fake Docker transport plus a programmable guest gate."""
+
+    def __init__(self) -> None:
+        self.stopped = 0
+        self.stop_raises: bool = False
+        self.acks: list[SandboxCommandResult] = []
+
+    async def inspect(self, spec: VmComputerSpec) -> str | None:
+        return "a" * 64
+
+    async def stop(self, spec: VmComputerSpec) -> None:
+        self.stopped += 1
+        if self.stop_raises:
+            raise RuntimeError("computer VM did not stop in time; it remains fenced")
+
+    def gate(self, _spec: VmComputerSpec):
+        fixture = self
+
+        class _Gate:
+            async def call(self, action: str, request: dict, *, timeout_seconds: float):
+                return fixture.acks.pop(0)
+
+        return _Gate()
+
+
+@pytest.mark.parametrize(
+    "ack",
+    [
+        SandboxCommandResult(exit_code=1, stdout="", stderr="fixture failure"),
+        SandboxCommandResult(exit_code=0, stdout="not json", stderr=""),
+        SandboxCommandResult(
+            exit_code=0,
+            stdout=json.dumps({"epoch": 7, "lease_id": "other", "active": True}),
+            stderr="",
+        ),
+        SandboxCommandResult(
+            exit_code=0, stdout=json.dumps({"epoch": 6, "active": True}), stderr=""
+        ),
+        SandboxCommandResult(
+            exit_code=0,
+            stdout=json.dumps({"epoch": 7, "lease_id": "computer_lease_" + "e" * 32}),
+            stderr="",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_recovery_refuses_any_unconfirmed_guest_ack_and_stops(ack: SandboxCommandResult):
+    fixture = RecoveryFixture()
+    fixture.acks = [ack, ack]
+    host = VmComputerLifecycle(cast(object, None), cast(object, None), {})
+    host._inspect = fixture.inspect  # type: ignore[method-assign]
+    host._stop = fixture.stop  # type: ignore[method-assign]
+    with patch("harness.computer.vm_host.GuestGate", fixture.gate):
+        assert await host._reset(spec(), recovery_token()) is None
+    assert fixture.stopped == 1
+
+
+@pytest.mark.asyncio
+async def test_recovery_confirmed_by_the_guest_keeps_the_vm():
+    fixture = RecoveryFixture()
+    lease_id = "computer_lease_" + "e" * 32
+    fixture.acks = [
+        SandboxCommandResult(
+            exit_code=0, stdout=json.dumps({"epoch": 7, "lease_id": lease_id, "active": True})
+        ),
+        SandboxCommandResult(
+            exit_code=0, stdout=json.dumps({"epoch": 7, "lease_id": lease_id, "active": False})
+        ),
+    ]
+    host = VmComputerLifecycle(cast(object, None), cast(object, None), {})
+    host._inspect = fixture.inspect  # type: ignore[method-assign]
+    host._stop = fixture.stop  # type: ignore[method-assign]
+    with patch("harness.computer.vm_host.GuestGate", fixture.gate):
+        assert await host._reset(spec(), recovery_token()) == "a" * 64
+    assert fixture.stopped == 0
+
+
+@pytest.mark.asyncio
+async def test_recovery_without_a_confirmed_physical_stop_stays_fenced():
+    fixture = RecoveryFixture()
+    fixture.stop_raises = True
+    fixture.acks = [SandboxCommandResult(exit_code=1, stdout="", stderr="fixture failure")]
+    host = VmComputerLifecycle(cast(object, None), cast(object, None), {})
+    host._inspect = fixture.inspect  # type: ignore[method-assign]
+    host._stop = fixture.stop  # type: ignore[method-assign]
+    with (
+        patch("harness.computer.vm_host.GuestGate", fixture.gate),
+        pytest.raises(RuntimeError, match="fenced"),
+    ):
+        await host._reset(spec(), recovery_token())
+    assert fixture.stopped == 1

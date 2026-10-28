@@ -34,6 +34,8 @@ from harness.computer.desktop_client import (
 from harness.computer.desktop_client import (
     type_text as desktop_type,
 )
+from harness.computer.gate_ack import GateAckError
+from harness.computer.gate_ack import validate as validate_gate_ack
 from harness.computer.models import (
     AssistantComputer,
     ComputerLease,
@@ -348,20 +350,25 @@ class VmComputerLifecycle:
             return None
         # Prefer guest fencing: the recovery epoch publishes a new gate before
         # draining the old task namespace, so the VM, its browser and desktop
-        # survive. Only an unreachable guest falls back to stopping the VM.
+        # survive. The acknowledgement is the only proof the old execution is
+        # fenced; an unconfirmed drain falls back to the proven physical
+        # stop, and an unconfirmed stop raises so the computer stays fenced
+        # instead of being handed to the next Run.
+        request = {
+            "epoch": token.epoch,
+            "lease_id": token.lease_id,
+            "expires_at": token.expires_at.timestamp(),
+        }
         try:
             gate = GuestGate(spec)
-            request = {
-                "epoch": token.epoch,
-                "lease_id": token.lease_id,
-                "expires_at": token.expires_at.timestamp(),
-            }
-            await gate.call("activate", request, timeout_seconds=30)
-            await gate.call("deactivate", request, timeout_seconds=30)
-            return identifier
-        except (ComputerLeaseLostError, RuntimeError, ValueError, OSError):
+            ack = await gate.call("activate", request, timeout_seconds=30)
+            validate_gate_ack(ack, epoch=token.epoch, lease_id=token.lease_id, active=True)
+            ack = await gate.call("deactivate", request, timeout_seconds=30)
+            validate_gate_ack(ack, epoch=token.epoch, lease_id=token.lease_id, active=False)
+        except (ComputerLeaseLostError, GateAckError, RuntimeError, ValueError, OSError):
             await self._stop(spec)
             return None
+        return identifier
 
     async def _inspect(self, spec: VmComputerSpec) -> str | None:
         found = await self.docker.get(f"/containers/{spec.container_name}/json")
