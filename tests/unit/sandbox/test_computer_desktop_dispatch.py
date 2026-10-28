@@ -88,3 +88,35 @@ async def test_unknown_operation_is_rejected_before_touching_the_desktop():
 def test_operate_rejects_unsupported_operation():
     with pytest.raises(ValueError, match="not supported"):
         asyncio.run(service().operate(cast(Any, object()), "nope", {}))
+
+
+@pytest.mark.asyncio
+async def test_screenshot_accepts_region_and_scale():
+    service_ = service()
+    calls: list[dict[str, Any]] = []
+
+    class ShotClient(FakeClient):
+        def resolve_region(self, region: Any) -> tuple[int, int, int, int]:
+            return (10, 20, 40, 30) if region else (0, 0, 1024, 768)
+
+        async def screenshot(self, *, region: Any = None, scale: float = 1.0):
+            calls.append({"region": region, "scale": scale})
+            return 20, 15, b"\x89PNG"
+
+    result = await service_._dispatch(
+        cast(RfbClient, ShotClient()),
+        "screenshot",
+        {"region": {"x": 10, "y": 20, "width": 40, "height": 30}, "scale": 0.5},
+    )
+    assert calls == [{"region": (10, 20, 40, 30), "scale": 0.5}]
+    assert result["width"] == 20 and result["height"] == 15
+    assert result["desktop_width"] == 1024 and result["desktop_height"] == 768
+    assert result["region"] == {"x": 10, "y": 20, "width": 40, "height": 30}
+
+
+@pytest.mark.asyncio
+async def test_screenshot_rejects_a_malformed_region():
+    service_ = service()
+    for bad in ({"x": 1, "y": 2}, {"x": "1", "y": 2, "width": 3, "height": 4}, "nope"):
+        with pytest.raises(ValueError, match="region"):
+            await service_._dispatch(cast(RfbClient, FakeClient()), "screenshot", {"region": bad})

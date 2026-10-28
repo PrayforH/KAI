@@ -532,10 +532,21 @@ class VmDesktopService:
         if client.width == 0:
             await client.connect()
         if operation == "screenshot":
-            width, height, png = await client.screenshot()
+            region = self._region(payload.get("region"))
+            scale = payload.get("scale", 1.0)
+            if not isinstance(scale, (int, float)) or isinstance(scale, bool):
+                raise ValueError("screenshot scale must be a number")
+            left, top, box_width, box_height = client.resolve_region(region)
+            width, height, png = await client.screenshot(
+                region=region, scale=float(scale)
+            )
             return {
                 "width": width,
                 "height": height,
+                "desktop_width": client.width,
+                "desktop_height": client.height,
+                "region": {"x": left, "y": top, "width": box_width, "height": box_height},
+                "scale": float(scale),
                 "png_base64": base64.b64encode(png).decode("ascii"),
             }
         if operation in {"move", "click", "scroll"}:
@@ -573,6 +584,26 @@ class VmDesktopService:
             raise ValueError("key requires a list of key names")
         await desktop_press(client, keys)
         return {"pressed": len(keys)}
+
+    @staticmethod
+    def _region(value: object) -> tuple[int, int, int, int] | None:
+        if value is None:
+            return None
+        if not isinstance(value, Mapping):
+            raise ValueError("screenshot region must be an object")
+        bounds = cast(Mapping[str, object], value)
+        keys = ("x", "y", "width", "height")
+        if any(key not in bounds for key in keys):
+            raise ValueError("screenshot region needs x, y, width and height")
+        numbers = [bounds[key] for key in keys]
+        if any(type(item) is not int for item in numbers):
+            raise ValueError("screenshot region coordinates must be integers")
+        return (
+            cast(int, numbers[0]),
+            cast(int, numbers[1]),
+            cast(int, numbers[2]),
+            cast(int, numbers[3]),
+        )
 
     @staticmethod
     def _point(payload: Mapping[str, object]) -> tuple[int, int]:

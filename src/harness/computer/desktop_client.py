@@ -16,6 +16,7 @@ from io import BytesIO
 from typing import Protocol
 
 from PIL import Image
+from PIL.Image import Resampling
 
 SERVER_OK = 0
 SEC_NONE = 1
@@ -225,14 +226,40 @@ class RfbClient:
             if result != SERVER_OK:
                 raise RuntimeError("desktop rejected the offered credential")
 
-    async def screenshot(self) -> tuple[int, int, bytes]:
-        """Request one full frame and return (width, height, PNG bytes)."""
+    def resolve_region(self, region: tuple[int, int, int, int] | None) -> tuple[int, int, int, int]:
+        """Clamp a requested rectangle to the framebuffer, refusing empty ones."""
+
+        if region is None:
+            return 0, 0, self.width, self.height
+        x, y, width, height = region
+        if width <= 0 or height <= 0:
+            raise ValueError("screenshot region must have a positive size")
+        if x < 0 or y < 0 or x + width > self.width or y + height > self.height:
+            raise ValueError("screenshot region is outside the desktop")
+        return x, y, width, height
+
+    async def screenshot(
+        self,
+        *,
+        region: tuple[int, int, int, int] | None = None,
+        scale: float = 1.0,
+    ) -> tuple[int, int, bytes]:
+        """Fetch one frame (optionally a sub-rectangle) as PNG.
+
+        Vision cost scales with pixels, so callers can ask for the area they
+        actually need and a readable downscale instead of the whole screen.
+        """
 
         assert self._reader is not None and self._writer is not None
+        if not 0.2 <= scale <= 1.0:
+            raise ValueError("screenshot scale must be between 0.2 and 1.0")
+        left, top, box_width, box_height = self.resolve_region(region)
         self._frame[:] = bytes(len(self._frame))
-        covered = 0
-        expected = self.width * self.height * self._bytes_per_pixel
-        await self._send(struct.pack(">BBHHHH", 3, 0, 0, 0, self.width, self.height))
+        covered_pixels = 0
+        expected_pixels = box_width * box_height
+        await self._send(
+            struct.pack(">BBHHHH", 3, left, top, box_width, box_height, 0)
+        )
         for _ in range(64):
             header = await self._expect(4)
             message_type = header[0]
@@ -246,7 +273,16 @@ class RfbClient:
                         raise RuntimeError("desktop sent a non-raw update")
                     data = await self._expect(width * height * self._bytes_per_pixel)
                     self._blit(rect, data)
-                    covered += width * height * self._bytes_per_pixel
+                    # Count only the part inside the requested rectangle: a
+                    # server may return rects that overlap it or extend past it.
+                    rect_x, rect_y = struct.unpack(">HH", rect[:4])
+                    inside_w = max(
+                        0, min(rect_x + width, left + box_width) - max(rect_x, left)
+                    )
+                    inside_h = max(
+                        0, min(rect_y + height, top + box_height) - max(rect_y, top)
+                    )
+                    covered_pixels += inside_w * inside_h
             elif message_type == 2:  # Bell
                 continue
             elif message_type == 3:  # ServerCutText
@@ -254,7 +290,7 @@ class RfbClient:
                 await self._expect(length)
             else:
                 raise RuntimeError("desktop sent an unexpected message type")
-            if covered >= expected:
+            if covered_pixels >= expected_pixels:
                 break
         else:
             raise RuntimeError("desktop did not deliver a complete frame")
@@ -265,9 +301,16 @@ class RfbClient:
             "raw",
             "BGRX" if self._bytes_per_pixel == 4 else "BGR",
         )
+        if region is not None:
+            image = image.crop((left, top, left + box_width, top + box_height))
+        if scale < 1.0:
+            image = image.resize(
+                (max(1, round(box_width * scale)), max(1, round(box_height * scale))),
+                Resampling.LANCZOS,
+            )
         buffer = BytesIO()
         image.save(buffer, format="PNG")
-        return self.width, self.height, buffer.getvalue()
+        return image.width, image.height, buffer.getvalue()
 
     def _blit(self, rect: bytes, data: bytes) -> None:
         x, y, width, height = struct.unpack(">HHHH", rect[:8])

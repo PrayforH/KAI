@@ -2,10 +2,12 @@
 
 import asyncio
 import struct
+from typing import cast
 
 import pytest
 
 from harness.computer.desktop_client import (
+    DesktopTransport,
     RfbClient,
     click,
     keysym_for,
@@ -191,3 +193,82 @@ async def test_client_reuses_a_banner_the_transport_already_read():
     assert (client.width, client.height) == (8, 6)
     assert bytes(sent).startswith(b"RFB 003.008\n")
     await client.close()
+
+
+@pytest.mark.asyncio
+async def test_region_screenshot_requests_only_that_rectangle():
+    reader = asyncio.StreamReader()
+    sent = bytearray()
+
+    class Transport:
+        async def open(self):
+            return reader, _FakeWriter(sent.extend)
+
+    client = RfbClient(Transport())
+    reader.feed_data(b"RFB 003.008\n")
+    task = asyncio.create_task(client.connect())
+    await asyncio.sleep(0.05)
+    reader.feed_data(bytes([1, 1]) + struct.pack(">I", 0))
+    pixel_format = struct.pack(">BBBBHHHBBB3x", 32, 24, 0, 1, 255, 255, 255, 16, 8, 0)
+    reader.feed_data(struct.pack(">HH", 100, 80) + pixel_format + struct.pack(">I", 0))
+    await asyncio.wait_for(task, timeout=5)
+
+    row = bytes.fromhex("ff000000") * 40
+    async def serve() -> None:
+        await asyncio.sleep(0.05)
+        reader.feed_data(struct.pack(">BxH", 0, 1))
+        reader.feed_data(struct.pack(">HHHHi", 10, 20, 40, 2, 0))
+        reader.feed_data(row + row)
+
+    server = asyncio.create_task(serve())
+    width, height, png = await asyncio.wait_for(
+        client.screenshot(region=(10, 20, 40, 2)), timeout=5
+    )
+    await server
+    assert (width, height) == (40, 2)
+    assert png.startswith(b"\x89PNG")
+    # The update request must name the same rectangle the caller asked for.
+    assert struct.unpack(">BBHHHH", bytes(sent[-10:])) == (3, 10, 20, 40, 2, 0)
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_scale_shrinks_the_returned_image():
+    reader = asyncio.StreamReader()
+    sent = bytearray()
+
+    class Transport:
+        async def open(self):
+            return reader, _FakeWriter(sent.extend)
+
+    client = RfbClient(Transport())
+    reader.feed_data(b"RFB 003.008\n")
+    task = asyncio.create_task(client.connect())
+    await asyncio.sleep(0.05)
+    reader.feed_data(bytes([1, 1]) + struct.pack(">I", 0))
+    pixel_format = struct.pack(">BBBBHHHBBB3x", 32, 24, 0, 1, 255, 255, 255, 16, 8, 0)
+    reader.feed_data(struct.pack(">HH", 100, 100) + pixel_format + struct.pack(">I", 0))
+    await asyncio.wait_for(task, timeout=5)
+
+    row = bytes.fromhex("004080ff") * 100
+    async def serve() -> None:
+        await asyncio.sleep(0.05)
+        reader.feed_data(struct.pack(">BxH", 0, 1))
+        reader.feed_data(struct.pack(">HHHHi", 0, 0, 100, 100, 0))
+        for _ in range(100):
+            reader.feed_data(row)
+
+    server = asyncio.create_task(serve())
+    width, height, png = await asyncio.wait_for(client.screenshot(scale=0.5), timeout=5)
+    await server
+    assert (width, height) == (50, 50)
+    assert png.startswith(b"\x89PNG")
+    await client.close()
+
+
+def test_region_outside_the_desktop_is_refused():
+    client = RfbClient(cast(DesktopTransport, object()))
+    client.width, client.height = 100, 80
+    with pytest.raises(ValueError, match="outside the desktop"):
+        client.resolve_region((90, 10, 20, 10))
+    assert client.resolve_region(None) == (0, 0, 100, 80)

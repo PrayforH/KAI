@@ -16,7 +16,11 @@ from harness.sandbox.base import SandboxHandle
 
 INSTRUCTIONS = (
     "你可以操作用户电脑的可见桌面（与网页右侧显示的是同一台电脑）。\n"
-    "先 computer_screenshot 观察当前画面；需要输入时用坐标动作，动作后重新截图确认。\n"
+    "截图按像素计费：读文件、看日志、查进程、跑命令一律用 shell，不要截图；"
+    "只有必须看界面时才截图。\n"
+    "只看某个区域时传 region（x/y/width/height，单位是桌面像素）；界面偏小可传 scale 0.5–0.8，"
+    "两者都能显著降低开销。先看全屏定位，再用 region 复核细节。\n"
+    "坐标动作之前要有对应的观测；动作后只在需要确认结果时重新截图。\n"
     "如果用户正在控制电脑，工具会明确提示，此时等待用户交还，不要重试输入。"
 )
 
@@ -93,7 +97,12 @@ def computer_gui_overlay(
                 },
                 {
                     "type": "text",
-                    "text": f"桌面画面 {result.get('width')}x{result.get('height')}。",
+                    "text": (
+                        f"画面 {result.get('width')}x{result.get('height')}"
+                        f"（桌面 {result.get('desktop_width')}x{result.get('desktop_height')}"
+                        f"，scale {result.get('scale')}）；"
+                        "坐标动作一律使用桌面像素，不是这张图的像素。"
+                    ),
                 },
             ]
         }
@@ -125,8 +134,32 @@ def computer_gui_overlay(
         tools=(
             PlatformTool(
                 name="computer_screenshot",
-                description="获取电脑桌面当前画面截图。观察桌面、确认操作结果时使用。",
-                schema={"type": "object", "properties": {}},
+                description=(
+                    "获取桌面画面。可只截某个区域（region）或缩小（scale）以降低开销；"
+                    "能用 shell 读到的内容不要截图。"
+                ),
+                schema={
+                    "type": "object",
+                    "properties": {
+                        "region": {
+                            "type": "object",
+                            "description": "可选：只截这块矩形（桌面像素）",
+                            "properties": {
+                                "x": {"type": "integer", "minimum": 0},
+                                "y": {"type": "integer", "minimum": 0},
+                                "width": {"type": "integer", "minimum": 1},
+                                "height": {"type": "integer", "minimum": 1},
+                            },
+                            "required": ["x", "y", "width", "height"],
+                        },
+                        "scale": {
+                            "type": "number",
+                            "minimum": 0.2,
+                            "maximum": 1,
+                            "description": "可选：缩放比例，默认 1.0",
+                        },
+                    },
+                },
                 handler=screenshot,
             ),
             pointer_tool("move", ""),
