@@ -67,4 +67,11 @@
   原样取回**（sha256 与工作卷源 fedcdda/542053/8e1ac 完全一致，未重做内容）。全部 8 个 artifact 经真实认证
   API 下载逐一 hash 核对一致。"Computer workspace download was truncated" 生产缺陷（run_d805423e 等 3 个 Run）
   已修复并验证。
-- 待办：助理页结果卡（产品项）、P1 系列、08:45 收尾。
+- 2026-10-29 03:2x `f1c60821` 交付契约测试补齐（跨分块 2MiB+4KiB、逐轮变更镜像）。
+- 2026-10-29 03:4x `45db3d60` P1-A（部分）：Viewer 输入代际绑定——输入连接只在自己观察到 human 代际时注入，
+  代际在连接下移动（他处交还/重接管）即断开重连，不继承新输入权。10 测试过；v8 已上线并复测：
+  重连 5/5（0.76–1.59s）、观察帧、接管 0.34s、human 输入 1/1、busy 正常释放、return 正常。
+- 产品项核对：助理页 artifact 卡片机制已在（artifact.ready → harness_present_artifact 投影 live+reload，
+  ArtifactSummaryRow/ArtifactCard 绑定真实 artifact + 认证下载）；addendum 的"简短结论+结果卡+先真交付再显完成"
+  的数据面已满足，主流呈现的进一步简化属 UI 改造，留待单独一轮（不冒险在无人值守夜改前端）。
+- 待办：P1-B/C/D/E、P2 按 review 顺序继续；08:45 收尾。
