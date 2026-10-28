@@ -431,22 +431,30 @@ def create_viewer_app(
             ):
                 pass
             finally:
+                # Teardown is bounded and terminates the transport first: a
+                # cancelled pipe reader must never hold the exclusive lock
+                # past a lost client, or the preview locks out every future
+                # connection until restart.
                 for task in tasks:
                     task.cancel()
-                if tasks:
-                    await asyncio.gather(*tasks, return_exceptions=True)
                 if process is not None:
                     if process.stdin is not None:
                         process.stdin.close()
                     if process.returncode is None:
                         with contextlib.suppress(ProcessLookupError):
                             process.terminate()
-                        try:
-                            await asyncio.wait_for(process.wait(), timeout=5)
-                        except TimeoutError:
-                            with contextlib.suppress(ProcessLookupError):
-                                process.kill()
-                            await process.wait()
+                if tasks:
+                    with contextlib.suppress(TimeoutError):
+                        await asyncio.wait_for(
+                            asyncio.gather(*tasks, return_exceptions=True), timeout=3
+                        )
+                if process is not None and process.returncode is None:
+                    try:
+                        await asyncio.wait_for(process.wait(), timeout=5)
+                    except TimeoutError:
+                        with contextlib.suppress(ProcessLookupError):
+                            process.kill()
+                        await process.wait()
                 with contextlib.suppress(RuntimeError, WebSocketDisconnect):
                     await websocket.close(code=1000)
 
