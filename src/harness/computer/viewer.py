@@ -181,8 +181,24 @@ class RfbClientFilter:
         elif kind == 6:
             if len(self._buffer) - self._pos < 8:
                 return
-            span = 8 + int.from_bytes(self._buffer[self._pos + 4 : self._pos + 8], "big")
+            # ExtendedClipboard uses a *negative signed* ClientCutText length.
+            # noVNC answers the server's capabilities even in view-only mode;
+            # reading -8 as uint32 used to disconnect every actual browser.
+            length = int.from_bytes(
+                self._buffer[self._pos + 4 : self._pos + 8], "big", signed=True
+            )
+            span = 8 + abs(length)
             label = RFB_CUT
+            if length < 0:
+                if abs(length) < 4:
+                    raise ValueError("desktop clipboard extension has no flags")
+                if len(self._buffer) - self._pos < 12:
+                    return
+                flags = int.from_bytes(self._buffer[self._pos + 8 : self._pos + 12], "big")
+                if flags & (1 << 24):  # Caps declares formats, it does not paste.
+                    if abs(length) != 4 + 4 * (flags & 0xFFFF).bit_count():
+                        raise ValueError("desktop clipboard capabilities length is invalid")
+                    label = RFB_NEGOTIATE
         elif kind == _RFB_QEMU_EXTENDED:
             if len(self._buffer) - self._pos < 2:
                 return

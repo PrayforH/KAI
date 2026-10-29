@@ -317,3 +317,38 @@ def test_a_truly_undefined_client_message_still_fails_closed():
     policy = RfbClientFilter(VERSION)
     with pytest.raises(ValueError):
         policy.feed(HANDSHAKE + b"\x51\x00\x00", input_allowed=True)
+
+
+def test_novnc_clipboard_caps_survive_fragmentation_in_observe_mode():
+    # Exact noVNC Caps response to x11vnc's ExtendedClipboard advertisement:
+    # signed length -8, all supported actions, one text format with size zero.
+    caps = bytes.fromhex("06000000fffffff81f00000100000000")
+    policy = viewer.RfbClientFilter(VERSION)
+    assert policy.feed(HANDSHAKE, input_allowed=False)
+    assert policy.feed(caps[:7], input_allowed=False) == []
+    assert policy.feed(caps[7:10], input_allowed=False) == []
+    assert policy.feed(caps[10:] + UPDATE_REQUEST, input_allowed=False) == [
+        (viewer.RFB_NEGOTIATE, caps),
+        (viewer.RFB_NEGOTIATE, UPDATE_REQUEST),
+    ]
+
+
+@pytest.mark.parametrize("allowed", [False, True])
+def test_extended_clipboard_content_still_requires_human_control(allowed: bool):
+    payload = struct.pack(">I", 1 << 28 | 1) + b"compressed clipboard"
+    message = struct.pack(">B3xi", 6, -len(payload)) + payload
+    policy = viewer.RfbClientFilter(VERSION)
+    policy.feed(HANDSHAKE, input_allowed=allowed)
+    expected = [(viewer.RFB_CUT, message)] if allowed else []
+    assert policy.feed(message + UPDATE_REQUEST, input_allowed=allowed) == [
+        *expected,
+        (viewer.RFB_NEGOTIATE, UPDATE_REQUEST),
+    ]
+
+
+@pytest.mark.parametrize("length", [65536, -65536, -(1 << 31), -3])
+def test_clipboard_length_limits_apply_to_signed_extensions(length: int):
+    policy = viewer.RfbClientFilter(VERSION)
+    policy.feed(HANDSHAKE, input_allowed=False)
+    with pytest.raises(ValueError):
+        policy.feed(struct.pack(">B3xiI", 6, length, 0), input_allowed=False)
