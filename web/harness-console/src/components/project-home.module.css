@@ -409,6 +409,8 @@
   --project-card-border: #2d2d2d;
   --project-card-border-hover: #404040;
   --project-resource-row-height: 32px;
+  --project-connector-size: 28px;
+  --project-connector-gap: 6px;
   display: grid;
   gap: 16px;
   grid-auto-rows: max-content;
@@ -453,7 +455,9 @@
 }
 .cardSection:is(:hover, :focus-within) .cardContent { scrollbar-color: var(--project-card-border-hover) transparent; }
 .cardSection[data-resource-section="instructions"] .cardContent { max-height: 110px; }
-.cardSection[data-resource-section="connectors"] .cardContent { max-height: 232px; }
+.cardSection[data-resource-section="connectors"] .cardContent {
+  max-height: calc(5 * var(--project-connector-size) + 4 * var(--project-connector-gap));
+}
 .cardContent:focus-visible {
   outline: 1px solid var(--codex-muted);
   outline-offset: -1px;
@@ -604,26 +608,27 @@
 .fileBadge[data-format="slides"] { color: #d08145; }
 .fileBadge[data-format="pdf"] { color: #cc6262; }
 .fileBadge[data-format="pdf"] > span { font-size: 5px; }
-.connectorIcons { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.connectorIcons li { display: flex; align-items: center; min-height: 40px; }
+.connectorIcons { display: flex; align-items: center; flex-wrap: wrap; gap: var(--project-connector-gap); }
+.connectorIcons li { display: flex; align-items: center; min-height: var(--project-connector-size); }
 .connectorIcon {
   display: inline-flex;
   justify-content: center;
   align-items: center;
-  width: 40px;
-  height: 40px;
-  padding: 9px;
-  border: 1px solid var(--project-card-border);
-  border-radius: 50%;
+  box-sizing: border-box;
+  width: var(--project-connector-size);
+  height: var(--project-connector-size);
+  padding: 6px;
+  border: 0;
+  border-radius: 6px;
   background: transparent;
+  box-shadow: none;
+  color: var(--codex-ink-soft);
   cursor: pointer;
-  transition: background 160ms ease, border-color 160ms ease;
+  transition: background 160ms ease, color 160ms ease;
 }
-.connectorIcon:hover { background: var(--codex-surface-hover); border-color: var(--project-card-border-hover); }
-.connectorIcon .resourceGlyph { width: 21px; height: 21px; flex-basis: 21px; }
-.connectorIcon [data-glyph="database"] { color: #6c9cce; }
-.connectorIcon [data-glyph="map"] { color: #61a27f; }
-.connectorIcon [data-glyph="globe"] { color: #6593ce; }
+.connectorIcon:hover { background: var(--codex-surface-hover); color: var(--codex-ink); }
+.connectorIcon .resourceGlyph { width: 16px; height: 16px; flex-basis: 16px; color: inherit; stroke-width: 1.7; }
+.connectorIcons .cardIconButton .controlIcon { width: 15px; height: 15px; flex-basis: 15px; }
 .hiddenFile { display: none; }
 .contextRail :is(button, a):focus-visible { outline-offset: -2px; }
 .uploadError { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--codex-danger, #c86464); }

@@ -1,13 +1,10 @@
 import type { ReactNode } from "react";
+import { ProjectConnectorIcon } from "./project-connector-icon";
 import styles from "./project-home.module.css";
 
 const paths = {
-  mcp: <><path d="m8 3 4 4m3-5 4 4M7 8l9 9m-5-13 9 9M5 12l7 7M3 21l4-4M7 8l-3 3 9 9 3-3M11 4l-4 4m13 5-4 4" /></>,
-  database: <><ellipse cx="12" cy="5" rx="8" ry="3" /><path d="M4 5v7c0 4 16 4 16 0V5M4 12v7c0 4 16 4 16 0v-7" /></>,
-  map: <><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Zm6-3v15m6-12v15" /></>,
   globe: <><circle cx="12" cy="12" r="9" /><ellipse cx="12" cy="12" rx="4" ry="9" /><path d="M3 12h18" /></>,
   branch: <><circle cx="6" cy="5" r="2.5" /><circle cx="18" cy="5" r="2.5" /><circle cx="6" cy="19" r="2.5" /><path d="M6 7.5v9m12-9V10a4 4 0 0 1-4 4H6" /></>,
-  mail: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 6 9 7 9-7" /></>,
   book: <><path d="M3 4h5a4 4 0 0 1 4 4v13a4 4 0 0 0-4-3H3Zm18 0h-5a4 4 0 0 0-4 4v13a4 4 0 0 1 4-3h5Z" /></>,
   compass: <><circle cx="12" cy="12" r="9" /><path d="m16 8-3 5-5 3 3-5Z" /></>,
   video: <><rect x="3" y="5" width="13" height="14" rx="2" /><path d="m16 10 5-4v12l-5-4" /></>,
@@ -19,17 +16,6 @@ const paths = {
 } satisfies Record<string, ReactNode>;
 
 type Glyph = keyof typeof paths;
-
-/** Use the service identity when available; unknown MCPs retain the MCP mark. */
-function connectorGlyph(identity: string): Glyph {
-  if (/database|mysql|postgres|sqlite|数据库|达梦/i.test(identity)) return "database";
-  if (/amap|地图|高德|baidu.*map/i.test(identity)) return "map";
-  if (/github|gitlab|gitee/i.test(identity)) return "branch";
-  if (/mail|outlook|邮件|邮箱/i.test(identity)) return "mail";
-  if (/knowledge|weknora|知识/i.test(identity)) return "book";
-  if (/search|fetch|crawl|web|搜索|网页/i.test(identity)) return "globe";
-  return "mcp";
-}
 
 function skillGlyph(identity: string): Glyph {
   if (/视频|video/i.test(identity)) return "video";
@@ -46,6 +32,7 @@ export function ProjectResourceIcon({ kind, name = "" }: {
   kind: "connector" | "skill" | "file" | "link" | "knowledge";
   name?: string;
 }) {
+  if (kind === "connector") return <ProjectConnectorIcon name={name} />;
   if (kind === "file") {
     const ext = name.split(".").at(-1)?.toLowerCase();
     const format = /^(docx?|odt)$/.test(ext ?? "") ? "word"
@@ -58,8 +45,7 @@ export function ProjectResourceIcon({ kind, name = "" }: {
       {label && <span>{label}</span>}
     </span>;
   }
-  const glyph = kind === "connector" ? connectorGlyph(name)
-    : kind === "skill" ? skillGlyph(name) : kind === "knowledge" ? "book" : "globe";
+  const glyph = kind === "skill" ? skillGlyph(name) : kind === "knowledge" ? "book" : "globe";
   return <svg className={styles.resourceGlyph} data-glyph={glyph} viewBox="0 0 24 24" aria-hidden="true">
     {paths[glyph]}
   </svg>;
