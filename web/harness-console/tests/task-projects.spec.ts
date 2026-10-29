@@ -16,10 +16,6 @@ const workbench = readFileSync(
   join(process.cwd(), "src/components/workbench-rail.tsx"),
   "utf8",
 );
-const projectPanel = readFileSync(
-  join(process.cwd(), "src/components/project-resources-panel.tsx"),
-  "utf8",
-);
 const projectRoute = readFileSync(
   join(process.cwd(), "src/app/studio/projects/[projectId]/page.tsx"),
   "utf8",
@@ -61,15 +57,11 @@ describe("project-grouped task list", () => {
     expect(workbench).not.toContain("项目资源视图");
   });
 
-  it("shows project knowledge, files and skills beside the task conversation", () => {
-    expect(projectPanel).toContain('aria-label="项目资源"');
-    expect(projectPanel).toContain("知识库");
-    expect(projectPanel).toContain("文件和资源");
-    expect(projectPanel).toContain("技能");
-    expect(projectPanel).not.toContain("记忆");
-    expect(projectPanel).toContain("<ProjectKnowledgeDialog");
-    expect(projectPanel).toContain("<ProjectFilesDialog");
-    expect(projectPanel).toContain("<ProjectSkillsDialog");
+  it("keeps project configuration on the project page, outside the task drawer", () => {
+    const home = readFileSync(join(process.cwd(), "src/components/project-home.tsx"), "utf8");
+    expect(home).toContain("<ProjectContextRail space={space} />");
+    expect(workbench).not.toContain("ProjectResourcesPanel");
+    expect(workbench).not.toContain("项目资源视图");
   });
 
   it("opens a dedicated dialog for each project resource card", () => {
