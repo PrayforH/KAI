@@ -16,7 +16,7 @@
 
 ## 部署过程
 
-- 镜像（全部以当前运行中镜像为基座的增量叠加，revision 标签 `20261030-managed-b3c46010`）：
+- 镜像（全部以当前运行中镜像为基座的增量叠加；r1=b3c46010、r2=项目托管核心+迁移0058、r3=凭据库+迁移0059）：
   api/worker/computer-control=`kai/assistant-api`、web=`kai/assistant-web`、feishu=`kai/feishu-receiver`、
   weixin=`kai/weixin-receiver`。Viewer 保持 `20261029-v12-clipboard`，未重建 VM/根盘/浏览器。
 - 迁移：新 api 镜像 `alembic upgrade head`，0054→0055→0056→0057，库 `harness_174_20260908`
@@ -78,3 +78,8 @@
   状态工具（observer 门控，委派权仍关闭）。r2 镜像三服务 + 双接收器滚动，容器内 grep
   `_ensure_acyclic`=2，全部 healthy，`/assistant` 200。
 - 数据库最终迁移头：**0058**。备份链：`db-backup-before-managed-b3c46010.sql.gz`（0054 时点）。
+
+- 凭据库批次（r3）：迁移 **0059** `assistant_specialist_credentials`；`POST specialists/{id}/credentials`
+  经 McpCredentialCipher(AES-GCM) 密文入库，specialist.config 只写 credential_ref；无读取接口。
+  r3 三服务+双接收器滚动，全部 healthy，容器内 grep `save_specialist_credential`=1，`/assistant` 200。
+- **数据库最终迁移头：0059**。

@@ -88,7 +88,7 @@ ruff 全过；pyright 剖面与基线一致（2449/1160/234）。
 | 3.3 | 转交回执 assistant_handovers（message_id 幂等；sent→received→applied/pending_input；重放不重建） | 已实现+已测试 |
 | 3.4 | delegate_to_specialist：创建/复用 + 职责登记 + 缺项不启动；assistant_specialist_status | 已实现+已测试 |
 | 3.5 | API：specialists CRUD/config/status + handovers | 已实现+已测试 |
-| 3.6 | 凭据专用加密输入接口与 credential_ref 隔离；子助理领域记忆 | 未实现（凭据仅设计约定"引用不入模型"，独立输入接口待建） |
+| 3.6 | 凭据专用加密输入接口：`POST specialists/{id}/credentials` → McpCredentialCipher(AES-GCM, 租户/用户/引用 AAD) 密文入 `assistant_specialist_credentials`（迁移 0059），config 只写 `credential_ref:<名称>`，无读取接口；子助理领域记忆 | 凭据接口 已实现+已测试+已部署(79 r3)；领域记忆 未实现 |
 | 3.7 | 子助理管理面板：/studio/assistant 新增「专职子助理」标签页（列表/配置状态/配置表单/启用暂停/转交记录/打开职责会话）；收件卡带「打开原任务」链接 | 已实现+已部署(79)+已测试(单测/构建) |
 
 ## 阶段 4：项目托管、持续运营、Computer 与预算（8.2/8.6/8.7 P2/P3）
