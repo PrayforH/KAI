@@ -1,6 +1,6 @@
 # KAI 主助理与子助理分阶段实现部署 79（2026-10-30）
 
-部署源码提交 `b3c46010`（分支 `auto/kai-assistant-managed-20261030`，基于 2488cf3c），工作树
+部署源码提交 `6a1f16a7`（分支 `auto/kai-assistant-managed-20261030`，基于 2488cf3c；镜像标签 `20261030-managed-b3c46010-r2`，web 为 `20261030-managed-b3c46010`），工作树
 `/Users/xiaokai/.codex/worktrees/kai-assistant-managed/agent studio`。部署目录
 `/data/kai-assistant-managed-20261030-b3c46010`（含 compose 备份与 DB 备份）。
 
@@ -72,3 +72,9 @@
   （`AssistantProgressStrip`：按 8.5 只展示 需要你处理/正在推进/已交付 三类卡片，
   15 秒轮询收件箱、打开原任务、可隐藏），web 镜像三次构建并滚动，运行容器 chunk
   含 `assistant-progress-strip`/`后台任务进展`，`/assistant` 200。
+
+- 阶段4.3 项目托管核心（r2 滚动）：迁移 0058（managed task 依赖边）、绑定服务端无环校验
+  （成环/超深拒绝）、`assistant_manage_work` 多线程纳管（observe 收集）、协调执行线程只读
+  状态工具（observer 门控，委派权仍关闭）。r2 镜像三服务 + 双接收器滚动，容器内 grep
+  `_ensure_acyclic`=2，全部 healthy，`/assistant` 200。
+- 数据库最终迁移头：**0058**。备份链：`db-backup-before-managed-b3c46010.sql.gz`（0054 时点）。
