@@ -179,3 +179,19 @@ class SpecialistHandoverRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class SpecialistCredentialRow(Base):
+    """加密凭据存储：值不回读给模型，接口只核对存在性。"""
+
+    __tablename__ = "assistant_specialist_credentials"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "user_id", "reference", name="uq_assistant_credential_ref"),
+    )
+
+    credential_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(128))
+    user_id: Mapped[str] = mapped_column(String(128))
+    reference: Mapped[str] = mapped_column(String(128))
+    ciphertext: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

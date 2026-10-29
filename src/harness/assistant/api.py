@@ -36,6 +36,12 @@ class SpecialistStatusRequest(StudioModel):
     expected_revision: int = Field(alias="expectedRevision", ge=1)
 
 
+class SpecialistCredentialRequest(StudioModel):
+    name: str = Field(min_length=1, max_length=64)
+    secret: str = Field(min_length=1, max_length=8_000)
+    expected_revision: int = Field(alias="expectedRevision", ge=1)
+
+
 def service(request: Request) -> AssistantService:
     value = getattr(request.app.state.container, "assistant", None)
     if not isinstance(value, AssistantService):
@@ -214,6 +220,24 @@ async def set_specialist_status(
         identity.user_id,
         specialist_id,
         status=body.status,
+        expected_revision=body.expected_revision,
+    )
+
+
+@router.post("/specialists/{specialist_id}/credentials", status_code=200)
+async def save_specialist_credential(
+    specialist_id: str,
+    body: SpecialistCredentialRequest,
+    identity: Writer,
+    assistant: Service,
+) -> Specialist:
+    """专用凭据入口：密文入库，模型与日志只允许出现 credential_ref。"""
+    return await assistant.save_specialist_credential(
+        identity.tenant_id,
+        identity.user_id,
+        specialist_id,
+        name=body.name,
+        secret=body.secret,
         expected_revision=body.expected_revision,
     )
 

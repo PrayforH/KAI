@@ -36,6 +36,7 @@ from harness.assistant.storage import (
     ObjectiveEventRow,
     ObjectiveExecutionRow,
     ObjectiveRow,
+    SpecialistCredentialRow,
     SpecialistHandoverRow,
     SpecialistRow,
 )
@@ -885,3 +886,25 @@ class PostgresAssistantRepository:
                 .limit(50)
             )
             return [SpecialistHandover.model_validate(row.payload) for row in rows]
+
+    async def save_credential_blob(
+        self,
+        tenant_id: str,
+        user_id: str,
+        reference: str,
+        ciphertext: str,
+        *,
+        now: datetime,
+    ) -> None:
+        """Encrypted value storage; only the reference is ever handed back."""
+        async with self._context(write=True) as session:
+            session.add(
+                SpecialistCredentialRow(
+                    credential_id=f"credential_{uuid4().hex}",
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    reference=reference,
+                    ciphertext=ciphertext,
+                    created_at=now,
+                )
+            )

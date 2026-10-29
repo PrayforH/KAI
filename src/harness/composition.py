@@ -1880,6 +1880,7 @@ def build_production_container(
         runs=run_service,
         events=raw_event_repository,
     )
+    assistant.set_cipher(mcp_credential_service.cipher)
     feishu_settings = FeishuSettings()
 
     async def channel_vision_route(tenant_id: str, configured_route: str = "") -> str:

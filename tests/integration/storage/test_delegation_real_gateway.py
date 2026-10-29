@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from pydantic import SecretStr
 
 from harness.assistant.delegation import AssistantDelegationGateway, assistant_delegation_overlay
 from harness.assistant.lifecycle import next_check
@@ -24,6 +25,7 @@ from harness.assistant.models import (
 )
 from harness.assistant.repository import PostgresAssistantRepository
 from harness.assistant.service import AssistantService
+from harness.core.errors import ConflictError
 from harness.core.models import Run, RunStatus, Session
 from tests.integration.storage.conftest import DatabaseFixture
 
@@ -696,3 +698,61 @@ async def test_project_takeover_collects_threads_under_one_objective(
     threads = sorted(item.thread_id for item in bindings)
     assert roles == ["execute", "observe", "observe"]
     assert threads == ["thread-extra-1", "thread-extra-2", "thread-main"]
+
+
+@pytest.mark.asyncio
+async def test_specialist_credential_stores_ciphertext_and_reference_only(
+    database: DatabaseFixture,
+) -> None:
+    from sqlalchemy import select
+
+    from harness.assistant.storage import SpecialistCredentialRow
+    from harness.studio.mcp_credential_store import McpCredentialCipher
+
+    service = make_service(database)
+    service._agui = cast(Any, _StubAgui())  # pyright: ignore[reportPrivateUsage]
+    service.set_cipher(McpCredentialCipher(SecretStr("unit-test-secret")))  # pyright: ignore[reportPrivateUsage]
+    specialist, _ = await service.create_specialist(
+        "tenant-a",
+        "user-a",
+        name="cost-monitor",
+        description="费用监控",
+        agent_name="audit-agent",
+        agent_version="1.0.0",
+    )
+    secret = "sk-live-DO-NOT-LOG-0123456789"
+    updated = await service.save_specialist_credential(
+        "tenant-a",
+        "user-a",
+        specialist.specialist_id,
+        name="vendor_api",
+        secret=secret,
+        expected_revision=specialist.revision,
+    )
+    # config 只出现引用
+    ref = updated.config.get("credential_ref:vendor_api")
+    assert isinstance(ref, str) and ref.startswith("specialist_credential_")
+    assert secret not in str(updated.config)
+    # 库里是密文：明文既不在 ciphertext 也不在 objectives payload
+    async with database[1]() as session:
+        row = (
+            await session.scalars(
+                select(SpecialistCredentialRow).where(
+                    SpecialistCredentialRow.reference == ref
+                )
+            )
+        ).first()
+        assert row is not None and secret not in row.ciphertext
+    objectives_payload = await service.repository.list("tenant-a", "user-a")
+    assert all(secret not in str(item.model_dump()) for item in objectives_payload)
+    # 无 cipher 时拒绝；密文不可回读给模型（没有读取接口）
+    bare = make_service(database)
+    with pytest.raises(ConflictError, match="凭据存储未配置"):
+        await bare.save_specialist_credential(
+            "tenant-a",
+            "user-a",
+            specialist.specialist_id,
+            name="x",
+            secret="y",
+            expected_revision=updated.revision,
+        )

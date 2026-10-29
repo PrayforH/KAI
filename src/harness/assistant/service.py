@@ -6,9 +6,11 @@ import asyncio
 import logging
 import re
 from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 from ag_ui.core import RunAgentInput, UserMessage
+from pydantic import SecretStr
 
 from harness.agui.response import final_response_text
 from harness.agui.service import AguiRunService
@@ -168,6 +170,49 @@ class AssistantService:
                 role=ManagedTaskRole.OBSERVE,
                 createdAt=datetime.now(UTC),
             )
+        )
+
+    def set_cipher(self, cipher: Any) -> None:
+        """凭据加密器（8.10）：值只进加密存储，模型与日志只允许出现引用。"""
+        self._cipher = cipher
+
+    async def save_specialist_credential(
+        self,
+        tenant_id: str,
+        user_id: str,
+        specialist_id: str,
+        *,
+        name: str,
+        secret: str,
+        expected_revision: int,
+    ) -> Specialist:
+        """专用凭据输入接口：密文入库，specialist.config 只写 credential_ref。"""
+        if not 1 <= len(name) <= 64:
+            raise ConflictError("凭据名称需在 1–64 字之间")
+        if not secret or len(secret) > 8_000:
+            raise ConflictError("凭据内容需在 1–8000 字之间")
+        await self.repository.get_specialist(tenant_id, user_id, specialist_id)
+        cipher = getattr(self, "_cipher", None)
+        if cipher is None:
+            raise ConflictError("凭据存储未配置")
+        reference = f"specialist_credential_{uuid4().hex}"
+        ciphertext = cipher.encrypt(
+            tenant_id, user_id, reference, {"secret": SecretStr(secret)}
+        )
+        await self.repository.save_credential_blob(
+            tenant_id,
+            user_id,
+            reference,
+            ciphertext,
+            now=datetime.now(UTC),
+        )
+        return await self.repository.update_specialist(
+            tenant_id,
+            user_id,
+            specialist_id,
+            expected_revision=expected_revision,
+            config={f"credential_ref:{name}": reference},
+            now=datetime.now(UTC),
         )
 
     async def resolve_targets(self, tenant_id: str, user_id: str, query: str, *, limit: int = 5):
