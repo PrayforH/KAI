@@ -118,5 +118,15 @@ class NotificationPreference(StudioModel):
 
 
 class MessageContent(StudioModel):
-    msg_type: Literal["text", "interactive"]
+    # "file" carries a file_key already uploaded through the media transport;
+    # the delivery layer keeps the durable UUID idempotency for every kind.
+    msg_type: Literal["text", "interactive", "file"]
     content: dict[str, Any]
+
+
+def file_message(file_key: str) -> MessageContent:
+    """One native Feishu file message, bound to an uploaded artifact."""
+
+    if not file_key.strip():
+        raise ValueError("a file message needs an uploaded file key")
+    return MessageContent(msg_type="file", content={"file_key": file_key})

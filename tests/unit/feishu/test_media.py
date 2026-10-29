@@ -13,8 +13,15 @@ from harness.feishu.media import (
     FeishuMedia,
     FeishuResourceClient,
     MediaRejectedError,
+    file_type_for,
 )
-from harness.feishu.models import Actor, FeishuSettings, Incoming, MessageResource
+from harness.feishu.models import (
+    Actor,
+    FeishuSettings,
+    Incoming,
+    MessageResource,
+    file_message,
+)
 from tests.unit.test_input_artifacts import build_service
 
 
@@ -193,3 +200,99 @@ async def test_disabled_or_long_voice_is_rejected_before_resource_download(setti
     with pytest.raises(MediaRejectedError):
         await media.prepare("tenant", "user", event("audio", duration_ms=duration))
     downloader.download.assert_not_awaited()
+
+
+def upload_client(handler, maximum=1024):
+    async def wrapped(request):
+        if request.url.path.endswith("/tenant_access_token/internal"):
+            return httpx.Response(
+                200, json={"code": 0, "tenant_access_token": "test-token", "expire": 7200}
+            )
+        assert request.headers["Authorization"] == "Bearer test-token"
+        assert request.url.host == "open.feishu.cn"
+        return handler(request)
+
+    return FeishuResourceClient(
+        FeishuSettings(max_resource_bytes=maximum), transport=httpx.MockTransport(wrapped)
+    )
+
+
+@pytest.mark.parametrize(
+    ("media_type", "name", "expected"),
+    [
+        ("application/pdf", "report.pdf", "pdf"),
+        ("application/octet-stream", "表格.xlsx", "xls"),
+        ("application/octet-stream", "notes.docx", "doc"),
+        ("application/octet-stream", "no-extension", "stream"),
+        ("text/html", "page.html", "stream"),
+    ],
+)
+def test_file_type_follows_the_declared_type_then_the_extension(
+    media_type: str, name: str, expected: str
+):
+    assert file_type_for(media_type, name) == expected
+
+
+@pytest.mark.asyncio
+async def test_file_upload_returns_the_platform_key_and_sends_its_fields():
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        assert request.url.path == "/open-apis/im/v1/files"
+        body = request.read()
+        seen["has_type"] = b'name="file_type"' in body
+        seen["has_name"] = b'name="file_name"' in body
+        seen["has_payload"] = b"payload-bytes" in body
+        return httpx.Response(200, json={"code": 0, "data": {"file_key": "file_v2_abc"}})
+
+    key = await upload_client(handler).upload_file("报告.pdf", "application/pdf", b"payload-bytes")
+    assert key == "file_v2_abc"
+    assert seen == {
+        "path": "/open-apis/im/v1/files",
+        "has_type": True,
+        "has_name": True,
+        "has_payload": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_file_upload_classifies_definitive_rejections_and_outages():
+    # A refusal is not retried; an outage is.
+    for status, expected in ((403, MediaRejectedError), (500, ConnectionError)):
+        client_ = upload_client(lambda request, status=status: httpx.Response(status, json={}))
+        with pytest.raises(expected):
+            await client_.upload_file("a.pdf", "application/pdf", b"x")
+
+
+@pytest.mark.asyncio
+async def test_file_upload_refuses_empty_and_oversized_payloads_before_the_network():
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(200, json={"code": 0, "data": {"file_key": "k"}})
+
+    client_ = upload_client(handler, maximum=1024)
+    with pytest.raises(MediaRejectedError):
+        await client_.upload_file("empty.pdf", "application/pdf", b"")
+    with pytest.raises(MediaRejectedError):
+        await client_.upload_file("big.pdf", "application/pdf", b"x" * 1025)
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_file_upload_rejects_a_response_without_a_key():
+    client_ = upload_client(
+        lambda request: httpx.Response(200, json={"code": 0, "data": {}})
+    )
+    with pytest.raises(MediaRejectedError):
+        await client_.upload_file("a.pdf", "application/pdf", b"x")
+
+
+def test_file_message_binds_an_uploaded_key():
+    message = file_message("file_v2_abc")
+    assert message.msg_type == "file"
+    assert message.content == {"file_key": "file_v2_abc"}
+    with pytest.raises(ValueError):
+        file_message("  ")

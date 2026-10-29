@@ -128,6 +128,95 @@ class FeishuResourceClient:
         except (httpx.HTTPError, TimeoutError, ValueError) as error:
             raise ConnectionError("Feishu resource download unavailable") from error
 
+    async def upload_file(self, name: str, media_type: str, content: bytes) -> str:
+        """Upload one outgoing file and return Feishu's ``file_key``.
+
+        The size bound is the same resource bound used for downloads, so an
+        artifact that could never be received cannot be promised outbound
+        either. Definitive rejections stay distinguishable from outages: the
+        delivery layer retries the latter inside its durable UUID window and
+        never retries the former.
+        """
+
+        maximum = self.settings.max_resource_bytes
+        if not content:
+            raise MediaRejectedError("待发送的文件为空。")
+        if len(content) > maximum:
+            raise MediaRejectedError(f"待发送的文件超过 {maximum // (1024 * 1024)} MB 上限。")
+        try:
+            async with (
+                asyncio.timeout(45),
+                httpx.AsyncClient(
+                    transport=self.transport,
+                    trust_env=False,
+                    timeout=15,
+                    follow_redirects=False,
+                ) as client,
+            ):
+                token = await self._access_token(client)
+                response = await client.post(
+                    "https://open.feishu.cn/open-apis/im/v1/files",
+                    headers={"Authorization": "Bearer " + token},
+                    data={
+                        "file_type": file_type_for(media_type, name),
+                        "file_name": name,
+                    },
+                    files={"file": (name, content, media_type or "application/octet-stream")},
+                )
+                if response.status_code == 401:
+                    self._token = ""
+                    raise ConnectionError("Feishu file authentication expired")
+                if response.status_code in {400, 403, 413}:
+                    raise MediaRejectedError("飞书拒绝了这次文件发送，请检查文件类型或大小。")
+                response.raise_for_status()
+                payload = response.json()
+                data = payload.get("data") if isinstance(payload, dict) else None
+                key = data.get("file_key") if isinstance(data, dict) else None
+                if not isinstance(payload, dict) or payload.get("code") != 0:
+                    raise MediaRejectedError("飞书未返回可用的文件标识。")
+                if not isinstance(key, str) or not key:
+                    raise MediaRejectedError("飞书未返回可用的文件标识。")
+                return key
+        except (httpx.HTTPError, TimeoutError, ValueError) as error:
+            raise ConnectionError("Feishu file upload unavailable") from error
+
+
+FILE_TYPES: dict[str, str] = {
+    "application/pdf": "pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "doc",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xls",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "ppt",
+    "application/msword": "doc",
+    "application/vnd.ms-excel": "xls",
+    "application/vnd.ms-powerpoint": "ppt",
+    "video/mp4": "mp4",
+    "audio/opus": "opus",
+}
+
+
+def file_type_for(media_type: str, name: str) -> str:
+    """Feishu's own file_type enum; unknown formats ride the stream bucket.
+
+    A document's extension is a better signal than a generic media type,
+    because uploads often arrive as octet-stream.
+    """
+
+    declared = FILE_TYPES.get(media_type.split(";", 1)[0].strip().lower())
+    if declared:
+        return declared
+    suffix = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    return {
+        "pdf": "pdf",
+        "doc": "doc",
+        "docx": "doc",
+        "xls": "xls",
+        "xlsx": "xls",
+        "ppt": "ppt",
+        "pptx": "ppt",
+        "mp4": "mp4",
+        "opus": "opus",
+    }.get(suffix, "stream")
+
 
 async def decode_voice(content: bytes, maximum_seconds: int) -> bytes:
     """Decode local bytes only; playlists cannot open remote/network resources."""
