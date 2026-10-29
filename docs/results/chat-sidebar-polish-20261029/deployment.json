@@ -1,0 +1,18 @@
+{
+  "environment": "172.20.109.174",
+  "codeCommit": "ce188ef6",
+  "webImage": "kai/projects-web:chat-sidebar-20261029-r1",
+  "webDigest": "sha256:e5d839b74fa03b81d4ed37815209fe08d26275cbb381280352562ef63847d7c2",
+  "apiUnchanged": "kai/projects-api:project-reuse-20261029-r2",
+  "scope": [
+    "Remove answer and user-message version pagination, including shared conversation defaults",
+    "Match fork footer action with copy/feedback: 30px buttons, 16px glyph, 2px gaps",
+    "Reset task preview limits on project/section/sidebar collapse; show-more follows the first five rows"
+  ],
+  "tests": {
+    "relatedFrontend": 89,
+    "productionBuild": "Next.js 16.4.1 native build passed",
+    "browser": "Synthetic API data with actual production UI; no server records changed"
+  },
+  "preserved": "Existing memory and project-reuse code retained by three-way merge into deployed Web baseline; no API or database changes"
+}

@@ -6,7 +6,8 @@ from datetime import datetime
 
 from pydantic import Field
 
-from harness.studio.models import StudioModel
+from harness.core.manifest import SkillSnapshot
+from harness.studio.models import DraftSkill, StudioModel
 
 MAX_PROJECT_NAME = 120
 MAX_PROJECT_INSTRUCTIONS = 20_000
@@ -19,6 +20,35 @@ MAX_PROJECT_KNOWLEDGE_BASES = 10
 MAX_PROJECT_LINKS = 20
 MAX_PROJECT_LINK_URL = 2_048
 MAX_PROJECT_LINK_TITLE = 200
+
+
+class ProjectSkill(StudioModel):
+    skill_id: str = Field(alias="skillId")
+    display_name: str = Field(alias="displayName", min_length=1, max_length=100)
+    skill: DraftSkill
+    revision: int = Field(default=1, ge=1)
+    enabled: bool = False
+    source_thread_id: str = Field(default="", alias="sourceThreadId")
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
+
+
+class SaveProjectSkillRequest(StudioModel):
+    display_name: str = Field(alias="displayName", min_length=1, max_length=100)
+    skill: DraftSkill
+    source_thread_id: str = Field(default="", alias="sourceThreadId", max_length=128)
+
+
+class UpdateProjectSkillRequest(StudioModel):
+    revision: int = Field(ge=1)
+    enabled: bool
+
+
+class ExtractProjectSkillRequest(StudioModel):
+    thread_id: str = Field(alias="threadId", min_length=1, max_length=128)
+    artifact_id: str | None = Field(default=None, alias="artifactId", max_length=128)
+    model_route: str | None = Field(default=None, alias="modelRoute", max_length=100)
+    goal: str = Field(default="", max_length=4000)
 
 
 class Project(StudioModel):
@@ -34,6 +64,9 @@ class Project(StudioModel):
     # ``packageId@revision`` so a later catalog revision cannot change an
     # already-created Run. Files are staged per Run, not copied into the Agent.
     skill_references: tuple[str, ...] = Field(default=(), alias="skillReferences")
+    local_skills: tuple[ProjectSkill, ...] = Field(
+        default=(), alias="localSkills", max_length=MAX_PROJECT_SKILLS
+    )
     # Knowledge bases pinned to the project. Every Run inherits them; a
     # per-task selection in the composer is added on top rather than replacing
     # the project's own binding.
@@ -132,6 +165,9 @@ class ProjectRunContext(StudioModel):
     """Snapshot of project resources captured when one Run is created."""
 
     project_id: str = Field(alias="projectId")
+    local_skill_snapshots: tuple[SkillSnapshot, ...] = Field(
+        default=(), alias="localSkillSnapshots"
+    )
     text: str = ""
     resource_manifest: dict[str, object] = Field(default_factory=dict, alias="resourceManifest")
     document_ids: tuple[str, ...] = Field(default=(), alias="documentIds")
@@ -167,6 +203,7 @@ class ProjectResult(StudioModel):
 
 
 class SaveProjectResultRequest(StudioModel):
+    add_to_resources: bool = Field(default=False, alias="addToResources")
     artifact_id: str = Field(alias="artifactId", min_length=1, max_length=128)
 
 

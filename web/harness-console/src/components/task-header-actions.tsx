@@ -1,4 +1,5 @@
 "use client";
+import { ProjectSkillExtractDialog } from "./project-skill-extract-dialog";
 import { useAuth } from "./auth-provider";
 import { useRouter } from "next/navigation";
 import { CodexTaskIcon } from "./codex-task-icon";
@@ -277,6 +278,7 @@ export function TaskHeaderActions({
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [skillExtractOpen, setSkillExtractOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -429,6 +431,7 @@ export function TaskHeaderActions({
               )}
             </NestedMenu>
           )}
+          {task.project_id && <button type="button" role="menuitem" disabled={busy} onClick={() => { close(); setSkillExtractOpen(true); }}><ProjectIcon /><span>提炼为项目技能</span></button>}
           {variant === "row" && <div role="separator" />}
           <button
             type="button"
@@ -496,6 +499,7 @@ export function TaskHeaderActions({
       {open && (
         variant === "row" ? <ActionMenuPopover className="task-row-menu" anchor={triggerRef} label={`任务操作 ${task.title}`} onClose={close}>{menu}</ActionMenuPopover> : <div className="task-header-menu" role="menu" aria-label="更多任务操作">{menu}</div>
       )}
+      {skillExtractOpen && task.project_id && <ProjectSkillExtractDialog projectId={task.project_id} threadId={task.thread_id} sourceTitle={task.title} onClose={() => setSkillExtractOpen(false)} />}
       <RenameTaskDialog
         open={renameOpen}
         initialTitle={task.title}

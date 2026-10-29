@@ -5,14 +5,25 @@ import { createPortal } from "react-dom";
 import { projectClient, type ApiProject } from "../lib/studio-client";
 import styles from "./project-create-dialog.module.css";
 
+type ProjectNameDialogProps = { onClose: () => void; onSaved: (project: ApiProject) => void };
+
 export function ProjectCreateDialog({ onClose, onCreated }: {
-  onClose: () => void;
-  onCreated: (project: ApiProject) => void;
+  onClose: () => void; onCreated: (project: ApiProject) => void;
 }) {
+  return <ProjectNameDialog onClose={onClose} onSaved={onCreated} />;
+}
+
+export function ProjectEditDialog({ project, ...props }: ProjectNameDialogProps & { project: ApiProject }) {
+  return <ProjectNameDialog key={project.projectId} project={project} {...props} />;
+}
+
+function ProjectNameDialog({ project, onClose, onSaved }: ProjectNameDialogProps & { project?: ApiProject }) {
+  const editing = Boolean(project);
+  const title = editing ? "编辑项目" : "创建项目";
   const dialogRef = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const pendingRef = useRef(false);
-  const [name, setName] = useState("");
+  const [name, setName] = useState(project?.name ?? "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const titleId = useId();
@@ -22,6 +33,7 @@ export function ProjectCreateDialog({ onClose, onCreated }: {
     const dialog = dialogRef.current!;
     dialog.showModal();
     inputRef.current?.focus();
+    if (editing) inputRef.current?.select();
     return () => dialog.close();
   }, []);
 
@@ -37,11 +49,13 @@ export function ProjectCreateDialog({ onClose, onCreated }: {
     setPending(true);
     setError("");
     try {
-      const project = await projectClient.create(trimmedName);
-      onCreated(project);
+      const saved = project
+        ? await projectClient.update(project.projectId, { name: trimmedName })
+        : await projectClient.create(trimmedName);
+      onSaved(saved);
       onClose();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "创建项目失败，请重试");
+      setError(cause instanceof Error ? cause.message : `${editing ? "保存" : "创建"}项目失败，请重试`);
     } finally {
       pendingRef.current = false;
       setPending(false);
@@ -63,8 +77,8 @@ export function ProjectCreateDialog({ onClose, onCreated }: {
     >
       <form onSubmit={(event) => void submit(event)} aria-busy={pending}>
         <div className={styles.header}>
-          <h2 id={titleId}>创建项目</h2>
-          <button className={styles.close} type="button" aria-label="关闭创建项目" disabled={pending} onClick={close}>
+          <h2 id={titleId}>{title}</h2>
+          <button className={styles.close} type="button" aria-label={`关闭${title}`} disabled={pending} onClick={close}>
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15" /></svg>
           </button>
         </div>
@@ -80,8 +94,8 @@ export function ProjectCreateDialog({ onClose, onCreated }: {
         {error && <p id={errorId} className={styles.error} role="alert">{error}</p>}
         <div className={styles.footer}>
           <button type="button" className={styles.cancel} disabled={pending} onClick={close}>取消</button>
-          <button type="submit" className={styles.submit} disabled={!name.trim() || pending}>
-            {pending ? "创建中…" : "创建项目"}
+          <button type="submit" className={styles.submit} disabled={!name.trim() || pending || (editing && name.trim() === project?.name)}>
+            {pending ? (editing ? "保存中…" : "创建中…") : (editing ? "保存" : "创建项目")}
           </button>
         </div>
       </form>

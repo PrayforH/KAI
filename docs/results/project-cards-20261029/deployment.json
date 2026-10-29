@@ -1,0 +1,31 @@
+{
+  "source_commit": "4d14a44308d3c0c498e50eaa8bc90382a7735e15",
+  "deployment_baseline": "memory-bank-20261027-r1",
+  "files": [
+    "src/components/project-context-rail.tsx",
+    "src/components/project-home.module.css"
+  ],
+  "scope": "Web only. Preserve memory release backend, database, workers, and frontend features. Hide results card, retain saved data and underlying routes.",
+  "deployment": {
+    "url": "https://172.20.109.174",
+    "image": "kai/projects-web:project-cards-20261029-r1",
+    "image_id": "sha256:661f0beb6970fec523955aea1b857708cc4e4c6cfd94f04bd4296c7ae979a738",
+    "next_version": "16.4.1",
+    "web_ports": [
+      3301,
+      3501
+    ],
+    "web_health": "healthy",
+    "web_restarts": 0,
+    "http_smoke": [
+      3301,
+      3501,
+      443
+    ],
+    "upstream_api_health": 200,
+    "backend_images_unchanged": true,
+    "baseline": "memory-bank-20261027-r1",
+    "release_directory": "/data/agent-studio/releases/project-cards-20261029-r1",
+    "build": "Native Linux build from memory release Web source plus two UI files and the develop dependency lock. Signed Alpine libcrypto3/libssl3 3.5.9-r0 installed offline with trusted signatures and repositories disabled."
+  }
+}

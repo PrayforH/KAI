@@ -199,7 +199,7 @@ export function ProjectResults({ space }: { space: ProjectSpaceState }) {
                     projectId={project.projectId}
                     artifactId={artifact.artifact_id}
                     initiallySaved={savedResults.some(
-                      (item) => item.artifactId === artifact.artifact_id,
+                      (item) => item.artifactId === artifact.artifact_id && Boolean(space.resources?.documents.some(document => document.inputArtifactId === item.inputArtifactId)),
                     )}
                     onSaved={(result) =>
                       setSavedResults((current) =>

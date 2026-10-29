@@ -29,7 +29,10 @@ from harness.storage.models import (
 
 
 def _payload(project: Project) -> dict[str, object]:
-    return project.model_dump(mode="json", by_alias=True)
+    payload = project.model_dump(mode="json", by_alias=True)
+    if not project.local_skills:
+        payload.pop("localSkills", None)
+    return payload
 
 
 def _project(row: ProjectRow) -> Project:
@@ -59,9 +62,7 @@ class PostgresProjectRepository:
                 await session.commit()
             except IntegrityError as error:
                 await session.rollback()
-                raise ConflictError(
-                    f"Project name already used: {project.name}"
-                ) from error
+                raise ConflictError(f"Project name already used: {project.name}") from error
 
     async def get(self, tenant_id: str, project_id: str) -> Project:
         async with self._sessions() as session:
@@ -88,11 +89,22 @@ class PostgresProjectRepository:
             rows = (await session.scalars(statement)).all()
         return [_project(row) for row in rows]
 
-    async def replace(self, project: Project) -> None:
+    async def replace(
+        self, project: Project, *, expected_updated_at: datetime | None = None
+    ) -> None:
         async with self._sessions() as session:
-            row = await session.get(ProjectRow, project.project_id)
+            row = await session.scalar(
+                select(ProjectRow)
+                .where(
+                    ProjectRow.project_id == project.project_id,
+                    ProjectRow.tenant_id == project.tenant_id,
+                )
+                .with_for_update()
+            )
             if row is None or row.tenant_id != project.tenant_id:
                 raise NotFoundError(f"Project not found: {project.project_id}")
+            if expected_updated_at is not None and row.updated_at != expected_updated_at:
+                raise ConflictError("项目已被更新，请刷新后重试")
             row.name = project.name
             row.pinned_at = project.pinned_at
             row.archived_at = project.archived_at
@@ -102,9 +114,7 @@ class PostgresProjectRepository:
                 await session.commit()
             except IntegrityError as error:
                 await session.rollback()
-                raise ConflictError(
-                    f"Project name already used: {project.name}"
-                ) from error
+                raise ConflictError(f"Project name already used: {project.name}") from error
 
     async def delete(self, tenant_id: str, project_id: str) -> None:
         statement = sql_delete(ProjectRow).where(
@@ -161,9 +171,7 @@ class PostgresProjectResourceRepository:
     def __init__(self, sessions: SessionFactory) -> None:
         self._sessions = sessions
 
-    async def list_memories(
-        self, tenant_id: str, project_id: str
-    ) -> list[ProjectMemory]:
+    async def list_memories(self, tenant_id: str, project_id: str) -> list[ProjectMemory]:
         statement = (
             select(ProjectMemoryRow)
             .where(
@@ -193,20 +201,12 @@ class PostgresProjectResourceRepository:
                 await session.commit()
             except IntegrityError as error:
                 await session.rollback()
-                raise ConflictError(
-                    f"project memory already exists: {memory.memory_id}"
-                ) from error
+                raise ConflictError(f"project memory already exists: {memory.memory_id}") from error
 
-    async def get_memory(
-        self, tenant_id: str, project_id: str, memory_id: str
-    ) -> ProjectMemory:
+    async def get_memory(self, tenant_id: str, project_id: str, memory_id: str) -> ProjectMemory:
         async with self._sessions() as session:
             row = await session.get(ProjectMemoryRow, memory_id)
-            if (
-                row is None
-                or row.tenant_id != tenant_id
-                or row.project_id != project_id
-            ):
+            if row is None or row.tenant_id != tenant_id or row.project_id != project_id:
                 raise NotFoundError(f"project memory not found: {memory_id}")
             return _memory(row)
 
@@ -223,9 +223,7 @@ class PostgresProjectResourceRepository:
             row.updated_at = memory.updated_at
             await session.commit()
 
-    async def delete_memory(
-        self, tenant_id: str, project_id: str, memory_id: str
-    ) -> None:
+    async def delete_memory(self, tenant_id: str, project_id: str, memory_id: str) -> None:
         statement = sql_delete(ProjectMemoryRow).where(
             ProjectMemoryRow.tenant_id == tenant_id,
             ProjectMemoryRow.project_id == project_id,
@@ -238,9 +236,7 @@ class PostgresProjectResourceRepository:
                 raise NotFoundError(f"project memory not found: {memory_id}")
             await session.commit()
 
-    async def list_documents(
-        self, tenant_id: str, project_id: str
-    ) -> list[ProjectDocument]:
+    async def list_documents(self, tenant_id: str, project_id: str) -> list[ProjectDocument]:
         statement = (
             select(ProjectDocumentRow, InputArtifactRow.payload["sha256"].as_string())
             .outerjoin(
@@ -255,9 +251,7 @@ class PostgresProjectResourceRepository:
                 ProjectDocumentRow.tenant_id == tenant_id,
                 ProjectDocumentRow.project_id == project_id,
             )
-            .order_by(
-                ProjectDocumentRow.created_at, ProjectDocumentRow.input_artifact_id
-            )
+            .order_by(ProjectDocumentRow.created_at, ProjectDocumentRow.input_artifact_id)
         )
         async with self._sessions() as session:
             rows = (await session.execute(statement)).all()
@@ -297,9 +291,7 @@ class PostgresProjectResourceRepository:
             result = cast(CursorResult[Any], await session.execute(statement))
             if not result.rowcount:
                 await session.rollback()
-                raise NotFoundError(
-                    f"project document not found: {input_artifact_id}"
-                )
+                raise NotFoundError(f"project document not found: {input_artifact_id}")
             await session.commit()
 
     async def list_results(self, tenant_id: str, project_id: str) -> list[ProjectResult]:
@@ -329,18 +321,22 @@ class PostgresProjectResourceRepository:
             )
             if project is None:
                 raise NotFoundError("Project not found")
-            existing = await session.scalar(select(ProjectResultRow).where(
-                ProjectResultRow.tenant_id == result.tenant_id,
-                ProjectResultRow.project_id == result.project_id,
-                ProjectResultRow.artifact_id == result.artifact_id,
-            ))
+            existing = await session.scalar(
+                select(ProjectResultRow).where(
+                    ProjectResultRow.tenant_id == result.tenant_id,
+                    ProjectResultRow.project_id == result.project_id,
+                    ProjectResultRow.artifact_id == result.artifact_id,
+                )
+            )
             if existing is not None:
                 return ProjectResult.model_validate(existing.payload)
-            latest_version = await session.scalar(select(func.max(ProjectResultRow.version)).where(
-                ProjectResultRow.tenant_id == result.tenant_id,
-                ProjectResultRow.project_id == result.project_id,
-                ProjectResultRow.name == result.name,
-            ))
+            latest_version = await session.scalar(
+                select(func.max(ProjectResultRow.version)).where(
+                    ProjectResultRow.tenant_id == result.tenant_id,
+                    ProjectResultRow.project_id == result.project_id,
+                    ProjectResultRow.name == result.name,
+                )
+            )
             version = (latest_version or 0) + 1
             saved = result.model_copy(update={"version": version})
             session.add(
@@ -382,8 +378,12 @@ class PostgresProjectResourceRepository:
 
     async def delete_for_project(self, tenant_id: str, project_id: str) -> None:
         async with self._sessions() as session:
-            await session.execute(sql_delete(ProjectResultRow).where(
-                ProjectResultRow.tenant_id == tenant_id, ProjectResultRow.project_id == project_id))
+            await session.execute(
+                sql_delete(ProjectResultRow).where(
+                    ProjectResultRow.tenant_id == tenant_id,
+                    ProjectResultRow.project_id == project_id,
+                )
+            )
             await session.execute(
                 sql_delete(ProjectMemoryRow).where(
                     ProjectMemoryRow.tenant_id == tenant_id,
@@ -404,9 +404,7 @@ class PostgresProjectResourceRepository:
             )
             await session.commit()
 
-    async def list_links(
-        self, tenant_id: str, project_id: str
-    ) -> list[ProjectLink]:
+    async def list_links(self, tenant_id: str, project_id: str) -> list[ProjectLink]:
         statement = (
             select(ProjectLinkRow)
             .where(
@@ -436,13 +434,9 @@ class PostgresProjectResourceRepository:
                 await session.commit()
             except IntegrityError as error:
                 await session.rollback()
-                raise ConflictError(
-                    f"project link already exists: {link.link_id}"
-                ) from error
+                raise ConflictError(f"project link already exists: {link.link_id}") from error
 
-    async def delete_link(
-        self, tenant_id: str, project_id: str, link_id: str
-    ) -> None:
+    async def delete_link(self, tenant_id: str, project_id: str, link_id: str) -> None:
         statement = sql_delete(ProjectLinkRow).where(
             ProjectLinkRow.tenant_id == tenant_id,
             ProjectLinkRow.project_id == project_id,

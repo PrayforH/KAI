@@ -1,0 +1,25 @@
+{
+  "environment": "172.20.109.174",
+  "release": "project-reuse-20261029-r1",
+  "url": "https://172.20.109.174",
+  "secondaryUrl": "http://172.20.109.174:3501",
+  "apiImage": "kai/projects-api:project-reuse-20261029-r2",
+  "apiDigest": "sha256:757a59ac111d0ac28bba9b2d27d9c65474bbe0b85f100aedadfd58c6a23894aa",
+  "webImage": "kai/projects-web:project-reuse-20261029-r1",
+  "webDigest": "sha256:68d6ddc3f98cca2952ac950b074859eb4b091b34a49afc01396163dd28dfe5f8",
+  "databaseMigration": "0052 (unchanged)",
+  "apiLayers": 9,
+  "actualProductionRuns": [
+    "run_2c2d3577a94142f78dcf4ae8c8f0d0f1",
+    "run_b078ded274f64005bf6136a4f50e9b01",
+    "run_112ffe380a6647e5bdd1ceecc5978dd4"
+  ],
+  "actualChecks": "live-acceptance.jsonl",
+  "browserChecks": "browser-live.jsonl (mocked API responses, production UI)",
+  "memoryRegression": "memory-smoke.log",
+  "projectBoundary": "Project-only authored skill storage and run snapshots; no Agent Studio draft or published-version mutation",
+  "cleanup": "Both disposable QA projects deleted; six QA tasks archived; QA memory entry deleted",
+  "apiCodeCommit": "6c25dce2",
+  "webCodeCommit": "6fcfba11b3e863707778297459f8c7d9fc876c22",
+  "note": "r2 only adds type annotations and explicit visible-history text-part narrowing; full workflow was validated on r1, followed by focused live extraction/save/enable checks on r2."
+}

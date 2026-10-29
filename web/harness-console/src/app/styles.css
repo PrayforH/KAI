@@ -4680,7 +4680,6 @@ textarea:not(.aui-composer-input):focus-visible,
   gap: 4px;
 }
 
-.assistant-message-controls > .aui-branch-picker-root,
 .assistant-message-controls > .aui-assistant-action-bar-root {
   min-width: max-content;
   flex: 0 0 auto;
@@ -4694,70 +4693,6 @@ textarea:not(.aui-composer-input):focus-visible,
   padding: 0;
   background: transparent;
   box-shadow: none;
-}
-
-.harness-branch-picker {
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  gap: 1px;
-  color: var(--codex-muted);
-}
-
-.harness-branch-picker button {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 7px;
-  color: inherit;
-  background: transparent;
-  cursor: pointer;
-  transition: color 120ms ease, background 120ms ease;
-}
-
-.harness-branch-picker button:hover:not(:disabled),
-.harness-branch-picker button:focus-visible {
-  color: var(--codex-ink);
-  background: var(--codex-surface-hover);
-  outline: none;
-}
-
-.harness-branch-picker button:focus-visible {
-  box-shadow: 0 0 0 2px var(--codex-surface), 0 0 0 4px var(--codex-accent);
-}
-
-.harness-branch-picker button:disabled {
-  cursor: default;
-  opacity: 0.28;
-}
-
-.harness-branch-picker svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.6;
-}
-
-.harness-branch-state {
-  min-width: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  color: var(--codex-muted);
-  font: 600 10px/1 ui-monospace, "SFMono-Regular", Consolas, monospace;
-}
-
-.harness-branch-state i {
-  color: var(--codex-faint);
-  font-style: normal;
-  font-weight: 400;
 }
 
 .harness-assistant-message > .aui-message-error {

@@ -795,11 +795,9 @@ body.codex-theme-v1:has(.console-shell) .task-list-scroll .task-list {
   gap: 1px;
 }
 
-/* Titles and the trailing controls share stable column boundaries. */
+/* Hidden row actions stay outside the title/time layout. */
 body.codex-theme-v1:has(.console-shell) .task-list-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content;
-  align-items: center;
+  display: block;
   min-width: 0;
   margin-top: 0;
 }
@@ -822,8 +820,7 @@ body.codex-theme-v1:has(.console-shell) .task-list-item.is-active {
 
 body.codex-theme-v1:has(.console-shell) .task-list-row > .task-list-item {
   display: grid;
-  grid-template-columns: subgrid;
-  grid-area: 1 / 1 / 2 / -1;
+  grid-template-columns: minmax(0, 1fr) max-content;
 }
 
 body.codex-theme-v1:has(.console-shell) .task-list-content {

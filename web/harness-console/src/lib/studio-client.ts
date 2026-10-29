@@ -2825,6 +2825,11 @@ export const automationClient = {
   },
 };
 
+export interface ApiProjectSkill {
+  skillId: string; displayName: string; skill: StudioSkill; revision: number; enabled: boolean;
+  sourceThreadId: string; createdAt: string; updatedAt: string;
+}
+
 export interface ApiProject {
   tenantId: string;
   projectId: string;
@@ -2832,6 +2837,7 @@ export interface ApiProject {
   name: string;
   instructions?: string;
   skillReferences?: string[];
+  localSkills?: ApiProjectSkill[];
   knowledgeReferences?: string[];
   mcpReferences?: string[];
   pinnedAt?: string | null;
@@ -2934,9 +2940,24 @@ export const projectClient = {
   results(projectId: string): Promise<ApiProjectResult[]> {
     return request(`projects/${encodeURIComponent(projectId)}/results`);
   },
-  saveResult(projectId: string, artifactId: string): Promise<ApiProjectResult> {
+  searchWeb(projectId: string, query: string, signal?: AbortSignal): Promise<{results: {url: string; title: string; content: string}[]}> {
+    return request(`projects/${encodeURIComponent(projectId)}/web-search?query=${encodeURIComponent(query)}`, {signal});
+  },
+  extractSkill(projectId: string, input: {threadId: string; artifactId?: string; modelRoute?: string; goal?: string}): Promise<StudioSkillConversationReply> {
+    return request(`projects/${encodeURIComponent(projectId)}/skills/extract`, {method: "POST", body: JSON.stringify(input)});
+  },
+  saveSkill(projectId: string, input: {displayName: string; skill: StudioSkill; sourceThreadId?: string}): Promise<ApiProjectSkill> {
+    return request(`projects/${encodeURIComponent(projectId)}/skills`, {method: "POST", body: JSON.stringify(input)});
+  },
+  setSkillEnabled(projectId: string, skill: ApiProjectSkill, enabled: boolean): Promise<ApiProjectSkill> {
+    return request(`projects/${encodeURIComponent(projectId)}/skills/${encodeURIComponent(skill.skillId)}`, {method: "PATCH", body: JSON.stringify({revision: skill.revision, enabled})});
+  },
+  deleteSkill(projectId: string, skillId: string): Promise<void> {
+    return request(`projects/${encodeURIComponent(projectId)}/skills/${encodeURIComponent(skillId)}`, {method: "DELETE"});
+  },
+  saveResult(projectId: string, artifactId: string, addToResources = false): Promise<ApiProjectResult> {
     return request(`projects/${encodeURIComponent(projectId)}/results`, {
-      method: "POST", body: JSON.stringify({ artifactId }),
+      method: "POST", body: JSON.stringify({ artifactId, ...(addToResources ? {addToResources: true} : {}) }),
     });
   },
   finalizeResult(projectId: string, resultId: string, finalized: boolean): Promise<ApiProjectResult> {

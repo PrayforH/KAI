@@ -1,0 +1,2 @@
+{"status": "PASS", "checks": ["archived task source ownership", "visible transcript extraction", "save project draft", "enable project skill", "direct URL search"], "agents_modified": false}
+QA project deleted; source task remains archived

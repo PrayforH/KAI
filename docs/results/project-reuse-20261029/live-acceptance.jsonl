@@ -1,0 +1,12 @@
+{"step": "independent_web_search", "results": 5, "saved_url": "https://www.python.org/shell/?ref=hackernoon.com", "creates_chat": false}
+{"step": "run_started", "thread": "b3233bb7-9a0c-4b1e-8d12-b99ded8a5b56", "run": "run_2c2d3577a94142f78dcf4ae8c8f0d0f1"}
+{"step": "run_completed", "run": "run_2c2d3577a94142f78dcf4ae8c8f0d0f1", "status": "succeeded"}
+{"step": "run_started", "thread": "5c190e12-3641-44d0-b33f-5d7616eb66ea", "run": "run_b078ded274f64005bf6136a4f50e9b01"}
+{"step": "run_completed", "run": "run_b078ded274f64005bf6136a4f50e9b01", "status": "succeeded"}
+{"step": "saved_resource_reused_in_new_task", "artifact": "artifact_a9c6a2c33de64998b188e24e7d8ca2ee", "snapshot": "input_artifact_94dce4b206b646d08d5e20e6d4c0b531", "verified_marker": true, "idempotent": true}
+{"step": "skill_generated_reviewed_saved_enabled", "skill": "sales-amount-markdown-report", "project_skill": "project_skill_eb452313b5a54749bd65a70c7853392a", "draft_first": true}
+{"step": "run_started", "thread": "2c348f62-03c3-4ace-a93b-e4b06db2f5a0", "run": "run_112ffe380a6647e5bdd1ceecc5978dd4"}
+{"step": "run_completed", "run": "run_112ffe380a6647e5bdd1ceecc5978dd4", "status": "succeeded"}
+{"step": "project_skill_reused_by_runtime", "run": "run_112ffe380a6647e5bdd1ceecc5978dd4", "skill": "sales-amount-markdown-report", "resolution": "project", "verified_output": true, "pinned_snapshot": true, "agents_unchanged": true}
+{"step": "PASS", "checks": ["keyword search", "URL entry", "no search task", "resource snapshot", "new task reads resource", "real skill extraction", "review before save", "project-only enable", "runtime uses skill", "disable preserves existing run", "agents unchanged"]}
+{"step": "cleanup", "project_deleted": true, "qa_tasks_archived": 3}

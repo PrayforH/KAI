@@ -196,9 +196,9 @@ it("collapses project and task sections independently and persists them across r
     expect(button("展开项目分组").getAttribute("aria-expanded")).toBe("false");
     expect(container.querySelectorAll(".task-list-row")).toHaveLength(0);
     await act(async () => button("展开任务分组").click());
-    expect(container.querySelectorAll(".task-list-row")).toHaveLength(7);
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(5);
     await act(async () => button("展开项目分组").click());
-    expect(container.querySelectorAll(".task-list-row")).toHaveLength(8);
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(6);
   } finally { await act(async () => root.unmount()); container.remove(); }
 });
 
@@ -266,5 +266,41 @@ it("pins and unpins from the trailing control and shares the menu with project t
     expect(button().getAttribute("aria-pressed")).toBe("false");
     expect(container.querySelector(".task-sidebar-mode")?.closest(".task-list-scroll")).not.toBeNull();
     expect(container.querySelector(".task-sidebar-primary")?.closest(".task-list-scroll")).toBeNull();
+  } finally { await act(async () => root.unmount()); container.remove(); }
+});
+
+it("restores five rows after collapsing a project, a section, or the whole sidebar", async () => {
+  loadTasks.mockResolvedValue([
+    ...Array.from({ length: 7 }, (_, i) => ({ ...task("succeeded", `project-${i}`), project_id: "project-a" })),
+    ...Array.from({ length: 7 }, (_, i) => task("succeeded", `loose-${i}`)),
+  ]);
+  const props = { currentThreadId: "", collapsed: false, onToggle() {}, onSelect() {}, onNewTask() {},
+    projects: [{ projectId: "project-a", name: "研究", userId: "test", tenantId: "local", createdAt: "", updatedAt: "" }] };
+  const container = document.createElement("div"); document.body.append(container);
+  const root = createRoot(container);
+  const click = async (label: string) => {
+    const button = container.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`);
+    expect(button, label).not.toBeNull();
+    await act(async () => button!.click());
+  };
+  try {
+    await act(async () => root.render(<TaskSidebar {...props} />));
+    await click("展开项目 研究");
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(10);
+    await click("展开 研究 的任务");
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(12);
+    await click("收起项目 研究"); await click("展开项目 研究");
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(10);
+    const projectItems = container.querySelector('[data-project-id="project-a"] .task-project-items')!;
+    expect(projectItems.lastElementChild?.textContent).toContain("展开显示（2）");
+    await click("展开任务");
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(12);
+    await click("收起任务分组"); await click("展开任务分组");
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(10);
+    await click("展开 研究 的任务"); await click("展开任务");
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(14);
+    await act(async () => root.render(<TaskSidebar {...props} collapsed />));
+    await act(async () => root.render(<TaskSidebar {...props} />));
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(10);
   } finally { await act(async () => root.unmount()); container.remove(); }
 });

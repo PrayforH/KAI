@@ -125,12 +125,10 @@ it("keeps user-stopped runs neutral and only offers retry for actual failures", 
   expect(agentThreadSource).not.toContain('<circle\n                cx="12"');
 });
 
-it("uses interactive answer branch primitives for regenerated responses", () => {
-  expect(agentThreadSource).toContain("<HarnessBranchPicker />");
-  expect(agentThreadSource).toContain("<BranchPickerPrimitive.Previous asChild>");
-  expect(agentThreadSource).toContain("<BranchPickerPrimitive.Next asChild>");
-  expect(agentThreadSource).toContain('aria-label="上一个回答"');
-  expect(agentThreadSource).toContain('aria-label="下一个回答"');
+it("omits version pagination beneath both input messages and answers", () => {
+  expect(agentThreadSource).not.toContain("<HarnessBranchPicker");
+  expect(agentThreadSource).not.toContain("<BranchPicker");
+  expect(agentThreadSource).toContain("branchPicker={{ allowBranchPicker: false }}");
 });
 
 it("distinguishes a historical failed turn from the current run", () => {

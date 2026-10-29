@@ -18,9 +18,18 @@ class ProjectSkillSnapshots:
         self._blobs = blobs
 
     async def capture(
-        self, tenant_id: str, references: tuple[str, ...], runtime: AgentRuntimeType
+        self,
+        tenant_id: str,
+        references: tuple[str, ...],
+        runtime: AgentRuntimeType,
+        *,
+        local: tuple[SkillSnapshot, ...] = (),
     ) -> list[dict[str, Any]]:
-        snapshots = skill_snapshots_for_references(references, runtime, strict=True)
+        platform = tuple(ref for ref in references if not ref.startswith("project-skill:"))
+        expected = {ref for ref in references if ref.startswith("project-skill:")}
+        if expected != {snapshot.source for snapshot in local}:
+            raise ValueError("Project Skill snapshot references do not match")
+        snapshots = (*skill_snapshots_for_references(platform, runtime, strict=True), *local)
         return await self._transform(
             tenant_id, [snapshot.model_dump(mode="json") for snapshot in snapshots]
         )

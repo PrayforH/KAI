@@ -1,0 +1,6 @@
+/agent-studio-174-web-1 kai/projects-web:project-name-drawer-20261029-r1 sha256:0bb739e3be943bf0be4754a93fd11f79d70851509708bc17e8d475fa96b76788 healthy restarts=0
+/axis-web-memory-bank-20261027-r1 kai/projects-web:project-name-drawer-20261029-r1 sha256:0bb739e3be943bf0be4754a93fd11f79d70851509708bc17e8d475fa96b76788 healthy restarts=0
+/agent-studio-174-api-1 kai/projects-api:project-reuse-20261029-r2 sha256:757a59ac111d0ac28bba9b2d27d9c65474bbe0b85f100aedadfd58c6a23894aa healthy restarts=0
+/agent-studio-174-worker-1 kai/projects-api:project-reuse-20261029-r2 sha256:757a59ac111d0ac28bba9b2d27d9c65474bbe0b85f100aedadfd58c6a23894aa healthy restarts=0
+/agent-studio-174-worker-2 kai/projects-api:project-reuse-20261029-r2 sha256:757a59ac111d0ac28bba9b2d27d9c65474bbe0b85f100aedadfd58c6a23894aa healthy restarts=0
+/agent-studio-174-worker-3 kai/projects-api:project-reuse-20261029-r2 sha256:757a59ac111d0ac28bba9b2d27d9c65474bbe0b85f100aedadfd58c6a23894aa healthy restarts=0

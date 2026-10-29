@@ -1659,3 +1659,10 @@ async def cancel_agui_run_by_server_id(
     ensure_permission(identity, "tasks:write")
     await require_owned_run(container, identity, run_id)
     return await container.runs.cancel(identity.tenant_id, run_id)
+
+
+async def read_run_history(
+    container: ApiContainer, identity: Identity, run: Run
+) -> list[AguiHistoryMessage]:
+    """Read the visible transcript without creating snapshots or modifying the task."""
+    return await _history_messages_for_run(container, identity, run, write_snapshot=False)

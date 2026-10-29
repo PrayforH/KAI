@@ -1,0 +1,16 @@
+
+> harness-console@0.3.1 test
+> vitest run tests/rail-navigation.spec.tsx tests/task-files-isolation.spec.tsx tests/task-projects.spec.ts tests/project-home.spec.tsx tests/task-sidebar-status.spec.tsx
+
+
+ RUN  v4.1.10 /private/tmp/project-cards-20261029/web/harness-console
+
+(node:26297) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:26294) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ Test Files  5 passed (5)
+      Tests  56 passed (56)
+   Start at  14:35:24
+   Duration  1.84s (transform 950ms, setup 0ms, import 2.82s, tests 1.09s, environment 1.71s)
