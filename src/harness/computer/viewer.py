@@ -36,11 +36,17 @@ RFB_KEYBOARD = "keyboard"
 RFB_POINTER = "pointer"
 RFB_CUT = "cut"
 
-# Fixed client message spans after the handshake, by RFB 3.3.8 type, plus
-# QEMU's extended key event (255) that noVNC sends when the server offers it.
-_RFB_FIXED_SPANS = {0: 20, 3: 10, 4: 8, 5: 6}
+# Fixed client message spans after the handshake, by RFB type. Besides the
+# core protocol this must cover what real clients actually send: QEMU's
+# extended key event (255), EnableContinuousUpdates (150) and xvp (250) that
+# noVNC uses, and SetDesktopSize (251) when the client may resize. An
+# unrecognized type is still refused, but a client must never be disconnected
+# for speaking standard RFB.
+_RFB_FIXED_SPANS = {0: 20, 3: 10, 4: 8, 5: 6, 150: 10, 250: 4}
 _RFB_INPUT_LABELS = {4: RFB_KEYBOARD, 5: RFB_POINTER}
 _RFB_QEMU_EXTENDED = 255
+_RFB_FENCE = 248
+_RFB_SET_DESKTOP_SIZE = 251
 
 
 class RfbClientFilter:
@@ -169,6 +175,19 @@ class RfbClientFilter:
             if self._buffer[self._pos + 1] != 0:
                 raise ValueError("desktop client sent an unknown extended key event")
             span, label = 16, RFB_KEYBOARD
+        elif kind == _RFB_FENCE:
+            # ClientFence: type, 3-byte pad, flags, 1-byte length, payload.
+            if len(self._buffer) - self._pos < 9:
+                return
+            span = 9 + self._buffer[self._pos + 8]
+            label = RFB_NEGOTIATE
+        elif kind == _RFB_SET_DESKTOP_SIZE:
+            # SetDesktopSize: type, pad, w, h, screens, pad, 16 bytes/screen.
+            if len(self._buffer) - self._pos < 8:
+                return
+            screens = self._buffer[self._pos + 6]
+            span = 8 + 16 * screens
+            label = RFB_NEGOTIATE
         else:
             raise ValueError("desktop client sent an unknown RFB message type")
         if span < 1 or span > RFB_FRAME_LIMIT:

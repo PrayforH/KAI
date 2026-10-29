@@ -279,3 +279,33 @@ def test_input_grant_never_survives_an_unobserved_generation(
             pass  # the test client surfaces the teardown in several shapes
         assert status_json(client)["input_frames"]["keyboard"] == 1
         state["active"] = False
+
+
+def test_standard_client_messages_are_never_mistaken_for_unknown_types():
+    """noVNC sends Fence, EnableContinuousUpdates, xvp and SetDesktopSize.
+
+    Refusing those disconnected every real browser 4 seconds after it
+    connected, even though the core handshake had succeeded.
+    """
+
+    from harness.computer.viewer import RfbClientFilter
+
+    fence = b"\xf8\x00\x00\x00\x00\x00\x00\x01\x05hello"  # type, pad, flags, len, data
+    continuous = b"\x96\x01\x00\x00\x00\x00\x05\x00\x03\x20"  # enable + rect
+    xvp = b"\xfa\x01\x00\x00"
+    desktop_size = b"\xfb\x00\x01\x90\x02\x58\x01\x00" + bytes(16)  # 400x600, 1 screen
+    pipeline = fence + continuous + xvp + desktop_size
+
+    policy = RfbClientFilter(VERSION)
+    messages = policy.feed(HANDSHAKE + pipeline, input_allowed=False)
+    assert [kind for kind, _ in messages] == ["negotiate"] * 7
+    assert b"".join(chunk for _, chunk in messages[-4:]) == pipeline
+    assert not policy.resync_required
+
+
+def test_a_truly_undefined_client_message_still_fails_closed():
+    from harness.computer.viewer import RfbClientFilter
+
+    policy = RfbClientFilter(VERSION)
+    with pytest.raises(ValueError):
+        policy.feed(HANDSHAKE + b"\x51\x00\x00", input_allowed=True)
