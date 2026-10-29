@@ -556,3 +556,71 @@ async def test_completed_specialist_config_enables_first_execution(
         expected_revision=configured.revision,
     )
     assert enabled.status is SpecialistStatus.ACTIVE
+
+
+@pytest.mark.asyncio
+async def test_budget_stops_dispatch_when_limits_are_reached(database: DatabaseFixture) -> None:
+    from harness.core.errors import ConflictError
+
+    service = make_service(database)
+    objective = await service.create(
+        "tenant-a",
+        "user-a",
+        ObjectiveBrief.model_validate(
+            {
+                "title": "预算受限职责",
+                "instructions": "受预算约束的检查",
+                "agentName": "audit-agent",
+                "agentVersion": "1.0.0",
+                "budget": {"maxRunsPerDay": 2, "maxTotalRuns": 3},
+            }
+        ),
+    )
+    for index in range(2):
+        execution = await service.repository.enqueue(
+            "tenant-a", "user-a", objective.objective_id, trigger_key=f"b{index}", now=NOW
+        )
+        claim = await service.repository.claim(NOW)
+        assert claim is not None
+        await service.repository.save_execution(
+            execution.model_copy(
+                update={
+                    "status": ObjectiveExecutionStatus.SUCCEEDED,
+                    "finished_at": NOW,
+                }
+            ),
+            claim[1],
+            NOW,
+        )
+    with pytest.raises(ConflictError, match="当日运行次数上限"):
+        await service.repository.enqueue(
+            "tenant-a", "user-a", objective.objective_id, trigger_key="b2", now=NOW
+        )
+    # 次日恢复派发；总上限仍然生效。
+    from datetime import timedelta
+
+    third = await service.repository.enqueue(
+        "tenant-a",
+        "user-a",
+        objective.objective_id,
+        trigger_key="b3",
+        now=NOW + timedelta(days=1),
+    )
+    assert third is not None
+    claim = await service.repository.claim(NOW + timedelta(days=1))
+    assert claim is not None
+    await service.repository.save_execution(
+        third.model_copy(
+            update={"status": ObjectiveExecutionStatus.SUCCEEDED, "finished_at": NOW}
+        ),
+        claim[1],
+        NOW + timedelta(days=1),
+    )
+    with pytest.raises(ConflictError, match="总运行次数上限"):
+        await service.repository.enqueue(
+            "tenant-a",
+            "user-a",
+            objective.objective_id,
+            trigger_key="b4",
+            now=NOW + timedelta(days=1),
+        )

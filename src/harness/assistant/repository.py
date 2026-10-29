@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -309,6 +309,29 @@ class PostgresAssistantRepository:
             .limit(1)
         ):
             raise ConflictError("This objective already has an active execution")
+        budget = objective.budget
+        if budget is not None:
+            # 派发前的预算闸门：在同一个入队事务内计数，达到上限即拒绝。
+            if budget.max_total_runs is not None:
+                total = await session.scalar(
+                    select(func.count())
+                    .select_from(ObjectiveExecutionRow)
+                    .where(ObjectiveExecutionRow.objective_id == objective.objective_id)
+                )
+                if (total or 0) >= budget.max_total_runs:
+                    raise ConflictError("预算已用尽：达到总运行次数上限，不再派发新执行")
+            if budget.max_runs_per_day is not None:
+                day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                today = await session.scalar(
+                    select(func.count())
+                    .select_from(ObjectiveExecutionRow)
+                    .where(
+                        ObjectiveExecutionRow.objective_id == objective.objective_id,
+                        ObjectiveExecutionRow.created_at >= day_start,
+                    )
+                )
+                if (today or 0) >= budget.max_runs_per_day:
+                    raise ConflictError("预算已用尽：达到当日运行次数上限，不再派发新执行")
         notes = list(
             await session.scalars(
                 select(ObjectiveEventRow.content)

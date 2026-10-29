@@ -61,6 +61,16 @@ class ManagedTaskSource(StrEnum):
     API = "api"
 
 
+class ObjectiveBudget(StudioModel):
+    """派发闸门：达到任一上限后不再派发新工作（8.6）。
+
+    token/费用上限需要真实计量对接后才允许配置；本字段先承载运行次数与并发。
+    """
+
+    max_runs_per_day: int | None = Field(default=None, alias="maxRunsPerDay", ge=1, le=10_000)
+    max_total_runs: int | None = Field(default=None, alias="maxTotalRuns", ge=1, le=100_000)
+
+
 class ObjectiveSchedule(StudioModel):
     """A bounded periodic check; None on the objective means manual only."""
 
@@ -89,6 +99,7 @@ class ObjectiveBrief(StudioModel):
     notification_mode: NotificationMode = Field(
         default=NotificationMode.IMPORTANT, alias="notificationMode"
     )
+    budget: ObjectiveBudget | None = None
 
     @field_validator("title", "instructions", "agent_version")
     @classmethod

@@ -54,6 +54,6 @@ def test_user_input_cannot_inject_identity_status_or_blank_instructions() -> Non
     )
     for extra in ({"userId": "someone-else"}, {"status": "completed"}, {"instructions": "  "}):
         with pytest.raises(ValidationError):
-            ObjectiveBrief(**(valid | extra))
+            ObjectiveBrief.model_validate(valid | extra)
     with pytest.raises(ValidationError):
-        ObjectiveBrief(**valid, endsAt="2026-11-01T00:00:00")
+        ObjectiveBrief.model_validate(valid | {"endsAt": "2026-11-01T00:00:00"})
