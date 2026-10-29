@@ -117,6 +117,20 @@
   不是系统故障。改用 base64 投递并核对字节数后一次通过。
 - 这补上了此前列为"未验证"的两轮记忆延续；刷新后历史重建走同一 projection（代码已读）。
 
+### 08:23 追加推进（真实时间）
+
+- `3b8f4822` 飞书 Outbox 原生文件交付的**窄能力**：`FeishuResourceClient.upload_file()` 走同一认证传输、
+  同一 `max_resource_bytes` 上界，`file_type` 先按声明 media type 再按扩展名映射；明确区分
+  确定性拒绝（400/403/413/无 file_key → `MediaRejectedError`，不重试）与故障（`ConnectionError`，可重试）。
+  `MessageContent` 增加 `"file"` 种类与 `file_message(file_key)`。
+  测试：`tests/unit/feishu` 31 passed / 2 skipped（新增 6 个：类型映射、上传字段与返回 key、拒绝 vs 故障、
+  空/超限前置拒绝、无 key 响应、file_message 形状）。
+  **状态：已实现 + 已测试；未接入交付编排、未部署**（feishu 接收器镜像重建属大迁移，未在收尾窗口发起）。
+- 本地整树 `pytest tests/unit` 会在**收集阶段**报 3 个 `import file mismatch`：`test_lifecycle` /
+  `test_memory_tools` / `test_service` 在两个目录同名且两目录都没有 `__init__.py`（分别来自 `64896583`、
+  `d776d265`，均早于本轮）。这是既有仓库卫生问题，不是本轮引入；本轮用范围化命令取证
+  （`tests/unit/sandbox`、`tests/unit/feishu`、按文件点名），三项单独运行均通过。
+
 ### 收尾快照（真实证据）
 
 - 测试基线：`tests/unit/sandbox` 348 passed；computer 相关集成 30 passed（隔离库
@@ -134,12 +148,11 @@
 
 ### 未验证（不声称完成）
 
-- 同会话两轮记忆延续的端到端对话：探针脚本在 79 上未能跑通（脚本自身问题，非系统故障），未取得证据。
-  数据面已知：`PersonalConversation.submit` 以同一 thread + previous prompts 提交，且本轮真实 Run
-  `run_7d56400e…` 正是该路径且成功。
+- 同会话两轮记忆延续：**已通过**（真实模型两轮，`turn2_recalled=true`，`same_session=true`，见上）。
 - 刷新后"结果卡仍在"的浏览器视觉证据：投影重建路径已读代码确认（`agui/routes.py` 用与 live 相同的
   projection 重建 `harness_present_artifact`），但受 79 自签证书限制，IAB 无法打开登录页做截图。
-- 飞书/微信 Outbox 原生文件交付：未实现（`SdkSender` 仅发 text/interactive，无 `im/v1/files` 上传）。
+- 飞书/微信 Outbox 原生文件交付：**上传与 file 消息能力已实现并单测**（`3b8f4822`），
+  但**未接入交付编排、未部署**；微信侧同样未接入。
 - BrowserTools（CDP/DOM 优先）、P2 全项（模板派生、每用户 Viewer、配额、OpenSandbox SDK 薄适配、快照契约）。
 - observation/frame 与 VM boot 代际绑定：仅完成 Viewer 输入代际（`45db3d60`）；frame 与 boot_id 绑定未实现。
 
