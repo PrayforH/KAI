@@ -152,7 +152,8 @@ describe("full-page agent workbench", () => {
     expect(agentThread).toContain("<TaskAgentSwitcher");
     expect(page).toContain('className="task-context-bar"');
     expect(page).toContain("<SidebarPanelToggle");
-    expect(page).toContain("<HelpMenu />");
+    expect(page).not.toContain("<HelpMenu");
+    expect(page).toContain("computerControl={personalAssistant ? <AssistantComputerLink");
     expect(page).toContain("<WorkbenchRail");
     expect(page).not.toContain("EnvironmentBadge");
     expect(page).not.toContain("<ContextRecoveryPanel");

@@ -80,27 +80,6 @@ import {
 
 const TASK_SIDEBAR_COMPACT_QUERY = "(max-width: 820px)";
 
-const HELP_MANUAL_URL = "https://my.feishu.cn/docx/DdiCdPFcroUpUXxOumNcQpIin1g";
-
-function HelpIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <circle cx="10" cy="10" r="7.25" />
-      <path d="M8.1 8.15a1.95 1.95 0 0 1 3.8.55c0 1.3-1.9 1.55-1.9 2.7" />
-      <path d="M10 13.85h.01" />
-    </svg>
-  );
-}
-
-function BookIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M10 5.7C8.9 4.8 7.3 4.35 5.45 4.35c-.6 0-1.15.05-1.7.15v10.15c.55-.1 1.1-.15 1.7-.15 1.85 0 3.45.45 4.55 1.35 1.1-.9 2.7-1.35 4.55-1.35.6 0 1.15.05 1.7.15V4.5c-.55-.1-1.1-.15-1.7-.15-1.85 0-3.45.45-4.55 1.35Z" />
-      <path d="M10 5.7v10.15" />
-    </svg>
-  );
-}
-
 function SidebarPanelToggle({
   expanded,
   onToggle,
@@ -137,65 +116,18 @@ function SidebarExpandToggle({ onToggle }: { onToggle: () => void }) {
   );
 }
 
-function HelpMenu() {
-  const [open, setOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function closeOnOutsideClick(event: PointerEvent) {
-      if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
-    }
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("pointerdown", closeOnOutsideClick);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsideClick);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [open]);
-
-  return (
-    <div className="header-help" ref={menuRef}>
-      <button
-        type="button"
-        className="header-icon-button"
-        aria-label="帮助"
-        aria-expanded={open}
-        title="帮助"
-        onClick={() => setOpen((value) => !value)}
-      >
-        <HelpIcon />
-      </button>
-      {open && (
-        <div className="help-popover" role="dialog" aria-label="帮助">
-          <a
-            className="help-popover-link"
-            href={HELP_MANUAL_URL}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <BookIcon />
-            产品使用手册
-          </a>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function HeaderUtilities({
+  computerControl,
   taskRailOpen,
   onToggleTaskRail,
 }: {
+  computerControl?: ReactNode;
   taskRailOpen: boolean;
   onToggleTaskRail: () => void;
 }) {
   return (
     <div className="header-utilities">
-      <HelpMenu />
+      {computerControl}
       <SidebarPanelToggle expanded={taskRailOpen} onToggle={onToggleTaskRail} />
     </div>
   );
@@ -855,7 +787,6 @@ function AuthenticatedHome() {
               {personalAssistant ? <div className="task-context-bar">
                 <strong className="task-context-title">我的助理</strong>
                 <AssistantChannelStatus />
-                <AssistantComputerLink open={computerOpen} onToggle={() => showComputer(!computerOpen)} />
               </div> : <TaskContextBar
                 taskTitle={currentTaskTitle}
                 onForked={switchTask}
@@ -890,6 +821,7 @@ function AuthenticatedHome() {
               />}
             </div>
             <HeaderUtilities
+              computerControl={personalAssistant ? <AssistantComputerLink open={computerOpen} onToggle={() => showComputer(!computerOpen)} /> : undefined}
               taskRailOpen={taskRailOpen}
               onToggleTaskRail={() => {
                 showComputer(false);

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import styles from "./computer-desktop.module.css";
 
 export function AssistantComputerLink({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const [href, setHref] = useState<string | null>(null);
@@ -16,7 +15,7 @@ export function AssistantComputerLink({ open, onToggle }: { open: boolean; onTog
       .catch(() => undefined);
     return () => controller.abort();
   }, []);
-  return href ? <button className={styles.entry} aria-expanded={open} aria-controls="assistant-computer-pane" onClick={() => {
+  return href ? <button type="button" className="header-icon-button" aria-label={open ? "收起电脑" : "打开电脑"} title={open ? "收起电脑" : "打开电脑"} aria-expanded={open} aria-controls="assistant-computer-pane" onClick={() => {
     if (window.location.protocol === "https:") onToggle();
     else {
       const url = new URL(href); url.pathname = "/assistant"; url.search = "?computer=open";
@@ -24,6 +23,5 @@ export function AssistantComputerLink({ open, onToggle }: { open: boolean; onTog
     }
   }}>
     <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3" width="15" height="10" rx="1.5" /><path d="M7 17h6m-3-4v4" /></svg>
-    电脑
   </button> : null;
 }
