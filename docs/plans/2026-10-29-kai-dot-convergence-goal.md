@@ -131,6 +131,34 @@
   `d776d265`，均早于本轮）。这是既有仓库卫生问题，不是本轮引入；本轮用范围化命令取证
   （`tests/unit/sandbox`、`tests/unit/feishu`、按文件点名），三项单独运行均通过。
 
+### 08:40 最终整理（真实时间，08:30 后无迁移）
+
+**版本与提交**
+- HEAD `480f3f4e`。本轮新增提交（按时间）：`960e21c0` 短读交付 → `c7fdc454` 观察态 RFB →
+  `859fd0f3` GateAck → `9e4f1945` 接管协调 → `b2746db4`/`016a3667` viewer 锁与 drain →
+  `f1c60821` 交付契约测试 → `45db3d60` 输入代际 → `8bc00664` objective 窄授权 →
+  `9150468c` office 能力注入 → `3b8f4822` 飞书文件上传 → `480f3f4e` 文件回复 seam（未接编排）。
+- 文档提交：`7a0314cd`、`70760ec4`、`835c5388`、`e4af7221`、`9864d159`、`5f51f7ed`、`40d3d267`。
+
+**具体测试证据（08:42 运行）**
+- `pytest tests/unit/sandbox tests/unit/feishu` → **384 passed, 2 skipped**。
+- 隔离库 `harness_test`：desktop / desktop-gate / access 三个集成文件 → **30 passed**。
+- `ruff check src/harness tests/unit/sandbox tests/unit/feishu` → **All checks passed**。
+- 2 个 skip = `test_sdk.py` 需要本地未装的 lark SDK；即 `SdkSender` 的 uuid 幂等与
+  403/429/503 分类**有测试但本地未执行**（镜像内有 SDK 才跑）。不把它算作已执行证据。
+
+**部署范围（79，08:20 之后未再变更）**
+- api / worker / computer-control = `kai/assistant-api:20261029-dot17`
+- computer-viewer = `kai/computer-viewer:20261029-v8`
+- web = `kai/assistant-web:20261028-dot3`（未改）；feishu / weixin = `20261027-r21-computer-transfer`（未改）
+- 11 个容器 Up；在途 Run = 0。
+
+**真实验收证据（生产）**
+- 交付：`run_7d56400ee4784bc58438a65b7fe4da77` 发布 8 个 artifact（6B、中文名、HTML、1.2MB PDF、XLSX、
+  原护栏三件套），经认证 API 下载 size/sha256 全对。
+- 观察态：1280×800 实帧；观察态输入 0/0；接管 0.28–0.39s；human 输入计数；重连 5/5。
+- 续聊：两轮同会话，`OMEGA7` 复述成功，`same_session=true`，`thread_sessions=1`。
+
 ### 收尾快照（真实证据）
 
 - 最终基线（08:24，真实时间）：`pytest tests/unit/sandbox tests/unit/feishu` = **379 passed, 2 skipped**；
