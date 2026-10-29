@@ -192,7 +192,10 @@ class AssistantInboxItem(StudioModel):
 
 
 class ManagedTask(StudioModel):
-    """托管关联：objective 与原 thread 的稳定绑定，带授权来源。"""
+    """托管关联：objective 与原 thread 的稳定绑定，带授权来源。
+
+    depends_on_objective_id 声明依赖职责；绑定与改绑时服务端校验无环。
+    """
 
     managed_id: str = Field(alias="managedId")
     objective_id: str = Field(alias="objectiveId")
@@ -200,6 +203,9 @@ class ManagedTask(StudioModel):
     user_id: str = Field(alias="userId")
     thread_id: str = Field(alias="threadId")
     project_id: str | None = Field(default=None, alias="projectId", max_length=128)
+    depends_on_objective_id: str | None = Field(
+        default=None, alias="dependsOnObjectiveId", max_length=128
+    )
     role: ManagedTaskRole = ManagedTaskRole.EXECUTE
     source: ManagedTaskSource = ManagedTaskSource.API
     created_at: AwareDatetime = Field(alias="createdAt")

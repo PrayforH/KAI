@@ -518,8 +518,10 @@ class PostgresAssistantRepository:
 
         Returns the durable binding and whether this call created it, so a
         retried delegation reports the existing coordinator instead of a
-        duplicate takeover.
+        duplicate takeover. A declared dependency must not close a cycle:
+        the chain is walked with a depth cap before the row is written.
         """
+        await self._ensure_acyclic(task)
         async with self._context(write=True) as session:
             existing = await session.scalar(
                 select(ManagedTaskRow).where(
@@ -541,6 +543,7 @@ class PostgresAssistantRepository:
                             user_id=task.user_id,
                             thread_id=task.thread_id,
                             project_id=task.project_id,
+                            depends_on_objective_id=task.depends_on_objective_id,
                             role=task.role.value,
                             source=task.source.value,
                             created_at=task.created_at,
@@ -561,6 +564,30 @@ class PostgresAssistantRepository:
                     raise
                 return ManagedTask.model_validate(existing.payload), False
         return task, True
+
+    async def _ensure_acyclic(self, task: ManagedTask, *, max_depth: int = 8) -> None:
+        """依赖禁止成环：沿 depends_on 链回走，回到自身或超深即拒绝。"""
+        seen = {task.objective_id}
+        current = task.depends_on_objective_id
+        depth = 0
+        while current is not None:
+            if current in seen or current == task.objective_id:
+                raise ConflictError("任务依赖成环；请调整依赖关系")
+            seen.add(current)
+            depth += 1
+            if depth > max_depth:
+                raise ConflictError("依赖链过深；请扁平化任务结构")
+            bindings = await self.managed_bindings(
+                task.tenant_id, task.user_id, objective_id=current
+            )
+            current = next(
+                (
+                    item.depends_on_objective_id
+                    for item in bindings
+                    if item.depends_on_objective_id
+                ),
+                None,
+            )
 
     async def managed_bindings(
         self,

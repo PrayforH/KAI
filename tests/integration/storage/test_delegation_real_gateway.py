@@ -624,3 +624,75 @@ async def test_budget_stops_dispatch_when_limits_are_reached(database: DatabaseF
             trigger_key="b4",
             now=NOW + timedelta(days=1),
         )
+
+
+@pytest.mark.asyncio
+async def test_task_dependencies_must_not_close_a_cycle(database: DatabaseFixture) -> None:
+    from harness.core.errors import ConflictError
+
+    service = make_service(database)
+    service._agui = cast(Any, _StubAgui())  # pyright: ignore[reportPrivateUsage]
+
+    async def make(number: str) -> Any:
+        # plain objectives: the dependency edges are bound explicitly below
+        return await service.create("tenant-a", "user-a", brief())
+
+    first = await make("dep-a")
+    second = await make("dep-b")
+    for objective, thread, depends_on in (
+        (first, "thread-dep-a", None),
+        (second, "thread-dep-b", first.objective_id),
+    ):
+        await service.repository.bind_managed(
+            ManagedTask(
+                managedId=f"managed-{thread}",
+                objectiveId=objective.objective_id,
+                tenantId="tenant-a",
+                userId="user-a",
+                threadId=thread,
+                dependsOnObjectiveId=depends_on,
+                createdAt=NOW,
+            )
+        )
+    await service.repository.bind_managed(
+        ManagedTask(
+            managedId="managed-dep-b",
+            objectiveId=second.objective_id,
+            tenantId="tenant-a",
+            userId="user-a",
+            threadId="thread-dep-b",
+            dependsOnObjectiveId=first.objective_id,
+            createdAt=NOW,
+        )
+    )
+    # a chain is fine; a cycle is not
+    with pytest.raises(ConflictError, match="依赖成环"):
+        await service.repository.bind_managed(
+            ManagedTask(
+                managedId="managed-dep-a",
+                objectiveId=first.objective_id,
+                tenantId="tenant-a",
+                userId="user-a",
+                threadId="thread-dep-a",
+                dependsOnObjectiveId=second.objective_id,
+                createdAt=NOW,
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_project_takeover_collects_threads_under_one_objective(
+    database: DatabaseFixture,
+) -> None:
+    service = make_service(database)
+    service._agui = cast(Any, _StubAgui())  # pyright: ignore[reportPrivateUsage]
+    main = await service.create("tenant-a", "user-a", brief(), managed_thread_id="thread-main")
+    await service.bind_thread("tenant-a", "user-a", main.objective_id, "thread-extra-1")
+    await service.bind_thread("tenant-a", "user-a", main.objective_id, "thread-extra-2")
+    bindings = await service.repository.managed_bindings(
+        "tenant-a", "user-a", objective_id=main.objective_id
+    )
+    roles = sorted(item.role.value for item in bindings)
+    threads = sorted(item.thread_id for item in bindings)
+    assert roles == ["execute", "observe", "observe"]
+    assert threads == ["thread-extra-1", "thread-extra-2", "thread-main"]

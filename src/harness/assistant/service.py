@@ -20,6 +20,7 @@ from harness.assistant.models import (
     DelegationMode,
     HandoverStatus,
     ManagedTask,
+    ManagedTaskRole,
     ManagedTaskSource,
     Objective,
     ObjectiveBrief,
@@ -141,6 +142,33 @@ class AssistantService:
                 )
             )
         return objective
+
+    async def bind_thread(
+        self, tenant_id: str, user_id: str, objective_id: str, thread_id: str
+    ) -> None:
+        """把既有线程纳入一个职责的纳管集合（observe 角色），依赖链服务端校验。"""
+        objective = await self.repository.get(tenant_id, user_id, objective_id)
+        binding = await self._agui.get_binding(
+            tenant_id=tenant_id, user_id=user_id, thread_id=thread_id
+        )
+        if (
+            objective.project_id
+            and binding.project_id
+            and binding.project_id != objective.project_id
+        ):
+            raise ConflictError("跨项目纳管需要用户明确授权该项目")
+        await self.repository.bind_managed(
+            ManagedTask(
+                managedId=f"managed_{uuid4().hex}",
+                objectiveId=objective.objective_id,
+                tenantId=tenant_id,
+                userId=user_id,
+                threadId=thread_id,
+                projectId=binding.project_id,
+                role=ManagedTaskRole.OBSERVE,
+                createdAt=datetime.now(UTC),
+            )
+        )
 
     async def resolve_targets(self, tenant_id: str, user_id: str, query: str, *, limit: int = 5):
         """把自然语言目标解析成可核验的候选原任务，不猜最近一条。"""

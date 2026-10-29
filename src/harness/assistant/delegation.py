@@ -95,6 +95,10 @@ class DelegationGateway(Protocol):
         self, tenant_id: str, user_id: str, objective_id: str, *, limit: int = 3
     ) -> list[Any]: ...
 
+    async def bind_thread(
+        self, tenant_id: str, user_id: str, objective_id: str, thread_id: str
+    ) -> None: ...
+
     async def delegate_to_specialist(
         self,
         tenant_id: str,
@@ -126,6 +130,7 @@ def assistant_delegation_overlay(
     session: Session,
     *,
     coordinator_thread: bool,
+    read_only: bool = False,
 ) -> PlatformToolOverlay:
     if not coordinator_thread:
         # Background objective executions and unrelated agents never delegate;
@@ -229,10 +234,24 @@ def assistant_delegation_overlay(
         )
 
     async def manage_work(arguments: dict[str, Any]) -> dict[str, Any]:
-        """接管既有任务：绑定原线程，只跟进或自主推进，不复制历史、不开替身。"""
+        """接管既有任务：绑定原线程，只跟进或自主推进，不复制历史、不开替身。
+
+        thread_ids 传入多个任务时建立项目协调职责：协调执行在自己的线程汇总
+        纳管任务进展（只读），各任务的执行托管仍按单任务语义逐个建立。
+        """
+        raw_ids = arguments.get("thread_ids")
+        thread_ids: list[str] = (
+            [str(item).strip() for item in cast(list[object], raw_ids) if str(item).strip()][:10]
+            if isinstance(raw_ids, list)
+            else []
+        )
         thread_id = str(arguments.get("thread_id", "")).strip()
-        if not 1 <= len(thread_id) <= 128:
-            return _text("thread_id 必填（先用 assistant_resolve_target 解析）。")
+        if not thread_id and len(thread_ids) == 1:
+            thread_id = thread_ids[0]
+        if not thread_id and not thread_ids:
+            return _text("thread_id（或 thread_ids）必填（先用 assistant_resolve_target 解析）。")
+        if thread_id and not 1 <= len(thread_id) <= 128:
+            return _text("thread_id 长度不合法。")
         task = str(arguments.get("task", "")).strip() or "跟进该任务，汇报进展、结果与差距。"
         if not 1 <= len(task) <= 20_000:
             return _text("任务说明需在 1–20000 字之间。")
@@ -267,9 +286,14 @@ def assistant_delegation_overlay(
                 user_id,
                 brief,
                 idempotency_key=None,
-                managed_thread_id=thread_id,
+                managed_thread_id=thread_id or None,
                 mode=mode,
             )
+            for extra in thread_ids:
+                if extra and extra != thread_id:
+                    await gateway.bind_thread(
+                        tenant_id, user_id, objective.objective_id, extra
+                    )
         except (ConflictError, NotFoundError, PermissionDeniedError, ValueError) as error:
             return _text(f"托管未能建立：{error}")
         if mode == "follow_only":
@@ -447,6 +471,23 @@ def assistant_delegation_overlay(
             "停止当前执行与停用后续调度是同一个明确动作，不会误伤其他任务。"
         )
 
+    if read_only:
+        # 项目协调者的执行线程：只读查看纳管任务，不授予创建/推进/控制权。
+        return PlatformToolOverlay(
+            tools=(
+                PlatformTool(
+                    name="assistant_task_status",
+                    description="查询纳管任务列表与最新检查点（只读）。",
+                    schema={"type": "object", "properties": {}},
+                    handler=task_status,
+                ),
+            ),
+            instructions=(
+                "你是项目协调职责的执行者：通过 assistant_task_status 读取纳管任务与检查点，"
+                "汇总进展与差距；不得创建新任务，也不得直接推进或控制它们。"
+            ),
+        )
+
     return PlatformToolOverlay(
         tools=(
             PlatformTool(
@@ -520,6 +561,12 @@ def assistant_delegation_overlay(
                     "type": "object",
                     "properties": {
                         "thread_id": {"type": "string", "maxLength": 128},
+                        "thread_ids": {
+                            "type": "array",
+                            "items": {"type": "string", "maxLength": 128},
+                            "maxItems": 10,
+                            "description": "多任务项目托管：主任务之外再纳管这些线程",
+                        },
                         "task": {"type": "string", "maxLength": 20000},
                         "title": {"type": "string", "maxLength": 120},
                         "mode": {"type": "string", "enum": ["autonomous", "follow_only"]},
@@ -707,6 +754,13 @@ class AssistantDelegationGateway:
             message_id=message_id,
         )
 
+    async def bind_thread(
+        self, tenant_id: str, user_id: str, objective_id: str, thread_id: str
+    ) -> None:
+        await self._assistant.bind_thread(
+            tenant_id, user_id, objective_id, thread_id
+        )
+
     async def list_specialists(self, tenant_id: str, user_id: str) -> list[Any]:
         return await self._assistant.repository.list_specialists(tenant_id, user_id)
 
@@ -716,6 +770,32 @@ class AssistantDelegationGateway:
         return await self._assistant.repository.handovers(
             tenant_id, user_id, specialist_id=specialist_id
         )
+
+
+async def objective_observer_session(assistant: Any, agui: Any, session: Session) -> bool:
+    """项目协调职责的执行线程：可只读查看纳管任务，无委派权。"""
+
+    if not session.agent_name:
+        return False
+    try:
+        record = await agui.get_thread_record_for_session(
+            tenant_id=session.tenant_id,
+            user_id=session.user_id,
+            session_id=session.session_id,
+        )
+    except NotFoundError:
+        return False
+    thread_id = record.thread_id
+    if not thread_id.startswith("assistant_"):
+        return False
+    objective_id = thread_id.removeprefix("assistant_")
+    try:
+        bindings = await assistant.repository.managed_bindings(
+            session.tenant_id, session.user_id, objective_id=objective_id
+        )
+    except (NotFoundError, PermissionDeniedError):
+        return False
+    return bool(bindings)
 
 
 async def coordinator_session(agui: Any, session: Session) -> bool:

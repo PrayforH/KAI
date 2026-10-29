@@ -117,6 +117,7 @@ class ManagedTaskRow(Base):
     user_id: Mapped[str] = mapped_column(String(128))
     thread_id: Mapped[str] = mapped_column(String(128))
     project_id: Mapped[str | None] = mapped_column(String(128))
+    depends_on_objective_id: Mapped[str | None] = mapped_column(String(128))
     role: Mapped[str] = mapped_column(String(16))
     source: Mapped[str] = mapped_column(String(16))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

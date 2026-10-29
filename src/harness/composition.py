@@ -33,6 +33,7 @@ from harness.assistant.delegation import (
     AssistantDelegationGateway,
     assistant_delegation_overlay,
     coordinator_session,
+    objective_observer_session,
 )
 from harness.assistant.file_delivery import ChannelFiles
 from harness.assistant.memory_tools import MemoryBankGateway, assistant_memory_overlay
@@ -1611,16 +1612,24 @@ def build_production_container(
             if getattr(sandbox, "image_office", False)
             else PlatformToolOverlay()
         )
-        delegation_overlay = (
-            assistant_delegation_overlay(
-                AssistantDelegationGateway(container.assistant),
-                run,
-                session,
-                coordinator_thread=await coordinator_session(container.agui, session),
+        delegation_overlay = PlatformToolOverlay()
+        if container.assistant is not None and session.agent_name:
+            coordinator = await coordinator_session(container.agui, session)
+            observer = (
+                False
+                if coordinator
+                else await objective_observer_session(
+                    container.assistant, container.agui, session
+                )
             )
-            if container.assistant is not None and session.agent_name
-            else PlatformToolOverlay()
-        )
+            if coordinator or observer:
+                delegation_overlay = assistant_delegation_overlay(
+                    AssistantDelegationGateway(container.assistant),
+                    run,
+                    session,
+                    coordinator_thread=True,
+                    read_only=observer,
+                )
         memory_overlay = (
             assistant_memory_overlay(MemoryBankGateway(container.memory_bank), run, session)
             if container.memory_bank is not None and session.agent_name

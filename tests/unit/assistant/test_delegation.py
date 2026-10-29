@@ -1,7 +1,7 @@
 """Delegation tool behaviour against a typed in-memory gateway."""
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -39,6 +39,7 @@ class FakeGateway:
         self.bindings: list[dict[str, Any]] = []
         self.resolved_queries: list[str] = []
         self.delegate_calls: list[dict[str, Any]] = []
+        self.bound_threads: list[tuple[str, str]] = []
         self.instruct_outcome: dict[str, Any] = {
             "status": "queued",
             "message": "当前没有进行中的执行",
@@ -77,7 +78,7 @@ class FakeGateway:
             userId=user_id,
             status=ObjectiveStatus.ACTIVE,
             managedThreadId=managed_thread_id,
-            mode=mode or "autonomous",  # pyright: ignore[reportArgumentType]
+            mode=cast("Any", mode or "autonomous"),
             createdAt=NOW,
             updatedAt=NOW,
         )
@@ -158,6 +159,11 @@ class FakeGateway:
             {"name": name, "task": task, "mode": mode, "message_id": message_id}
         )
         return self.delegate_outcome
+
+    async def bind_thread(
+        self, tenant_id: str, user_id: str, objective_id: str, thread_id: str
+    ) -> None:
+        self.bound_threads.append((objective_id, thread_id))
 
     async def list_specialists(self, tenant_id: str, user_id: str) -> list[Any]:
         return self.specialists
