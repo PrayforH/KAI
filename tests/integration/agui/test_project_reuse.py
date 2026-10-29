@@ -1,13 +1,14 @@
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from harness.api.app import create_memory_app
 from harness.studio.models import DraftSkill
-from harness.studio.skill_builder import SkillConversationReply
+from harness.studio.skill_builder import SkillConversationReply, SkillConversationRequest
 
 HEADERS = {"X-Tenant-ID": "tenant-a", "X-User-ID": "user-1"}
 SKILL = {
@@ -18,7 +19,7 @@ SKILL = {
 }
 
 
-async def setup(client):
+async def setup(client: AsyncClient) -> tuple[str, str, str]:
     response = await client.post(
         "/v1/agents",
         headers=HEADERS,
@@ -43,7 +44,7 @@ async def setup(client):
     return project["projectId"], thread["thread_id"], run_id
 
 
-async def turn(client, thread):
+async def turn(client: AsyncClient, thread: str) -> str:
     response = await client.post(
         "/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
         headers=HEADERS,
@@ -196,10 +197,12 @@ async def test_project_skills_are_drafts_then_run_snapshots_and_never_edit_agent
 @pytest.mark.asyncio
 async def test_extraction_uses_visible_owned_transcript_and_does_not_save_or_activate():
     app = create_memory_app(auto_execute=True)
-    calls = []
+    calls: list[SkillConversationRequest] = []
 
     class Generator:
-        async def respond(self, tenant, request):
+        async def respond(
+            self, tenant: str, request: SkillConversationRequest
+        ) -> SkillConversationReply:
             calls.append(request)
             return SkillConversationReply(
                 status="ready", reply="已提炼为草稿", skill=DraftSkill.model_validate(SKILL)
@@ -236,13 +239,13 @@ async def test_extraction_uses_visible_owned_transcript_and_does_not_save_or_act
 @pytest.mark.asyncio
 async def test_web_search_respects_user_configuration_and_creates_no_chat_or_link():
     app = create_memory_app(auto_execute=True)
-    calls = []
+    calls: list[tuple[str, str]] = []
 
     class Web:
-        async def client_for_user(self, tenant, user):
+        async def client_for_user(self, tenant: str, user: str) -> Any:
             calls.append((tenant, user))
 
-            async def search(query, **kwargs):
+            async def search(query: str, **kwargs: Any) -> dict[str, Any]:
                 return {
                     "results": [
                         {"url": "https://example.com/policy", "title": "政策", "content": "说明"}
