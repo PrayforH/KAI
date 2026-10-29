@@ -32,6 +32,7 @@ import { ThreadHistoryReadyProvider } from "./thread-history-ready";
 import { RunCancelProvider } from "./run-cancel-context";
 import { TaskModelProvider } from "./task-model-context";
 import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
+import { ReplySendContext, type ReplyReference } from "./reply-reference";
 
 
 export function AssistantRuntimeShell({
@@ -183,9 +184,16 @@ export function AssistantRuntimeShell({
     onCancel: () => agent.cancelActiveRun(),
     onError: (error) => console.error("[Harness Console]", error),
   });
+  const sendReply = useCallback(
+    (reply: ReplyReference | null) => {
+      agent.setReplyTo(reply);
+    },
+    [agent],
+  );
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
+      <ReplySendContext.Provider value={sendReply}>
       <RunCancelProvider value={() => agent.cancelActiveRun()}>
       <ThreadHistoryReadyProvider value={historyReady}>
       <DurableHistorySync threadId={threadId} revision={historyRevision} history={history} onSettled={() => setHistoryReady(true)} />
@@ -208,7 +216,8 @@ export function AssistantRuntimeShell({
         </TaskKnowledgeProvider>
       </TaskModelProvider>
       </ThreadHistoryReadyProvider>
-    </RunCancelProvider>
+      </RunCancelProvider>
+      </ReplySendContext.Provider>
     </AssistantRuntimeProvider>
   );
 }

@@ -54,6 +54,18 @@ import { useConversationRedactor } from "./conversation-redaction";
 import { SentUserContent } from "./sent-user-content";
 import { ConversationInput } from "./conversation-input";
 import { groupWorkspaceFiles } from "../lib/workspace-file-groups";
+import { setPendingReply } from "../lib/reply-references";
+import { loadComposerReplyDraft, persistComposerReplyDraft } from "../lib/task-composer-draft";
+import {
+  ComposerReplyProvider,
+  MessageReplyButton,
+  ReplyComposerBar,
+  ReplySendContext,
+  UserReplyHeader,
+  replyAwareComposerPlaceholder,
+  useComposerReply,
+  type ReplyReference,
+} from "./reply-reference";
 import { ActivitySummary } from "./activity-summary";
 import { TaskAgentSwitcher } from "./task-agent-switcher";
 import { ApprovalCard, type ApprovalDetails } from "./approval-card";
@@ -310,6 +322,8 @@ function MessageFeedbackButtons({ runId }: { runId?: string }) {
 function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const conversationScope = useConversationScope();
   const aui = useAui();
+  const replyScope = useComposerReply();
+  const sendReply = useContext(ReplySendContext);
   const { routes, overrideRouteId } = useTaskModel();
   const threadRunning = useAuiState((state) => state.thread.isRunning);
   const threadLoading = useAuiState((state) => state.thread.isLoading);
@@ -331,6 +345,19 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const projectLaunchScope = useContext(ComposerDraftContext);
   const projectLaunchReady = useThreadHistoryReady();
   useTaskComposerSnapshot(projectLaunchReady && !threadLoading && !agentSelection.loading ? projectLaunchScope : null);
+  const replyDraftScope = projectLaunchReady && !threadLoading && !agentSelection.loading ? projectLaunchScope : null;
+  useEffect(() => {
+    // Refresh restores the draft together with its still-valid reference.
+    if (!replyDraftScope || !replyScope) return;
+    const draft = loadComposerReplyDraft(localStorage, replyDraftScope.userId, replyDraftScope.threadId);
+    if (draft && !replyScope.reply) replyScope.startReply(draft);
+    // Restores once per composer mount; later changes persist below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [replyDraftScope]);
+  useEffect(() => {
+    if (!replyDraftScope || !replyScope) return;
+    persistComposerReplyDraft(localStorage, replyDraftScope.userId, replyDraftScope.threadId, replyScope.reply);
+  }, [replyDraftScope, replyScope?.reply]);
   useEffect(() => {
     if (!activeSkillLaunch) {
       seededSkillLaunchRef.current = null;
@@ -607,6 +634,12 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     }
   }
   const composerSendLock = useRef(false);
+  function sendComposerReply() {
+    if (!replyScope?.reply) return;
+    sendReply(replyScope.reply);
+    setPendingReply(replyScope.threadId, replyScope.reply);
+    replyScope.cancelReply();
+  }
   async function submitComposer(alternate = false) {
     if (voiceActive || followupVoiceActive) return;
     if (projectLaunchScope) consumeProjectTaskLaunch(projectLaunchScope.userId, projectLaunchScope.threadId);
@@ -620,6 +653,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     composerSendLock.current = true;
     setInputError("");
     try {
+      sendComposerReply();
       const error = await sendComposerWithRecovery(threadRuntime.composer);
       if (error) setInputError(error);
       else onSubmitted?.();
@@ -843,6 +877,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
             }}>×</button>
           </div>
         )}
+        <ReplyComposerBar />
         <Composer.Attachments components={{ Attachment: HarnessComposerAttachment }} />
         <div
           className="composer-input-wrap"
@@ -852,7 +887,11 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
           onComposingChange={(value) => { composingRef.current = value; }}
           className="aui-composer-input"
           aria-label="消息输入"
-          placeholder={conversationScope?.composerPlaceholder ?? (busy ? "继续补充…" : "输入消息…")}
+          placeholder={replyAwareComposerPlaceholder(
+            replyScope?.threadId,
+            busy,
+            conversationScope?.composerPlaceholder,
+          )}
           rows={Math.min(8, Math.max(2, composerText.split("\n").length))}
           aria-controls={options.length ? "composer-suggestions" : undefined}
           aria-activedescendant={options.length ? `composer-option-${suggestionIndex}` : undefined}
@@ -1584,6 +1623,7 @@ export function HarnessAssistantMessage() {
               label="复制回答"
               text={copyText}
             />
+            <MessageReplyButton className="assistant-message-copy" label="回复这条回答" />
             <MessageFeedbackButtons runId={feedbackRun} />
             <TurnCompletion />
           </AssistantActionBar.Root>
@@ -1703,6 +1743,7 @@ function HarnessUserMessage() {
   return (
     <>
       <UserMessage.Root className="harness-user-message" data-turn-id={message.id} data-turn-label={(displayText || message.attachments?.map(item => item.name).join("、") || "附件消息").replace(/\s+/g, " ").slice(0, 180)} tabIndex={-1}>
+        <UserReplyHeader isLatestUserMessage={isLatestUserMessage} />
         <MessageAttachmentGroup attachments={message.attachments ?? []} />
         <MessagePrimitive.If hasContent>
           {editing ? (
@@ -1741,6 +1782,7 @@ function HarnessUserMessage() {
                   label="复制消息"
                   text={displayText}
                 />
+                <MessageReplyButton label="回复消息" />
                 {isLatestUserMessage && !threadRunning && !sensitive ? (
                   <button
                     className="user-message-action"
@@ -1834,12 +1876,23 @@ export function AgentThread({
         : HarnessComposer,
     [onComposerSubmitted],
   );
+  const [composerReply, setComposerReply] = useState<ReplyReference | null>(null);
+  const composerReplyController = useMemo(
+    () => ({
+      threadId,
+      reply: composerReply,
+      startReply: setComposerReply,
+      cancelReply: () => setComposerReply(null),
+    }),
+    [composerReply, threadId],
+  );
   return (
     <TaskForkContext.Provider value={onForked}>
     <AgentSelectionContext.Provider value={agentSelection}>
       <SkillLaunchContext.Provider value={skillLaunch}>
         <ComposerDraftContext.Provider value={composerDraftScope}>
           <MessageEditorContext.Provider value={{ editor, setEditor }}>
+            <ComposerReplyProvider threadId={threadId}>
             <VideoGenerationProvider task={selectedAgent ? {
               threadId, agentName: selectedAgent.name, agentVersion: selectedAgent.version,
               agentOwnerUserId: selectedAgent.ownerUserId, spaceId: selectedAgent.spaceId,
@@ -1888,6 +1941,7 @@ export function AgentThread({
             />
             </div>
             </VideoGenerationProvider>
+            </ComposerReplyProvider>
           </MessageEditorContext.Provider>
         </ComposerDraftContext.Provider>
       </SkillLaunchContext.Provider>

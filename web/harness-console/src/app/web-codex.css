@@ -1677,6 +1677,117 @@ body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-in
   color: #767676;
 }
 
+/* 8.12 reply reference: quote bar shares the composer container; the thin
+   divider separates it from the body input. Cancelling keeps the draft. */
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-reply-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px 0;
+  min-width: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-reply-bar svg {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: #8a8a8a;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-reply-excerpt {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #9a9a9a;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: left;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-reply-cancel {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #9a9a9a;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-reply-cancel:hover {
+  background: #2a2a2a;
+  color: #efefef;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-reply-divider {
+  height: 1px;
+  margin: 8px 8px 0;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-user-message .user-reply-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  margin-bottom: 4px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #9a9a9a;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  text-align: left;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-user-message .user-reply-header svg {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-user-message .user-reply-excerpt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-user-message .user-reply-header.unavailable {
+  cursor: default;
+  color: #6f6f6f;
+  font-style: italic;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-user-message .user-reply-original {
+  max-width: 100%;
+  margin-bottom: 4px;
+  padding: 6px 10px;
+  border-left: 2px solid rgba(255, 255, 255, 0.14);
+  color: #9a9a9a;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* Drafts remain editable without a fold overlay. */
 
 body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-input-wrap {

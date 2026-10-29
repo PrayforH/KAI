@@ -385,6 +385,7 @@ class AguiRunService:
         conversation_prompts = _user_prompts(request)
         model_route_override = _model_route_override(request)
         requested_knowledge = _knowledge_references_override(request)
+        reply_reference = _reply_reference(request)
         if project_id is not None and self._project_context is not None:
             if await self._project_context(tenant_id, user_id, project_id) is None:
                 raise NotFoundError(f"Project not found: {project_id}")
@@ -482,6 +483,7 @@ class AguiRunService:
                     else {}
                 ),
                 **({"project_skill_snapshots": captured_skills} if captured_skills else {}),
+                **({"reply_to": reply_reference} if reply_reference is not None else {}),
                 **({"project_document_ids": project_document_ids} if project_document_ids else {}),
                 **(
                     {"required_model_capabilities": ["vision"]}
@@ -1217,6 +1219,33 @@ def _latest_user_input(request: RunAgentInput) -> tuple[str, list[str]]:
                 input_artifact_ids.append(input_artifact_id)
         return text, input_artifact_ids
     return "", []
+
+
+def _reply_reference(request: RunAgentInput) -> dict[str, str] | None:
+    """Quoted-message reference from the composer, per the reply protocol.
+
+    The client excerpt is display-only; routing back to the referenced
+    message resolves through its persisted run, never through the excerpt.
+    """
+    raw = request.forwarded_props
+    if not isinstance(raw, dict):
+        return None
+    value = cast(dict[str, object], raw).get("replyTo")
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ConflictError("reply reference is invalid")
+    reply = cast(dict[str, object], value)
+    message_id = reply.get("messageId")
+    if not isinstance(message_id, str) or not 1 <= len(message_id) <= 200:
+        raise ConflictError("reply reference is invalid")
+    reference = {"message_id": message_id}
+    excerpt = reply.get("excerpt")
+    if excerpt is not None:
+        if not isinstance(excerpt, str):
+            raise ConflictError("reply reference is invalid")
+        reference["excerpt"] = excerpt[:400]
+    return reference
 
 
 def _user_prompts(request: RunAgentInput) -> list[str]:

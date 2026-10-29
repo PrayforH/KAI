@@ -17,6 +17,7 @@ import { liveResponseStore } from "./live-response-store";
 import { runStreamStore } from "./run-stream-store";
 import { runReuseStore } from "./run-reuse-store";
 import { redirectOnUnauthorized } from "./client-auth";
+import type { ReplyReference } from "./reply-references";
 
 export interface HarnessHttpAgentConfig extends HttpAgentConfig {
   cancelFetch?: typeof fetch;
@@ -179,6 +180,7 @@ export class HarnessHttpAgent extends HttpAgent {
   private cancellation?: { key: string; promise: Promise<void> };
   private modelRouteOverride?: string;
   private knowledgeReferences?: readonly string[];
+  private replyOverride?: ReplyReference;
   private onRunSucceeded?: () => void;
 
   constructor(config: HarnessHttpAgentConfig) {
@@ -230,7 +232,10 @@ export class HarnessHttpAgent extends HttpAgent {
       runId: input.runId,
       idKind: "client",
     };
-    return compactActivityStream(super.run(this.withModelOverride(input)));
+    const outgoing = this.withModelOverride(input);
+    // The reference rides exactly one send; a retry re-quotes deliberately.
+    this.replyOverride = undefined;
+    return compactActivityStream(super.run(outgoing));
   }
 
   adoptActiveRun(threadId: string, serverRunId: string): void {
@@ -242,7 +247,7 @@ export class HarnessHttpAgent extends HttpAgent {
   }
 
   private withModelOverride<T extends object>(input: T): T {
-    if (!this.modelRouteOverride && !this.knowledgeReferences) {
+    if (!this.modelRouteOverride && !this.knowledgeReferences && !this.replyOverride) {
       return input;
     }
     const current = input as T & { forwardedProps?: Record<string, unknown> };
@@ -254,8 +259,21 @@ export class HarnessHttpAgent extends HttpAgent {
         ...(this.knowledgeReferences
           ? { knowledgeReferences: [...this.knowledgeReferences] }
           : {}),
+        ...(this.replyOverride
+          ? {
+              replyTo: {
+                messageId: this.replyOverride.messageId,
+                ...(this.replyOverride.excerpt ? { excerpt: this.replyOverride.excerpt } : {}),
+              },
+            }
+          : {}),
       },
     };
+  }
+
+  /** Attach the composer's quote reference to the next outgoing run. */
+  setReplyTo(reply: ReplyReference | null) {
+    this.replyOverride = reply ?? undefined;
   }
 
   override runAgent(

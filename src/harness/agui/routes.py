@@ -350,6 +350,20 @@ class AguiHistoryMessage(BaseModel):
     tool_call_id: str | None = Field(default=None, serialization_alias="toolCallId")
 
 
+class AguiReplyReference(BaseModel):
+    """A quoted original message, replayed with the run that quoted it.
+
+    The excerpt is display-only; the client locates the original through the
+    message id, and an unresolvable id degrades to 原消息不可用 instead of
+    being silently re-pointed.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    message_id: str = Field(serialization_alias="messageId")
+    excerpt: str | None = None
+
+
 class AguiThreadHistory(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -362,6 +376,8 @@ class AguiThreadHistory(BaseModel):
     # Every visible run of the thread, so a client can show the whole timeline
     # even while only the newest page is materialised.
     total: int = 0
+    # messageId -> quoted original, keyed by the reply message in this page.
+    replies: dict[str, AguiReplyReference] | None = None
 
 
 @router.get(
@@ -1116,6 +1132,20 @@ async def get_agui_thread_history(
         background_tasks.add_task(_materialize_history_snapshot, container, identity.tenant_id, run)
 
     messages: list[AguiHistoryMessage] = [message for chunk in reconstructed for message in chunk]
+    replies: dict[str, AguiReplyReference] = {}
+    for run in page:
+        raw_object: object = run.input.get("reply_to")
+        if not isinstance(raw_object, dict):
+            continue
+        raw = cast(dict[str, object], raw_object)
+        message_id = raw.get("message_id")
+        if not isinstance(message_id, str) or not 1 <= len(message_id) <= 200:
+            continue
+        excerpt = raw.get("excerpt")
+        replies[f"user-{run.run_id}"] = AguiReplyReference(
+            message_id=message_id,
+            excerpt=excerpt if isinstance(excerpt, str) else None,
+        )
     # Add the immutable branch prefix only on the oldest page, preserving pagination.
     if binding.branch_snapshot_id and not has_more:
         snapshot = await load_branch_snapshot(
@@ -1135,6 +1165,65 @@ async def get_agui_thread_history(
         next_cursor=_encode_history_cursor(page[0]) if has_more and page else None,
         has_more=has_more,
         total=len(ordered),
+        replies=replies or None,
+    )
+    return JSONResponse(content=body.model_dump(mode="json", by_alias=True, exclude_none=True))
+
+
+class AguiMessageContext(BaseModel):
+    """Locate-by-id context for a quoted message the client has not loaded."""
+
+    model_config = ConfigDict(frozen=True)
+
+    message_id: str = Field(serialization_alias="messageId")
+    found: bool
+    run_id: str | None = Field(default=None, serialization_alias="runId")
+    created_at: datetime | None = Field(default=None, serialization_alias="createdAt")
+    excerpt: str | None = None
+    role: str | None = None
+
+
+@router.get(
+    "/threads/{thread_id}/messages/{message_id}",
+    response_model=AguiMessageContext,
+    response_model_by_alias=True,
+    response_model_exclude_none=True,
+)
+async def get_agui_message_context(
+    thread_id: str,
+    message_id: str,
+    identity: Annotated[Identity, Depends(require_identity)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+) -> JSONResponse:
+    ensure_permission(identity, "tasks:read")
+    if not 1 <= len(message_id) <= 200:
+        raise HTTPException(status_code=400, detail="invalid message id")
+    binding = await container.agui.get_binding(
+        tenant_id=identity.tenant_id,
+        user_id=identity.user_id,
+        thread_id=thread_id,
+    )
+    runs = _visible_thread_runs(
+        await container.runs.list_for_sessions(
+            identity.tenant_id, list(binding.session_ids), limit=200
+        )
+    )
+    run_id = message_id.removeprefix("user-").removeprefix("assistant-")
+    matched = next(
+        (run for run in runs if run.run_id == run_id and message_id.endswith(run.run_id)),
+        None,
+    )
+    if matched is None:
+        body = AguiMessageContext(message_id=message_id, found=False)
+        return JSONResponse(content=body.model_dump(mode="json", by_alias=True, exclude_none=True))
+    prompt = matched.input.get("prompt")
+    body = AguiMessageContext(
+        message_id=message_id,
+        found=True,
+        run_id=matched.run_id,
+        created_at=matched.created_at,
+        excerpt=prompt[:400] if isinstance(prompt, str) else None,
+        role="user" if message_id.startswith("user-") else "assistant",
     )
     return JSONResponse(content=body.model_dump(mode="json", by_alias=True, exclude_none=True))
 

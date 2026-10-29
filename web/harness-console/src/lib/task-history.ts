@@ -12,6 +12,7 @@ import type { ApprovalDetails } from "../components/approval-card";
 import { latestHistoryRunActivity } from "./activity-schema";
 import { activityStore } from "./activity-store";
 import { requireAuthenticatedResponse } from "./client-auth";
+import { setThreadReplyReferences } from "./reply-references";
 
 export interface TaskSummary {
   thread_id: string;
@@ -55,6 +56,7 @@ export interface ThreadHistoryResponse {
     toolCallId?: string;
     tool_call_id?: string;
   }>;
+  replies?: Record<string, { messageId?: string; excerpt?: string | null }>;
   next_cursor?: string | null;
   has_more?: boolean;
   total?: number;
@@ -153,6 +155,7 @@ async function loadThreadHistory(
         if (isLatestPage && threadHistoryRequests.get(threadId) === request) {
           if (!history || !activeStatuses.has(history.status)) cacheThreadHistory(threadId, history);
           seedAccumulatedHistory(threadId, history);
+          setThreadReplyReferences(threadId, history?.replies);
         }
         return history;
       })
