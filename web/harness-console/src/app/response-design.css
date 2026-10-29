@@ -79,6 +79,12 @@ html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer[data-str
   html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer *, body.codex-theme-v1 .assistant-message-controls { transition: none !important; animation: none !important; }
 }
 
+/* Response actions share theme colors, including feedback's hover and keyboard focus. */
+body.codex-theme-v1 .assistant-message-controls button:is(.assistant-message-copy, .assistant-message-feedback, .turn-branch-button):is(:hover, :focus-visible):not(:disabled) {
+  color: var(--codex-ink);
+  background: var(--codex-surface-hover);
+}
+
 /* Fork is a persistent footer action; its time trails it without layout shifts. */
 body.codex-theme-v1 .turn-completion-slot {
   display: inline-flex;
@@ -103,13 +109,12 @@ body.codex-theme-v1 .turn-branch-button {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: var(--codex-muted);
   cursor: pointer;
+  transition: color 140ms ease, background 140ms ease, transform 140ms ease;
 }
 body.codex-theme-v1 .turn-branch-button > [data-codex-task-icon] { width: 16px; height: 16px; fill: currentColor; stroke: none; }
 body.codex-theme-v1 .harness-assistant-message:is(:hover, :focus-within) .turn-completion-slot > .turn-completion,
 body.codex-theme-v1 .turn-completion-slot:is(:hover, :focus-within, [data-branch-pending]) > .turn-completion { opacity: 1; pointer-events: auto; }
-body.codex-theme-v1 .turn-branch-button:hover { background: var(--codex-surface-hover); color: var(--codex-ink); }
 body.codex-theme-v1 .turn-branch-button:focus-visible { outline: 2px solid var(--codex-muted); outline-offset: 2px; }
 body.codex-theme-v1 .turn-branch-button:disabled { cursor: progress; }
 @media (hover: none) {
