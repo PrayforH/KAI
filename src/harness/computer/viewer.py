@@ -8,6 +8,7 @@ and membership; browser input never selects a host, key, user, or command.
 import asyncio
 import contextlib
 import ipaddress
+import logging
 import os
 import re
 import time
@@ -32,6 +33,8 @@ RFB_FRAME_LIMIT = 65536
 # encodings, refresh requests) is read-only and keeps the observation stream
 # alive; the rest writes to the desktop and needs a confirmed human owner.
 RFB_NEGOTIATE = "negotiate"
+# A message the guest must not receive; consumed so the stream stays aligned.
+RFB_DISCARD = "discard"
 RFB_KEYBOARD = "keyboard"
 RFB_POINTER = "pointer"
 RFB_CUT = "cut"
@@ -42,11 +45,16 @@ RFB_CUT = "cut"
 # noVNC uses, and SetDesktopSize (251) when the client may resize. An
 # unrecognized type is still refused, but a client must never be disconnected
 # for speaking standard RFB.
-_RFB_FIXED_SPANS = {0: 20, 3: 10, 4: 8, 5: 6, 150: 10, 250: 4}
+_RFB_FIXED_SPANS = {0: 20, 3: 10, 4: 8, 5: 6}
 _RFB_INPUT_LABELS = {4: RFB_KEYBOARD, 5: RFB_POINTER}
 _RFB_QEMU_EXTENDED = 255
 _RFB_FENCE = 248
 _RFB_SET_DESKTOP_SIZE = 251
+# Extension messages a client may send that this deployment's guest does not
+# implement (its x11vnc reports them unsupported). They are parsed for stream
+# alignment but never forwarded: handing a server an extension it does not
+# support makes it drop the client, which is what a live browser hit ~1s in.
+_RFB_LOCAL_EXTENSIONS = {150: "EnableContinuousUpdates", 250: "xvp"}
 
 
 class RfbClientFilter:
@@ -101,7 +109,11 @@ class RfbClientFilter:
         return messages
 
     def _pending_input(self) -> bool:
-        return self._span is not None and self._label not in (None, RFB_NEGOTIATE)
+        return self._span is not None and self._label in {
+            RFB_KEYBOARD,
+            RFB_POINTER,
+            RFB_CUT,
+        }
 
     def _next(self) -> tuple[str | None, bytes] | None:
         if self._span is None:
@@ -125,6 +137,8 @@ class RfbClientFilter:
             self._handshake.pop(0)
             self._advance_handshake(message)
             return RFB_NEGOTIATE, message
+        if label == RFB_DISCARD:
+            return None, message  # consumed for alignment, never forwarded
         if label is not None and label != RFB_NEGOTIATE and not self._input_allowed:
             return None, message  # input without a confirmed human owner
         return label or RFB_NEGOTIATE, message
@@ -175,19 +189,22 @@ class RfbClientFilter:
             if self._buffer[self._pos + 1] != 0:
                 raise ValueError("desktop client sent an unknown extended key event")
             span, label = 16, RFB_KEYBOARD
+        elif kind in _RFB_LOCAL_EXTENSIONS:
+            span = 10 if kind == 150 else 4
+            label = RFB_DISCARD
         elif kind == _RFB_FENCE:
             # ClientFence: type, 3-byte pad, flags, 1-byte length, payload.
             if len(self._buffer) - self._pos < 9:
                 return
             span = 9 + self._buffer[self._pos + 8]
-            label = RFB_NEGOTIATE
+            label = RFB_DISCARD
         elif kind == _RFB_SET_DESKTOP_SIZE:
             # SetDesktopSize: type, pad, w, h, screens, pad, 16 bytes/screen.
             if len(self._buffer) - self._pos < 8:
                 return
             screens = self._buffer[self._pos + 6]
             span = 8 + 16 * screens
-            label = RFB_NEGOTIATE
+            label = RFB_DISCARD
         else:
             raise ValueError("desktop client sent an unknown RFB message type")
         if span < 1 or span > RFB_FRAME_LIMIT:
@@ -423,6 +440,8 @@ def create_viewer_app(
                                 and granted_epoch == control["epoch"]
                             ),
                         ):
+                            if kind == RFB_DISCARD:
+                                continue
                             if kind == RFB_KEYBOARD:
                                 input_frames["keyboard"] += 1
                             elif kind == RFB_POINTER:
@@ -459,10 +478,24 @@ def create_viewer_app(
                         valid_until = time.monotonic() + AUTH_GRACE_SECONDS
 
                 tasks = [
-                    asyncio.create_task(job())
+                    asyncio.create_task(job(), name=job.__name__)
                     for job in (to_browser, to_desktop, watch_authorization)
                 ]
-                await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                # One line naming the task that ended the session and why; the
+                # client never sees this, but a silent close is undebuggable.
+                for task in done:
+                    if task.exception() is not None:
+                        logging.getLogger(__name__).warning(
+                            "desktop session ended by %s: %s: %s",
+                            task.get_name(),
+                            type(task.exception()).__name__,
+                            str(task.exception())[:200],
+                        )
+                    else:
+                        logging.getLogger(__name__).warning(
+                            "desktop session ended by %s: returned", task.get_name()
+                        )
             except (
                 OSError,
                 RuntimeError,

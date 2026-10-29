@@ -1,6 +1,7 @@
 """Browser access needs a live owner session, matching origin and sole input."""
 
 import asyncio
+import struct
 import sys
 import time
 from pathlib import Path
@@ -281,11 +282,12 @@ def test_input_grant_never_survives_an_unobserved_generation(
         state["active"] = False
 
 
-def test_standard_client_messages_are_never_mistaken_for_unknown_types():
+def test_client_extensions_are_aligned_but_never_forwarded():
     """noVNC sends Fence, EnableContinuousUpdates, xvp and SetDesktopSize.
 
-    Refusing those disconnected every real browser 4 seconds after it
-    connected, even though the core handshake had succeeded.
+    Refusing them disconnected every real browser; forwarding them made the
+    guest (~1s later) drop the client because its x11vnc implements none of
+    them. They must be parsed for alignment and then discarded.
     """
 
     from harness.computer.viewer import RfbClientFilter
@@ -298,9 +300,14 @@ def test_standard_client_messages_are_never_mistaken_for_unknown_types():
 
     policy = RfbClientFilter(VERSION)
     messages = policy.feed(HANDSHAKE + pipeline, input_allowed=False)
-    assert [kind for kind, _ in messages] == ["negotiate"] * 7
-    assert b"".join(chunk for _, chunk in messages[-4:]) == pipeline
+    forwarded = [chunk for kind, chunk in messages if kind != "discard"]
+    # Exactly the three handshake messages reach the guest; nothing else.
+    assert forwarded == [VERSION, b"\x01", b"\x01"]
+    assert len(messages) == 7
     assert not policy.resync_required
+    # And the stream is still aligned: a following request parses cleanly.
+    follow = struct.pack(">BBHHHH", 3, 0, 0, 0, 1280, 800)
+    assert policy.feed(follow, input_allowed=False)[-1] == ("negotiate", follow)
 
 
 def test_a_truly_undefined_client_message_still_fails_closed():
