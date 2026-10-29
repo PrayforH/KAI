@@ -1,0 +1,119 @@
+{
+  "source_commit": "8f2c3a8fddde21e937b0ac75527af16a2f7b1045",
+  "develop_commit": "4d30bbd42d843fa3bdce9fafc01519065b061bea",
+  "deployed": true,
+  "tests": {
+    "frontend": 166,
+    "backend": 176,
+    "typescript": "passed",
+    "ruff": "passed",
+    "linux_amd64_build": "passed"
+  },
+  "files": {
+    "count": 10,
+    "all_sent": true,
+    "download_and_hash_ok": true,
+    "preview_and_hash_ok": true,
+    "anonymous_denied": true
+  },
+  "channels": {
+    "feishu": {
+      "pending_files": 0,
+      "failed_files": 0,
+      "delivered_files": 7,
+      "receiver_online": true
+    },
+    "weixin": {
+      "online": true,
+      "fileDeliveries": {
+        "sent": 3
+      }
+    }
+  },
+  "computer": {
+    "http": 200,
+    "enabled": true,
+    "desktop_link": true,
+    "control_state": "observe"
+  },
+  "projects": {
+    "http": 200,
+    "count": 1,
+    "resource_checks": [
+      {
+        "http": 200
+      }
+    ]
+  },
+  "history": {
+    "http": 200,
+    "feishu_marker": true,
+    "wechat_marker": true,
+    "file_card_projection": true
+  },
+  "continuity": {
+    "all_succeeded": true,
+    "same_session": true,
+    "web_recalled_wechat_code": true
+  },
+  "browser": {
+    "refreshed_history_and_file_cards": true,
+    "html_preview_body_visible": true,
+    "computer_connected_observe": true,
+    "computer_icon_only_on_assistant": true,
+    "header_help_removed": true
+  },
+  "images": {
+    "api": {
+      "image": "kai/assistant-api:20261029-develop-8f2c3a8f",
+      "image_id": "sha256:475242280ca44c1d958f2def89c9d8ffa235c73c203d58dbeae3c9dd9043fcba",
+      "status": "running",
+      "health": "healthy",
+      "source_revision": "8f2c3a8fddde21e937b0ac75527af16a2f7b1045"
+    },
+    "worker": {
+      "image": "kai/assistant-api:20261029-develop-8f2c3a8f",
+      "image_id": "sha256:475242280ca44c1d958f2def89c9d8ffa235c73c203d58dbeae3c9dd9043fcba",
+      "status": "running",
+      "health": "healthy",
+      "source_revision": "8f2c3a8fddde21e937b0ac75527af16a2f7b1045"
+    },
+    "computer-control": {
+      "image": "kai/assistant-api:20261029-develop-8f2c3a8f",
+      "image_id": "sha256:475242280ca44c1d958f2def89c9d8ffa235c73c203d58dbeae3c9dd9043fcba",
+      "status": "running",
+      "health": "healthy",
+      "source_revision": "8f2c3a8fddde21e937b0ac75527af16a2f7b1045"
+    },
+    "web": {
+      "image": "kai/assistant-web:20261029-develop-8f2c3a8f",
+      "image_id": "sha256:258e80e2782f26bc02b3a967362cdff6b0e0a967bf04ca33848c2ccca9559ca8",
+      "status": "running",
+      "health": "healthy",
+      "source_revision": "8f2c3a8fddde21e937b0ac75527af16a2f7b1045"
+    },
+    "feishu": {
+      "image": "kai/feishu-receiver:20261029-develop-8f2c3a8f",
+      "image_id": "sha256:722abe6e7e49463429b50ddbaae8f5ce8408b1d371e2f309899b63eb39e45248",
+      "status": "running",
+      "health": null,
+      "source_revision": "8f2c3a8fddde21e937b0ac75527af16a2f7b1045"
+    },
+    "weixin": {
+      "image": "kai/weixin-receiver:20261029-develop-8f2c3a8f",
+      "image_id": "sha256:6e0500a1a4ca686340ddddce244a831b8545d608c4dd52e6ccd9d74dd62a5334",
+      "status": "running",
+      "health": null,
+      "source_revision": "8f2c3a8fddde21e937b0ac75527af16a2f7b1045"
+    },
+    "computer-viewer": {
+      "image": "kai/computer-viewer:20261029-v12-clipboard",
+      "image_id": "sha256:f0ad4cfb104632b34e079363abfc4e2a234801896aeda0aa573a5556728faef5",
+      "status": "running",
+      "health": null,
+      "source_revision": null
+    }
+  },
+  "migration": "0054",
+  "private_compose_backup": "/data/kai-79-20261013/compose.private.before-develop-8f2c3a8f.json"
+}
