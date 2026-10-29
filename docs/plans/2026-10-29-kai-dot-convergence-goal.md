@@ -133,7 +133,11 @@
 
 ### 收尾快照（真实证据）
 
-- 测试基线：`tests/unit/sandbox` 348 passed；computer 相关集成 30 passed（隔离库
+- 最终基线（08:24，真实时间）：`pytest tests/unit/sandbox tests/unit/feishu` = **379 passed, 2 skipped**；
+  `ruff check src/harness/computer src/harness/feishu tests/unit/sandbox tests/unit/feishu` All checks passed。
+  2 个 skip 是 `test_sdk.py` 依赖本地未安装的 lark SDK（`SdkSender` 的 uuid 幂等与 403/429/503 分类测试
+  在镜像内有 SDK 时会运行；本地跳过，故幂等只算"已实现+有测试、本地未执行"）。
+- 早前基线：`tests/unit/sandbox` 348 passed；computer 相关集成 30 passed（隔离库
   `postgresql+asyncpg://harness:***@127.0.0.1:35432/harness_test`）；`ruff check src/harness/computer tests/unit/sandbox`
   All checks passed。集成测库此前缺 `harness_test`，本轮新建；conftest 改为 `DROP SCHEMA public CASCADE`
   以覆盖 feishu/evolution 对 assistant 表的跨域外键。
