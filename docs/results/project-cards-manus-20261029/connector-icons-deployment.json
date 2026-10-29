@@ -1,0 +1,30 @@
+{
+  "source_commit": "3e0eaf4f",
+  "image": "kai/projects-web:project-cards-20261029-r3",
+  "image_id": "sha256:37cb12c418d82794743c64d4ccc4cac0c408da9fe1611bb05b65c5cba1abcbbe",
+  "previous_web": "kai/projects-web:project-cards-20261029-r2",
+  "url": "https://172.20.109.174",
+  "release_directory": "/data/agent-studio/releases/project-cards-20261029-r3",
+  "changes": [
+    "Connector glyphs use a vendored Lucide 0.475.0 subset; license shipped in public/licenses/lucide.txt.",
+    "16px glyphs inside 28px borderless controls, 6px gaps, neutral gray, hover background and accessible names.",
+    "Five connector icon rows maximum; other resource rows retain their five-row cap."
+  ],
+  "verification": {
+    "project_home_tests": 17,
+    "production_build": "passed",
+    "preview_browser": "passed",
+    "live_browser": "passed",
+    "actual_connector_geometry": {
+      "button": 28,
+      "glyph": 16,
+      "border": "0px"
+    },
+    "no_page_errors": true,
+    "light_dark_and_mobile": "passed",
+    "uploads_links_saved_results_regression": "passed with mocked browser API responses; no production user records changed",
+    "both_web_containers": "healthy, zero restarts",
+    "http_3301_http_3501_https_api_health": 200,
+    "backend_images_unchanged": true
+  }
+}

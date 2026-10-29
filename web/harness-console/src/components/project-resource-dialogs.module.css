@@ -311,3 +311,12 @@
   .addGroup { width: 100%; }
   .linkForm { grid-template-columns: minmax(0, 1fr); }
 }
+
+.localSkill { padding: 14px 8px; border-bottom: 1px solid var(--codex-line); }
+.localSkill > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.localSkill strong { font-size: 14px; }
+.localSkill small, .localSkill p { color: var(--codex-muted); font-size: 12px; }
+.localSkill p { line-height: 1.6; }
+.localSkill summary { font-size: 12px; cursor: pointer; }
+.localSkill pre { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.localActions { display: flex; gap: 8px; margin-top: 12px; }

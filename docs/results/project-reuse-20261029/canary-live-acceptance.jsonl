@@ -1,0 +1,12 @@
+{"step": "independent_web_search", "results": 5, "saved_url": "https://www.python.org/about/?pStoreID=ups", "creates_chat": false}
+{"step": "run_started", "thread": "53464537-a86a-47c2-bff2-b3087e2a941b", "run": "run_5f1c84e50d664e5faa40a72bb66c69e6"}
+{"step": "run_completed", "run": "run_5f1c84e50d664e5faa40a72bb66c69e6", "status": "succeeded"}
+{"step": "run_started", "thread": "e68637bb-b0fe-4334-b4f2-4dd141c243ed", "run": "run_ef14981792764b3aae35d6ec4a416b3c"}
+{"step": "run_completed", "run": "run_ef14981792764b3aae35d6ec4a416b3c", "status": "succeeded"}
+{"step": "saved_resource_reused_in_new_task", "artifact": "artifact_9faa8a36fc9d4b40aaebf493e58ca5cd", "snapshot": "input_artifact_849fd3b18bc2465895633048a72e4bb3", "verified_marker": true, "idempotent": true}
+{"step": "skill_generated_reviewed_saved_enabled", "skill": "sales-amount-markdown-report", "project_skill": "project_skill_fdcab2793f6d426996441d67b3f61c16", "draft_first": true}
+{"step": "run_started", "thread": "f490d74c-45c6-40c5-b3c2-ac833147b70d", "run": "run_d69d75de906b4a2fa9d89695e7adb732"}
+{"step": "run_completed", "run": "run_d69d75de906b4a2fa9d89695e7adb732", "status": "succeeded"}
+{"step": "project_skill_reused_by_runtime", "run": "run_d69d75de906b4a2fa9d89695e7adb732", "skill": "sales-amount-markdown-report", "resolution": "project", "verified_output": true, "pinned_snapshot": true, "agents_unchanged": true}
+{"step": "PASS", "checks": ["keyword search", "URL entry", "no search task", "resource snapshot", "new task reads resource", "real skill extraction", "review before save", "project-only enable", "runtime uses skill", "disable preserves existing run", "agents unchanged"]}
+{"step": "cleanup", "project_deleted": true, "qa_tasks_archived": 3}

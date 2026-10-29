@@ -16,10 +16,6 @@ const workbench = readFileSync(
   join(process.cwd(), "src/components/workbench-rail.tsx"),
   "utf8",
 );
-const projectPanel = readFileSync(
-  join(process.cwd(), "src/components/project-resources-panel.tsx"),
-  "utf8",
-);
 const projectRoute = readFileSync(
   join(process.cwd(), "src/app/studio/projects/[projectId]/page.tsx"),
   "utf8",
@@ -46,7 +42,7 @@ describe("project-grouped task list", () => {
     expect(sidebar).toContain("置顶");
     expect(sidebar).toContain("移除项目");
     expect(sidebar).toContain("<span>查看项目</span>");
-    expect(sidebar).not.toContain("编辑项目");
+    expect(sidebar).toContain("编辑项目");
     expect(sidebar).toContain("useConfirmationDialog");
     expect(sidebar).not.toContain("查看 ${project.name} 的文件");
     expect(sidebar).not.toContain('projectHref(project.projectId, "results")');
@@ -57,18 +53,15 @@ describe("project-grouped task list", () => {
     expect(page).toContain('className="task-project-breadcrumb"');
     expect(page).toContain("createProjectTask(currentTask.project_id, nextAgent)");
     expect(workbench).toContain("projectId");
-    expect(workbench).toContain("<ProjectResourcesPanel projectId={projectId} />");
+    expect(workbench).not.toContain("ProjectResourcesPanel");
+    expect(workbench).not.toContain("项目资源视图");
   });
 
-  it("shows project knowledge, files and skills beside the task conversation", () => {
-    expect(projectPanel).toContain('aria-label="项目资源"');
-    expect(projectPanel).toContain("知识库");
-    expect(projectPanel).toContain("文件和资源");
-    expect(projectPanel).toContain("技能");
-    expect(projectPanel).not.toContain("记忆");
-    expect(projectPanel).toContain("<ProjectKnowledgeDialog");
-    expect(projectPanel).toContain("<ProjectFilesDialog");
-    expect(projectPanel).toContain("<ProjectSkillsDialog");
+  it("keeps project configuration on the project page, outside the task drawer", () => {
+    const home = readFileSync(join(process.cwd(), "src/components/project-home.tsx"), "utf8");
+    expect(home).toContain("<ProjectContextRail space={space} />");
+    expect(workbench).not.toContain("ProjectResourcesPanel");
+    expect(workbench).not.toContain("项目资源视图");
   });
 
   it("opens a dedicated dialog for each project resource card", () => {
@@ -81,7 +74,7 @@ describe("project-grouped task list", () => {
     expect(dialogs).toContain("export function ProjectFilesDialog");
     expect(dialogs).toContain("搜索文件和资源");
     expect(dialogs).toContain("搜索技能、标签或来源");
-    expect(dialogs).toContain("添加网页");
+    expect(dialogs).toContain("搜索网页");
     expect(dialogs).toContain("project_id=${encodeURIComponent(project.projectId)}");
     expect(dialogs).toContain("任务产物");
     expect(dialogs).toContain("/content?inline=1");

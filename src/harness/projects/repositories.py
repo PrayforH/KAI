@@ -27,7 +27,9 @@ class ProjectRepository(Protocol):
     async def list_for_user(
         self, tenant_id: str, user_id: str, *, include_archived: bool
     ) -> list[Project]: ...
-    async def replace(self, project: Project) -> None: ...
+    async def replace(
+        self, project: Project, *, expected_updated_at: datetime | None = None
+    ) -> None: ...
     async def delete(self, tenant_id: str, project_id: str) -> None: ...
 
 
@@ -102,11 +104,15 @@ class InMemoryProjectRepository:
             ),
         )
 
-    async def replace(self, project: Project) -> None:
+    async def replace(
+        self, project: Project, *, expected_updated_at: datetime | None = None
+    ) -> None:
         async with self._lock:
             current = self._items.get(project.project_id)
             if current is None or current.tenant_id != project.tenant_id:
                 raise NotFoundError(f"Project not found: {project.project_id}")
+            if expected_updated_at is not None and current.updated_at != expected_updated_at:
+                raise ConflictError("项目已被更新，请刷新后重试")
             if any(
                 item.project_id != project.project_id
                 and item.tenant_id == project.tenant_id

@@ -26,7 +26,7 @@ export function ConversationThread({ threadId, ...config }: ComponentProps<typeo
     ...messageComponents
   } = config.components ?? {};
   return (
-    <ConversationRedactionProvider><Thread.Root config={config}>
+    <ConversationRedactionProvider><Thread.Root config={{ ...config, branchPicker: { ...config.branchPicker, allowBranchPicker: false } }}>
       <ThreadPrimitive.Viewport className="aui-thread-viewport" ref={viewport} autoScroll={false} scrollToBottomOnRunStart={false} scrollToBottomOnInitialize={false} scrollToBottomOnThreadSwitch={false}>
         <Welcome />
         <Thread.Messages MessagesFooter={MessagesFooter} components={messageComponents} />

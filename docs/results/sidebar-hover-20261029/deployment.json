@@ -1,0 +1,15 @@
+{
+  "codeCommit": "7323bb65",
+  "environment": "172.20.109.174",
+  "webImage": "kai/projects-web:sidebar-hover-20261029-r1",
+  "webDigest": "sha256:1f7ba94eb7ae26d6de531d512c0e1a93a8ec8c11410623a8f1f073e8ffbd8b46",
+  "change": "Remove hidden pin/more controls from row sizing. Idle title uses all space before the timestamp. Hover, focus and open menus reserve action space and apply a title fade only to overflowing titles. Touch preserves visible controls and non-overlapping titles.",
+  "validation": "Actual production-build UI with synthetic API responses: both themes at 220/264/340px sidebar preferences, idle/hover/reset title bounds, hidden idle mask, open menu after pointer leaves, keyboard focus, and touch context. Native Next.js build passed.",
+  "geometryAt264px": {
+    "idleTitleWidth": 177,
+    "hoverTitleWidth": 147,
+    "gapBeforeVisibleActions": 8,
+    "idleMask": "none"
+  },
+  "scope": "Web only; API, workers and project/task data unchanged; browser fixtures create no server records."
+}

@@ -103,6 +103,9 @@ export function ProjectResourcesPanel({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     void reload();
+    const changed = (event: Event) => { if ((event as CustomEvent<{projectId:string}>).detail?.projectId === projectId) void reload(); };
+    window.addEventListener("harness:project-results-changed", changed);
+    return () => window.removeEventListener("harness:project-results-changed", changed);
   }, [projectId]);
 
   const knowledge = useMemo(() => {
@@ -117,11 +120,10 @@ export function ProjectResourcesPanel({ projectId }: { projectId: string }) {
     const byReference = new Map(
       packages.map((pkg) => [`${pkg.packageId}@${pkg.revision}`, pkg]),
     );
-    return (project?.skillReferences ?? []).map((reference) => ({
-      reference,
-      package: byReference.get(reference),
-    }));
-  }, [project?.skillReferences, packages]);
+    return [...(project?.localSkills ?? []).map(item=>({reference:item.skillId, package:{displayName: `${item.displayName}${item.enabled ? "" : " · 草稿"}`}})), ...(project?.skillReferences ?? []).map((reference) => ({
+      reference, package: byReference.get(reference),
+    }))];
+  }, [project?.skillReferences, project?.localSkills, packages]);
 
   const files = documents.length + links.length;
   const previewFiles = [

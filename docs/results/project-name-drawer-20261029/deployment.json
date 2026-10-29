@@ -1,0 +1,18 @@
+{
+  "codeCommit": "ff094564",
+  "environment": "172.20.109.174",
+  "webImage": "kai/projects-web:project-name-drawer-20261029-r1",
+  "webDigest": "sha256:0bb739e3be943bf0be4754a93fd11f79d70851509708bc17e8d475fa96b76788",
+  "scope": [
+    "Remove project-resource view and view switching state from the main conversation drawer; retain task file list, navigation, previews and artifact reuse actions",
+    "Add Edit Project to sidebar project menu, using the existing name dialog UI with a name-only PATCH request",
+    "Refresh sidebar, task breadcrumb and current project page immediately after renaming"
+  ],
+  "validation": {
+    "unit": "56 related frontend tests plus 2 rename dialog tests passed; 12 updated project contracts passed",
+    "build": "Next.js 16.4.1 production build passed",
+    "browser": "Actual Web UI with synthetic API responses; both conversation breadcrumb and already-open project heading update, file preview works, no project-resource tab or panel in drawer",
+    "liveApi": "Disposable project renamed with stable ID and preserved instructions/skill configuration; test project deleted"
+  },
+  "backend": "API, workers and database unchanged; existing memory and project reuse Web baseline preserved by three-way merge"
+}
