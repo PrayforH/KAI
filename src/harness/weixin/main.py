@@ -33,6 +33,13 @@ async def owner_loop(service: WeixinService, tenant: str, user: str) -> None:
         tasks.create_task(loop(service.process_chat_once, 1))
         # Media download/ASR can be slow; stop/status must remain reachable.
         tasks.create_task(loop(service.process_control_once, 1))
+        if service.files:
+
+            async def files_once(_tenant: str, _user: str) -> object:
+                assert service.files is not None
+                return await service.files.deliver_once()
+
+            tasks.create_task(loop(files_once, 1))
 
 
 async def run() -> None:

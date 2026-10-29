@@ -33,6 +33,7 @@ from harness.assistant.delegation import (
     AssistantDelegationGateway,
     assistant_delegation_overlay,
 )
+from harness.assistant.file_delivery import ChannelFiles
 from harness.assistant.memory_tools import MemoryBankGateway, assistant_memory_overlay
 from harness.assistant.repository import PostgresAssistantRepository
 from harness.assistant.service import AssistantService
@@ -1617,9 +1618,7 @@ def build_production_container(
             else PlatformToolOverlay()
         )
         memory_overlay = (
-            assistant_memory_overlay(
-                MemoryBankGateway(container.memory_bank), run, session
-            )
+            assistant_memory_overlay(MemoryBankGateway(container.memory_bank), run, session)
             if container.memory_bank is not None and session.agent_name
             else PlatformToolOverlay()
         )
@@ -1889,7 +1888,9 @@ def build_production_container(
         ].route_id
 
     def feishu_factory(active: FeishuSettings) -> FeishuService:
-        return FeishuService(
+        from harness.feishu.file_transport import FeishuFileTransport
+
+        service = FeishuService(
             FeishuRepository(sessions, active.app_id),
             active,
             assistant=assistant,
@@ -1905,6 +1906,10 @@ def build_production_container(
                 vision_route=lambda tenant: channel_vision_route(tenant, active.vision_model_route),
             ),
         )
+        service.files = ChannelFiles(
+            sessions, artifact_service, mcp_credential_service.cipher, FeishuFileTransport(service)
+        )
+        return service
 
     container = ApiContainer(
         presentations=presentations,
@@ -2006,4 +2011,13 @@ def build_production_container(
         sandbox_startup=sandbox_startup,
         close=close,
     )
+    if container.weixin is not None:
+        from harness.weixin.file_transport import WeixinFileTransport
+
+        container.weixin.files = ChannelFiles(
+            sessions,
+            artifact_service,
+            mcp_credential_service.cipher,
+            WeixinFileTransport(container.weixin),
+        )
     return container

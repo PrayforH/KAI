@@ -55,6 +55,15 @@ async def service(request: Request, identity: Reader) -> FeishuService:
 Service = Annotated[FeishuService, Depends(service)]
 
 
+@router.post("/files/retry")
+async def retry_files(identity: Writer, feishu: Service) -> dict[str, int]:
+    await feishu.authorize(identity.tenant_id, identity.user_id)
+    count = (
+        await feishu.files.retry_failed(identity.tenant_id, identity.user_id) if feishu.files else 0
+    )
+    return {"queued": count}
+
+
 def control(request: Request) -> FeishuConnectionControl:
     value = request.app.state.container.feishu_connections
     if value is None:

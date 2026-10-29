@@ -133,6 +133,10 @@ class Receiver:
                         for _ in range(10):
                             if not await service.process_conversation_once():
                                 break
+                        if service.files:
+                            for _ in range(4):
+                                if not await service.files.deliver_once():
+                                    break
                         await delivery.collect()
                         for _ in range(2):
                             if not await delivery.deliver_once():

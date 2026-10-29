@@ -101,6 +101,9 @@ class BindingCode(StudioModel):
 
 
 class ConnectionStatus(StudioModel):
+    pending_files: int = Field(default=0, alias="pendingFiles")
+    failed_files: int = Field(default=0, alias="failedFiles")
+    delivered_files: int = Field(default=0, alias="deliveredFiles")
     configured: bool
     enabled: bool
     receiver_online: bool = Field(alias="receiverOnline")

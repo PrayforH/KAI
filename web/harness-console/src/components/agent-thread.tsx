@@ -60,6 +60,8 @@ import { ActivitySummary } from "./activity-summary";
 import { TaskAgentSwitcher } from "./task-agent-switcher";
 import { ApprovalCard, type ApprovalDetails } from "./approval-card";
 import { ArtifactCard, isImageArtifact, type ArtifactDetails } from "./artifact-list";
+import { AssistantResults } from "./assistant-results";
+import { usePersonalAssistantEntry } from "./personal-assistant-context";
 import { replyWebImages } from "../lib/reply-web-images";
 import { ReplyWebImages } from "./reply-web-images";
 import { ReplyArtifactImages } from "./reply-artifact-images";
@@ -1187,16 +1189,17 @@ function HarnessArtifactPart() {
   return null;
 }
 
-const ReasoningPart: ReasoningMessagePartComponent = ({ text, status }) => (
-  <details className="reasoning-card" data-active={status.type === "running"} open={status.type === "running"}>
+const ReasoningPart: ReasoningMessagePartComponent = ({ text, status }) => {
+  const personalAssistant = usePersonalAssistantEntry();
+  return <details className="reasoning-card" data-active={status.type === "running"} open={!personalAssistant && status.type === "running"}>
     <summary>
       <span className="reasoning-mark" aria-hidden="true" />
       <span>{status.type === "running" ? "正在思考" : "已思考"}</span>
       <small>{status.type === "running" ? "进行中" : "展开查看"}</small>
     </summary>
     <div>{text}</div>
-  </details>
-);
+  </details>;
+};
 
 type AssistantPartLike = {
   type?: string;
@@ -1429,6 +1432,7 @@ export function responseTextForTurn(messageId: string, nativeText: string, direc
 
 export function HarnessAssistantMessage() {
   const redact = useConversationRedactor();
+  const personalAssistant = usePersonalAssistantEntry();
   const conversationScope = useConversationScope();
   const live = useLiveResponse();
   const isLast = useAuiState((state) => state.message.isLast);
@@ -1570,10 +1574,10 @@ export function HarnessAssistantMessage() {
       {!hasVideoGeneration ? (
         <>
         <div className="artifact-summary-line">
-          <ArtifactSummaryRow artifacts={turnArtifacts} />
+          {personalAssistant || conversationScope?.compactComposer ? <AssistantResults artifacts={turnArtifacts} /> : <ArtifactSummaryRow artifacts={turnArtifacts} />}
         </div>
         <div className="assistant-message-controls">
-          <HarnessBranchPicker />
+          {!personalAssistant && <HarnessBranchPicker />}
           <AssistantActionBar.Root
             className="assistant-feedback-actions"
             hideWhenRunning

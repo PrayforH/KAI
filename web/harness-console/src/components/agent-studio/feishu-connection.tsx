@@ -9,7 +9,7 @@ import styles from "./feishu-connection.module.css";
 
 type Status = { configured: boolean; enabled: boolean; receiverOnline: boolean; receiverState: string;
   lastEventAt: string | null; bound: boolean; notifications: boolean; boundAt: string | null;
-  pendingDeliveries: number; failedDeliveries: number };
+  pendingDeliveries: number; failedDeliveries: number; pendingFiles?: number; failedFiles?: number; deliveredFiles?: number };
 type Configuration = { appId: string; configured: boolean; enabled: boolean; revision: number;
   appliedRevision: number; receiverLabel: string; canManage: boolean; source: string };
 type Diagnostics = { checkedAt: string; checks: { key: string; label: string;
@@ -17,7 +17,7 @@ type Diagnostics = { checkedAt: string; checks: { key: string; label: string;
 type Code = { code: string; expiresAt: string };
 const date = (value: string) => new Date(value).toLocaleString("zh-CN");
 const permissions = JSON.stringify({ scopes: { tenant: ["im:message.p2p_msg:readonly",
-  "im:message:send_as_bot", "im:message:readonly"], user: [] } }, null, 2);
+  "im:message:send_as_bot", "im:message:readonly", "im:resource:upload"], user: [] } }, null, 2);
 
 export function FeishuConnection({ compact = true }: { compact?: boolean }) {
   const [managed, setManaged] = useState(false); const management = useRef<HTMLDialogElement>(null);
@@ -95,6 +95,10 @@ export function FeishuConnection({ compact = true }: { compact?: boolean }) {
         {config?.canManage && <button className={styles.primary} disabled={busy} onClick={() => { setAppId(config.appId); setSecret(""); setError(""); setOpen(true); }}>{config.enabled ? "配置连接" : "连接飞书"}</button>}
         {config?.configured && <button className={styles.button} disabled={busy} onClick={() => void perform(diagnose)}>连接诊断</button>}
         {online && status?.bound && <button className={styles.button} disabled={busy} onClick={() => void perform(sendTest)}>发送测试消息</button>}
+        {Boolean(status?.failedFiles) && <button className={styles.button} disabled={busy} onClick={() => void perform(async () => {
+          const result = await assistantRequest<{ queued: number }>("feishu/files/retry", "POST");
+          setNotice(`已重新排队 ${result.queued} 份未发送文件。回执不明确的文件不会自动重发。`);
+        })}>重试未发送文件</button>}
         {config?.canManage && config.enabled && <button className={styles.textButton} disabled={busy} onClick={() => setConfirm("disconnect")}>断开连接</button>}
       </div>
       {config && !config.canManage && !config.enabled && <small>由工作区管理员连接飞书机器人，成员只需绑定本人账号。</small>}
@@ -114,6 +118,7 @@ export function FeishuConnection({ compact = true }: { compact?: boolean }) {
       <div className={styles.sectionTitle}><h3>本人账号</h3><span className={styles.state}>{status?.bound ? "已绑定" : "待绑定"}</span></div>
       {status?.bound ? <><p>已关联当前 KAI 账号。</p>
         <div className={styles.accountMeta}>通知：{status.notifications ? "已开启" : "已关闭"} · 待投递 {status.pendingDeliveries} 条{status.failedDeliveries > 0 && ` · 未确认或失败 ${status.failedDeliveries} 条`}</div>
+        <div className={styles.accountMeta}>文件：已交付 {status.deliveredFiles ?? 0} 份 · 待发送 {status.pendingFiles ?? 0} 份{Boolean(status.failedFiles) && ` · 未确认或失败 ${status.failedFiles} 份，可在助理文件中下载`}</div>
         <div className={styles.actions}><button className={styles.button} disabled={busy} onClick={() => void perform(async () => {
           await assistantRequest("feishu/notifications", "PUT", { enabled: !status.notifications });
         })}>{status.notifications ? "关闭飞书通知" : "开启飞书通知"}</button><button className={styles.textButton} disabled={busy} onClick={() => setConfirm("unbind")}>解除绑定</button></div>

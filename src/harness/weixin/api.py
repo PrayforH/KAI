@@ -24,6 +24,15 @@ def service(request: Request) -> WeixinService:
 Service = Annotated[WeixinService, Depends(service)]
 
 
+@router.post("/files/retry")
+async def retry_files(identity: Writer, weixin: Service) -> dict[str, int]:
+    await weixin.authorize(identity.tenant_id, identity.user_id)
+    count = (
+        await weixin.files.retry_failed(identity.tenant_id, identity.user_id) if weixin.files else 0
+    )
+    return {"queued": count}
+
+
 class Verification(BaseModel):
     login_id: str = Field(alias="loginId", min_length=1, max_length=64)
     code: str = Field(pattern=r"^[0-9A-Za-z]{4,12}$")

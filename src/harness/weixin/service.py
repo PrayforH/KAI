@@ -16,6 +16,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from harness.assistant.controls import CONTROL_ALIASES, STEER_PREFIXES, ControlIntent, parse_control
 from harness.assistant.conversation import PersonalConversation
+from harness.assistant.file_delivery import ChannelFiles
 from harness.auth.service import AuthService
 from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
 from harness.feishu.media import MediaRejectedError
@@ -79,6 +80,7 @@ class WeixinService:
         )
         self.client = client or WeixinClient()
         self.media = media
+        self.files: ChannelFiles | None = None
 
     def seal(self, row: Connection, purpose: str, value: dict[str, str]) -> str:
         return self.cipher.encrypt(
@@ -133,6 +135,7 @@ class WeixinService:
             }
             return {
                 "bound": bool(row.ciphertext),
+                "fileDeliveries": await self.files.counts(s, tenant, user) if self.files else {},
                 "enabled": row.enabled,
                 "online": bool(
                     row.enabled
@@ -585,6 +588,15 @@ class WeixinService:
                         row.status = "running"
                         return True
                     row.reply = await self.conversation.answer(run)
+                    if self.files:
+                        await self.files.enqueue(
+                            s,
+                            tenant_id=tenant,
+                            user_id=user,
+                            source_id=row.message_id,
+                            route=row.generation,
+                            run_id=run.run_id,
+                        )
                     row.status = "ready"
                 credentials = self.open(connection, "credentials", connection.ciphertext)
                 context = self.open(connection, "context", row.context_ciphertext)["context"]

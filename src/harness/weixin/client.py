@@ -5,9 +5,10 @@ accepted only for HTTPS hosts in the Weixin domain, without ports or userinfo.
 """
 
 import base64
+import hashlib
 import secrets
 from typing import Any, cast
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 
@@ -112,6 +113,13 @@ class WeixinClient:
     async def send(
         self, credentials: dict[str, str], context: str, client_id: str, text: str
     ) -> None:
+        await self.send_item(
+            credentials, context, client_id, {"type": 1, "text_item": {"text": text}}
+        )
+
+    async def send_item(
+        self, credentials: dict[str, str], context: str, client_id: str, item: dict[str, Any]
+    ) -> None:
         await self.request(
             "sendmessage",
             base=credentials["base"],
@@ -124,7 +132,76 @@ class WeixinClient:
                     "message_type": 2,
                     "message_state": 2,
                     "context_token": context,
-                    "item_list": [{"type": 1, "text_item": {"text": text}}],
+                    "item_list": [item],
                 }
             },
         )
+
+    async def upload_file(
+        self, credentials: dict[str, str], name: str, content: bytes
+    ) -> dict[str, Any]:
+        """Tencent's encrypted CDN upload, followed by a native FILE item."""
+        from cryptography.hazmat.primitives import padding
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+        from harness.feishu.media import MediaRejectedError
+        from harness.weixin.media import WeixinMediaSettings, cdn_url
+
+        if not content or len(content) > WeixinMediaSettings().max_resource_bytes:
+            raise MediaRejectedError("微信文件为空或超过发送上限，请在网页下载。")
+        key, filekey = secrets.token_bytes(16), secrets.token_hex(16)
+        padder = padding.PKCS7(128).padder()
+        padded = padder.update(content) + padder.finalize()
+        encoder = Cipher(algorithms.AES(key), modes.ECB()).encryptor()
+        encrypted = encoder.update(padded) + encoder.finalize()
+        result = await self.request(
+            "getuploadurl",
+            base=credentials["base"],
+            token=credentials["token"],
+            body={
+                "filekey": filekey,
+                "media_type": 3,
+                "to_user_id": credentials["peer"],
+                "rawsize": len(content),
+                "rawfilemd5": hashlib.md5(content, usedforsecurity=False).hexdigest(),
+                "filesize": len(encrypted),
+                "no_need_thumb": True,
+                "aeskey": key.hex(),
+            },
+        )
+        url = result.get("upload_full_url")
+        if not url:
+            param = result.get("upload_param")
+            if not isinstance(param, str) or not param:
+                raise WeixinError("UploadNotConfirmed")
+            url = "https://novac2c.cdn.weixin.qq.com/c2c/upload?" + urlencode(
+                {"encrypted_query_param": param, "filekey": filekey}
+            )
+        url = cdn_url({"full_url": url})
+        try:
+            async with httpx.AsyncClient(
+                transport=self.transport, trust_env=False, timeout=45, follow_redirects=False
+            ) as client:
+                response = await client.post(
+                    url, content=encrypted, headers={"Content-Type": "application/octet-stream"}
+                )
+                if 400 <= response.status_code < 500 and response.status_code != 429:
+                    raise MediaRejectedError("微信拒绝了文件上传，请在网页下载。")
+                response.raise_for_status()
+                param = response.headers.get("x-encrypted-param")
+                if response.status_code != 200 or not param:
+                    raise WeixinError("UploadNotConfirmed")
+        except httpx.HTTPError:
+            raise WeixinError("UploadUnavailable") from None
+        return {
+            "type": 4,
+            "file_item": {
+                "file_name": name,
+                "len": str(len(content)),
+                "media": {
+                    "encrypt_query_param": param,
+                    "aes_key": base64.b64encode(key.hex().encode()).decode(),
+                    "encrypt_type": 1,
+                },
+            },
+        }

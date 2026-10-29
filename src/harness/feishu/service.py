@@ -13,6 +13,7 @@ from sqlalchemy.orm import aliased
 from harness.application.agents import AgentService
 from harness.assistant.controls import parse_control
 from harness.assistant.conversation import PersonalConversation
+from harness.assistant.file_delivery import ChannelFiles
 from harness.assistant.models import Objective, ObjectiveAction, ObjectiveBrief, ObjectiveStatus
 from harness.assistant.service import AssistantService
 from harness.assistant.storage import ObjectiveRow
@@ -79,6 +80,7 @@ class FeishuService:
         self.assistant, self.auth, self.agents = assistant, auth, agents
         self.conversation = conversation
         self.media = media
+        self.files: ChannelFiles | None = None
 
     async def authorize(self, tenant_id: str, user_id: str) -> None:
         user, membership = await self.auth.profile(tenant_id, user_id)
@@ -93,6 +95,7 @@ class FeishuService:
 
     async def status(self, tenant_id: str, user_id: str) -> ConnectionStatus:
         async with self.repository.sessions() as session:
+            files = await self.files.counts(session, tenant_id, user_id) if self.files else {}
             binding = await self.repository.binding(session, tenant_id, user_id)
             receiver = await session.get(ReceiverRow, self.repository.app_id)
             counts: dict[str, int] = {}
@@ -107,6 +110,9 @@ class FeishuService:
             receiver and receiver.heartbeat_at > datetime.now(UTC) - timedelta(seconds=45)
         )
         return ConnectionStatus(
+            pendingFiles=sum(files.get(k, 0) for k in ("pending", "ready", "sending")),
+            failedFiles=sum(files.get(k, 0) for k in ("blocked", "failed", "uncertain")),
+            deliveredFiles=files.get("sent", 0),
             configured=self.settings.configured,
             enabled=self.settings.enabled,
             receiverOnline=online,
@@ -307,6 +313,15 @@ class FeishuService:
                     row.run_id = run.run_id
                     row.error_code = None
                     if run.status.is_terminal:
+                        if self.files:
+                            await self.files.enqueue(
+                                session,
+                                tenant_id=binding.tenant_id,
+                                user_id=binding.user_id,
+                                source_id=row.incoming_id,
+                                route=self.settings.app_id + ":" + binding.binding_id,
+                                run_id=run.run_id,
+                            )
                         await self.repository.reply(
                             session,
                             key="chat-result:" + row.incoming_id,

@@ -26,6 +26,10 @@ class MediaRejectedError(Exception):
     """Only fixed, user-facing messages; never external response bodies."""
 
 
+class MediaPermissionError(MediaRejectedError):
+    """The app administrator must enable upload permission before retrying."""
+
+
 @dataclass(frozen=True)
 class DownloadedResource:
     content: bytes
@@ -166,6 +170,10 @@ class FeishuResourceClient:
                 if response.status_code == 401:
                     self._token = ""
                     raise ConnectionError("Feishu file authentication expired")
+                if response.status_code in {400, 403}:
+                    payload = response.json()
+                    if isinstance(payload, dict) and payload.get("code") in {99991672, 99991679}:
+                        raise MediaPermissionError("飞书应用尚未开通文件上传权限。")
                 if response.status_code in {400, 403, 413}:
                     raise MediaRejectedError("飞书拒绝了这次文件发送，请检查文件类型或大小。")
                 response.raise_for_status()

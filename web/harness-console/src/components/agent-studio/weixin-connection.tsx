@@ -10,7 +10,7 @@ import wx from "./weixin-connection.module.css";
 type Status = { bound: boolean; enabled: boolean; online: boolean; state: string;
   loginId?: string; loginStatus: string | null; expiresAt?: string; qrSvg?: string | null;
   lastEventAt?: string | null; lastReplyAt?: string | null; errorCode?: string | null;
-  pendingMessages?: number; failedMessages?: number; receiverLabel?: string };
+  pendingMessages?: number; failedMessages?: number; receiverLabel?: string; fileDeliveries?: Record<string, number> };
 type Diagnostics = { checkedAt: string; checks: { key: string; label: string;
   status: "pass" | "pending" | "fail"; detail: string }[] };
 
@@ -66,12 +66,17 @@ export function WeixinConnection({ compact = true }: { compact?: boolean }) {
       <div className={styles.actions}>
         <button className={styles.primary} disabled={busy} onClick={() => void start()}>{busy && !open ? "正在连接…" : status?.enabled ? "重新扫码" : "连接微信"}</button>
         {status?.bound && <button className={styles.button} disabled={busy} onClick={() => void perform(async () => setDiagnostics(await assistantRequest<Diagnostics>("weixin/diagnose", "POST")))}>微信连接诊断</button>}
+        {Boolean(status?.fileDeliveries?.failed) && <button className={styles.button} disabled={busy} onClick={() => void perform(async () => {
+          const result = await assistantRequest<{ queued: number }>("weixin/files/retry", "POST");
+          setNotice(`已重新排队 ${result.queued} 份未发送文件。回执不明确的文件不会自动重发。`);
+        })}>重试未发送文件</button>}
         {(status?.enabled || status?.qrSvg) && <button className={styles.textButton} disabled={busy} onClick={() => setConfirm(true)}>断开微信</button>}
       </div>
       {confirm && <div className={styles.confirm}><p>断开后暂停微信接收。飞书连接、网页会话和聊天记录继续保留。</p>
         <button className={styles.button} disabled={busy} onClick={() => void perform(async () => { await assistantRequest("weixin/disconnect", "POST"); setConfirm(false); setDiagnostics(null); close(); setNotice("微信已断开，聊天记录已保留。"); })}>确认断开微信</button>
         <button className={styles.textButton} onClick={() => setConfirm(false)}>保持微信连接</button></div>}
       {status?.enabled && <p className={wx.meta}>待处理 {status.pendingMessages ?? 0} 条{Boolean(status.failedMessages) && ` · 未确认或失败 ${status.failedMessages} 条`}</p>}
+      {status?.enabled && <p className={wx.meta}>文件：已交付 {status.fileDeliveries?.sent ?? 0} 份 · 待发送 {(status.fileDeliveries?.pending ?? 0) + (status.fileDeliveries?.ready ?? 0) + (status.fileDeliveries?.sending ?? 0)} 份{Boolean((status.fileDeliveries?.failed ?? 0) + (status.fileDeliveries?.uncertain ?? 0)) && ` · 部分文件未确认或失败，可在助理文件中下载`}</p>}
     </article>
     {!open && error && <p role="alert" className={styles.error}>{error}</p>}
     {notice && <p role="status" className={styles.notice}>{notice}</p>}

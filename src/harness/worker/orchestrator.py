@@ -1543,6 +1543,12 @@ class RunOrchestrator:
             async def sync_workspace() -> None:
                 await active_sandbox.collect(handle)
 
+            artifact_file_plane = _bind_sandbox_file_plane(active_sandbox, handle)
+
+            async def read_workspace_file(path: str, max_bytes: int) -> bytes:
+                assert artifact_file_plane is not None
+                return await artifact_file_plane.download_file(path, max_bytes=max_bytes)
+
             interaction_guidance = await self._interaction_guidance(run)
             artifact_publisher = (
                 ArtifactPublisher(
@@ -1556,6 +1562,7 @@ class RunOrchestrator:
                     max_file_bytes=self._output_artifact_max_bytes,
                     observability=self._observability,
                     validate_generated_html=bool(interaction_guidance),
+                    read_workspace_file=read_workspace_file if artifact_file_plane else None,
                 )
                 if self._artifacts is not None
                 else None

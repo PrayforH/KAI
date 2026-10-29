@@ -1,0 +1,15 @@
+.results { margin: 14px 0; width: 100%; min-width: 0; }
+.files { display: grid; gap: 8px; }
+.file { display: flex; align-items: center; min-width: 0; border: 1px solid var(--border, #8884); border-radius: 12px; overflow: hidden; background: var(--card, transparent); }
+.open { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; padding: 12px; color: inherit; background: none; border: 0; text-align: left; cursor: pointer; }
+.mark { display: grid; place-items: center; flex: 0 0 38px; height: 42px; border: 1px solid #8884; border-radius: 6px; font-size: 10px; font-weight: 650; }
+.copy { display: grid; gap: 3px; min-width: 0; }
+.copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 550; }
+.copy small { font-size: 12px; opacity: .65; }
+.download { flex: 0 0 auto; padding: 12px 16px; font-size: 13px; color: inherit; text-decoration: none; }
+.open:hover, .download:hover { background: #8881; }
+.open:focus-visible, .download:focus-visible, .close:focus-visible { outline: 2px solid currentColor; outline-offset: -3px; }
+.preview { margin-top: 10px; border: 1px solid #8884; border-radius: 12px; overflow: hidden; }
+.preview :global(.rail-preview) { height: 520px; max-height: 70vh; min-height: 260px; }
+.close { display: block; margin: 8px 12px 4px auto; color: inherit; background: none; border: 0; padding: 4px 8px; cursor: pointer; font-size: 12px; }
+@media (max-width: 600px) { .download { padding-inline: 12px; } .preview :global(.rail-preview) { height: 380px; } }
