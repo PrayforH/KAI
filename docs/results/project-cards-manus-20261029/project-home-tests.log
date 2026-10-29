@@ -1,0 +1,13 @@
+
+> harness-console@0.3.1 test
+> vitest run --run tests/project-home.spec.tsx
+
+
+ RUN  v4.1.10 /private/tmp/project-cards-20261029/web/harness-console
+
+
+ Test Files  1 passed (1)
+      Tests  17 passed (17)
+   Start at  11:22:25
+   Duration  2.00s (transform 353ms, setup 0ms, import 984ms, tests 525ms, environment 369ms)
+

@@ -1,0 +1,23 @@
+{
+  "source_commit": "ef0b2c6620a4332da8b5bf3e6aca046df4428fba",
+  "url": "https://172.20.109.174",
+  "image": "kai/projects-web:project-cards-20261029-r2",
+  "image_id": "sha256:6e8743fb5a1e772a1e5c66857125fbb129efed7a92aeb1a7ba0c31a367ed4c6c",
+  "previous_web": "kai/projects-web:project-cards-20261029-r1",
+  "memory_baseline": "memory-bank-20261027-r1",
+  "next_version": "16.4.1",
+  "release_directory": "/data/agent-studio/releases/project-cards-20261029-r2",
+  "project_home_tests_passed": 17,
+  "live_browser_passed": true,
+  "health": {
+    "http_3301": 200,
+    "http_3501": 200,
+    "https": 200,
+    "upstream_api": 200,
+    "web_containers": "healthy",
+    "web_restarts": 0
+  },
+  "backend_images_unchanged": true,
+  "results_card_hidden": true,
+  "web_resource_action": "Add an existing webpage URL. No network-search service was introduced."
+}
