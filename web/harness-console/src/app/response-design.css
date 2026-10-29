@@ -84,8 +84,8 @@ body.codex-theme-v1 .turn-completion-slot {
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  min-height: 26px;
-  margin-left: 8px;
+  min-height: 30px;
+  margin-left: 0;
 }
 body.codex-theme-v1 .turn-completion-slot > .turn-completion {
   margin: 0;
@@ -96,8 +96,9 @@ body.codex-theme-v1 .turn-completion-slot > .turn-completion {
 body.codex-theme-v1 .turn-branch-button {
   display: inline-grid;
   place-items: center;
-  width: 28px;
-  height: 26px;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
   padding: 0;
   border: 0;
   border-radius: 6px;
@@ -105,6 +106,7 @@ body.codex-theme-v1 .turn-branch-button {
   color: var(--codex-muted);
   cursor: pointer;
 }
+body.codex-theme-v1 .turn-branch-button > [data-codex-task-icon] { width: 16px; height: 16px; fill: currentColor; stroke: none; }
 body.codex-theme-v1 .harness-assistant-message:is(:hover, :focus-within) .turn-completion-slot > .turn-completion,
 body.codex-theme-v1 .turn-completion-slot:is(:hover, :focus-within, [data-branch-pending]) > .turn-completion { opacity: 1; pointer-events: auto; }
 body.codex-theme-v1 .turn-branch-button:hover { background: var(--codex-surface-hover); color: var(--codex-ink); }

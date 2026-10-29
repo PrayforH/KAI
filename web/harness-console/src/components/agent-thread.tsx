@@ -17,7 +17,6 @@ import Link from "next/link";
 import {
   ActionBarPrimitive,
   AttachmentPrimitive,
-  BranchPickerPrimitive,
   MessagePrimitive,
   TextMessagePartProvider,
   useAui,
@@ -42,7 +41,6 @@ import { createPortal } from "react-dom";
 import {
   AssistantActionBar,
   AssistantMessage,
-  BranchPicker,
   Composer,
   ThreadWelcome,
   UserMessage,
@@ -1573,7 +1571,6 @@ export function HarnessAssistantMessage() {
           <ArtifactSummaryRow artifacts={turnArtifacts} />
         </div>
         <div className="assistant-message-controls">
-          <HarnessBranchPicker />
           <AssistantActionBar.Root
             className="assistant-feedback-actions"
             hideWhenRunning
@@ -1612,35 +1609,6 @@ function TurnCompletion() {
   if (!view || view.phase !== "completed") return null;
   return <TurnCompletionControl completedAt={view.updatedAt} onForked={onForked}
     branchScope={isLast && !conversationScope && !threadRunning && !selectComposerDisabled(observed) ? draftScope : null} />;
-}
-
-function HarnessBranchPicker() {
-  return (
-    <BranchPickerPrimitive.Root
-      className="harness-branch-picker"
-      hideWhenSingleBranch
-    >
-      <BranchPickerPrimitive.Previous asChild>
-        <button type="button" aria-label="上一个回答" title="上一个回答">
-          <svg viewBox="0 0 20 20" aria-hidden="true">
-            <path d="m12.5 4.5-5 5.5 5 5.5" />
-          </svg>
-        </button>
-      </BranchPickerPrimitive.Previous>
-      <span className="harness-branch-state" aria-label="回答版本">
-        <BranchPickerPrimitive.Number />
-        <i aria-hidden="true">/</i>
-        <BranchPickerPrimitive.Count />
-      </span>
-      <BranchPickerPrimitive.Next asChild>
-        <button type="button" aria-label="下一个回答" title="下一个回答">
-          <svg viewBox="0 0 20 20" aria-hidden="true">
-            <path d="m7.5 4.5 5 5.5-5 5.5" />
-          </svg>
-        </button>
-      </BranchPickerPrimitive.Next>
-    </BranchPickerPrimitive.Root>
-  );
 }
 
 function EditMessageIcon() {
@@ -1784,7 +1752,6 @@ function HarnessUserMessage() {
             </>
           )}
         </MessagePrimitive.If>
-        {editing ? null : <BranchPicker />}
       </UserMessage.Root>
       {preResponseActivity ? (
         <div
@@ -1890,7 +1857,7 @@ export function AgentThread({
               components: { ToolFallback: HarnessToolPart },
             }}
             userMessage={{ allowEdit: true }}
-            branchPicker={{ allowBranchPicker: true }}
+            branchPicker={{ allowBranchPicker: false }}
             composer={{ allowAttachments: true }}
             components={{
               AssistantMessage: HarnessAssistantMessage,
@@ -1904,10 +1871,6 @@ export function AgentThread({
               assistantMessage: {
                 reload: { tooltip: "重新运行" },
                 copy: { tooltip: "复制回答" },
-              },
-              branchPicker: {
-                previous: { tooltip: "上一个分支" },
-                next: { tooltip: "下一个分支" },
               },
               composer: {
                 send: { tooltip: "发送任务" },

@@ -163,9 +163,21 @@ export function TaskSidebar({
       const key = `section:${section}:collapsed`;
       if (next.has(key)) next.delete(key);
       else next.add(key);
+      if (section === "tasks") next.delete("tasks");
+      else projects.forEach(project => next.delete(project.projectId));
       return next;
     });
   }
+
+  useEffect(() => {
+    if (!collapsed) return;
+    setExpandedTaskGroups(current => {
+      const next = new Set(current);
+      next.delete("tasks");
+      projects.forEach(project => next.delete(project.projectId));
+      return next.size === current.size ? current : next;
+    });
+  }, [collapsed, projects, setExpandedTaskGroups]);
 
   useEffect(() => {
     if (!projectMenuId) return;
@@ -595,6 +607,7 @@ export function TaskSidebar({
                         setExpandedTaskGroups((current) => {
                           const next = new Set(current);
                           const key = `project:${project.projectId}`;
+                          next.delete(project.projectId);
                           if (next.has(key)) {
                             next.delete(key);
                             next.add(`collapsed:${project.projectId}`);
