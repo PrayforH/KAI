@@ -20,12 +20,57 @@ from ag_ui.core import (
 )
 
 from harness.agui.activity import activity_projection
+from harness.agui.failure import failure_message
 from harness.core.events import RunEvent
+from harness.presentation.schema import Presentation
 from harness.runtime.message_mapper import safe_model_text
+
+# The domain tool the console renders an interactive answer block from. It carries
+# the server-filled presentation as its arguments, so the browser never has to
+# re-validate identity, and the same frame is rebuilt from history on reload.
+PRESENTATION_TOOL_NAME = "harness_present_ui"
+PRESENTATION_CUSTOM_EVENT = "harness.ui.v1"
 
 
 def _custom(event: RunEvent, name: str) -> Sequence[BaseEvent]:
     return [CustomEvent(name=name, value=event.payload)]
+
+
+def presentation_frames(presentations: Sequence[Presentation]) -> list[BaseEvent]:
+    """Project validated presentations into the frames AG-UI clients receive.
+
+    Each block is published twice on purpose: as a tool call — the channel the
+    console already renders tool-shaped answers from, and the one history can
+    rebuild — and as a ``harness.ui.v1`` custom event, the protocol other hosts
+    (kai-webui, MCP Apps) adapt without reading console internals.
+    """
+
+    frames: list[BaseEvent] = []
+    for presentation in presentations:
+        payload = presentation.model_dump(mode="json")
+        tool_call_id = f"{PRESENTATION_TOOL_NAME}-{presentation.presentation_id}"
+        frames.extend(
+            [
+                ToolCallStartEvent(
+                    tool_call_id=tool_call_id,
+                    tool_call_name=PRESENTATION_TOOL_NAME,
+                    parent_message_id=presentation.message_id,
+                ),
+                ToolCallArgsEvent(
+                    tool_call_id=tool_call_id,
+                    delta=json.dumps(payload, separators=(",", ":"), ensure_ascii=False),
+                ),
+                ToolCallEndEvent(tool_call_id=tool_call_id),
+                ToolCallResultEvent(
+                    message_id=f"tool-result-{presentation.presentation_id}",
+                    tool_call_id=tool_call_id,
+                    content=json.dumps({"status": "ready"}, separators=(",", ":")),
+                    role="tool",
+                ),
+                CustomEvent(name=PRESENTATION_CUSTOM_EVENT, value=payload),
+            ]
+        )
+    return frames
 
 
 def _domain_tool(
@@ -66,6 +111,8 @@ def _domain_tool(
 
 def _map_standard_event(event: RunEvent) -> Sequence[BaseEvent]:
     message_id = str(event.payload.get("message_id", f"assistant-{event.run_id}"))
+    if event.type.startswith("ui."):
+        return _custom(event, event.type)
     if event.type == "run.queued":
         return [RunStartedEvent(thread_id=event.session_id, run_id=event.run_id)]
     if event.type == "run.succeeded":
@@ -73,7 +120,7 @@ def _map_standard_event(event: RunEvent) -> Sequence[BaseEvent]:
     if event.type in {"run.failed", "run.rejected", "run.timed_out"}:
         return [
             RunErrorEvent(
-                message=str(event.payload.get("message", event.type)),
+                message=failure_message(event.type, event.payload),
                 code=str(event.payload.get("error_code", event.type.removeprefix("run."))),
             )
         ]

@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>太平洋西北部 10 天自驾 · 可调路书</title>
+<style>
+  :root{
+    --bg:#0e1512; --card:#151f1b; --card2:#1b2823; --line:#2a3a33;
+    --txt:#e8f0ec; --dim:#9db3a9; --accent:#4fbf8b; --accent2:#e0b34f;
+    --warn:#e08a4f; --danger:#e06a5a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(180deg,#0b1210,#0e1512 40%);color:var(--txt);
+       font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;}
+  .wrap{max-width:1040px;margin:0 auto;padding:18px 14px 60px}
+  h1{font-size:22px;margin:6px 0 4px;letter-spacing:.3px}
+  .sub{color:var(--dim);font-size:13.5px;margin-bottom:16px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  .panel h2{font-size:14px;margin:0 0 10px;color:var(--dim);font-weight:600;letter-spacing:.6px;text-transform:uppercase}
+  .row{display:flex;flex-wrap:wrap;gap:14px}
+  .field{flex:1 1 190px;min-width:170px}
+  label.lb{display:block;font-size:12.5px;color:var(--dim);margin-bottom:5px}
+  select{width:100%;background:var(--card2);color:var(--txt);border:1px solid var(--line);
+         border-radius:8px;padding:9px 10px;font-size:14px;font-family:inherit}
+  .seg{display:flex;gap:6px;flex-wrap:wrap}
+  .seg button{flex:1 1 0;min-width:70px;background:var(--card2);color:var(--dim);border:1px solid var(--line);
+        border-radius:8px;padding:8px 6px;font-size:13px;cursor:pointer;font-family:inherit;transition:.15s}
+  .seg button:hover{border-color:var(--accent);color:var(--txt)}
+  .seg button[aria-pressed="true"]{background:rgba(79,191,139,.16);border-color:var(--accent);color:var(--accent);font-weight:600}
+  .checks{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:8px}
+  .chk{display:flex;gap:9px;align-items:flex-start;background:var(--card2);border:1px solid var(--line);
+       border-radius:9px;padding:9px 11px;cursor:pointer;font-size:13.5px;transition:.15s}
+  .chk:hover{border-color:var(--accent)}
+  .chk input{margin-top:2px;accent-color:var(--accent);width:16px;height:16px;flex:none;cursor:pointer}
+  .chk.on{border-color:var(--accent);background:rgba(79,191,139,.10)}
+  .chk small{display:block;color:var(--dim);font-size:12px}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+  .stat{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:11px 12px}
+  .stat .k{font-size:11.5px;color:var(--dim);letter-spacing:.4px}
+  .stat .v{font-size:21px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums}
+  .stat .v small{font-size:12px;color:var(--dim);font-weight:400;margin-left:2px}
+  .stat.hi .v{color:var(--accent)}
+  .stat.wrn .v{color:var(--accent2)}
+  #note{font-size:13.5px;color:#cfe0d8;background:rgba(79,191,139,.07);border-left:3px solid var(--accent);
+        border-radius:0 8px 8px 0;padding:10px 12px;margin-top:12px}
+  #note b{color:var(--accent)}
+  .warnlist{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+  .warnlist .w{font-size:13px;color:#f0d3bd;background:rgba(224,138,79,.10);border-left:3px solid var(--warn);
+        border-radius:0 8px 8px 0;padding:8px 11px}
+  svg.chart{width:100%;height:auto;display:block}
+  .chartwrap{overflow-x:auto}
+  .day{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:12px;overflow:hidden}
+  .day.addon{border-style:dashed;border-color:#3d5348}
+  .day .top{display:flex;align-items:center;gap:11px;padding:12px 14px;cursor:pointer;user-select:none}
+  .day .n{flex:none;width:34px;height:34px;border-radius:9px;background:rgba(79,191,139,.15);
+      color:var(--accent);font-weight:700;display:flex;align-items:center;justify-content:center;font-size:14px}
+  .day.addon .n{background:rgba(224,179,79,.15);color:var(--accent2)}
+  .day .tt{flex:1;min-width:0}
+  .day .tt .t{font-weight:600;font-size:15px}
+  .day .tt .r{color:var(--dim);font-size:12.5px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .day .chev{color:var(--dim);transition:.2s;flex:none;font-size:13px}
+  .day.open .chev{transform:rotate(90deg)}
+  .day .body{display:none;padding:0 14px 14px}
+  .day.open .body{display:block}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin:2px 0 10px}
+  .chip{font-size:12px;background:var(--card2);border:1px solid var(--line);border-radius:20px;padding:4px 10px;color:#cfe0d8}
+  .chip.o{border-color:rgba(224,179,79,.5);color:var(--accent2)}
+  .chip.d{border-color:rgba(224,106,90,.5);color:var(--danger)}
+  .tip{font-size:13.5px;color:#cfe0d8;border-left:2px solid var(--line);padding-left:11px;margin:6px 0 12px}
+  figure{margin:0;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:var(--card2)}
+  figure img{width:100%;height:210px;object-fit:cover;display:block}
+  figcaption{font-size:11.5px;color:var(--dim);padding:7px 10px;line-height:1.45}
+  figcaption a{color:var(--accent);text-decoration:none}
+  .imgfail{height:210px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:12.5px;text-align:center;padding:16px}
+  .legend{font-size:12px;color:var(--dim);margin-top:8px;display:flex;gap:14px;flex-wrap:wrap}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:middle}
+  .clist{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px}
+  .foot{font-size:12px;color:var(--dim);line-height:1.7;margin-top:18px;border-top:1px solid var(--line);padding-top:12px}
+  .foot a{color:var(--accent);text-decoration:none}
+  .btnrow{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+  .btn{background:var(--card2);border:1px solid var(--line);color:var(--dim);border-radius:8px;padding:8px 13px;
+       font-size:13px;cursor:pointer;font-family:inherit}
+  .btn:hover{border-color:var(--accent);color:var(--txt)}
+  @media(max-width:560px){ figure img,.imgfail{height:170px} h1{font-size:19px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>太平洋西北部 · 10 天自驾路书</h1>
+  <div class="sub">华盛顿州 + 俄勒冈州环线 · 奥林匹克半岛 / 俄勒冈海岸 / 哥伦比亚河峡谷 / 雷尼尔山</div>
+
+  <div class="panel">
+    <h2>① 调整你的行程</h2>
+    <div class="row">
+      <div class="field">
+        <label class="lb">进出城市</label>
+        <div class="seg" id="segStart">
+          <button data-v="seattle" aria-pressed="true">西雅图</button>
+          <button data-v="portland" aria-pressed="false">波特兰</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="lb">驾驶节奏</label>
+        <div class="seg" id="segPace">
+          <button data-v="relaxed" aria-pressed="false">轻松</button>
+          <button data-v="balanced" aria-pressed="true">均衡</button>
+          <button data-v="packed" aria-pressed="false">紧凑</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="lb">出行月份</label>
+        <select id="selMonth">
+          <option value="6">6 月</option>
+          <option value="7">7 月</option>
+          <option value="8">8 月</option>
+          <option value="9" selected>9 月（推荐）</option>
+          <option value="10">10 月</option>
+        </select>
+      </div>
+    </div>
+    <div class="checks" style="margin-top:14px">
+      <label class="chk" data-addon="crater"><input type="checkbox"><span>火山口湖延伸 <small>+2 天 · 南俄勒冈</small></span></label>
+      <label class="chk" data-addon="sthelens"><input type="checkbox"><span>圣海伦斯火山 <small>+1 天 · 南侧</small></span></label>
+      <label class="chk" data-addon="victoria"><input type="checkbox"><span>维多利亚（加拿大）<small>+1 天 · 渡轮</small></span></label>
+      <label class="chk" data-addon="cascades"><input type="checkbox"><span>北喀斯喀特 20 号公路 <small>+1 天</small></span></label>
+    </div>
+    <div class="btnrow">
+      <button class="btn" id="btnReset">重置为推荐方案</button>
+      <button class="btn" id="btnExpand">展开 / 收起全部日程</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>② 汇总</h2>
+    <div class="stats">
+      <div class="stat hi"><div class="k">总天数</div><div class="v"><span id="sDays">10</span><small>天</small></div></div>
+      <div class="stat"><div class="k">总里程</div><div class="v"><span id="sMiles">1119</span><small>mi</small></div></div>
+      <div class="stat"><div class="k">约合公里</div><div class="v"><span id="sKm">1801</span><small>km</small></div></div>
+      <div class="stat"><div class="k">纯驾驶时长</div><div class="v"><span id="sHours">28.3</span><small>h</small></div></div>
+      <div class="stat wrn"><div class="k">日均驾驶</div><div class="v"><span id="sAvg">2.8</span><small>h</small></div></div>
+      <div class="stat wrn"><div class="k">最长单日</div><div class="v"><span id="sMax">4.3</span><small>h</small></div></div>
+    </div>
+    <div id="note"></div>
+    <div class="warnlist" id="warns"></div>
+  </div>
+
+  <div class="panel">
+    <h2>③ 每日驾驶强度</h2>
+    <div class="chartwrap"><svg class="chart" id="chart" viewBox="0 0 900 250" role="img" aria-label="每日驾驶里程柱状图"></svg></div>
+    <div class="legend">
+      <span><i class="dot" style="background:#4fbf8b"></i>在舒适区间内</span>
+      <span><i class="dot" style="background:#e0b34f"></i>超出当前节奏上限</span>
+      <span><i class="dot" style="background:#e0b34f;opacity:.5"></i>加项支线日</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>④ 逐日行程</h2>
+    <div id="days"></div>
+  </div>
+
+  <div class="panel">
+    <h2>⑤ 出行准备清单</h2>
+    <div class="clist" id="clist"></div>
+  </div>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ---------- 数据层（与 check.js 同源，已通过单元校验） ---------- */
+var MI_KM = 1.609344;
+var PACE = { relaxed:3.0, balanced:4.0, packed:5.5 };
+var PACE_LABEL = { relaxed:'轻松（≤3 小时/天）', balanced:'均衡（≤4 小时/天）', packed:'紧凑（≤5.5 小时/天）' };
+
+var IMG = {
+  seattleCity:{u:'https://uploads.visitseattle.org/2015/04/17020329/PikePlaceFish_creditChrisBachmann.jpg',c:'派克市场抛鱼（摄影 Chris Bachmann）',s:'https://visitseattle.org/things-to-do/sightseeing/pike-place-market',sn:'Visit Seattle'},
+  hurricane:{u:'https://cdn.myolympicpark.com/wp-content/uploads/2020/09/OL-Hiking-Hurricane-Ridge-SunrisePoint_JBailie_2400.jpg',c:'奥林匹克国家公园飓风岭步道（摄影 J. Bailie）',s:'https://www.myolympicpark.com/things-to-do/natural-wonders/hurricane-ridge',sn:'Olympic National Park Trips'},
+  solduc:{u:'https://cdn.myolympicpark.com/wp-content/uploads/2020/01/ol-sol-duc-falls-bridge_dp_700.jpg',c:'索尔达克瀑布（Sol Duc Falls）',s:'https://www.myolympicpark.com/road-trips/road-trip-itineraries/portland-to-olympic-national-park-road-trip',sn:'Olympic National Park Trips'},
+  hoh:{u:'https://www.nps.gov/common/uploads/grid_builder/olym/crop16_9/61F3A0DC-FB58-1695-F8FCDBBB05351441.jpg',c:'霍雨林步道（美国国家公园管理局）',s:'https://www.nps.gov/olym/planyourvisit/conditions.htm',sn:'NPS'},
+  cannonbeach:{u:'https://cdn.myolympicpark.com/wp-content/uploads/2020/07/or-cannonbeach-haystackrock_dp_700.jpg',c:'俄勒冈州坎农海滩的 Haystack Rock',s:'https://www.myolympicpark.com/road-trips/road-trip-itineraries/portland-to-olympic-national-park-road-trip',sn:'Olympic National Park Trips'},
+  tillamook:{u:'https://cdn.myolympicpark.com/wp-content/uploads/2020/07/or-tillamookcreamery_dpeditorial_700.jpg',c:'蒂拉穆克奶酪厂（Tillamook Creamery）',s:'https://www.myolympicpark.com/road-trips/road-trip-itineraries/portland-to-olympic-national-park-road-trip',sn:'Olympic National Park Trips'},
+  multnomah:{u:'https://images.squarespace-cdn.com/content/v1/5eabefd1b259fc1e715e7e3b/bdf0a3b0-8181-44c0-a9de-db58d1d4f397/multnomah+falls%2C+Columbia+River+Gorge+-1.jpg',c:'哥伦比亚河峡谷 · 马特诺玛瀑布',s:'https://ohwhataknight.co.uk/blog/pacific-northwest-road-trip-guide',sn:'Oh What A Knight'},
+  tipsoo:{u:'https://cdn.myolympicpark.com/wp-content/uploads/2024/01/MtRainier-TipsooLake-Dawn_Tam22GailGrace_1500.jpg',c:'奇努克山口旁的蒂普索湖黎明（摄影 Gail Grace）',s:'https://www.myolympicpark.com/things-to-do/neighboring-parks/rainier-entrance-reservations',sn:'Olympic National Park Trips'},
+  paradise:{u:'https://images.squarespace-cdn.com/content/v1/5eabefd1b259fc1e715e7e3b/96fd21e0-3c5e-4690-a93b-7ad47a9b403c/Skyline+loop+%2C+Paradise%2C+Mount+Rainier-3.jpg',c:'雷尼尔山天堂区 · 天际线步道',s:'https://ohwhataknight.co.uk/blog/pacific-northwest-road-trip-guide',sn:'Oh What A Knight'},
+  seattleSky:{u:'https://travelandtransitions.com/wp-content/uploads/2011/06/NA-Seattle-skyline.jpg',c:'西雅图天际线：太空针塔与远处的雷尼尔山',s:'https://travelandtransitions.com/usa/washington/seattle/',sn:'Travel and Transitions'},
+  portland:{u:'https://cdn.myolympicpark.com/wp-content/uploads/2021/02/portland-hawthorne-bridge_dp_680.jpg',c:'波特兰霍桑桥',s:'https://www.myolympicpark.com/road-trips/road-trip-itineraries/portland-to-olympic-national-park-road-trip',sn:'Olympic National Park Trips'},
+  hood:{u:'https://www.we12travel.com/blog/wp-content/uploads/2018/06/Mount-Hood-Pacific-Crest-Trail.jpg',c:'胡德山与太平洋山脊步道',s:'https://www.we12travel.com/pacific-northwest-road-trip-itinerary',sn:'We12Travel'},
+  crater:{u:'https://www.we12travel.com/blog/wp-content/uploads/2018/06/pacific-northwest-roadtrip-crater-lake.jpg',c:'火山口湖国家公园',s:'https://www.we12travel.com/pacific-northwest-road-trip-itinerary',sn:'We12Travel'},
+  sthelens:{u:'https://www.fs.usda.gov/sites/nfs/files/styles/hero/public/r06/giffordpinchot/image/jro_0.jpg',c:'圣海伦斯火山（美国林务局：Johnston Ridge 观测站视角）',s:'https://www.fs.usda.gov/r06/giffordpinchot/recreation/johnston-ridge-observatory',sn:'USDA Forest Service'},
+  ncascades:{u:'https://hagadone.media.clients.ellingtoncms.com/img/photos/2026/06/15/North_cascades_open_t1200x1200.jpg?89991875fe57e095a7a6851653f0e1c1091b3037',c:'北喀斯喀特 20 号公路（雪季通行窗口有限）',s:'https://lakechelannow.com/north-cascades-highway-to-close-temporarily-on-thursday-due-to-snowfall/',sn:'Lake Chelan News'}
+};
+
+var TRIPS = {
+  seattle:{ label:'西雅图进出 · 大环线', ferry:0.6, days:[
+    {n:1,  t:'西雅图市区',            r:'派克市场 → 太空针塔/奇胡利玻璃馆 → 凯瑞公园夜景', mi:15,  h:0.7, sleep:'西雅图',        img:'seattleCity',
+     tip:'倒时差轻装上阵。派克市场上午最热闹；凯瑞公园是拍太空针+雷尼尔山同框的经典机位。今天就把租车、通行证、离线地图备好。'},
+    {n:2,  t:'渡轮进半岛 · 飓风岭',    r:'西雅图 →(渡轮)班布里奇 → 汤森港 → 安吉利斯港 → 飓风岭', mi:114, h:3.2, sleep:'安吉利斯港', img:'hurricane',
+     tip:'渡轮+驾车合计约 4 小时。飓风岭海拔约 1,600 m，上山 17 mi 盘山路，留足日落时间。注意：原游客中心（Day Lodge）2023 年 5 月烧毁，现有临时游客设施。'},
+    {n:3,  t:'月牙湖 · 索尔达克瀑布',  r:'安吉利斯港 → 月牙湖 → 索尔达克瀑布 → 福克斯/拉普什', mi:88, h:2.3, sleep:'福克斯', img:'solduc',
+     tip:'轻松一天。月牙湖旅馆（Lake Crescent Lodge）值得停留；索尔达克瀑布往返约 2.4 km 平缓步道。若想加海滩，可在拉普什（La Push）看日落。'},
+    {n:4,  t:'霍雨林 · 太平洋海岸',    r:'福克斯 → 霍雨林 → 红宝石海滩 → 卡拉洛奇', mi:118, h:2.9, sleep:'卡拉洛奇', img:'hoh',
+     tip:'霍雨林自 101 号公路需单程 31 mi 进山。温带雨林常年湿润，带防水外层。红宝石海滩的海蚀柱在退潮时最好看，出发前查潮汐表。'},
+    {n:5,  t:'南下俄勒冈海岸',        r:'卡拉洛奇 → 阿斯托里亚 → 坎农海滩(Haystack Rock)', mi:188, h:4.2, sleep:'坎农海滩', img:'cannonbeach',
+     tip:'全程最长驾驶日之一（约 4.2 h + 停留）。经阿伯丁、过哥伦比亚河口大桥（Astoria–Megler）进入俄勒冈。Haystack Rock 退潮时可走到近前。'},
+    {n:6,  t:'奶酪厂 · 波特兰',       r:'坎农海滩 → 蒂拉穆克 → 波特兰', mi:112, h:2.9, sleep:'波特兰', img:'tillamook',
+     tip:'Ecola 州立公园可俯瞰海岸。蒂拉穆克奶酪厂适合午餐+冰激凌。经 US-26 进入波特兰，傍晚可逛珍珠区与美食车。'},
+    {n:7,  t:'哥伦比亚河峡谷',        r:'波特兰 → 远景楼 → 马特诺玛瀑布 → 胡德河', mi:105, h:2.6, sleep:'胡德河', img:'multnomah',
+     tip:'沿历史公路（Historic Columbia River Hwy）串联多个瀑布。马特诺玛瀑布停车场紧张，宜早到。胡德河是风帆之都，果园区可品酒。'},
+    {n:8,  t:'转移日 · 穿越喀斯喀特',  r:'胡德河 → 亚基马 → 奇努克山口(WA-410) → 帕克伍德', mi:196, h:4.3, sleep:'帕克伍德', img:'tipsoo',
+     tip:'纯转移日，约 4.3 h。奇努克山口（Chinook Pass）旁的蒂普索湖是雷尼尔山东侧经典机位。山口为季节性公路，5 月下旬前/11 月后可能封闭。'},
+    {n:9,  t:'雷尼尔山 · 天堂区',      r:'帕克伍德 → 史蒂文斯峡谷 → 天堂区 → 天际线步道', mi:78, h:2.2, sleep:'阿什福德', img:'paradise',
+     tip:'今日重点是天堂区（Paradise）。天际线步道（Skyline Trail）全程约 8.8 km、爬升 520 m；只走一段到 Myrtle Falls 也很值。7 月底-8 月野花最好。'},
+    {n:10, t:'返回西雅图',            r:'阿什福德 → 塔科马 → 西雅图（还车/航班）', mi:105, h:2.4, sleep:'西雅图 / 返程', img:'seattleSky',
+     tip:'预留还车与安检时间。若航班在下午，可绕道塔科马的玻璃博物馆或波音飞行博物馆。'}
+  ]},
+  portland:{ label:'波特兰进出 · 逆时针环线', ferry:0.6, days:[
+    {n:1,  t:'波特兰市区',            r:'霍桑桥 → 珍珠区 → 美食车 → 鲍威尔书城', mi:15,  h:0.7, sleep:'波特兰', img:'portland',
+     tip:'轻装适应。波特兰以美食车、精酿和书城闻名，适合作为出发前的休整日。'},
+    {n:2,  t:'哥伦比亚河峡谷',        r:'波特兰 → 远景楼 → 马特诺玛瀑布 → 胡德河', mi:95, h:2.4, sleep:'胡德河', img:'multnomah',
+     tip:'逆时针走法让峡谷段放在精力最好的第二天。马特诺玛瀑布宜早到避开车流。'},
+    {n:3,  t:'转移日 · 进雷尼尔',      r:'胡德河 → 亚基马 → 奇努克山口(WA-410) → 日出区 → 帕克伍德', mi:235, h:5.0, sleep:'帕克伍德', img:'tipsoo',
+     tip:'全程最长的单日（约 5 h）。若想轻松，可在亚基马或雅基马河谷拆成两天。日出区（Sunrise）海拔更高、野花更晚开。'},
+    {n:4,  t:'雷尼尔山 · 天堂区',      r:'帕克伍德 → 史蒂文斯峡谷 → 天堂区 → 天际线步道', mi:85, h:2.4, sleep:'阿什福德', img:'paradise',
+     tip:'从东侧经史蒂文斯峡谷进入，一路多个观景点。傍晚可到反射湖（Reflection Lakes）拍日照金山倒影。'},
+    {n:5,  t:'跨海湾 · 飓风岭',        r:'阿什福德 → 西雅图 →(渡轮)班布里奇 → 安吉利斯港 → 飓风岭', mi:200, h:4.6, sleep:'安吉利斯港', img:'hurricane',
+     tip:'约 4.6 h，是较累的一天。也可改走塔科马经普吉特湾大桥到基萨普半岛，省去渡轮排队。'},
+    {n:6,  t:'月牙湖 · 索尔达克瀑布',  r:'安吉利斯港 → 月牙湖 → 索尔达克瀑布 → 福克斯', mi:88, h:2.3, sleep:'福克斯', img:'solduc',
+     tip:'轻松日。索尔达克温泉区（Sol Duc Hot Springs）可泡汤缓解疲劳。'},
+    {n:7,  t:'霍雨林 · 太平洋海岸',    r:'福克斯 → 霍雨林 → 红宝石海滩 → 卡拉洛奇', mi:118, h:2.9, sleep:'卡拉洛奇', img:'hoh',
+     tip:'雨林+海岸组合日。带防水冲锋衣，海岸风大。'},
+    {n:8,  t:'南下俄勒冈海岸',        r:'卡拉洛奇 → 阿斯托里亚 → 坎农海滩', mi:188, h:4.2, sleep:'坎农海滩', img:'cannonbeach',
+     tip:'较长驾驶日。阿斯托里亚的柱石塔（Astoria Column）可俯瞰哥伦比亚河口。'},
+    {n:9,  t:'奶酪厂 · 返回波特兰',    r:'坎农海滩 → 蒂拉穆克 → 波特兰', mi:112, h:2.9, sleep:'波特兰', img:'tillamook',
+     tip:'较轻松。蒂拉穆克奶酪厂与 Ecola 州立公园是今日亮点。'},
+    {n:10, t:'胡德山一日 / 市区收尾',  r:'波特兰 → 木材线旅馆(胡德山) → 波特兰', mi:60, h:1.6, sleep:'波特兰 / 返程', img:'hood',
+     tip:'收尾日。木材线旅馆（Timberline Lodge）是《闪灵》取景地，海拔约 1,800 m。若当天返程则改为市区半日。'}
+  ]}
+};
+
+var ADDONS = {
+  crater:{ label:'火山口湖延伸（南俄勒冈）', days:2, mi:470, h:9.5, img:'crater', seed:99,
+    r:'坎农海滩/纽波特 → 火山口湖环湖路 → 本德(Bend) → 波特兰',
+    tip:'从坎农海滩折向南，经纽波特、佛罗伦萨到火山口湖，再经本德返回波特兰。环湖路（Rim Drive）全长 33 mi。火山口湖年均降雪极大，环湖路通常 7 月才全线开通，10 月下旬起可能再封。'},
+  sthelens:{ label:'圣海伦斯火山支线（南侧）', days:1, mi:210, h:4.6, img:'sthelens', seed:98,
+    r:'帕克伍德 → 阿佩洞/风脊(Windy Ridge) → 帕克伍德',
+    tip:'重要：Johnston Ridge 观测站因 2023 年 5 月塌方，SR-504 在北侧中断，预计 2027 年才修复，因此改走南侧的阿佩洞（Ape Cave）与风脊（Windy Ridge）一侧看火山口。往返约 210 mi。'},
+  victoria:{ label:'维多利亚（加拿大）一日', days:1, mi:8, h:0.3, img:'seattleSky', seed:97,
+    r:'安吉利斯港 ⇄（渡轮 90 分钟）维多利亚 → 布查特花园',
+    tip:'Black Ball 的 Coho 渡轮往返安吉利斯港与维多利亚，单程约 90 分钟。步行上船可省排队；需带护照（美国公民需护照/合规证件，其他国家旅客需加拿大 eTA 或签证）。建议提前在线订票。'},
+  cascades:{ label:'北喀斯喀特 20 号公路', days:1, mi:230, h:5.5, img:'ncascades', seed:96,
+    r:'西雅图 → 北喀斯喀特公路(North Cascades Hwy) → 温思罗普 → 返回',
+    tip:'华盛顿州最壮丽的高山公路之一，但属季节性路线：通常 5 月才除雪通车，11 月首场大雪后封闭。适合替换西雅图市区日或作为返程前的加站。'}
+};
+
+var MONTH_NOTE = {
+  6:{ n:'<b>6 月</b>：人流与价格都友好，但高海拔路段刚解雪。', rows:[
+    '高海拔步道（飓风岭、天堂区、蒂普索湖）仍有大片积雪，需防滑鞋具，部分步道未通。',
+    '北喀斯喀特 20 号公路可能尚未完成除雪通车。',
+    '火山口湖环湖路多半只开通西段，东段常到 7 月才全通。',
+    '飓风岭在阵亡将士纪念日后的数周内，周一至周四可能因水电施工封闭，宜安排在周末。']},
+  7:{ n:'<b>7 月</b>：全线基本通行、野花渐盛，同时进入最旺季节。', rows:[
+    '住宿与营地最紧张，园内旅馆常需提前 6–9 个月预订。',
+    '2026 年 7–8 月飓风岭主停车场施工，部分草甸步道可能改道，维多利亚观景台保持开放。',
+    '火山口湖环湖路通常本月全线开通。',
+    '午后雷雨与山火烟雾风险开始上升，行程保留弹性。']},
+  8:{ n:'<b>8 月</b>：通行条件最好、野花最盛，也是人最多、最干的一个月。', rows:[
+    '天堂区与日出区停车场清晨即满，建议 8 点前进园。',
+    '山火烟雾可能影响能见度，行前查 AirNow 空气质量。',
+    '林区常有限火令，用气炉而非明火。']},
+  9:{ n:'<b>9 月</b>：综合体验最佳——天气稳定、人潮回落、光线柔和。', rows:[
+    '部分园内旅馆与商业服务 9 月下旬起陆续歇业，务必确认营业日期。',
+    '飓风岭自 10 月起通常改为周末开放，9 月仍可平日前往。',
+    '夜间山区接近冰点，睡袋与保暖层要按秋冬准备。']},
+  10:{ n:'<b>10 月</b>：秋色与温泉的好时节，但高山开始看天吃饭。', rows:[
+    '雷尼尔山天堂旅馆等设施多在 9 月底至 10 月初关闭；园内服务大幅减少。',
+    '北喀斯喀特 20 号公路随时可能因首场大雪季节性封闭。',
+    '高海拔路段清晨可能结冰，注意轮胎与驾驶速度。',
+    '2026 年奥林匹克公园 Mora Road（通往 Rialto Beach）7/8–10/15 施工封闭，5 月 15 日起营地需在 recreation.gov 预约。']}
+};
+
+var CHECKLIST = [
+  '国家公园门票：美国美丽通行证（America the Beautiful）年票 $80，或单次按车收费',
+  '雷尼尔山门票（2026 年起无需预约入园，但入口不收现金）',
+  '露营／园内住宿：recreation.gov 最多提前 6 个月；园内旅馆更早',
+  '渡轮：San Juan/Anacortes 航线建议预约；西雅图–班布里奇、埃德蒙兹–金斯顿旺季需排队',
+  '租车：确认异地还车政策、不限里程、冬季备胎链',
+  '离线地图（海岸与山区信号差）＋ 车载充电／备用油',
+  '雨具与防水徒步鞋、保暖中层（山区昼夜温差大）',
+  '若赴加拿大：护照 + eTA／签证，Black Ball 渡轮提前订票',
+  '下载 NPS App，出行前查各园 Alerts & Conditions',
+  '现金应急（部分小加油站/营地收费亭）'
+];
+
+/* ---------- 状态 ---------- */
+var state = { start:'seattle', pace:'balanced', month:'9', addons:[], open:[true,false,false,false,false,false,false,false,false,false], checked:{} };
+var TOKEN = new URLSearchParams(location.hash.slice(1)).get('harness_ui_token');
+var restoring = false;
+
+/* ---------- 计算（与 check.js 一致的算法） ---------- */
+function compute(){
+  var t = TRIPS[state.start], miles=0, hours=t.ferry, over=[], maxD=t.days[0];
+  t.days.forEach(function(d){
+    miles+=d.mi; hours+=d.h;
+    if(d.h>PACE[state.pace]) over.push(d.n);
+    if(d.h>maxD.h) maxD=d;
+  });
+  var addonDays=0, addonMiles=0;
+  state.addons.forEach(function(k){ var a=ADDONS[k]; if(a){ addonDays+=a.days; addonMiles+=a.mi; miles+=a.mi; hours+=a.h; } });
+  var days = t.days.length + addonDays;
+  return { days:days, miles:Math.round(miles), km:Math.round(miles*MI_KM),
+           hours:Math.round(hours*10)/10, avg:Math.round((hours/days)*10)/10,
+           maxD:maxD, over:over, addonDays:addonDays, addonMiles:addonMiles };
+}
+
+/* ---------- 渲染 ---------- */
+function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+
+function figureHTML(key){
+  var im = IMG[key];
+  if(!im) return '';
+  return '<figure><img src="'+im.u+'" alt="'+esc(im.c)+'" loading="lazy" '+
+    'onerror="this.parentNode.innerHTML=\'<div class=&quot;imgfail&quot;>图片未能加载 · 详见下方来源链接</div>\'">'+
+    '<figcaption>'+esc(im.c)+' · 来源：<a href="'+im.s+'" target="_blank" rel="noopener">'+esc(im.sn)+'</a></figcaption></figure>';
+}
+
+function dayCard(d, isAddon, idx){
+  var open = state.open[idx] ? ' open':'';
+  var cap = PACE[state.pace];
+  var hCls = isAddon ? 'o' : (d.h>cap ? 'd' : '');
+  var chips = '<span class="chip'+hCls+'">'+d.mi+' mi · '+Math.round(d.mi*MI_KM)+' km</span>'+
+              '<span class="chip'+hCls+'">驾驶 '+d.h+' h</span>'+
+              (isAddon?'<span class="chip o">加项支线</span>':'')+
+              '<span class="chip">过夜 '+esc(d.sleep)+'</span>';
+  return '<div class="day'+(isAddon?' addon':'')+open+'" data-idx="'+idx+'">'+
+    '<div class="top"><div class="n">'+(isAddon?'+'+d.days+'D':'D'+d.n)+'</div>'+
+      '<div class="tt"><div class="t">'+esc(d.t)+'</div><div class="r">'+esc(d.r)+'</div></div>'+
+      '<div class="chev">▶</div></div>'+
+    '<div class="body"><div class="chips">'+chips+'</div>'+
+      '<div class="tip">'+esc(d.tip)+'</div>'+figureHTML(d.img)+'</div></div>';
+}
+
+function renderWarns(){
+  var m = MONTH_NOTE[state.month];
+  var w = m.rows.slice();
+  if(state.addons.indexOf('cascades')>=0 && (state.month==='6'||state.month==='10'))
+    w.unshift('你勾选了北喀斯喀特 20 号公路，而 '+state.month+' 月正处于该路的季节性封闭风险窗口（通常 5 月通车、11 月封路），务必先查 WSDOT 实时路况。');
+  if(state.addons.indexOf('crater')>=0 && state.month==='6')
+    w.unshift('火山口湖环湖路（Rim Drive）在东段除雪完成前无法环行，6 月通常只开西段。');
+  if(state.addons.indexOf('sthelens')>=0)
+    w.unshift('圣海伦斯北侧 Johnston Ridge 观测站关闭至 2027 年，本路书已将其改为南侧风脊（Windy Ridge）路线。');
+  var el = document.getElementById('warns');
+  el.innerHTML = w.map(function(x){ return '<div class="w">'+x+'</div>'; }).join('');
+}
+
+function render(){
+  var c = compute();
+  document.getElementById('sDays').textContent = c.days;
+  document.getElementById('sMiles').textContent = c.miles;
+  document.getElementById('sKm').textContent = c.km;
+  document.getElementById('sHours').textContent = c.hours;
+  document.getElementById('sAvg').textContent = c.avg;
+  document.getElementById('sMax').textContent = c.maxD.h;
+
+  var note = '';
+  if(state.addons.length){
+    note += '已加入 '+state.addons.length+' 项支线，共增加 '+c.addonDays+' 天、约 '+c.addonMiles+' mi。 ';
+  }
+  if(c.over.length){
+    note += '按“'+PACE_LABEL[state.pace]+'”衡量，第 '+c.over.join('、')+' 天的驾驶超出上限，建议延长 1–2 天或改为紧凑节奏。';
+  } else {
+    note += '按“'+PACE_LABEL[state.pace]+'”衡量，所有单日驾驶都在舒适区间内。';
+  }
+  note += ' 若按轻松节奏走完整环线，建议把行程放宽到 '+Math.max(10, c.days + (state.pace==='relaxed'?2:1))+' 天。';
+  document.getElementById('note').innerHTML = '<b>'+TRIPS[state.start].label+'</b> · '+
+    MONTH_NOTE[state.month].n+'<br>'+note;
+
+  renderWarns();
+
+  // 图表
+  var svg = document.getElementById('chart');
+  var all = TRIPS[state.start].days.map(function(d){ return {label:'D'+d.n, mi:d.mi, h:d.h, add:false}; });
+  state.addons.forEach(function(k){
+    var a=ADDONS[k]; if(!a) return;
+    all.push({label:'加项', mi:Math.round(a.mi/a.days), h:Math.round(a.h/a.days*10)/10, add:true});
+  });
+  var W=900,H=250,padL=44,padR=16,padT=18,padB=44;
+  var maxMi = Math.max.apply(null, all.map(function(x){return x.mi;})) || 1;
+  var bw = (W-padL-padR)/all.length;
+  var s = '';
+  [0,0.25,0.5,0.75,1].forEach(function(f){
+    var y = padT+(H-padT-padB)*(1-f);
+    s += '<line x1="'+padL+'" y1="'+y+'" x2="'+(W-padR)+'" y2="'+y+'" stroke="#22322b" stroke-width="1"/>';
+    s += '<text x="'+(padL-8)+'" y="'+(y+4)+'" fill="#7f978c" font-size="11" text-anchor="end">'+Math.round(maxMi*f)+'</text>';
+  });
+  var cap = PACE[state.pace];
+  all.forEach(function(x,i){
+    var bh=(H-padT-padB)*(x.mi/maxMi);
+    var bx=padL+i*bw+bw*0.18, by=H-padB-bh, bwid=bw*0.64;
+    var col = x.add ? '#e0b34f' : (x.h>cap ? '#e0b34f' : '#4fbf8b');
+    var op = x.add ? '0.55' : '1';
+    s += '<rect x="'+bx.toFixed(1)+'" y="'+by.toFixed(1)+'" width="'+bwid.toFixed(1)+'" height="'+Math.max(bh,1).toFixed(1)+
+         '" rx="4" fill="'+col+'" opacity="'+op+'"><title>'+x.label+' · '+x.mi+' mi · '+x.h+' h</title></rect>';
+    s += '<text x="'+(bx+bwid/2).toFixed(1)+'" y="'+(by-6).toFixed(1)+'" fill="#cfe0d8" font-size="11" text-anchor="middle">'+x.mi+'</text>';
+    s += '<text x="'+(bx+bwid/2).toFixed(1)+'" y="'+(H-padB+18)+'" fill="#9db3a9" font-size="11.5" text-anchor="middle">'+x.label+'</text>';
+  });
+  s += '<line x1="'+padL+'" y1="'+(H-padB)+'" x2="'+(W-padR)+'" y2="'+(H-padB)+'" stroke="#2a3a33"/>';
+  svg.innerHTML = s;
+
+  // 日程
+  var html = TRIPS[state.start].days.map(function(d,i){ return dayCard(d,false,i); }).join('');
+  var oi = TRIPS[state.start].days.length;
+  state.addons.forEach(function(k){
+    var a=ADDONS[k]; if(!a) return;
+    html += dayCard({n:'', t:a.label, r:a.r, mi:a.mi, h:a.h, sleep:'（插入到环线相应位置）', tip:a.tip, img:a.img, days:a.days}, true, oi);
+    oi++;
+  });
+  document.getElementById('days').innerHTML = html;
+
+  // 清单
+  document.getElementById('clist').innerHTML = CHECKLIST.map(function(t,i){
+    var on = state.checked['c'+i] ? ' on':'';
+    return '<label class="chk'+on+'" data-check="c'+i+'"><input type="checkbox"'+(state.checked['c'+i]?' checked':'')+'><span>'+esc(t)+'</span></label>';
+  }).join('');
+
+  document.getElementById('foot').innerHTML =
+    '里程与时长为按常规路线的近似估算，不含停留与堵车，实际以导航为准。' +
+    '通行信息核对日期 2026-10-14：雷尼尔山 2026 年取消预约入园（NPS 2026-02-25 公告）；' +
+    '奥林匹克公园 Mora Road 7/8–10/15/2026 施工封闭；圣海伦斯 Johnston Ridge 观测站关闭至 2027 年；' +
+    '飓风岭 2026 年 7–8 月停车场施工。<b>出行前请以各园官方 Alerts &amp; Conditions 与 WSDOT 实时路况为准。</b>';
+}
+
+/* ---------- 交互 ---------- */
+function syncSegs(){
+  document.querySelectorAll('#segStart button').forEach(function(b){ b.setAttribute('aria-pressed', b.dataset.v===state.start?'true':'false'); });
+  document.querySelectorAll('#segPace button').forEach(function(b){ b.setAttribute('aria-pressed', b.dataset.v===state.pace?'true':'false'); });
+  document.querySelectorAll('.chk[data-addon]').forEach(function(l){
+    var on = state.addons.indexOf(l.dataset.addon)>=0;
+    l.classList.toggle('on', on);
+    l.querySelector('input').checked = on;
+  });
+  document.getElementById('selMonth').value = state.month;
+}
+
+function refresh(){ syncSegs(); render(); save(); }
+
+function save(){
+  if(restoring) return;
+  try{ window.parent.postMessage({type:'harness.ui.state', token:TOKEN, state:state}, '*'); }catch(e){}
+}
+
+document.getElementById('segStart').addEventListener('click', function(e){
+  var b=e.target.closest('button'); if(!b) return;
+  state.start=b.dataset.v; state.open=state.open.map(function(){return false;}); state.open[0]=true; refresh();
+});
+document.getElementById('segPace').addEventListener('click', function(e){
+  var b=e.target.closest('button'); if(!b) return;
+  state.pace=b.dataset.v; refresh();
+});
+document.getElementById('selMonth').addEventListener('change', function(e){
+  state.month=e.target.value; refresh();
+});
+document.querySelectorAll('.chk[data-addon]').forEach(function(l){
+  l.addEventListener('click', function(e){
+    if(e.target.tagName!=='INPUT') e.preventDefault();
+    var k=l.dataset.addon, i=state.addons.indexOf(k);
+    if(i>=0) state.addons.splice(i,1); else state.addons.push(k);
+    refresh();
+  });
+});
+document.getElementById('days').addEventListener('click', function(e){
+  var top=e.target.closest('.top'); if(!top) return;
+  var card=top.parentNode, idx=+card.dataset.idx;
+  card.classList.toggle('open'); state.open[idx]=card.classList.contains('open'); save();
+});
+document.getElementById('clist').addEventListener('click', function(e){
+  var l=e.target.closest('.chk'); if(!l) return;
+  var k=l.dataset.check, on=!state.checked[k];
+  if(on) state.checked[k]=true; else delete state.checked[k];
+  l.classList.toggle('on', on); l.querySelector('input').checked=on; save();
+});
+document.getElementById('btnReset').addEventListener('click', function(){
+  state = { start:'seattle', pace:'balanced', month:'9', addons:[],
+            open:[true,false,false,false,false,false,false,false,false,false], checked:{} };
+  refresh();
+});
+document.getElementById('btnExpand').addEventListener('click', function(){
+  var anyClosed = state.open.indexOf(false)>=0;
+  state.open = state.open.map(function(){ return anyClosed; });
+  render(); save();
+});
+
+/* 状态恢复协议 */
+window.addEventListener('message', function(ev){
+  if(ev.source!==window.parent) return;
+  var d=ev.data;
+  if(!d || d.type!=='harness.ui.init' || (TOKEN && d.token!==TOKEN)) return;
+  var st=d.state;
+  if(st && typeof st==='object'){
+    restoring = true;
+    state.start = (st.start==='portland')?'portland':'seattle';
+    state.pace = ['relaxed','balanced','packed'].indexOf(st.pace)>=0?st.pace:'balanced';
+    state.month = ['6','7','8','9','10'].indexOf(st.month)>=0?st.month:'9';
+    state.addons = Array.isArray(st.addons)?st.addons.filter(function(k){return !!ADDONS[k];}):[];
+    state.open = Array.isArray(st.open)?st.open.map(Boolean):state.open;
+    state.checked = (st.checked&&typeof st.checked==='object')?st.checked:{};
+    restoring = false;
+  }
+  refresh();
+});
+
+syncSegs(); render();
+try{ window.parent.postMessage({type:'harness.ui.ready', token:TOKEN}, '*'); }catch(e){}
+})();
+</script>
+</body>
+</html>

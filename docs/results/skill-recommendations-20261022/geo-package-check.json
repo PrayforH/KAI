@@ -1,0 +1,25 @@
+{
+  "wheel": "kai_geo_mcp-0.3.0-py3-none-any.whl",
+  "wheelTemplatesAndVendorPresent": true,
+  "health": 200,
+  "unauthenticatedMcp": 401,
+  "authenticatedToolsList": 200,
+  "toolCount": 10,
+  "tools": [
+    "calculate_route",
+    "create_itinerary",
+    "export_plan",
+    "get_plan",
+    "get_transport_status",
+    "plan_running_loop",
+    "revise_itinerary",
+    "revise_plan",
+    "search_nearby",
+    "search_places"
+  ],
+  "generatedCredentialValid": true,
+  "rawCredentialMode": "0600",
+  "existingCredentialProtected": true,
+  "sourceUnitTests": 31,
+  "liveProviderRequests": false
+}

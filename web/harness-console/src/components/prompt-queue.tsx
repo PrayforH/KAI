@@ -1,4 +1,5 @@
 "use client";
+import { SteeringUserMessage } from "./steering-user-message";
 import { ConversationControl } from "./conversation-control";
 import { useRef, useState } from "react";
 import type { QueuedPrompt } from "../lib/composer-interactions";
@@ -22,8 +23,12 @@ export function PromptQueue({ items, paused, busy, canSteer, sendingIds, onChang
     onChange(next);
   }
   if (!items.length) return null;
-  return <section className="composer-context-shelf prompt-queue" aria-label="待发送队列">
+  const queuedCount = items.filter(item => !item.steerRunId).length;
+  const pendingGuidance = items.filter(item => item.steerRunId);
+  return <>{pendingGuidance.map(item => <SteeringUserMessage key={item.id} text={item.text} status="pending" />)}
+  {queuedCount > 0 && <section className="composer-context-shelf prompt-queue" aria-label="待发送队列">
     <ol>{items.map((item, index) => {
+      if (item.steerRunId) return null;
       const sending = sendingIds.includes(item.id);
       return <li key={item.id} tabIndex={0} title="Alt + ↑ / ↓ 调整队列顺序" onKeyDown={event => {
         if (!event.altKey || sendingIds.length || editing) return;
@@ -44,15 +49,15 @@ export function PromptQueue({ items, paused, busy, canSteer, sendingIds, onChang
         </div> : <>
           <span className="queue-number" aria-hidden="true">↳</span>
           <span className="queue-copy" title={item.text}>{item.text || "附件消息"}{item.attachments.length > 0 && <small> · {item.attachments.length} 个附件</small>}</span>
-          <div className="queue-actions">
-          {paused && index === 0 && <ConversationControl action="resume" aria-label="继续队列" disabled={sendingIds.length > 0 || Boolean(editing)} onClick={() => onPause(false)} />}
-          {busy ? <button type="button" disabled={!canSteer || sending || item.attachments.length > 0} title={canSteer ? "将补充送入当前运行" : "等待运行支持实时引导"} onClick={() => onGuide(item)} aria-label={sending ? "正在调整方向" : "调整方向"}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 16V9a4 4 0 0 1 4-4h8m-4-4 4 4-4 4" /></svg></button>
+          {item.steerRunId ? <small role="status">等待接收…</small> : <div className="queue-actions">
+          {!item.steerRunId && paused && index === 0 && <ConversationControl action="resume" aria-label="继续队列" disabled={sendingIds.length > 0 || Boolean(editing)} onClick={() => onPause(false)} />}
+          {busy ? <button type="button" disabled={!canSteer || sending || item.attachments.length > 0} title={canSteer ? "将补充送入当前运行" : "等待运行支持实时引导"} onClick={() => onGuide(item)} aria-label={sending ? "等待接收" : "补充说明"}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 16V9a4 4 0 0 1 4-4h8m-4-4 4 4-4 4" /></svg></button>
             : <ConversationControl action="send" aria-label="发送" disabled={sendingIds.length > 0} onClick={() => onSend(item)} />}
           <button type="button" aria-label={`删除第 ${index + 1} 条`} disabled={sending} onClick={() => onChange(items.filter((entry) => entry.id !== item.id))}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 5.5h13M7 5.5V3h6v2.5M5 5.5l1 11h8l1-11M8 8v6m4-6v6" /></svg></button>
           <button type="button" aria-label={`编辑第 ${index + 1} 条`} title="编辑" disabled={sending} onClick={() => { onPause(true); setDraft(item.text); setEditing(item.id); }}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m12 4 4 4M4 12l9-9a2 2 0 0 1 3 3l-9 9-4 1 1-4Z" /></svg></button>
-          </div>
+          </div>}
         </>}
       </li>;
     })}</ol>
-  </section>;
+  </section>}</>;
 }

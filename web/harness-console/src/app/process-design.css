@@ -1,0 +1,123 @@
+/* Codex's quiet transcript, using the project's observable process events. */
+html body.codex-theme-v1 .execution-ribbon { font: 13px/1.6 var(--codex-font-ui, system-ui); }
+html body.codex-theme-v1 .execution-ribbon > .execution-disclosure,
+html body.codex-theme-v1 .execution-ribbon > .execution-disclosure:is(:hover, :active) {
+  width: 100%; max-width: 100%; min-height: 28px;
+  padding: 3px 88px 3px 0; gap: 6px; border: 0; border-bottom: 1px solid var(--codex-line); border-radius: 0;
+  color: var(--codex-muted); background: transparent;
+}
+html body.codex-theme-v1 .execution-ribbon > button.execution-disclosure:hover { color: var(--codex-ink); }
+html body.codex-theme-v1 .execution-phase { font-size: 13px; font-weight: 450; line-height: 22px; }
+html body.codex-theme-v1 .execution-duration { font-size: 12px; color: var(--codex-muted); font-variant-numeric: tabular-nums; line-height: 22px; }
+html body.codex-theme-v1 .execution-details-trigger { font-size: 11px; color: var(--codex-muted); }
+html body.codex-theme-v1 .execution-tree { padding: 4px 0 6px; }
+html body.codex-theme-v1 .execution-log { gap: 8px; }
+html body.codex-theme-v1 .execution-reasoning,
+html body.codex-theme-v1 .execution-action { color: var(--codex-muted); font-size: 13px; }
+html body.codex-theme-v1 .execution-reasoning-summary,
+html body.codex-theme-v1 .execution-action-summary { min-height: 26px; gap: 8px; border-radius: 6px; transition: color 120ms ease; }
+html body.codex-theme-v1 .execution-action-summary { grid-template-columns: 16px minmax(0, 1fr) 16px; }
+html body.codex-theme-v1 .execution-reasoning-summary:hover,
+html body.codex-theme-v1 .execution-action-summary:not([aria-disabled="true"]):hover { color: var(--codex-ink); }
+html body.codex-theme-v1 .execution-reasoning-label,
+html body.codex-theme-v1 .execution-action-copy strong { color: inherit; font-size: 13px; font-weight: 450; }
+html body.codex-theme-v1 .execution-action-copy small { font-size: 12px; color: var(--codex-muted); }
+html body.codex-theme-v1 :is(.execution-reasoning-icon,.execution-action-icon) { margin-left: 0; color: var(--codex-muted); }
+html body.codex-theme-v1 .execution-ribbon .codex-response-icon { width: 16px; height: 16px; fill: currentColor; stroke: none; }
+html body.codex-theme-v1 .execution-reasoning-preview { color: var(--codex-muted); font-size: 12px; }
+html body.codex-theme-v1 .execution-reasoning[data-active="true"] .execution-reasoning-preview { opacity: .65; }
+html body.codex-theme-v1 :is(.execution-chevron,.execution-reasoning-chevron,.execution-action-chevron) {
+  display: inline-flex; flex: 0 0 16px; width: 16px; height: 16px; margin: 0;
+  border: 0; color: var(--codex-muted); opacity: .8;
+  transform: rotate(-90deg); transition: transform 160ms cubic-bezier(.16,1,.3,1);
+}
+html body.codex-theme-v1 .execution-ribbon[data-open="true"] > .execution-disclosure .execution-chevron,
+html body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-chevron,
+html body.codex-theme-v1 .execution-action[open] .execution-action-chevron { transform: rotate(0); }
+html body.codex-theme-v1 .execution-reasoning-body {
+  margin: 4px 0 0 7px; padding: 2px 12px 4px 16px;
+  border-left: 1px solid var(--codex-line); max-height: 256px;
+  color: var(--codex-muted); font-size: 13px; line-height: 1.625;
+  scrollbar-width: thin; overflow-y: auto; overscroll-behavior: contain;
+}
+html body.codex-theme-v1 .execution-action-body { margin: 4px 0 0 24px; padding-block: 2px; }
+html body.codex-theme-v1 .execution-action-result { font: 12px/1.625 var(--codex-font-mono, monospace); border-radius: 8px; background: var(--codex-surface-subtle); }
+html body.codex-theme-v1 .execution-action-detail { padding-block: 5px; }
+html body.codex-theme-v1 .execution-commentary-content .aui-md { color: var(--codex-muted); font-size: 13px; line-height: 1.625; }
+html body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-body,
+html body.codex-theme-v1 .execution-action[open] > .execution-action-body { animation: process-body-enter 160ms ease-out; }
+/* One second of light, then three seconds at rest. Text updates keep this node. */
+html body.codex-theme-v1 .execution-ribbon .execution-state-sweep[data-running="true"] {
+  color: transparent;
+  background-color: var(--codex-muted);
+  background-image: linear-gradient(90deg, transparent 0%, var(--codex-ink) 40% 60%, transparent 100%);
+  background-size: 50% 200%; background-repeat: no-repeat; background-position: -100% 0;
+  background-clip: text; -webkit-background-clip: text;
+  animation: process-text-cadence 4s steps(48, end) .6s infinite;
+}
+@keyframes process-text-cadence { 0% { background-position: -100% 0; } 25%, 100% { background-position: 250% 0; } }
+@keyframes process-body-enter { from { opacity: 0; } to { opacity: 1; } }
+@media (max-width: 480px) {
+  html body.codex-theme-v1 .execution-ribbon > .execution-disclosure { max-width: 100%; }
+  html body.codex-theme-v1 .execution-duration { font-size: 11px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html body.codex-theme-v1 .execution-ribbon .execution-state-sweep[data-running="true"] { animation: none; background: none; color: var(--codex-muted); }
+  html body.codex-theme-v1 .execution-ribbon :is(.execution-chevron,.execution-reasoning-chevron,.execution-action-chevron,.execution-reasoning-summary,.execution-action-summary) { transition: none; }
+  html body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-body,
+  html body.codex-theme-v1 .execution-action[open] > .execution-action-body { animation: none; }
+}
+
+/* Collapsed process content should not leave an empty padded row. */
+html body.codex-theme-v1 .execution-ribbon[data-open="false"] > .execution-tree { padding: 0; }
+html body.codex-theme-v1 .execution-ribbon.phase-completed { margin-bottom: 4px; }
+html body.codex-theme-v1 .execution-disclosure .execution-chevron { opacity: 0; transition: opacity 120ms ease, transform 160ms ease; }
+html body.codex-theme-v1 .execution-disclosure:is(:hover, :focus-visible) .execution-chevron { opacity: .8; }
+@media (hover: none) {
+  html body.codex-theme-v1 .execution-disclosure .execution-chevron { opacity: .8; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html body.codex-theme-v1 .execution-disclosure .execution-chevron { transition: none; }
+}
+
+/* Individual process rows follow the same quiet disclosure as the heading. */
+html body.codex-theme-v1 :is(.execution-reasoning-chevron, .execution-action-chevron) { opacity: 0; transition: opacity 120ms ease, transform 160ms ease; }
+html body.codex-theme-v1 .execution-reasoning-summary:is(:hover, :focus-visible) .execution-reasoning-chevron,
+html body.codex-theme-v1 .execution-action-summary:not([aria-disabled="true"]):is(:hover, :focus-visible) .execution-action-chevron { opacity: .8; }
+html body.codex-theme-v1 .execution-action-summary[aria-disabled="true"] .execution-action-chevron { display: none; }
+@media (hover: none) {
+  html body.codex-theme-v1 .execution-reasoning-chevron,
+  html body.codex-theme-v1 .execution-action-summary:not([aria-disabled="true"]) .execution-action-chevron { opacity: .8; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html body.codex-theme-v1 :is(.execution-reasoning-chevron, .execution-action-chevron) { transition: none; }
+}
+
+/* One compact collaboration group, with per-task details kept in the conversation. */
+html body.codex-theme-v1 .subagent-progress { margin: 10px 0; border: 1px solid var(--codex-border, #8883); border-radius: 10px; overflow: hidden; color: var(--codex-ink); }
+html body.codex-theme-v1 .subagent-progress-heading { display: flex; align-items: center; gap: 9px; width: 100%; padding: 11px 13px; background: transparent; border: 0; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+html body.codex-theme-v1 .subagent-progress-heading:hover { background: #8888880a; }
+html body.codex-theme-v1 .subagent-progress-heading:focus-visible, html body.codex-theme-v1 .subagent-progress-task > summary:focus-visible { outline: 2px solid var(--codex-ink); outline-offset: -3px; }
+html body.codex-theme-v1 .subagent-progress-heading strong { font-size: 13px; font-weight: 600; }
+html body.codex-theme-v1 .subagent-progress-icon { font-size: 18px; color: var(--codex-muted); }
+html body.codex-theme-v1 .subagent-progress-counts { flex: 1; text-align: right; color: var(--codex-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+html body.codex-theme-v1 .subagent-progress-list { list-style: none; margin: 0; padding: 0 12px 4px; }
+html body.codex-theme-v1 .subagent-progress-list > li { border-top: 1px solid var(--codex-border, #8883); }
+html body.codex-theme-v1 .subagent-progress-task > summary { display: flex; align-items: center; gap: 10px; padding: 12px 0; list-style: none; cursor: pointer; }
+html body.codex-theme-v1 .subagent-progress-task > summary::-webkit-details-marker { display: none; }
+html body.codex-theme-v1 .subagent-progress-copy { display: grid; gap: 3px; min-width: 0; flex: 1; }
+html body.codex-theme-v1 .subagent-progress-copy strong { font-size: 13px; font-weight: 500; }
+html body.codex-theme-v1 .subagent-progress-copy > span { color: var(--codex-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+html body.codex-theme-v1 .subagent-progress-state { display: grid; gap: 3px; text-align: right; font-size: 12px; color: var(--codex-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+html body.codex-theme-v1 .subagent-progress-state small { font-size: 11px; }
+html body.codex-theme-v1 .subagent-progress-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--codex-muted); flex-shrink: 0; }
+html body.codex-theme-v1 li[data-status="running"] .subagent-progress-dot { background: #5797ba; box-shadow: 0 0 0 3px #5797ba20; }
+html body.codex-theme-v1 li[data-status="completed"] .subagent-progress-dot { background: #61977c; }
+html body.codex-theme-v1 li[data-status="failed"] .subagent-progress-dot { background: #c77868; }
+html body.codex-theme-v1 li[data-status="waiting"] .subagent-progress-dot { background: #bd9a50; }
+html body.codex-theme-v1 .subagent-progress-chevron { color: var(--codex-muted); }
+html body.codex-theme-v1 .subagent-progress-task[open] .subagent-progress-chevron { transform: rotate(180deg); }
+html body.codex-theme-v1 .subagent-progress-detail { padding: 0 16px 12px; max-height: 340px; overflow-y: auto; overflow-wrap: anywhere; }
+html body.codex-theme-v1 .subagent-progress-detail strong { color: var(--codex-muted); font-size: 11px; font-weight: 500; }
+html body.codex-theme-v1 .subagent-progress-detail p { white-space: pre-wrap; margin: 4px 0 12px; font-size: 12px; line-height: 1.7; }
+@media (max-width: 540px) { html body.codex-theme-v1 .subagent-progress-heading { flex-wrap: wrap; } html body.codex-theme-v1 .subagent-progress-counts { flex-basis: 60%; } }

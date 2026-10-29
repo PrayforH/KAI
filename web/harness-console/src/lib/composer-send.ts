@@ -6,6 +6,7 @@ export async function sendComposerWithRecovery(
   composer: AssistantRuntime["thread"]["composer"],
 ): Promise<string | null> {
   const before = { ...composer.getState() };
+  if (before.canSend === false) return "对话尚未准备好，输入已保留，请稍后再发送。";
   const files: CompleteAttachment[] = [];
   for (const attachment of before.attachments) {
     const id = inputArtifactIdFromAttachment(attachment);

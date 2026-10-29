@@ -5,6 +5,7 @@ import type {
 } from "@assistant-ui/react";
 import { uploadFeedbackStore, uploadKey } from "./upload-feedback-store";
 import { requireAuthenticatedResponse } from "./client-auth";
+import { inputFileSizeLimit, inputTotalSizeLimit, type UploadLimits } from "./input-upload-limits";
 
 interface InputArtifactUpload {
   input_artifact_id: string;
@@ -17,12 +18,6 @@ interface InputArtifactUpload {
 type ServerBackedPendingAttachment = PendingAttachment & {
   harnessInputArtifactId?: string;
 };
-
-interface UploadLimits {
-  max_file_bytes: number;
-  max_files: number;
-  max_total_bytes: number;
-}
 
 export function inputArtifactIdFromAttachment(value: unknown): string | null {
   if (!value || typeof value !== "object") return null;
@@ -101,6 +96,7 @@ export function uploadInputFile(
     xhr.open("POST", "/api/input-artifacts");
     const file = form.get("file");
     if (file instanceof Blob) xhr.setRequestHeader("x-upload-size", String(file.size));
+    if (file instanceof File) xhr.setRequestHeader("x-upload-name", encodeURIComponent(file.name));
     xhr.timeout = 10 * 60 * 1000;
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) onProgress(event.loaded / event.total * 100);
@@ -127,7 +123,7 @@ export function createInputAttachmentAdapter(
   fetcher?: typeof fetch,
 ): AttachmentAdapter {
   const uploads = new Map<string, AbortController>();
-  const reservedSizes = new Map<string, number>();
+  const reservedSizes = new Map<string, { name: string; size: number }>();
   let limitsRequest: Promise<UploadLimits> | undefined;
   let limitsExpireAt = 0;
   const getLimits = () => {
@@ -141,6 +137,12 @@ export function createInputAttachmentAdapter(
         if (!response.ok) throw new Error(errorMessage(payload, "暂时无法获取附件上传限制，请重试。"));
         if (![payload?.max_file_bytes, payload?.max_files, payload?.max_total_bytes]
           .every((value) => Number.isSafeInteger(value) && value > 0)) {
+          throw new Error("暂时无法获取附件上传限制，请刷新后重试。");
+        }
+        if (payload.max_archive_file_bytes !== undefined &&
+            (!Number.isSafeInteger(payload.max_archive_file_bytes) || payload.max_archive_file_bytes <= 0 ||
+             !Array.isArray(payload.archive_extensions) ||
+             !payload.archive_extensions.every((extension: unknown) => typeof extension === "string" && /^\.[a-z0-9]+$/.test(extension)))) {
           throw new Error("暂时无法获取附件上传限制，请刷新后重试。");
         }
         return payload as UploadLimits;
@@ -168,24 +170,27 @@ export function createInputAttachmentAdapter(
       try {
         const limits = await getLimits();
         if (controller.signal.aborted) return;
-        if (file.size > limits.max_file_bytes) {
-          throw new Error(`文件大小 ${(file.size / (1024 * 1024)).toFixed(2)} MB，超过单文件 ${limits.max_file_bytes / (1024 * 1024)} MB 上限。`);
+        const maximum = inputFileSizeLimit(file.name, limits);
+        if (file.size > maximum) {
+          throw new Error(`文件大小 ${(file.size / (1024 * 1024)).toFixed(2)} MB，超过单文件 ${maximum / (1024 * 1024)} MB 上限。`);
         }
         if (reservedSizes.size >= limits.max_files) {
           throw new Error(`每条消息最多添加 ${limits.max_files} 个附件。`);
         }
-        const total = [...reservedSizes.values()].reduce((sum, size) => sum + size, 0) + file.size;
-        if (total > limits.max_total_bytes) {
-          throw new Error(`每条消息附件合计不能超过 ${limits.max_total_bytes / (1024 * 1024)} MB。`);
+        const reserved = [...reservedSizes.values()];
+        const total = reserved.reduce((sum, file) => sum + file.size, 0) + file.size;
+        const totalMaximum = inputTotalSizeLimit([...reserved.map(file => file.name), file.name], limits);
+        if (total > totalMaximum) {
+          throw new Error(`每条消息附件合计不能超过 ${totalMaximum / (1024 * 1024)} MB。`);
         }
-        reservedSizes.set(attachmentId, file.size);
+        reservedSizes.set(attachmentId, { name: file.name, size: file.size });
         const form = new FormData();
         form.append("file", file);
         const response = requireAuthenticatedResponse(
           await (fetcher || typeof XMLHttpRequest === "undefined"
             ? (fetcher ?? fetch)("/api/input-artifacts", {
                 method: "POST", body: form, signal: controller.signal,
-                headers: { "x-upload-size": String(file.size) },
+                headers: { "x-upload-size": String(file.size), "x-upload-name": encodeURIComponent(file.name) },
               })
             : uploadInputFile(form, controller.signal, percent => uploadFeedbackStore.progress(key, percent))),
         );

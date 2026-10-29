@@ -1,0 +1,2 @@
+{"base":"https://172.20.105.79:3543","stage":"79-https","manualClose":true,"reopenKeepsSelection":true,"autoCollapseAfterAcceptedRun":true,"unselectedSkillsNeverInstalled":true,"draftUnchanged":true,"pageErrors":[],"fixture":"browser-only generation and run responses; no model inference"}
+{"stage":"79-https","qaDraftDeleted":true}

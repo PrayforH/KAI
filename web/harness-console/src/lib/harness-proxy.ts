@@ -7,6 +7,7 @@ import {
   type Span,
 } from "@opentelemetry/api";
 import type { HarnessServerConfig } from "./server-config";
+import { inputFileSizeLimit, type UploadLimits } from "./input-upload-limits";
 import {
   ACCESS_COOKIE,
   appendClearedSessionCookies,
@@ -19,6 +20,10 @@ const RESPONSE_HEADERS = [
   "cache-control",
   "content-disposition",
   "content-type",
+  "content-security-policy",
+  "permissions-policy",
+  "x-content-type-options",
+  "referrer-policy",
   "etag",
   "vary",
   "www-authenticate",
@@ -59,7 +64,7 @@ function upstreamHeaders(
     ...config.serviceHeaders,
   });
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
-  for (const name of ["accept", "content-type", "last-event-id"]) {
+  for (const name of ["accept", "content-type", "last-event-id", "idempotency-key"]) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
@@ -251,15 +256,18 @@ async function forward(
               if (refreshed) upstream = await authorize(refreshed.access_token);
             }
             if (upstream.ok) {
-              const limits = await upstream.json() as { max_file_bytes: number };
+              const limits = await upstream.json() as UploadLimits;
               if (!Number.isSafeInteger(limits.max_file_bytes) || limits.max_file_bytes <= 0) {
                 throw new Error("Invalid input artifact limits");
               }
               const declaredSize = Number(request.headers.get("x-upload-size"));
-              if (declaredSize > limits.max_file_bytes) {
+              const name = decodeURIComponent(request.headers.get("x-upload-name") ?? "");
+              const maximum = inputFileSizeLimit(name, limits);
+              if (!Number.isSafeInteger(maximum) || maximum <= 0) throw new Error("Invalid input artifact limits");
+              if (declaredSize > maximum) {
                 upstream = Response.json({ error: {
                   code: "input_artifact_too_large",
-                  message: `单个附件不能超过 ${limits.max_file_bytes / (1024 * 1024)} MB，请压缩或拆分后上传。`,
+                  message: `单个附件不能超过 ${maximum / (1024 * 1024)} MB，请压缩或拆分后上传。`,
                 } }, { status: 413 });
               } else {
                 // No clone/tee or arrayBuffer: forward with backpressure, so
@@ -332,6 +340,7 @@ export async function proxyAguiRequest(
     const agentVersion = requested.get("agent_version");
     const agentOwnerUserId = requested.get("agent_owner_user_id");
     const spaceId = requested.get("space_id");
+    const projectId = requested.get("project_id");
     if (
       agentName &&
       agentVersion &&
@@ -345,6 +354,9 @@ export async function proxyAguiRequest(
       }
       if (spaceId && spaceId.length <= 128) {
         url.searchParams.set("space_id", spaceId);
+      }
+      if (projectId && projectId.length <= 128) {
+        url.searchParams.set("project_id", projectId);
       }
     }
   }
@@ -533,6 +545,14 @@ export async function proxyMemoryBankRequest(
   );
 }
 
+export async function proxyUiRequest(
+  request: Request, config: HarnessServerConfig, fetcher: typeof fetch = fetch, path = "",
+) {
+  const url = new URL(`${config.apiUrl}/v1/ui/${path}`);
+  url.search = new URL(request.url).search;
+  return forward(request, url.toString(), config, fetcher, "harness.web.ui");
+}
+
 export async function proxyRunRequest(request: Request, config: HarnessServerConfig, fetcher: typeof fetch = fetch, path = "") {
   const url = new URL(`${config.apiUrl}/v1/runs/${path}`);
   return forward(request, url.toString(), config, fetcher, "harness.web.run_control");
@@ -540,7 +560,9 @@ export async function proxyRunRequest(request: Request, config: HarnessServerCon
 
 export async function proxyDictationRequest(request: Request, config: HarnessServerConfig, path: string) {
   if (request.body) {
-    const maximum = path.endsWith("/audio") ? 32000 : 64000;
+    const maximum = path.endsWith("/audio") ? 32000
+      : path === "transcribe" ? 300 * 32000 + 65536
+      : path === "vad" ? 2_000_000 : 64000;
     const reader = request.body.getReader();
     const chunks: Uint8Array[] = []; let total = 0;
     while (true) {

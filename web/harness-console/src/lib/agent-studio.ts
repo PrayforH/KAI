@@ -113,6 +113,8 @@ export interface McpOption {
   tools: string[];
   network: NetworkAccess;
   sendsUserData: boolean;
+  visibility?: "all" | "selected";
+  visibleAgentIds?: string[];
 }
 
 // The generic Lead Agent may only use platform-generic capabilities, never
@@ -121,13 +123,18 @@ export interface McpOption {
 const GENERAL_LEAD_MCP_REFERENCES = new Set<string>();
 
 export function mcpOptionsForDraft(
-  draft: Pick<StudioDraft, "name" | "domain">,
+  draft: Pick<StudioDraft, "name" | "domain" | "agentId">,
   options: McpOption[],
 ): McpOption[] {
+  const visible = options.filter(
+    (option) =>
+      option.visibility !== "selected"
+      || Boolean(draft.agentId && option.visibleAgentIds?.includes(draft.agentId)),
+  );
   if (draft.name !== "lead-agent" || draft.domain !== "general-assistant") {
-    return options;
+    return visible;
   }
-  return options.filter((option) => GENERAL_LEAD_MCP_REFERENCES.has(option.id));
+  return visible.filter((option) => GENERAL_LEAD_MCP_REFERENCES.has(option.id));
 }
 
 export interface StudioSkill {
@@ -259,6 +266,7 @@ export function applyStudioDraftUpdate(
   if (update.runtime && update.runtime !== current.runtime && !update.context) {
     next.context = {};
   }
+  if (JSON.stringify(next) === JSON.stringify(current)) return current;
   if (
     !("version" in update) &&
     current.publishedVersion &&
@@ -267,6 +275,20 @@ export function applyStudioDraftUpdate(
     next.version = nextPatchVersion(current.publishedVersion) ?? current.version;
   }
   return next;
+}
+
+export function isStudioDraftPublished(
+  draft: StudioDraft,
+  hasUnsavedChanges: boolean,
+): boolean {
+  // The server advances the version whenever a published spec changes. Its
+  // persisted release metadata survives reloads; page-local validation does not.
+  return Boolean(
+    !hasUnsavedChanges
+    && draft.version === draft.publishedVersion
+    && draft.publishedHash
+    && draft.publishedPackageHash
+  );
 }
 
 export interface StudioContract {

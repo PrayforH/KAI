@@ -37,7 +37,7 @@ describe("MCP capability catalog", () => {
     // which is itself a drawer. The catalog view is a page layout, so mounting
     // it bare painted into the workbench.
     expect(workbench).toContain("setMcpStartInForm(true); setMcpManagerOpen(true);");
-    expect(workbench).toContain("<McpCatalogControlPlane startInForm onClose={() => setMcpManagerOpen(false)}");
+    expect(workbench).toContain("<McpCatalogControlPlane startInForm defaultAgentId={draft.agentId ?? undefined} onClose={() => setMcpManagerOpen(false)}");
     // Dismissing the form closes the surface: falling back to the catalog page
     // would paint a full page where the drawer was.
     expect(component).toContain("const closeForm = () => {");

@@ -1,0 +1,106 @@
+[
+  {
+    "id": "bill-split",
+    "prompt": "五个人吃饭，按我们点的菜做个分账器，做成写字板的样子。菜品是披萨30元、意面20元、沙拉10元。",
+    "decision": {
+      "interactive": true,
+      "images": true
+    }
+  },
+  {
+    "id": "monty-hall",
+    "prompt": "讲讲三门问题，为什么换门更容易赢？",
+    "decision": {
+      "interactive": false,
+      "images": false
+    }
+  },
+  {
+    "id": "gdp",
+    "prompt": "GDP 是怎么算的？",
+    "decision": {
+      "interactive": false,
+      "images": false
+    }
+  },
+  {
+    "id": "retro-game",
+    "prompt": "做一个我能玩的复古游戏机。",
+    "decision": {
+      "interactive": true,
+      "images": false
+    }
+  },
+  {
+    "id": "savings",
+    "prompt": "每个月存一笔钱，长期下来能攒多少？",
+    "decision": {
+      "interactive": false,
+      "images": false
+    }
+  },
+  {
+    "id": "clt",
+    "prompt": "用咖啡店消费的例子解释一下中心极限定理。",
+    "decision": {
+      "interactive": false,
+      "images": false
+    }
+  },
+  {
+    "id": "plain-text",
+    "prompt": "只用文字解释中心极限定理，不要任何互动。",
+    "decision": {
+      "interactive": false,
+      "images": false
+    }
+  },
+  {
+    "id": "greeting",
+    "prompt": "早上好",
+    "decision": {
+      "interactive": false,
+      "images": false
+    }
+  },
+  {
+    "id": "lamb",
+    "prompt": "周日想做烤羊腿招待朋友，人数还没定。",
+    "decision": {
+      "interactive": true,
+      "images": false
+    }
+  },
+  {
+    "id": "bike",
+    "prompt": "拆解一下 7 速自行车的设计。",
+    "decision": {
+      "interactive": false,
+      "images": false
+    }
+  },
+  {
+    "id": "italy-wedding",
+    "prompt": "要去意大利参加婚礼，帮我规划一周穿什么。",
+    "decision": {
+      "interactive": true,
+      "images": false
+    }
+  },
+  {
+    "id": "pnw-roadtrip",
+    "prompt": "规划一趟太平洋西北部10天的自驾。",
+    "decision": {
+      "interactive": true,
+      "images": false
+    }
+  },
+  {
+    "id": "plain-followup",
+    "prompt": "请只用一句话概括上面的穿搭方案。",
+    "decision": {
+      "interactive": false,
+      "images": false
+    }
+  }
+]

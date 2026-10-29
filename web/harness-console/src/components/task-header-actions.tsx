@@ -1,4 +1,12 @@
 "use client";
+import { ProjectSkillExtractDialog } from "./project-skill-extract-dialog";
+import { useAuth } from "./auth-provider";
+import { useRouter } from "next/navigation";
+import { CodexTaskIcon } from "./codex-task-icon";
+import { CodexResponseIcon } from "./codex-response-icon";
+import { ActionMenuPopover } from "./action-menu-popover";
+import { writeTextToClipboard } from "../lib/clipboard";
+import { RunContextManifest } from "./run-context-manifest";
 import { FeedbackToast } from "./feedback-toast";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -9,13 +17,14 @@ import {
   notifyTaskListChanged,
   setTaskArchived,
   setTaskPinned,
+  forkTask,
   setTaskTitle,
   type TaskSummary,
 } from "../lib/task-history";
 import { useConfirmationDialog } from "./confirmation-dialog";
 import { setTaskProject, type ApiProject } from "../lib/studio-client";
 
-const activeStatuses = new Set(["queued", "running", "waiting_approval", "cancelling"]);
+const activeStatuses = new Set(["queued", "provisioning", "running", "waiting_approval", "cancelling"]);
 
 function ProjectFolderIcon() {
   return (
@@ -34,16 +43,7 @@ function RecentActivityIcon() {
   );
 }
 
-function BranchIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <circle cx="6" cy="5" r="1.9" />
-      <circle cx="6" cy="15" r="1.9" />
-      <circle cx="14" cy="7.5" r="1.9" />
-      <path d="M6 6.9v6.2M14 9.4c0 2.5-1.8 3.4-4.2 3.7-1.2.15-2.4.4-3.1 1" />
-    </svg>
-  );
-}
+function BranchIcon() { return <CodexTaskIcon name="branch" />; }
 
 function ProjectIcon() {
   return (
@@ -53,15 +53,7 @@ function ProjectIcon() {
   );
 }
 
-function DotsIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <circle cx="4.4" cy="10" r="1.3" />
-      <circle cx="10" cy="10" r="1.3" />
-      <circle cx="15.6" cy="10" r="1.3" />
-    </svg>
-  );
-}
+function DotsIcon() { return <CodexTaskIcon name="more" />; }
 
 function TraceIcon() {
   return (
@@ -71,32 +63,9 @@ function TraceIcon() {
   );
 }
 
-function PinIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="m11.5 3 5.5 5.5-2.4.7-2.9 2.9-.3 3-5.9-5.9 3-.3 2.9-2.9ZM6.4 13.6 3 17" />
-    </svg>
-  );
-}
-
-function RenameIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M8 13.2 8.5 11l6.8-6.8a1.4 1.4 0 0 1 2 2L10.5 13Z" />
-      <path d="M3.5 16.5h13" />
-    </svg>
-  );
-}
-
-function ArchiveIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M3.5 6.5h13v9a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5Z" />
-      <path d="M2.5 3.5h15v3h-15Z" />
-      <path d="M7.5 10h5" />
-    </svg>
-  );
-}
+function PinIcon() { return <CodexTaskIcon name="pin" />; }
+function RenameIcon() { return <CodexResponseIcon name="pencil" className="task-action-glyph" />; }
+function ArchiveIcon() { return <CodexTaskIcon name="archive" />; }
 
 function useDismissable(open: boolean, close: () => void) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -190,6 +159,7 @@ export function TaskDetailsPopover({
           <div className="task-details-row is-path">
             <span>{task.agent_name}</span>
           </div>
+          {task.project_id && task.run_id && <RunContextManifest runId={task.run_id} />}
           <div className="task-details-row is-activity">
             <RecentActivityIcon />
             <span>最近活动 {age === "刚刚" ? "刚刚" : `${age}前`}</span>
@@ -284,8 +254,16 @@ export function TaskHeaderActions({
   onRenamed,
   onArchived,
   onProjectChanged,
+  variant = "header",
+  showPinControl = false,
+  onChanged,
+  onForked,
 }: {
   task: TaskSummary;
+  variant?: "header" | "row";
+  showPinControl?: boolean;
+  onChanged?: () => void;
+  onForked?: (task: TaskSummary) => void;
   /** Projects the task can be moved into; empty hides the project actions. */
   projects?: readonly ApiProject[];
   /** Trace for the run currently shown in this task. */
@@ -296,12 +274,17 @@ export function TaskHeaderActions({
   onArchived?: () => void;
   onProjectChanged?: (projectId: string | null) => void;
 }) {
+  const router = useRouter();
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [skillExtractOpen, setSkillExtractOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const close = useCallback(() => setOpen(false), []);
-  const containerRef = useDismissable(open, close);
+  const containerRef = useDismissable(open && variant === "header", close);
   const { requestConfirmation, confirmationDialog } = useConfirmationDialog();
 
   const pinned = Boolean(task.pinned_at);
@@ -313,6 +296,7 @@ export function TaskHeaderActions({
     setError("");
     try {
       await action();
+      onChanged?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -365,9 +349,11 @@ export function TaskHeaderActions({
     setBusy(true);
     try {
       await setTaskProject(task.thread_id, projectId);
+      notifyTaskListChanged();
       setError("");
       close();
       onProjectChanged?.(projectId);
+      onChanged?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -375,32 +361,49 @@ export function TaskHeaderActions({
     }
   }
 
-  return (
-    <div className="task-header-actions" ref={containerRef}>
-      <button
-        type="button"
-        className="header-icon-button task-header-more"
-        aria-expanded={open}
-        aria-haspopup="menu"
-        aria-label="更多任务操作"
-        title="更多任务操作"
-        onClick={() => setOpen((value) => !value)}
-      >
-        <DotsIcon />
+  const menu = <>
+    {variant === "row" && <>
+      <button type="button" role="menuitem" disabled={busy} onClick={() => {
+        close();
+        void writeTextToClipboard(new URL(`/?thread=${encodeURIComponent(task.thread_id)}`, window.location.origin).href).then(copied => {
+          if (copied) setNotice("任务链接已复制"); else setError("复制失败，请重试。");
+        });
+      }}>
+        <CodexResponseIcon name="copy" className="task-action-glyph" />
+        <span>复制任务链接</span>
       </button>
-      <FeedbackToast message={error} tone="error" onDismiss={() => setError("")} />
-      {open && (
-        <div className="task-header-menu" role="menu" aria-label="更多任务操作">
-          <button type="button" role="menuitem" disabled={busy} onClick={togglePinned}>
+      <a role="menuitem" href={`/?thread=${encodeURIComponent(task.thread_id)}`} target="_blank" rel="noopener noreferrer" onClick={close}>
+        <CodexResponseIcon name="external" className="task-action-glyph" />
+        <span>在新标签中打开</span>
+      </a>
+      <div role="separator" />
+    </>}
+
+          {variant === "header" && (<button type="button" role="menuitem" disabled={busy} onClick={togglePinned}>
             <PinIcon />
             <span>{pinned ? "取消置顶任务" : "置顶任务"}</span>
+          </button>)}
+          <button type="button" role="menuitem" disabled={busy || isActive}
+            title={isActive ? "当前任务结束后可创建分支" : undefined}
+            onClick={() => void run(async () => {
+              const branch = await forkTask(task.thread_id, user.user_id);
+              close();
+              if (onForked) onForked(branch);
+              else router.push(`/?thread=${encodeURIComponent(branch.thread_id)}`);
+            })}>
+            <CodexTaskIcon name="branchAlt" /><span>分支到新聊天</span>
           </button>
           <button type="button" role="menuitem" disabled={busy} onClick={openRename}>
             <RenameIcon />
-            <span>重命名任务</span>
+            <span>{variant === "row" ? "重命名" : "重命名任务"}</span>
           </button>
+          {variant === "row" && (<button type="button" role="menuitem" disabled={busy} onClick={togglePinned}>
+            <PinIcon />
+            <span>{pinned ? "取消置顶" : "置顶"}</span>
+          </button>)}
+          {variant === "row" && <div role="separator" />}
           {(projects.length > 0 || task.project_id) && (
-            <NestedMenu label="移入项目" icon={<ProjectIcon />} disabled={busy}>
+            <NestedMenu label={variant === "row" ? "项目" : "移入项目"} icon={<ProjectIcon />} disabled={busy}>
               {projects
                 .filter((project) => project.projectId !== task.project_id)
                 .map((project) => (
@@ -428,17 +431,19 @@ export function TaskHeaderActions({
               )}
             </NestedMenu>
           )}
+          {task.project_id && <button type="button" role="menuitem" disabled={busy} onClick={() => { close(); setSkillExtractOpen(true); }}><ProjectIcon /><span>提炼为项目技能</span></button>}
+          {variant === "row" && <div role="separator" />}
           <button
             type="button"
             role="menuitem"
-            disabled={busy || isActive}
-            title={isActive ? "任务结束后可归档" : undefined}
+            disabled={busy || isActive || Boolean(task.archived_at)}
+            title={task.archived_at ? "任务已归档" : isActive ? "任务结束后可归档" : undefined}
             onClick={archive}
           >
             <ArchiveIcon />
-            <span>归档任务</span>
+            <span>{variant === "row" ? "归档" : "归档任务"}</span>
           </button>
-          {onOpenTrace ? (
+          {variant === "row" ? null : onOpenTrace ? (
             <button
               type="button"
               role="menuitem"
@@ -467,8 +472,34 @@ export function TaskHeaderActions({
               <span>调用轨迹</span>
             </span>
           )}
-        </div>
+
+  </>;
+  return (
+    <div className={`task-header-actions${variant === "row" ? " project-task-actions" : ""}`} ref={containerRef}>
+      {showPinControl && <button type="button" className="header-icon-button task-quick-pin"
+        aria-label={`${pinned ? "取消置顶" : "置顶"} ${task.title}`} aria-pressed={pinned}
+        title={pinned ? "取消置顶" : "置顶"} disabled={busy} onClick={togglePinned}>
+        <PinIcon />
+      </button>}
+      <button
+        type="button"
+        ref={triggerRef}
+        className="header-icon-button task-header-more"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label={variant === "row" ? `任务操作 ${task.title}` : "更多任务操作"}
+        title="更多任务操作"
+        onClick={() => setOpen((value) => !value)}
+        onKeyDown={(event) => { if (variant === "row" && event.key === "ArrowDown") { event.preventDefault(); setOpen(true); } }}
+      >
+        <DotsIcon />
+      </button>
+      <FeedbackToast message={notice} onDismiss={() => setNotice("")} />
+      <FeedbackToast message={error} tone="error" onDismiss={() => setError("")} />
+      {open && (
+        variant === "row" ? <ActionMenuPopover className="task-row-menu" anchor={triggerRef} label={`任务操作 ${task.title}`} onClose={close}>{menu}</ActionMenuPopover> : <div className="task-header-menu" role="menu" aria-label="更多任务操作">{menu}</div>
       )}
+      {skillExtractOpen && task.project_id && <ProjectSkillExtractDialog projectId={task.project_id} threadId={task.thread_id} sourceTitle={task.title} onClose={() => setSkillExtractOpen(false)} />}
       <RenameTaskDialog
         open={renameOpen}
         initialTitle={task.title}

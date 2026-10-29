@@ -52,6 +52,7 @@ from harness.runtime.claude_sdk import ClaudeSdkRuntime, ContextWindowObservatio
 from harness.runtime.mcp_credentials import RequestMcpCredentialProvider
 from harness.runtime.tools import (
     McpServerRegistration,
+    ToolResolutionError,
     ToolResolver,
 )
 from harness.sandbox.base import SandboxCommandResult
@@ -233,6 +234,7 @@ async def test_runtime_builds_new_api_options_and_maps_fake_sdk_messages(
         assert "WebFetch" not in (options.tools or [])
     else:
         assert "harness-web" not in options.mcp_servers
+    assert options.max_turns is None  # Legacy maxTurns=5 must not cap a task.
     assert options.max_budget_usd is None  # Fixture retains maxBudgetUsd=1.
     assert options.env["ANTHROPIC_BASE_URL"] == "https://new-api.example/v1"
     assert options.env["ANTHROPIC_AUTH_TOKEN"] == "super-secret"
@@ -1055,8 +1057,17 @@ async def test_runtime_wires_resolved_python_and_mcp_tools_into_sdk_options(
 
 
 @pytest.mark.asyncio
-async def test_runtime_wires_custom_tools_declared_by_subagents(tmp_path: Path) -> None:
+@pytest.mark.parametrize("connector_difference", [None, "url", "headers", "transport"])
+async def test_runtime_wires_custom_tools_declared_by_subagents(
+    tmp_path: Path, connector_difference: str | None,
+) -> None:
     snapshot = load_manifest("tests/fixtures/agents/echo-agent/agent.yaml")
+    lead_spec = snapshot.manifest.spec.model_copy(
+        update={"tools": snapshot.manifest.spec.tools + (ToolSpec(mcp="lead-crm"),)}
+    )
+    snapshot = snapshot.model_copy(
+        update={"manifest": snapshot.manifest.model_copy(update={"spec": lead_spec})}
+    )
     helper_snapshot = load_manifest("tests/fixtures/agents/helper-agent/agent.yaml")
     helper_spec = helper_snapshot.manifest.spec.model_copy(
         update={
@@ -1065,6 +1076,7 @@ async def test_runtime_wires_custom_tools_declared_by_subagents(tmp_path: Path) 
                 ToolSpec.model_validate(
                     {"python": "tests.fixtures.runtime.domain_tools:lookup_tool"}
                 ),
+                ToolSpec(mcp="child-crm"),
             )
         }
     )
@@ -1116,12 +1128,27 @@ async def test_runtime_wires_custom_tools_declared_by_subagents(tmp_path: Path) 
             session_id="sdk-session",
         )
 
+    resolver = ToolResolver(mcp_registry={
+        reference: McpServerRegistration(
+            server_name="shared-crm",
+            config=cast(McpServerConfig, {
+                "type": "sse" if child and connector_difference == "transport" else "http",
+                "url": "https://other.example/mcp"
+                if child and connector_difference == "url" else "https://crm.example/mcp",
+            }),
+            allowed_tools=("mcp__shared-crm__search",),
+            static_headers=(("X-Connection", "other"
+                             if child and connector_difference == "headers" else "same"),),
+        )
+        for reference, child in (("lead-crm", False), ("child-crm", True))
+    })
     runtime = ClaudeSdkRuntime(
         agent_version=main_version,
         routes=[route],
         route_secrets={"new-api-default": "secret"},
         subagent_versions={"helper": helper_version},
         query_factory=fake_query,
+        tool_resolver=resolver,
     )
     context = RuntimeContext(
         run=Run(
@@ -1145,16 +1172,26 @@ async def test_runtime_wires_custom_tools_declared_by_subagents(tmp_path: Path) 
         workspace=tmp_path,
     )
 
+    if connector_difference is not None:
+        with pytest.raises(ToolResolutionError, match="MCP server name conflicts"):
+            _events = [event async for event in runtime.execute(context)]
+        assert not captured
+        return
     _events = [event async for event in runtime.execute(context)]
 
     options = captured[0]
     assert options.agents is not None
     helper = options.agents["helper"]
+    assert helper.maxTurns is None  # Published child limits are also disabled.
     assert isinstance(options.system_prompt, str)
     assert "subagent_type=helper" in options.system_prompt
     assert "children do not inherit" in options.system_prompt
     assert helper.tools is not None
     assert "mcp__harness-python__lookup_customer" in helper.tools
+
+    assert "mcp__shared-crm__search" in helper.tools
+    assert isinstance(options.mcp_servers, dict)
+    assert set(options.mcp_servers) == {"harness-python", "shared-crm"}
 
 
 @pytest.mark.asyncio

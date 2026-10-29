@@ -14,7 +14,7 @@ export function ProcessDisclosure({ open, children }: { open: boolean; children:
     const from = node.getBoundingClientRect().height;
     animation.current?.cancel();
     const animate = initialized.current && typeof node.animate === "function" &&
-      !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     initialized.current = true;
     node.hidden = false;
     node.style.height = "auto";
@@ -26,7 +26,7 @@ export function ProcessDisclosure({ open, children }: { open: boolean; children:
     }
     const current = node.animate(
       [{ height: `${from}px`, opacity: open ? 0 : 1 }, { height: `${to}px`, opacity: open ? 1 : 0 }],
-      { duration: 180, easing: "cubic-bezier(.2,.7,.2,1)" },
+      { duration: 200, easing: "cubic-bezier(.16,1,.3,1)" },
     );
     animation.current = current;
     current.onfinish = () => { node.hidden = !open; animation.current = null; };

@@ -86,6 +86,7 @@ class MemoryEntry(MemoryModel):
     tenant_id: str = Field(alias="tenantId")
     user_id: str = Field(alias="userId")
     agent_name: str = Field(alias="agentName")
+    project_id: str | None = Field(default=None, alias="projectId")
     entry_id: str = Field(alias="entryId")
     content: str
     content_hash: str = Field(alias="contentHash")
@@ -118,6 +119,7 @@ class MemorySearchHit(MemoryModel):
 
 
 class ProposeMemoryRequest(MemoryModel):
+    project_id: str | None = Field(default=None, alias="projectId", min_length=1, max_length=128)
     agent_name: str = Field(alias="agentName", min_length=1, max_length=128)
     agent_owner_user_id: str | None = Field(default=None, alias="agentOwnerUserId", max_length=128)
     content: str = Field(min_length=1, max_length=4000)
@@ -141,6 +143,7 @@ class UpdateMemoryRequest(MemoryVersionRequest):
 
 
 class SearchMemoryRequest(MemoryModel):
+    project_id: str | None = Field(default=None, alias="projectId", min_length=1, max_length=128)
     agent_name: str = Field(alias="agentName", min_length=1, max_length=128)
     query: str = Field(min_length=1, max_length=500)
     limit: int = Field(default=8, ge=1, le=50)

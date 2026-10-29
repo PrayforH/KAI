@@ -594,6 +594,19 @@ class AgentDraftCompiler:
                         path="mcpServers",
                     )
                 )
+            elif (
+                server.visibility == "selected"
+                and draft.agent_id not in server.visible_agent_ids
+            ):
+                issues.append(
+                    ValidationIssue(
+                        code="mcp_server_not_visible",
+                        message=f"该 MCP 未授权给当前智能体：{reference}",
+                        severity=ValidationSeverity.ERROR,
+                        path="mcpServers",
+                        relatedReferences=(reference,),
+                    )
+                )
             elif runtime is not None and f"mcp_{server.transport}" not in runtime_features:
                 issues.append(
                     ValidationIssue(

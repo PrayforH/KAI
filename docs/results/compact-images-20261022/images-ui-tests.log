@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /Users/xiaokai/Documents/agent-studio-zcode-projects/web/harness-console
+
+
+ Test Files  9 passed (9)
+      Tests  48 passed (48)
+   Start at  19:01:13
+   Duration  2.82s (transform 2.20s, setup 0ms, import 8.31s, tests 854ms, environment 3.15s)
+

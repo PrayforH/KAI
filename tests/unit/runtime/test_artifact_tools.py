@@ -50,6 +50,7 @@ def publisher(
     *,
     limit: int = 32,
     observability: Observability | None = None,
+    validate_html: bool = False,
 ) -> tuple[ArtifactPublisher, FakeArtifacts, FakeEvents, list[str]]:
     artifacts = FakeArtifacts()
     events = FakeEvents()
@@ -69,6 +70,7 @@ def publisher(
             sync_workspace=sync,
             max_file_bytes=limit,
             observability=observability,
+            validate_generated_html=validate_html,
         ),
         artifacts,
         events,
@@ -159,3 +161,30 @@ async def test_sdk_tool_uses_only_the_active_run_publisher(tmp_path: Path) -> No
     assert "artifact-1" in result["content"][0]["text"]
     with pytest.raises(RuntimeError, match="not active"):
         await publish_artifact_tool.handler({"path": "answer.json"})
+
+
+@pytest.mark.asyncio
+async def test_interactive_html_validation_precedes_upload_and_ready_event(tmp_path: Path) -> None:
+    from unittest.mock import AsyncMock, patch
+
+    (tmp_path / "tool.html").write_text("<script>broken</script>")
+    service, artifacts, events, _ = publisher(tmp_path, limit=200, validate_html=True)
+    with patch(
+        "harness.runtime.artifact_tools.validate_html_document",
+        new=AsyncMock(side_effect=ValueError("invalid script")),
+    ):
+        with pytest.raises(ValueError, match="invalid script"):
+            await service.publish(path="tool.html")
+    assert artifacts.uploads == []
+    assert events.appended == []
+
+
+@pytest.mark.asyncio
+async def test_ordinary_downloadable_html_retains_its_existing_publication_path(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "download.html").write_text('<script src="https://example.com/lib.js"></script>')
+    service, artifacts, events, _ = publisher(tmp_path, limit=200)
+    await service.publish(path="download.html")
+    assert len(artifacts.uploads) == 1
+    assert len(events.appended) == 1

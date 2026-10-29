@@ -561,19 +561,19 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments {
 body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments:empty { display: none; }
 body.codex-theme-v1 .harness-composer-shell .composer-file-card {
   position: relative;
-  flex: 0 0 72px;
-  width: 72px;
-  height: 72px;
+  flex: 0 0 80px;
+  width: 80px;
+  height: 80px;
 }
 body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments .aui-attachment-root {
-  height: 72px;
+  height: 80px;
   min-width: 0;
   margin: 0;
 }
 body.codex-theme-v1 .harness-composer-shell .aui-attachment-content {
   box-sizing: border-box;
-  width: 72px;
-  height: 72px;
+  width: 80px;
+  height: 80px;
   min-width: 0;
   justify-content: center;
   align-items: center;
@@ -637,20 +637,6 @@ body.codex-theme-v1 .harness-composer-shell .composer-file-card .attachment-uplo
   white-space: nowrap;
 }
 body.codex-theme-v1 .harness-composer-shell .composer-file-card .attachment-upload-track { margin-top: 3px; }
-body.codex-theme-v1 .harness-composer-shell .composer-file-ready {
-  position: absolute;
-  right: 4px;
-  bottom: 4px;
-  display: grid;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  color: #0f1a13;
-  background: var(--codex-success, #40c977);
-  font-size: 10px;
-  line-height: 1;
-}
 @media (prefers-reduced-motion: reduce) {
   body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments .aui-attachment-remove { transition: none; }
 }
@@ -1042,6 +1028,7 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-prev
    rule that flattens every button in the message controls. */
 body.codex-theme-v1 .harness-assistant-message > .artifact-summary-line { order: 2; margin-top: 8px; opacity: 1; }
 body.codex-theme-v1 .harness-assistant-message > .reply-artifact-images { order: 2; display: grid; gap: 16px; min-width: 0; max-width: 100%; margin-top: 12px; }
+body.codex-theme-v1 .harness-assistant-message > .reply-artifact-videos { order: 2; display: grid; gap: 16px; min-width: 0; max-width: 100%; margin-top: 12px; }
 .reply-artifact-image { min-width: 0; max-width: 100%; margin: 0; }
 .reply-artifact-image-preview { display: block; width: fit-content; max-width: 100%; padding: 0; border: 0; border-radius: 12px; background: transparent; overflow: hidden; cursor: zoom-in; }
 .reply-artifact-image-preview img { display: block; width: auto; height: auto; max-width: 100%; max-height: 520px; object-fit: contain; border-radius: inherit; }
@@ -1200,7 +1187,135 @@ html[data-color-mode="light"] .nested-menu-panel { background: #fff; border-colo
 .conversation-jump svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .conversation-jump:focus-visible { outline: 2px solid var(--codex-muted); outline-offset: 3px; }
 
-/* Long sent messages fold; drafts have no mask or centered expand button. */
+/* Long sent messages fold with an overlay control inside the message bubble. */
+.sent-user-bubble { position: relative; align-self: flex-end; width: fit-content; max-width: min(82%, 40rem); min-width: 0; }
+body.codex-theme-v1 .sent-user-bubble > .aui-user-message-content.sent-user-content { width: 100%; max-width: 100%; margin: 0; }
+body.codex-theme-v1 .sent-user-bubble[data-long="true"] > .sent-user-content { padding-bottom: 42px; }
 body.codex-theme-v1 .aui-user-message-content.sent-user-content[data-collapsed="true"] { max-height: 12em; overflow: hidden; }
-.sent-user-expand { align-self: flex-end; justify-self: end; grid-column: 2; border: 0; padding: 5px 2px; color: var(--codex-muted); background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
-.sent-user-expand:hover { color: var(--codex-ink); }
+.sent-user-expand { position: absolute; right: 8px; bottom: 8px; display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--codex-line); border-radius: 50%; padding: 6px; color: var(--codex-muted); background: var(--codex-surface-raised); box-shadow: 0 2px 6px rgb(0 0 0 / 10%); cursor: pointer; }
+.sent-user-expand:is(:hover, :focus-visible) { color: var(--codex-ink); background: var(--codex-surface-hover); }
+.sent-user-expand:focus-visible { outline: 2px solid var(--codex-muted); outline-offset: 2px; }
+.sent-user-expand .codex-response-icon { width: 16px; height: 16px; fill: currentColor; stroke: none; }
+.sent-user-expand[aria-expanded="true"] .codex-response-icon { transform: rotate(180deg); }
+
+/* Codex 26.1007.30912 UserMessage compact variant:
+   user-message-f152e09d34c3.css + user-message-dd2539189e70.js. */
+.steering-user-message { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; width: 100%; margin: 16px 0; }
+.steering-user-message-bubble { width: fit-content; max-width: min(456px, 100%); min-width: 0; padding: 8px 12px; border: 0; border-radius: 16px; corner-shape: superellipse(1); background: #414141; color: var(--codex-ink, #ededed); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 18px; letter-spacing: -.01em; }
+.steering-user-message-status { font-size: 12px; line-height: 16px; color: var(--codex-muted, #8f8f8f); padding-inline: 3px; }
+html[data-color-mode="light"] .steering-user-message-bubble { background: #f3f3f3; color: var(--codex-ink, #202020); }
+.execution-log-segment { display: flex; flex-direction: column; gap: 8px; }
+
+/* Message growth must enlarge the scroll range, never shrink a grid message
+   and let its reasoning overflow behind the sticky composer. */
+body.codex-theme-v1 .harness-thread-frame .aui-thread-viewport > * {
+  flex-shrink: 0;
+}
+
+/* The same prose can move from the answer candidate into the process log.
+   Keep its typography identical across that hand-off; parser whitespace is
+   structural, never an extra pre-wrapped blank line. */
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.74;
+  white-space: normal;
+}
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md > * { margin-block: 0; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md > * + * { margin-top: 8px; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md p { margin-block: 0 8px; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md :is(h1,h2,h3) { margin-block: 18px 7px; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md :is(ul,ol) { margin-block: 7px 9px; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md li > p { margin-block: 0 3px; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md li > :is(ul,ol) { margin-block: 4px; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md strong { font-weight: 600; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md > :first-child { margin-top: 0; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md > :last-child { margin-bottom: 0; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md pre,
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md pre code { white-space: pre; }
+
+/* A collapsed tool and a collapsed thought occupy the same row box. The log
+   owns vertical spacing; collapsed result bodies remain hidden in the inline disclosure. */
+html body.codex-theme-v1 .execution-log-segment { gap: 10px; }
+html body.codex-theme-v1 :is(.execution-action, .execution-reasoning) { margin: 0; padding: 0; min-height: 0; }
+html body.codex-theme-v1 :is(.execution-action-summary, .execution-reasoning-summary) { min-height: 24px; height: 24px; margin: 0; padding: 0; align-items: center; line-height: 20px; box-sizing: border-box; }
+html body.codex-theme-v1 .execution-action-icon { margin-top: 0; }
+html body.codex-theme-v1 :is(.execution-action-copy strong, .execution-action-copy small, .execution-reasoning-label, .execution-reasoning-preview) { line-height: 20px; }
+html body.codex-theme-v1 .execution-action-copy { gap: 0; }
+
+
+/* Prose stays bright from its first token through the tool hand-off. Status
+   rows stay muted, with no highlight sweep or remount fade. */
+html body.codex-theme-v1 .execution-commentary,
+html body.codex-theme-v1 .execution-commentary .aui-md { color: var(--codex-ink); }
+html body.codex-theme-v1 :is(.execution-action-copy strong, .execution-reasoning-label, .execution-reasoning-preview) { color: var(--codex-muted); }
+html body.codex-theme-v1 :is(.execution-action, .execution-reasoning) .execution-state-sweep { color: var(--codex-muted); background: none; animation: none; }
+html body.codex-theme-v1 .execution-log > * { animation: none; }
+
+
+/* Dormant questions belong to their authored turn, with no empty composer row. */
+.followup-input-holder:empty, .followup-input-anchor:empty { display: none; }
+body.codex-theme-v1 .harness-assistant-message > .followup-input-anchor { order: 2; width: 100%; min-width: 0; }
+.followup-input-anchor .followup-input-container { margin-top: 8px; }
+
+/* Sent uploads share a bounded thumbnail row, rather than one full row per file. */
+body.codex-theme-v1 .harness-user-message .aui-user-message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: flex-start;
+  width: min(100%, 560px);
+  gap: 8px;
+}
+.message-attachment-group .message-attachment-card { flex: 0 1 208px; min-width: 0; max-width: 100%; }
+.message-attachment-group .message-attachment-card > :is(a, button, span) { min-height: 60px; height: 60px; }
+.message-attachment-group .message-attachment-card[data-kind="image"] { flex: 0 0 112px; width: 112px; }
+.message-attachment-group .message-attachment-card[data-kind="image"] > :is(a, button, span) { width: 112px; height: 96px; min-height: 0; padding: 0; gap: 0; overflow: hidden; border-radius: 10px; }
+.message-attachment-group .message-attachment-card[data-kind="image"] .message-attachment-preview { width: 100%; height: 100%; flex: 1; border: 0; border-radius: 0; }
+.message-attachment-group .message-attachment-card[data-kind="image"] .message-attachment-copy { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.message-attachment-expand { align-self: center; padding: 8px 12px; border: 1px solid var(--codex-line); border-radius: 8px; background: transparent; color: var(--codex-muted); font: 12px/20px var(--codex-font-ui); cursor: pointer; }
+.message-attachment-expand:hover { color: var(--codex-ink); background: var(--codex-surface-hover); }
+.image-lightbox-navigation { position: absolute; inset: 50% 16px auto; display: flex; justify-content: space-between; pointer-events: none; }
+.image-lightbox-navigation button { width: 40px; height: 48px; padding: 0; border: 1px solid #555; border-radius: 10px; background: #202020; color: #eee; font: 32px/1 var(--codex-font-ui); cursor: pointer; pointer-events: auto; }
+.image-lightbox-actions > a { color: inherit; font-size: 12px; }
+
+/* Images stay square; documents retain their filename and format, as in Codex. */
+body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments { max-height: 196px; overflow-y: auto; padding-bottom: 4px; }
+body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments .aui-attachment-root { height: 100%; }
+body.codex-theme-v1 .harness-composer-shell .aui-attachment-content { width: 100%; height: 100%; }
+body.codex-theme-v1 .harness-composer-shell .composer-file-card[data-kind="file"] { flex: 0 0 208px; width: 208px; max-width: 100%; height: 64px; }
+body.codex-theme-v1 .harness-composer-shell .composer-file-card[data-kind="file"] .aui-attachment-content { justify-content: flex-start; gap: 10px; padding: 10px 28px 10px 10px; border: 1px solid var(--codex-line); background: var(--codex-surface-subtle); }
+body.codex-theme-v1 .harness-composer-shell .composer-file-card[data-kind="file"] .aui-attachment-thumb { flex: 0 0 32px; width: 32px; height: 36px; color: var(--codex-muted); }
+body.codex-theme-v1 .harness-composer-shell .composer-file-card[data-kind="file"] .aui-attachment-text { position: static; width: auto; height: auto; flex: 1; min-width: 0; align-self: flex-start; padding-top: 2px; clip-path: none; }
+body.codex-theme-v1 .harness-composer-shell .composer-file-card[data-kind="file"] .aui-attachment-name { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 18px; color: var(--codex-ink); }
+body.codex-theme-v1 .harness-composer-shell .composer-file-card[data-kind="file"] .aui-attachment-type { display: none; }
+.composer-file-format { position: absolute; top: 35px; left: 52px; max-width: calc(100% - 80px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--codex-muted); font: 10px/16px var(--codex-font-ui); pointer-events: none; }
+.composer-file-card:not([data-upload-state="ready"]) .composer-file-format { display: none; }
+@media (hover: none) { body.codex-theme-v1 .harness-composer-shell .composer-file-card .aui-attachment-remove { opacity: 1; } }
+@media (max-width: 480px) {
+  .message-attachment-group .message-attachment-card[data-kind="image"] { flex-basis: 88px; width: 88px; }
+  .message-attachment-group .message-attachment-card[data-kind="image"] > :is(a, button, span) { width: 88px; height: 80px; }
+}
+
+.conversation-image-group { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 12px; }
+.reply-web-images { margin: 16px 0; min-width: 0; max-width: 100%; }
+.reply-web-image-strip { display: flex; gap: 8px; max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; padding-bottom: 4px; }
+.reply-web-image-strip figure { flex: 0 0 160px; width: 160px; margin: 0; min-width: 0; scroll-snap-align: start; }
+.reply-web-image-strip button, .reply-web-image-fallback { display: grid; place-items: center; width: 160px; height: 120px; padding: 0; overflow: hidden; border: 1px solid var(--codex-line); border-radius: 10px; background: var(--codex-surface-subtle); color: var(--codex-muted); cursor: zoom-in; font-size: 12px; }
+.reply-web-image-strip img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.reply-web-image-strip figcaption { margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--codex-muted); font-size: 11px; line-height: 18px; }
+.reply-web-image-strip figcaption a { color: inherit; text-decoration: none; }
+.reply-web-image-strip figcaption a:hover { text-decoration: underline; }
+.reply-web-image-strip button:focus-visible { outline: 2px solid var(--codex-muted); outline-offset: 2px; }
+
+.message-attachment-group { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; max-width: 100%; }
+[data-workspace-attachments] .message-attachment-card[data-kind="image"] { width: 80px; }
+[data-workspace-attachments] .message-attachment-card[data-kind="image"] .message-attachment-open { width: 80px; height: 80px; min-height: 0; padding: 0; gap: 0; overflow: hidden; }
+[data-workspace-attachments] .message-attachment-card[data-kind="image"] .message-attachment-preview { width: 100%; height: 100%; flex: 1; border: 0; border-radius: 0; }
+[data-workspace-attachments] .message-attachment-card[data-kind="image"] .message-attachment-copy { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; }
+[data-workspace-attachments] .message-attachment-card[data-kind="file"] { width: 208px; }
+[data-workspace-attachments] .message-attachment-card[data-kind="file"] > :is(a, span) { height: 64px; min-height: 0; padding-right: 28px; }
+.reply-web-images { position: relative; }
+.reply-web-image-controls { position: absolute; top: 44px; right: 4px; left: 4px; display: flex; justify-content: space-between; pointer-events: none; }
+.reply-web-image-controls button { width: 28px; height: 32px; padding: 0; border: 1px solid var(--codex-line); border-radius: 7px; background: var(--codex-surface); color: var(--codex-ink); font: 24px/1 var(--codex-font-ui); cursor: pointer; pointer-events: auto; }
+.reply-web-image-controls button:disabled { visibility: hidden; }

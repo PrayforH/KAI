@@ -322,7 +322,7 @@ body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workbench-r
 
 body.codex-theme-v1:has(.console-shell) .task-sidebar,
 body.codex-theme-v1:has(.console-shell) .task-sidebar.is-collapsed {
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   border-right: 1px solid #303030;
   background: var(--codex-surface-sidebar);
   box-shadow: none;
@@ -561,7 +561,7 @@ body.codex-theme-v1:has(.console-shell) .task-list-scroll .task-list {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 30px;
-  padding: 4px 30px 4px 8px;
+  padding: 4px 62px 4px 8px;
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
@@ -639,6 +639,147 @@ body.codex-theme-v1:has(.console-shell) .task-list-scroll .task-list {
   display: none;
 }
 
+.task-project-settings {
+  position: absolute;
+  top: 50%;
+  right: 34px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: #c4c4c4;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+  text-decoration: none;
+  transform: translateY(-50%);
+  transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease;
+}
+
+.task-project-head:hover .task-project-settings,
+.task-project-head:focus-within .task-project-settings {
+  opacity: 1;
+}
+
+.task-project-settings:hover {
+  color: #ffffff;
+  background: #454545;
+}
+
+.task-project-settings svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+  stroke: none;
+}
+
+.task-project-files {
+  position: absolute;
+  top: 50%;
+  right: 62px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: #c4c4c4;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease;
+}
+
+.task-project-head:hover .task-project-files,
+.task-project-head:focus-within .task-project-files {
+  opacity: 1;
+}
+
+.task-project-files:hover {
+  color: #ffffff;
+  background: #454545;
+}
+
+.task-project-files svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.task-project-menu {
+  position: absolute;
+  top: 34px;
+  right: 4px;
+  z-index: 60;
+  display: grid;
+  gap: 1px;
+  width: 178px;
+  padding: 5px;
+  border: 1px solid #414141;
+  border-radius: 11px;
+  background: #262626;
+  box-shadow: 0 14px 34px rgb(0 0 0 / 38%);
+}
+
+.task-project-menu button,
+.task-project-menu a {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #d4d4d4;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.task-project-menu button:hover,
+.task-project-menu a:hover {
+  background: #363636;
+  color: #ffffff;
+}
+
+.task-project-menu button.is-danger {
+  color: #e58b8b;
+}
+
+.task-project-menu button.is-danger:hover {
+  background: #3a2525;
+  color: #ffb4b4;
+}
+
+.task-project-menu svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (hover: none) {
+  .task-project-add,
+  .task-project-settings,
+  .task-project-files {
+    opacity: 1;
+  }
+}
+
 .task-project-add svg {
   width: 15px;
   height: 15px;
@@ -654,7 +795,9 @@ body.codex-theme-v1:has(.console-shell) .task-list-scroll .task-list {
   gap: 1px;
 }
 
+/* Hidden row actions stay outside the title/time layout. */
 body.codex-theme-v1:has(.console-shell) .task-list-row {
+  display: block;
   min-width: 0;
   margin-top: 0;
 }
@@ -673,6 +816,18 @@ body.codex-theme-v1:has(.console-shell) .task-list-item.is-active {
   background: transparent;
   box-shadow: none;
   transition: color 140ms ease, background-color 140ms ease, transform 140ms ease;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-row > .task-list-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 body.codex-theme-v1:has(.console-shell) .task-list-item:hover {
@@ -717,12 +872,6 @@ body.codex-theme-v1:has(.console-shell) .task-list-meta {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   transition: opacity 120ms ease;
-}
-
-/* On hover the archive control takes over the row's right edge, so the time
-   (and status dot) step aside instead of overlapping the archive button. */
-body.codex-theme-v1:has(.console-shell) .task-list-row:hover .task-list-meta {
-  opacity: 0;
 }
 
 /* Active tasks show a small status dot to the left of the title; finished
@@ -907,7 +1056,7 @@ body.codex-theme-v1:has(.console-shell) .console-header {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 6px;
 }
 
 .task-context-title {
@@ -915,7 +1064,8 @@ body.codex-theme-v1:has(.console-shell) .console-header {
   overflow: hidden;
   color: #efefef;
   font-size: 14px;
-  font-weight: 580;
+  font-weight: 500;
+  line-height: 20px;
   letter-spacing: -0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1117,18 +1267,31 @@ body.codex-theme-v1:has(.console-shell) .console-header {
   stroke: none;
 }
 
+.task-header-menu, .task-row-menu {
+  --action-menu-width: 208px;
+  --action-menu-padding: 5px;
+  --action-menu-radius: 10px;
+  --action-menu-background: var(--codex-surface-raised);
+  --action-menu-item-height: 32px;
+  --action-menu-item-padding: 0 9px;
+  --action-menu-item-gap: 8px;
+  --action-menu-font-size: 12.5px;
+  --action-menu-icon-size: 15px;
+}
+
 .task-header-menu {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
   z-index: 130;
-  min-width: 168px;
-  padding: 5px;
+  width: min(var(--action-menu-width), calc(100vw - 16px));
+  box-sizing: border-box;
+  padding: var(--action-menu-padding);
   display: grid;
   gap: 1px;
-  border: 1px solid #3a3a3a;
-  border-radius: 10px;
-  background: #252525;
+  border: 1px solid var(--codex-line);
+  border-radius: var(--action-menu-radius);
+  background: var(--action-menu-background);
   box-shadow: 0 24px 80px rgb(0 0 0 / 46%);
 }
 
@@ -1136,16 +1299,16 @@ body.codex-theme-v1:has(.console-shell) .console-header {
 .task-header-menu a,
 .task-header-menu .task-header-menu-unavailable {
   width: 100%;
-  min-height: 32px;
-  padding: 0 9px;
+  min-height: var(--action-menu-item-height);
+  padding: var(--action-menu-item-padding);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--action-menu-item-gap);
   border: 0;
   border-radius: 7px;
   color: var(--codex-ink-soft);
   background: transparent;
-  font-size: 12.5px;
+  font-size: var(--action-menu-font-size);
   text-align: left;
   text-decoration: none;
 }
@@ -1168,9 +1331,9 @@ body.codex-theme-v1:has(.console-shell) .console-header {
 .task-header-menu button svg,
 .task-header-menu a svg,
 .task-header-menu .task-header-menu-unavailable svg {
-  width: 15px;
-  height: 15px;
-  flex: 0 0 15px;
+  width: var(--action-menu-icon-size);
+  height: var(--action-menu-icon-size);
+  flex: 0 0 var(--action-menu-icon-size);
   fill: none;
   stroke: currentColor;
   stroke-width: 1.5;
@@ -1398,6 +1561,8 @@ body.codex-theme-v1:has(.console-shell) .aui-thread-root {
   --aui-thread-max-width: 800px;
 }
 
+/* Project tasks keep the shared centered launcher; the rail opens beside it. */
+
 body.codex-theme-v1:has(.console-shell) .aui-thread-root .aui-thread-viewport {
   padding-inline: clamp(24px, 5vw, 72px);
   scroll-behavior: auto;
@@ -1430,6 +1595,7 @@ body.codex-theme-v1:has(.console-shell) .aui-user-message-content {
 }
 
 body.codex-theme-v1:has(.console-shell) .aui-thread-viewport-footer {
+  isolation: isolate;
   width: min(800px, 100%);
   max-width: 800px;
   margin-top: 0;
@@ -1438,9 +1604,27 @@ body.codex-theme-v1:has(.console-shell) .aui-thread-viewport-footer {
   backdrop-filter: none;
 }
 
+/* Paint across the scroll gutter without widening the scroll area or clipping
+   composer menus. The sticky footer keeps this cover above older messages. */
+body.codex-theme-v1:has(.console-shell) .aui-thread-viewport-footer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--codex-thread-bg);
+  box-shadow: 0 0 0 100vmax var(--codex-thread-bg);
+  clip-path: inset(0 -100vmax);
+}
+
 body.codex-theme-v1:has(.console-shell) .harness-composer-shell {
+  --composer-shadow: 0 2px 12px rgb(0 0 0 / 18%);
   width: 100%;
   max-width: 800px;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell {
+  --composer-shadow: 0 2px 12px rgb(27 27 34 / 7%);
 }
 
 body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-root,
@@ -1452,20 +1636,20 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-c
   border-radius: 16px;
   color: #ededed;
   background: #1f1f1f;
-  box-shadow: 0 14px 44px rgb(0 0 0 / 20%);
+  box-shadow: var(--composer-shadow);
 }
 
 body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-root:focus-within,
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-root:focus-within {
   border-color: #616161;
-  box-shadow: 0 16px 48px rgb(0 0 0 / 24%);
+  box-shadow: var(--composer-shadow);
 }
 
 body.codex-theme-v1:has(.console-shell) .harness-composer-shell[data-run-locked="true"] .aui-composer-root,
 body.codex-theme-v1:has(.console-shell) .harness-composer-shell[data-run-locked="true"] .aui-composer-root:focus-within {
   border-color: #333333;
   background: #1b1b1b;
-  box-shadow: none;
+  box-shadow: var(--composer-shadow);
 }
 
 body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-input {
@@ -2116,6 +2300,45 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-proj
   background: #dedee1;
 }
 
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-settings {
+  color: #606066;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-settings:hover {
+  color: #171719;
+  background: #e9e9eb;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-files {
+  color: #606066;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-files:hover {
+  color: #171719;
+  background: #e9e9eb;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-menu {
+  border-color: #dedee1;
+  background: #ffffff;
+  box-shadow: 0 14px 34px rgb(0 0 0 / 14%);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-menu button,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-menu a {
+  color: #4b4b50;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-menu button:hover,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-menu a:hover {
+  background: #f0f0f2;
+  color: #171719;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-menu .is-danger {
+  color: #b33a3a;
+}
+
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-list-item:hover {
   background: #eeeeef;
 }
@@ -2202,7 +2425,7 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .console-h
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-context-title {
   color: #202024;
-  font-weight: 620;
+  font-weight: 500;
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-context-chip {
@@ -2365,12 +2588,12 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-c
   border-radius: 16px;
   color: #202024;
   background: #ffffff;
-  box-shadow: 0 10px 34px rgb(27 27 34 / 10%), 0 1px 2px rgb(27 27 34 / 5%);
+  box-shadow: var(--composer-shadow);
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-root:focus-within {
   border-color: #c8d6ed;
-  box-shadow: 0 0 0 2px rgb(26 28 31 / 8%), 0 12px 38px rgb(27 27 34 / 11%);
+  box-shadow: 0 0 0 2px rgb(26 28 31 / 8%), var(--composer-shadow);
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell[data-run-locked="true"] .aui-composer-root,
@@ -2882,3 +3105,81 @@ body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-toolba
 }
 
 .composer-footer { display: flex; flex: 0 0 100%; width: 100%; min-width: 0; align-items: flex-end; gap: 6px; }
+
+
+/* Answer card actions share the compact, quiet Codex response controls. */
+body.codex-theme-v1 :is(button, a).card-icon-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  padding: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--codex-muted);
+  cursor: pointer;
+}
+body.codex-theme-v1 :is(button, a).card-icon-action:hover:not(:disabled) {
+  background: var(--codex-surface-hover);
+  color: var(--codex-ink);
+}
+body.codex-theme-v1 :is(button, a).card-icon-action:focus-visible {
+  outline: 2px solid var(--codex-accent);
+  outline-offset: 2px;
+}
+body.codex-theme-v1 :is(button, a).card-icon-action:disabled { opacity: .4; cursor: default; }
+body.codex-theme-v1 :is(button, a).card-icon-action > svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.card-action-feedback {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* Input requests remain visible after opening/reading a task, like Codex's chip. */
+body.codex-theme-v1 .task-input-badge {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  max-width: 150px;
+  overflow: hidden;
+  padding: 2px 10px 2px 8px;
+  border-radius: 999px;
+  background: #339cff26;
+  color: #339cff;
+  font: 14px/20px var(--codex-font-ui);
+  white-space: nowrap;
+}
+body.codex-theme-v1:has(.console-shell) .task-list-item:has(.task-input-badge) .task-list-meta { display: none; }
+
+body.codex-theme-v1 :is(button, a).card-icon-action { min-height: 28px; text-decoration: none; }
+
+/* Project organization has a stable home; the folder button only folds tasks. */
+.task-project-heading { text-decoration: none; }
+.task-project-toggle { display: grid; place-items: center; width: 18px; height: 22px; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; }
+.task-project-name { min-width: 0; overflow: hidden; color: inherit; text-decoration: none; }
+.task-project-name:hover { color: var(--codex-ink); }
+.task-project-toggle:focus-visible, .task-project-name:focus-visible { outline: 2px solid var(--codex-ink); outline-offset: 2px; border-radius: 3px; }
+.task-project-breadcrumb { min-width: 0; max-width: min(30vw, 220px); height: 30px; display: inline-flex; align-items: center; gap: 8px; color: var(--codex-muted); font: 500 14px/20px var(--codex-font-ui); letter-spacing: -0.01em; text-decoration: none; }
+.task-project-breadcrumb:hover { color: var(--codex-ink); text-decoration: underline; }
+.task-project-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-project-separator { flex: 0 0 auto; color: var(--codex-muted); opacity: 0.5; }
+@media (max-width: 1099px) {
+  body.codex-theme-v1:has(.console-shell) .console-shell.studio-unified[data-project-home] {
+    grid-template-columns: 0 minmax(0, 1fr);
+  }
+  .studio-unified[data-project-home] > .studio-unified-content {
+    grid-column: 2;
+  }
+}
+
+.rail-project-save { padding: 10px 16px; border-bottom: 1px solid var(--codex-line); }
+
+/* Project columns scroll internally rather than moving the whole workspace. */
+.studio-unified[data-project-home] > .studio-unified-content { overflow: hidden; }

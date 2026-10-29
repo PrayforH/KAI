@@ -2,7 +2,7 @@
 
 import { type FormEvent, useEffect, useState } from "react";
 import { publishAuthEvent } from "../../lib/auth-coordination";
-import { PRODUCT_NAME, ProductBrandMark } from "../../components/product-brand";
+import { PRODUCT_DESCRIPTOR, ProductBrandMark, ProductWordmark } from "../../components/product-brand";
 import { SecretInput } from "../../components/secret-input";
 import alpinePeak from "./assets/alpine-peak.jpg";
 
@@ -91,8 +91,8 @@ export default function LoginPage() {
       <div className="login-workspace-preview" aria-hidden="true">
         <aside>
           <div className="login-preview-brand">
-            <span>K</span>
-            <strong>{PRODUCT_NAME}</strong>
+            <ProductBrandMark />
+            <ProductWordmark />
           </div>
           <div className="login-preview-action">＋&nbsp;&nbsp;新建任务</div>
           <nav>
@@ -113,7 +113,7 @@ export default function LoginPage() {
           <header className="login-card-banner">
             <div className="login-card-brand">
               <ProductBrandMark className="login-brand-mark" />
-              <strong>{PRODUCT_NAME}</strong>
+              <ProductWordmark />
             </div>
             <p
               className="login-system-status"
@@ -129,8 +129,8 @@ export default function LoginPage() {
             <section className="login-access-context" aria-label="阿尔卑斯雪峰">
               <img src={alpinePeak.src} alt="晨光中的阿尔卑斯雪峰" />
               <div className="login-image-caption">
-                <span>Agent workbench</span>
-                <strong>让复杂任务保持清晰。</strong>
+                <span>{PRODUCT_DESCRIPTOR}</span>
+                <strong>从想法到验证。</strong>
               </div>
             </section>
 

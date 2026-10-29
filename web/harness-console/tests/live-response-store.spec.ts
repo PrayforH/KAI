@@ -297,3 +297,22 @@ it("does not release text ownership between a PDF progress block and subsequent 
   expect(liveResponseStore.getSnapshot()).toMatchObject({ visible: true, status: "complete", text: "最终整理结果。" });
   liveResponseStore.clear();
 });
+
+it("keeps isolated punctuation hidden during work and preserves a legitimate symbol-only final answer", () => {
+  vi.useFakeTimers();
+  try {
+    liveResponseStore.clear();
+    liveResponseStore.startRun("punctuation");
+    liveResponseStore.startMessage("message");
+    liveResponseStore.append("message", "。 ");
+    vi.advanceTimersByTime(1000);
+    expect(liveResponseStore.getSnapshot().visible).toBe(false);
+    liveResponseStore.hideForTool();
+    expect(liveResponseStore.getSnapshot().visible).toBe(false);
+    liveResponseStore.append("message", "！");
+    vi.advanceTimersByTime(1000);
+    expect(liveResponseStore.getSnapshot().visible).toBe(false);
+    liveResponseStore.completeRun();
+    expect(liveResponseStore.getSnapshot()).toMatchObject({visible:true, text:"！", status:"complete"});
+  } finally { liveResponseStore.clear(); vi.useRealTimers(); }
+});

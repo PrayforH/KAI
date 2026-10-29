@@ -1,0 +1,42 @@
+apiVersion: harness/v1alpha1
+kind: Agent
+metadata:
+  name: ontology-data-agent
+  version: 0.2.1
+  labels:
+    domain: ontology-data-analysis
+    template: operator
+    display-name: 数据本体问数助手
+    description: 使用时选择文件或数据库，探查数据、构建业务本体、按指标口径问数并维护可追溯的口径版本。
+    source: sapling-1.1-ontology-adapted
+spec:
+  runtime: claude-agent-sdk
+  model:
+    route: deepseek-v4-flash
+    model: deepseek-flash
+    requiredCapabilities: [streaming, tool_use]
+  prompt:
+    system: prompts/system.md
+  skills:
+    - skills/ontology-data-analysis
+  tools:
+    - builtin: Read
+    - builtin: Glob
+    - builtin: Grep
+    - builtin: Write
+    - builtin: Edit
+    - builtin: Bash
+    - mcp: database-readonly
+  subagents: []
+  hooks: []
+  permissions:
+    policy: production-standard
+  workspace:
+    mode: isolated
+    restoreSession: true
+    archiveOnComplete: true
+  limits:
+    maxTurns: 60
+    timeoutSeconds: 2400
+    maxBudgetUsd: 5
+    maxModelTokens: 500000

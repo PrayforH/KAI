@@ -3,6 +3,7 @@ import { FeedbackToast } from "../feedback-toast";
 import { useInternalAgentsPreference } from "../../lib/interface-preferences";
 
 import Link from "next/link";
+import { projectHref } from "../../lib/project-space";
 import { useAuth } from "../auth-provider";
 import { loadTaskAgentCatalog } from "../../lib/task-agent-catalog";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -52,6 +53,7 @@ function EntryRow({ entry, busy, mutate, requestConfirmation }: { entry: MemoryE
       {visible && entry.supersedes && <p role="note">这是一条更新建议。确认后替代原记忆；拒绝则保留原记忆。</p>}
       {visible && entry.source.evidence && <details><summary>查看来源证据</summary><blockquote>{entry.source.evidence}</blockquote><small>会话：{entry.source.sessionId} · 版本 {entry.version}</small></details>}
       <div className={styles.meta}>
+        {entry.projectId && <Link href={projectHref(entry.projectId)} title="只在所属项目内使用">项目专属记忆</Link>}
         {entry.topic && <span>主题 · {entry.topic}</span>}<span>来源 · {entry.source.label}</span><span>智能体 · {entry.agentName}</span><span>置信度 <b className={styles.confidence}><i style={{ width: `${entry.confidence * 100}%` }}/></b>{Math.round(entry.confidence * 100)}%</span>
         {entry.expiresAt && <span>到期 · {formatTime(entry.expiresAt)}</span>}
       </div>

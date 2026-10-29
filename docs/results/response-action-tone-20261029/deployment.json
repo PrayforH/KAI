@@ -1,0 +1,9 @@
+{
+  "codeCommit": "ff01e501",
+  "environment": "172.20.109.174",
+  "webImage": "kai/projects-web:branch-tone-20261029-r1",
+  "webDigest": "sha256:4636a15b5175e3db9c689216e9bbe38399991cd4dc83fbe8911aad4e8ebac42a",
+  "change": "Remove fork-specific muted color override; use shared themed response-action hover/focus color and background, overriding legacy pale feedback backgrounds. Match color/background transition timings.",
+  "checks": "Native Next.js production build; computed default SVG/button colors and hover colors/backgrounds for copy, positive feedback, negative feedback and fork in light and dark themes. Shared button geometry and collapsed five-row sidebar behavior remain verified.",
+  "scope": "Web only. API, workers, database unchanged. Browser API responses synthetic; no server records changed."
+}

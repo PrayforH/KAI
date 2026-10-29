@@ -443,3 +443,78 @@ async def test_published_web_tools_respect_runtime_web_revocation(
     assert enforce_published_tool_directory(snapshot, restored).builtin_tools == (
         "Read", "WebSearch", "WebFetch",
     )
+
+
+@pytest.mark.asyncio
+async def test_project_mcp_additions_keep_agent_precedence_and_caller_credentials():
+    calls: list[tuple[str, str, str]] = []
+
+    class Credentials:
+        async def resolve(
+            self, server_reference: str, identity: ExecutionIdentity, required_keys: frozenset[str],
+        ) -> CredentialValues:
+            calls.append((server_reference, identity.connection_mode, identity.user_id))
+            return {"token": SecretStr("project-secret")}
+
+    resolver = ToolResolver(
+        mcp_registry={
+            "agent": McpServerRegistration(
+                server_name="agent",
+                config={"type": "http", "url": "https://agent.test/mcp"},
+                allowed_tools=("mcp__agent__lookup",),
+            ),
+            "data": McpServerRegistration(
+                server_name="data",
+                config={"type": "http", "url": "https://data.test/mcp"},
+                allowed_tools=("mcp__data__query",),
+                credential_headers=(("Authorization", "token"),),
+            ),
+            "collision": McpServerRegistration(
+                server_name="agent",
+                config={"type": "http", "url": "https://wrong.test/mcp"},
+                allowed_tools=("mcp__agent__wrong",),
+            ),
+        },
+        credential_provider=Credentials(),
+    )
+    manifest = manifest_fixture({"mcp": "agent"})
+    identity = ExecutionIdentity(
+        tenant_id="t",
+        user_id="caller",
+        project_id="agent",
+        business_project_id="p",
+        session_id="s",
+        run_id="r",
+        agent_name="agent",
+        agent_version="1",
+        connection_mode="service_owned",
+        project_mcp_references=("agent", "data", "collision"),
+    )
+    resolved = await resolver.resolve(manifest, identity)
+    assert set(resolved.mcp_servers) == {"agent", "data"}
+    assert calls == [("data", "caller_owned", "caller")]
+    assert resolved.project_tools == frozenset({"mcp__data__query"})
+    snapshot = AgentManifestSnapshot(
+        manifest=manifest,
+        content_hash="a" * 64,
+        system_prompt="Use reviewed tools.",
+        tool_directory=ToolDirectorySnapshot.create(
+            exposure_mode="eager",
+            catalog_revision=1,
+            entries=(
+                ToolDirectoryEntry(
+                    name="mcp__agent__lookup",
+                    source="mcp",
+                    logicalReference="agent",
+                    description="Lookup",
+                    risk="low",
+                    resultTrust="untrusted",
+                ),
+            ),
+        ),
+    )
+    assert enforce_published_tool_directory(snapshot, resolved).allowed_tools == (
+        "mcp__agent__lookup",
+        "mcp__data__query",
+    )
+    assert len(manifest.spec.tools) == 1

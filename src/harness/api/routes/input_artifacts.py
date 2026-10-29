@@ -13,6 +13,7 @@ from harness.api.dependencies import (
 from harness.api.downloads import attachment_content_disposition
 from harness.core.errors import NotFoundError
 from harness.core.models import InputArtifact, ThreadFile
+from harness.inputs.limits import ARCHIVE_EXTENSIONS
 
 router = APIRouter(tags=["input-artifacts"])
 
@@ -21,11 +22,13 @@ router = APIRouter(tags=["input-artifacts"])
 async def input_artifact_limits(
     identity: Annotated[Identity, Depends(require_identity)],
     container: Annotated[ApiContainer, Depends(get_container)],
-) -> dict[str, int]:
+) -> dict[str, int | tuple[str, ...]]:
     """Authorize uploads before the BFF starts consuming a large multipart body."""
     ensure_permission(identity, "tasks:write")
     return {
         "max_file_bytes": container.input_artifacts.max_file_bytes,
+        "max_archive_file_bytes": container.input_artifacts.max_archive_file_bytes,
+        "archive_extensions": ARCHIVE_EXTENSIONS,
         "max_files": container.input_artifacts.max_files_per_run,
         "max_total_bytes": container.input_artifacts.max_total_bytes,
     }
@@ -57,7 +60,7 @@ async def upload_input_artifact(
     container: Annotated[ApiContainer, Depends(get_container)],
 ) -> InputArtifact:
     ensure_permission(identity, "tasks:write")
-    maximum = container.input_artifacts.max_file_bytes
+    maximum = container.input_artifacts.file_size_limit(file.filename or "input")
     content = await file.read(maximum + 1)
     if len(content) > maximum:
         raise HTTPException(
@@ -81,6 +84,7 @@ async def download_input_artifact(
     input_artifact_id: str,
     identity: Annotated[Identity, Depends(require_identity)],
     container: Annotated[ApiContainer, Depends(get_container)],
+    inline: bool = False,
 ) -> Response:
     ensure_permission(identity, "tasks:read")
     artifact, content = await container.input_artifacts.download(
@@ -88,10 +92,19 @@ async def download_input_artifact(
         user_id=identity.user_id,
         input_artifact_id=input_artifact_id,
     )
+    # Only formats a browser can render safely may be displayed inline. User
+    # uploads such as HTML/SVG stay downloads so they cannot run same-origin.
+    media_type = artifact.media_type.split(";", 1)[0].strip().lower()
+    inline_safe = media_type.startswith(("text/", "image/")) or media_type in {
+        "application/pdf",
+    }
     return Response(
         content=content,
         media_type=artifact.media_type,
         headers={
-            "Content-Disposition": attachment_content_disposition(artifact.name)
+            "Content-Disposition": attachment_content_disposition(
+                artifact.name, inline=inline and inline_safe
+            ),
+            "X-Content-Type-Options": "nosniff",
         },
     )

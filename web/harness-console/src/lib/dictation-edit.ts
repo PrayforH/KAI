@@ -63,6 +63,12 @@ export class DictationEdit {
 
   observe(text: string) { this.reconcile(text); }
 
+  /** A completed recording has no provisional span. Preserve intervening edits. */
+  commitRecording(text: string, speech: string): DictationPatch {
+    this.reconcile(text);
+    return this.patch(text, speech);
+  }
+
   replace(text: string, speech: string, refined = false): DictationPatch | undefined {
     this.reconcile(text);
     if (this.manual) {

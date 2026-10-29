@@ -152,6 +152,9 @@ class CreateTaskDrivenDraftRequest(StudioModel):
         alias="sampleInput",
         max_length=10_000,
     )
+    model_route_override: str | None = Field(
+        default=None, alias="modelRouteOverride", pattern=r"^[a-z][a-z0-9-]{0,63}$"
+    )
     runtime_preference: TaskRuntimePreference = Field(
         default="auto",
         alias="runtimePreference",
@@ -444,7 +447,9 @@ def _execution_profile(
             for reference in references
         )
     ]
-    for preferred in ("isolated-default", "gvisor-production", "e2b-public-egress"):
+    for preferred in (
+        "opensandbox-gvisor", "isolated-default", "gvisor-production", "e2b-public-egress"
+    ):
         if any(item.profile_id == preferred for item in candidates):
             return preferred
     if candidates:

@@ -1,4 +1,5 @@
 "use client";
+import { CardActionButton } from "./card-action-button";
 
 import { useState } from "react";
 import { truncateLines } from "../lib/content-format";
@@ -23,7 +24,7 @@ export function CodeBlock({ code, language = "text", maxLines = 500 }: CodeBlock
     <section className="code-block" aria-label={`${language} 代码`}>
       <header className="code-block-header">
         <span>{language}</span>
-        <button type="button" onClick={copy}>{copied ? "已复制" : "复制"}</button>
+        <CardActionButton action="copy" label="复制代码" copied={copied} onClick={copy} />
       </header>
       <pre>
         <code>

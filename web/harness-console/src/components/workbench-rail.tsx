@@ -1,4 +1,5 @@
 "use client";
+import { CodexResponseIcon } from "./codex-response-icon";
 
 import { useEffect, useState, type ReactNode } from "react";
 import { groupWorkspaceFiles } from "../lib/workspace-file-groups";
@@ -7,6 +8,7 @@ import { PanelResizeHandle } from "./panel-resize-handle";
 import { RailResizeHandle, canSplitRail } from "./rail-resize-handle";
 import { SidebarPanelIcon } from "./panel-icons";
 import { RailFilePreview, previewKindFor, type PreviewKind, type PreviewTarget } from "./rail-file-preview";
+import { ProjectArtifactActions } from "./project-skill-extract-dialog";
 
 
 function RefreshIcon() {
@@ -133,6 +135,7 @@ export function WorkbenchRail({
   expanded,
   onToggleExpanded,
   threadId,
+  projectId,
   previewRequest,
   runPhase,
   workspace,
@@ -145,6 +148,7 @@ export function WorkbenchRail({
   expanded: boolean;
   onToggleExpanded: () => void;
   threadId: string;
+  projectId?: string | null;
   previewRequest?: (PreviewTarget & { nonce: number }) | null;
   /** A phase change means the run may have written new artifacts. */
   runPhase: string | null;
@@ -176,17 +180,17 @@ export function WorkbenchRail({
     index: Math.min(current.items.length - 1, Math.max(0, current.index + delta)),
   }));
 
-  // The transcript's artifact cards open their file here instead of a new tab.
-  useEffect(() => {
-    if (!previewRequest) return;
-    show(previewRequest);
-  }, [previewRequest]);
-
   // A task switch shows that task's files, never the previous selection.
   useEffect(() => {
     setTrail({ items: [null], index: 0 });
     setExpandedGroups(["最终产出"]);
   }, [threadId]);
+
+  // A new preview takes precedence over the reset when switching to its task.
+  useEffect(() => {
+    if (!previewRequest || (previewRequest.thread_id && previewRequest.thread_id !== threadId)) return;
+    show(previewRequest);
+  }, [previewRequest, threadId]);
 
   useEffect(() => {
     if (!open || workspace) return;
@@ -257,7 +261,7 @@ export function WorkbenchRail({
           <span className="workbench-rail-file-name">{query.trim() ? file.name : file.name.split("/").at(-1)}</span>
           <span className="workbench-rail-file-size" data-change={file.change}>{file.change || formatFileSize(file.size_bytes)}</span>
         </button>
-        {(!workspace || file.downloadHref) && <a className="rail-download" href={file.downloadHref ?? `/api/harness/artifacts/${encodeURIComponent(file.artifact_id)}?thread_id=${encodeURIComponent(threadId)}`} download={file.name} title={`下载 ${file.name}`} aria-label={`下载 ${file.name}`}>↓</a>}
+        {(!workspace || file.downloadHref) && <a className="rail-download" href={file.downloadHref ?? `/api/harness/artifacts/${encodeURIComponent(file.artifact_id)}?thread_id=${encodeURIComponent(threadId)}`} download={file.name} title={`下载 ${file.name}`} aria-label={`下载 ${file.name}`}><CodexResponseIcon name="download" /></a>}
       </div>
     );
 
@@ -285,7 +289,7 @@ export function WorkbenchRail({
       {fileError ? <p role="alert">{fileError} <button type="button" onClick={refreshFiles}>重试</button></p> : filesLoading ? (
         <span className="workbench-rail-files-empty">正在读取文件…</span>
       ) : files.length === 0 ? (
-        <span className="workbench-rail-files-empty">生成的文档、图片与其他成果会保存在这里。</span>
+        <span className="workbench-rail-files-empty">暂无文件</span>
       ) : (
         <div className="workbench-rail-files">
           {!matchingFiles.length && <p>没有匹配的文件</p>}
@@ -320,7 +324,7 @@ export function WorkbenchRail({
               className="rail-bar-button"
               aria-label="文件列表"
               title="文件列表"
-              aria-current={selected ? undefined : "page"}
+              aria-current={!selected ? "page" : undefined}
               onClick={() => show(null)}
             >
               <FolderIcon />
@@ -417,7 +421,14 @@ export function WorkbenchRail({
               // narrow one keeps the preview full width and hides the browser.
               <>
                 <div className="rail-file-column">{fileList}</div>
-                <div className="rail-preview-column">{workspace && selectedFile ? workspace.renderPreview(selectedFile) : <RailFilePreview target={selected} />}</div>
+                <div className="rail-preview-column">
+                  {projectId && !workspace && selected.artifact_id && (
+                    <div className="rail-project-save">
+                      <ProjectArtifactActions key={`${projectId}:${selected.artifact_id}`} projectId={projectId} threadId={threadId} artifactId={selected.artifact_id} sourceTitle={selected.name} />
+                    </div>
+                  )}
+                  {workspace && selectedFile ? workspace.renderPreview(selectedFile) : <RailFilePreview target={selected} />}
+                </div>
               </>
             ) : fileList}
           </section>

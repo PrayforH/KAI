@@ -104,3 +104,27 @@ test("IME composition is not interrupted by partials or refinement", async () =>
   await act(async () => { callbacks.onDraft("更长草稿"); callbacks.onInsert("精修文字"); callbacks.onActive(false); });
   expect(input.value).toBe("前文草稿后文");
 });
+
+test("batch recording leaves selection intact until atomic insertion", async () => {
+  const input = await mount("前旧文字后"); input.setSelectionRange(1, 4);
+  act(() => callbacks.onActive(true)); expect(input.value).toBe("前旧文字后");
+  act(() => { callbacks.onRecorded("整段语音"); callbacks.onActive(false); });
+  expect(input.value).toBe("前整段语音后"); expect(input.selectionStart).toBe(5);
+});
+test("batch completion preserves manual edits inside the original selection", async () => {
+  const input = await mount("前旧文字后"); input.setSelectionRange(1, 4); act(() => callbacks.onActive(true));
+  act(() => { setText("前人工修改后"); callbacks.onChange("前人工修改后"); });
+  act(() => { callbacks.onRecorded("整段语音"); callbacks.onActive(false); });
+  expect(input.value).toBe("前人工修改整段语音后");
+});
+test("batch result waits for IME composition without losing either input", async () => {
+  const input = await mount("前旧文字后"); input.setSelectionRange(1, 4); act(() => callbacks.onActive(true));
+  composing.current = true; act(() => { callbacks.onRecorded("整段语音"); callbacks.onActive(false); });
+  expect(input.value).toBe("前旧文字后"); act(() => setText("前中文输入后")); composing.current = false;
+  await act(async () => {
+    callbacks.onCompositionEnd();
+    // The final browser input can follow compositionend in the same turn.
+    setText("前最终中文后");
+  });
+  expect(input.value).toBe("前最终中文整段语音后");
+});

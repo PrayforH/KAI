@@ -1,6 +1,7 @@
 import asyncio
 import json
 import shutil
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ from httpx import ASGITransport, AsyncClient
 
 from harness.api.app import create_memory_app
 from harness.core.errors import ConflictError, NotFoundError
+from harness.core.events import RunEvent
 
 FIXTURE_MANIFEST = Path("tests/fixtures/agents/echo-agent/agent.yaml")
 HEADERS = {"X-Tenant-ID": "tenant-a", "X-User-ID": "user-1"}
@@ -153,9 +155,7 @@ async def test_same_agent_can_switch_version_and_keep_thread_history(
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         for path in (FIXTURE_MANIFEST, manifest):
-            published = await client.post(
-                "/v1/agents", json={"path": str(path)}, headers=HEADERS
-            )
+            published = await client.post("/v1/agents", json={"path": str(path)}, headers=HEADERS)
             assert published.status_code == 201
 
         first = await client.post(
@@ -172,9 +172,7 @@ async def test_same_agent_can_switch_version_and_keep_thread_history(
             ),
             headers=HEADERS,
         )
-        history = await client.get(
-            "/v1/agui/threads/thread-upgrade/history", headers=HEADERS
-        )
+        history = await client.get("/v1/agui/threads/thread-upgrade/history", headers=HEADERS)
         listed = await client.get("/v1/agui/threads", headers=HEADERS)
 
     assert first.status_code == 200
@@ -185,9 +183,7 @@ async def test_same_agent_can_switch_version_and_keep_thread_history(
     assert len(binding.previous_session_ids) == 1
     assert binding.session_id not in binding.previous_session_ids
     assert [
-        message["content"]
-        for message in history.json()["messages"]
-        if message["role"] == "user"
+        message["content"] for message in history.json()["messages"] if message["role"] == "user"
     ] == ["old", "new"]
     task = next(item for item in listed.json() if item["thread_id"] == "thread-upgrade")
     assert task["agent_version"] == "0.1.1"
@@ -305,12 +301,8 @@ async def test_agui_thread_list_and_history_restore_owned_tasks() -> None:
 @pytest.mark.asyncio
 async def test_agui_thread_can_be_archived_restored_and_keeps_history() -> None:
     app = create_memory_app(auto_execute=True)
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        await client.post(
-            "/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS
-        )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
         run = await client.post(
             "/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
             json=_request(
@@ -326,12 +318,8 @@ async def test_agui_thread_can_be_archived_restored_and_keeps_history() -> None:
             headers=HEADERS,
         )
         active_list = await client.get("/v1/agui/threads", headers=HEADERS)
-        archive_list = await client.get(
-            "/v1/agui/threads?archived=true", headers=HEADERS
-        )
-        history = await client.get(
-            "/v1/agui/threads/thread-archive/history", headers=HEADERS
-        )
+        archive_list = await client.get("/v1/agui/threads?archived=true", headers=HEADERS)
+        history = await client.get("/v1/agui/threads/thread-archive/history", headers=HEADERS)
         restored = await client.patch(
             "/v1/agui/threads/thread-archive",
             json={"archived": False},
@@ -354,12 +342,8 @@ async def test_agui_thread_can_be_archived_restored_and_keeps_history() -> None:
 @pytest.mark.asyncio
 async def test_agui_thread_can_be_pinned_renamed_and_ranks_pinned_first() -> None:
     app = create_memory_app(auto_execute=True)
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        await client.post(
-            "/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS
-        )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
         for index, thread_id in enumerate(["thread-pin-a", "thread-pin-b"]):
             run = await client.post(
                 "/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
@@ -559,12 +543,8 @@ async def test_cancel_agui_run_resolves_protocol_ids_to_harness_run() -> None:
 @pytest.mark.asyncio
 async def test_cancel_resumed_agui_run_by_server_id() -> None:
     app = create_memory_app()
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        await client.post(
-            "/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS
-        )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
         request = RunAgentInput.model_validate(
             _request(
                 thread_id="thread-resumed",
@@ -715,6 +695,13 @@ async def test_agui_run_does_not_trust_inline_data_urls_or_cross_user_ids() -> N
     app = create_memory_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        # Let the second user reach input authorization with their own Agent.
+        # A missing Agent would reject earlier and never exercise this check.
+        await client.post(
+            "/v1/agents",
+            json={"path": str(FIXTURE_MANIFEST)},
+            headers={**HEADERS, "X-User-ID": "user-2"},
+        )
         uploaded = await client.post(
             "/v1/input-artifacts",
             files={"file": ("private.txt", b"private", "text/plain")},
@@ -870,19 +857,32 @@ async def test_history_keeps_messages_and_valid_files_when_old_attachment_is_mis
         attachments = []
         ids = []
         for filename in ("missing.txt", "valid.txt"):
-            upload = await client.post("/v1/input-artifacts",
-                files={"file": (filename, b"historical attachment", "text/plain")}, headers=HEADERS)
+            upload = await client.post(
+                "/v1/input-artifacts",
+                files={"file": (filename, b"historical attachment", "text/plain")},
+                headers=HEADERS,
+            )
             assert upload.status_code == 201
             input_id = upload.json()["input_artifact_id"]
             ids.append(input_id)
-            attachments.append({"type": "document", "source": {
-                "type": "data", "value": input_id, "mimeType": "text/plain"},
-                "metadata": {"filename": filename}})
+            attachments.append(
+                {
+                    "type": "document",
+                    "source": {"type": "data", "value": input_id, "mimeType": "text/plain"},
+                    "metadata": {"filename": filename},
+                }
+            )
         request = _request(thread_id="old-files", run_id="old-run", prompt="保留历史对话")
-        request["messages"] = [{"id": "m", "role": "user", "content": [
-            {"type": "text", "text": "保留历史对话"}, *attachments]}]
-        result = await client.post("/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
-            json=request, headers=HEADERS)
+        request["messages"] = [
+            {
+                "id": "m",
+                "role": "user",
+                "content": [{"type": "text", "text": "保留历史对话"}, *attachments],
+            }
+        ]
+        result = await client.post(
+            "/v1/agui?agent_name=echo-agent&agent_version=0.1.0", json=request, headers=HEADERS
+        )
         assert result.status_code == 200
         repository = app.state.container.input_artifacts._repository
         assert isinstance(repository, InMemoryInputArtifactRepository)
@@ -894,8 +894,9 @@ async def test_history_keeps_messages_and_valid_files_when_old_attachment_is_mis
         assert "保留历史对话" in messages[0]["content"][0]["text"]
         assert "部分历史附件已不可用" in messages[0]["content"][0]["text"]
         assert messages[0]["content"][1]["source"]["value"] == ids[1]
-        denied = await client.get("/v1/agui/threads/old-files/history",
-            headers={**HEADERS, "X-User-ID": "someone-else"})
+        denied = await client.get(
+            "/v1/agui/threads/old-files/history", headers={**HEADERS, "X-User-ID": "someone-else"}
+        )
         assert denied.status_code == 404
 
 
@@ -914,7 +915,190 @@ async def test_legacy_knowledge_mode_does_not_constrain_new_runs(legacy_mode: st
             "/v1/agui?agent_name=echo-agent&agent_version=0.1.0", json=request, headers=HEADERS
         )
         assert response.status_code == 200
-        run = await app.state.container.runs.get(
-            "tenant-a", response.headers["x-harness-run-id"]
-        )
+        run = await app.state.container.runs.get("tenant-a", response.headers["x-harness-run-id"])
         assert "knowledge_mode" not in run.input
+
+
+@pytest.mark.asyncio
+async def test_followup_restages_uploads_after_workspace_inputs_are_excluded() -> None:
+    app = create_memory_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        uploaded = await client.post(
+            "/v1/input-artifacts",
+            files={"file": ("source.txt", b"Original retained upload", "text/plain")},
+            headers=HEADERS,
+        )
+    artifact_id = uploaded.json()["input_artifact_id"]
+    initial = _request(thread_id="followup-file", run_id="file-first", prompt="Read")
+    initial["messages"] = [
+        {
+            "id": "first",
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Read"},
+                {"type": "binary", "mimeType": "text/plain", "id": artifact_id},
+            ],
+        }
+    ]
+    c = app.state.container
+    first = await c.agui.create_run(
+        tenant_id="tenant-a",
+        user_id="user-1",
+        agent_name="echo-agent",
+        agent_version="0.1.0",
+        request=RunAgentInput.model_validate(initial),
+    )
+    await c.worker.execute("tenant-a", first.run_id)
+    followup = await c.agui.create_run(
+        tenant_id="tenant-a",
+        user_id="user-1",
+        agent_name="echo-agent",
+        agent_version="0.1.0",
+        request=RunAgentInput.model_validate(
+            _request(
+                thread_id="followup-file",
+                run_id="file-continue",
+                prompt="Continue",
+            )
+        ),
+    )
+    assert followup.input["input_artifact_ids"] == [artifact_id]
+    assert followup.input["inherited_input_artifact_ids"] == [artifact_id]
+    await c.worker.execute("tenant-a", followup.run_id)
+    events = await c.events.list_after("tenant-a", followup.run_id, 0)
+    staged = [event for event in events if event.type == "input.staged"]
+    assert len(staged) == 1
+    assert staged[0].payload["input_artifact_id"] == artifact_id
+
+
+@pytest.mark.asyncio
+async def test_history_receipt_stays_inside_process_even_with_cached_snapshot() -> None:
+    app = create_memory_app(auto_execute=True)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        assert (
+            await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        ).status_code == 201
+        response = await client.post(
+            "/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
+            json=_request(thread_id="steer-history", run_id="steer-client", prompt="初始问题"),
+            headers=HEADERS,
+        )
+        assert response.status_code == 200
+        first = await client.get("/v1/agui/threads/steer-history/history", headers=HEADERS)
+        run = await app.state.container.runs.get("tenant-a", first.json()["run_id"])
+        sequence = await app.state.container.events.latest_sequence("tenant-a", run.run_id) + 1
+        await app.state.container.events.append(
+            RunEvent(
+                event_id="guidance-receipt-test",
+                tenant_id="tenant-a",
+                run_id=run.run_id,
+                session_id=run.session_id,
+                sequence=sequence,
+                type="run.steer.accepted",
+                timestamp=datetime.now(UTC),
+                payload={"request_id": "receipt", "text": "补充要求"},
+            )
+        )
+        history = await client.get("/v1/agui/threads/steer-history/history", headers=HEADERS)
+        messages = history.json()["messages"]
+        assert len([message for message in messages if message["role"] == "user"]) == 1
+        calls = [
+            call
+            for message in messages
+            for call in message.get("toolCalls", [])
+            if call["function"]["name"] == "harness_run_activity"
+        ]
+        activity = json.loads(calls[0]["function"]["arguments"])["activity"]
+        receipts = [
+            item for item in activity["items"] if item["event_type"] == "run.steer.accepted"
+        ]
+        assert len(receipts) == 1
+        assert receipts[0]["summary"] == "补充要求"
+        assert activity["status"] == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_video_generation_is_a_durable_task_with_media_history() -> None:
+    import httpx
+
+    from harness.studio.model_configuration import ConfigureModelRequest
+    from tests.unit.studio.test_model_configuration import minimax_quota_response, minimax_request
+
+    application = create_memory_app(auto_execute=False)
+    container = application.state.container
+    captured: list[httpx.Request] = []
+
+    def provider(incoming: httpx.Request) -> httpx.Response:
+        captured.append(incoming)
+        if incoming.url.path.endswith("/remains"):
+            return httpx.Response(200, json=minimax_quota_response())
+        if incoming.method == "POST":
+            return httpx.Response(200, json={"task_id": "12345", "base_resp": {"status_code": 0}})
+        if incoming.url.path.endswith("/video_generation"):
+            return httpx.Response(
+                200, json={"status": "Success", "file_id": "23456", "base_resp": {"status_code": 0}}
+            )
+        return httpx.Response(
+            200,
+            json={
+                "file": {"download_url": "https://cdn.example.test/video.mp4"},
+                "base_resp": {"status_code": 0},
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as upstream:
+        container.model_configurations._http_client = upstream
+        await container.model_configurations.configure(
+            "tenant-a",
+            "admin",
+            "minimax-video",
+            ConfigureModelRequest.model_validate(minimax_request().model_dump(by_alias=True)),
+        )
+        async with AsyncClient(
+            transport=ASGITransport(app=application), base_url="http://test"
+        ) as client:
+            assert (
+                await client.post(
+                    "/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS
+                )
+            ).status_code == 201
+            response = await client.post(
+                "/v1/studio/models/minimax-video/videos",
+                headers=HEADERS,
+                json={
+                    "prompt": "test media task",
+                    "seconds": 6,
+                    "task": {
+                        "threadId": "video-thread",
+                        "agentName": "echo-agent",
+                        "agentVersion": "0.1.0",
+                    },
+                },
+            )
+            assert response.status_code == 200, response.text
+            job_id = response.json()["jobId"]
+            tasks = await client.get("/v1/agui/threads", headers=HEADERS)
+            assert tasks.json()[0]["thread_id"] == "video-thread"
+            assert tasks.json()[0]["status"] == "running"
+            container.model_configurations._video_jobs.clear()
+            completed = await client.get(
+                "/v1/studio/models/minimax-video/videos/" + job_id, headers=HEADERS
+            )
+            assert completed.json()["status"] == "completed"
+            history = await client.get("/v1/agui/threads/video-thread/history", headers=HEADERS)
+            assert history.json()["status"] == "succeeded"
+            assert (
+                history.json()["messages"][1]["toolCalls"][0]["function"]["name"]
+                == "harness_video_generation"
+            )
+            assert "providerJobId" not in history.text
+            assert "sk-cp-test-key" not in tasks.text + history.text
+            other = await client.get(
+                "/v1/studio/models/minimax-video/videos/" + job_id,
+                headers={**HEADERS, "X-User-ID": "other"},
+            )
+            assert other.status_code == 404
+            assert sum(item.method == "POST" for item in captured) == 1
+        for task in container.model_configurations._video_monitors.values():
+            task.cancel()

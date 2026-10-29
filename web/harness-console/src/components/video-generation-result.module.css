@@ -1,0 +1,33 @@
+/* Based on the installed Codex client's attachment-video geometry and compact
+   action toolbar. Theme colors are mapped to KAI's existing Codex variables. */
+.response {
+  width: min(380px, 100%);
+  margin: 0;
+  color: var(--codex-ink);
+  font-family: var(--codex-font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.answer { margin: 0 0 12px; }
+.player {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+  border-radius: 14px;
+  background: #000;
+}
+.activity { display: flex; align-items: center; gap: 8px; color: var(--codex-muted); }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 1.6s ease-in-out infinite; }
+.footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; margin-top: 8px; }
+.metadata { color: var(--codex-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.actions { display: flex; align-items: center; gap: 2px; }
+.action { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 4px; border: 0; border-radius: 6px; background: transparent; color: var(--codex-muted); cursor: pointer; text-decoration: none; transition: background-color 140ms ease, color 140ms ease; }
+.action svg { width: 18px; height: 18px; }
+.action:hover { background: var(--codex-surface-hover); color: var(--codex-ink); }
+.action:active { background: var(--codex-surface-active); }
+.action:focus-visible { outline: 2px solid var(--codex-ink); outline-offset: 2px; }
+.action:disabled { opacity: .45; cursor: default; }
+.error { margin: 8px 0; color: var(--codex-muted); font-size: 12px; }
+@keyframes pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .dot { animation: none; } .action { transition: none; } }

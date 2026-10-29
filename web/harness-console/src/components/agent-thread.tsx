@@ -1,12 +1,15 @@
 "use client";
+import { responseTextForDisplay } from "../lib/process-response";
 import { sendComposerWithRecovery } from "../lib/composer-send";
-import { ConversationInputCard } from "./conversation-input-card";
+import { TerminalResponseNotice } from "./terminal-response-notice";
+import { TurnCompletionControl } from "./turn-completion";
+import { FollowupInputPlacement } from "./followup-input-placement";
 import { latestConversationInput } from "../lib/conversation-input";
 import { useConversationScope } from "../lib/conversation-scope";
-import { useAutoLoadEarlierMessages, useThreadHistoryPagination } from "../lib/task-history";
+import { type TaskSummary, createThreadHistoryAdapter, useAutoLoadEarlierMessages, useThreadHistoryPagination } from "../lib/task-history";
 import { startSteeringPolling } from "../lib/steering-poller";
 import { ConversationControl } from "./conversation-control";
-import { MessageAttachmentView } from "./message-attachment-view";
+import { MessageAttachmentGroup } from "./message-attachment-view";
 import { useThreadHistoryReady } from "./thread-history-ready";
 import { ProductBrandMark } from "./product-brand";
 
@@ -14,10 +17,8 @@ import Link from "next/link";
 import {
   ActionBarPrimitive,
   AttachmentPrimitive,
-  BranchPickerPrimitive,
   MessagePrimitive,
   TextMessagePartProvider,
-  useAttachment,
   useAui,
   useAuiState,
   useThreadRuntime,
@@ -26,6 +27,7 @@ import {
   type ToolCallMessagePartProps,
 } from "@assistant-ui/react";
 import {
+  useCallback,
   createContext,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -39,15 +41,16 @@ import { createPortal } from "react-dom";
 import {
   AssistantActionBar,
   AssistantMessage,
-  BranchPicker,
   Composer,
   ThreadWelcome,
   UserMessage,
 } from "@assistant-ui/react-ui";
 import { ConversationThread } from "./conversation-thread";
 import { ConversationIndex } from "./conversation-index";
+import { useRunCancel } from "./run-cancel-context";
 import { PromptQueue } from "./prompt-queue";
 import { useFollowUpPreference } from "../lib/interface-preferences";
+import { useConversationRedactor } from "./conversation-redaction";
 import { SentUserContent } from "./sent-user-content";
 import { ConversationInput } from "./conversation-input";
 import { groupWorkspaceFiles } from "../lib/workspace-file-groups";
@@ -55,7 +58,10 @@ import { ActivitySummary } from "./activity-summary";
 import { TaskAgentSwitcher } from "./task-agent-switcher";
 import { ApprovalCard, type ApprovalDetails } from "./approval-card";
 import { ArtifactCard, isImageArtifact, type ArtifactDetails } from "./artifact-list";
+import { replyWebImages } from "../lib/reply-web-images";
+import { ReplyWebImages } from "./reply-web-images";
 import { ReplyArtifactImages } from "./reply-artifact-images";
+import { ReplyArtifactVideos } from "./reply-artifact-videos";
 import { AnswerCitationProvider } from "./knowledge/answer-citation-context";
 import { citationsForTurn, parseWikiTarget } from "../lib/knowledge-links";
 import { KnowledgeCitations } from "./knowledge/knowledge-citations";
@@ -100,6 +106,7 @@ import type { TaskAgent } from "../lib/task-agent-catalog";
 import {
   VIDEO_GENERATION_PART_NAME,
   VideoGenerationControls,
+  DurableVideoGenerationPart,
   VideoGenerationMessagePart,
   VideoGenerationProvider,
   useVideoGeneration,
@@ -114,12 +121,22 @@ import {
 } from "./task-knowledge-context";
 import { composerTrigger, queueAttachments, queueMayDispatch, restorePromptQueue, type QueuedPrompt } from "../lib/composer-interactions";
 
+import { writeTextToClipboard } from "../lib/clipboard";
+import { CodexResponseIcon } from "./codex-response-icon";
+import { useResponseMotion } from "./use-response-motion";
+
 export { normalizeMessageText } from "../lib/message-text";
 import { runReuseStore, useRunReuseNotice } from "../lib/run-reuse-store";
 import {
-  loadTaskComposerDraft,
-  persistTaskComposerDraft,
-} from "../lib/task-composer-draft";
+  IntelligentUiBlock,
+  type PresentationActionHandler,
+} from "./intelligent-ui/presentation-host";
+import { submitUiAction } from "./intelligent-ui/client";
+import { modelBlockSources, presentationsForMessage } from "./intelligent-ui/schema";
+import { PublishedBlocksProvider } from "./intelligent-ui/turn-context";
+import { hasPendingProjectTaskLaunch, consumeProjectTaskLaunch } from "../lib/project-task-launch";
+import { useProjectTaskLaunch } from "./use-project-task-launch";
+import { useTaskComposerSnapshot } from "./task-composer-draft";
 import { VoiceInput } from "./voice-input";
 import { useDictationComposer } from "./use-dictation-composer";
 import { HarnessComposerAttachment } from "./composer-attachment";
@@ -156,40 +173,7 @@ export function shouldShowPreResponseActivity(
 }
 
 export async function writeMessageToClipboard(value: string): Promise<boolean> {
-  const text = normalizeMessageText(value);
-  if (!text) return false;
-
-  try {
-    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // HTTP deployments and restrictive browser policies can reject the modern
-    // Clipboard API. Fall through to the selection-based copy path below.
-  }
-
-  if (typeof document === "undefined" || !document.body) return false;
-  const activeElement = document.activeElement instanceof HTMLElement
-    ? document.activeElement
-    : null;
-  const textarea = document.createElement("textarea");
-  textarea.value = text;
-  textarea.setAttribute("readonly", "");
-  textarea.style.position = "fixed";
-  textarea.style.inset = "0 auto auto -9999px";
-  textarea.style.opacity = "0";
-  document.body.appendChild(textarea);
-  textarea.focus();
-  textarea.select();
-  try {
-    return document.execCommand("copy");
-  } catch {
-    return false;
-  } finally {
-    textarea.remove();
-    activeElement?.focus({ preventScroll: true });
-  }
+  return writeTextToClipboard(normalizeMessageText(value));
 }
 
 function MessageCopyButton({
@@ -208,8 +192,9 @@ function MessageCopyButton({
     if (resetTimer.current) clearTimeout(resetTimer.current);
   }, []);
 
+  const redact = useConversationRedactor();
   async function copy() {
-    const copied = await writeMessageToClipboard(text);
+    const copied = await writeMessageToClipboard(redact(text));
     setCopyState(copied ? "copied" : "failed");
     if (resetTimer.current) clearTimeout(resetTimer.current);
     resetTimer.current = setTimeout(() => setCopyState("idle"), 1800);
@@ -229,7 +214,7 @@ function MessageCopyButton({
       data-copy-state={copyState}
       onClick={() => void copy()}
     >
-      {copyState === "copied" ? <CopySuccessIcon /> : <CopyMessageIcon />}
+      <CodexResponseIcon name={copyState === "copied" ? "check" : "copy"} />
       <span className="message-copy-status" aria-live="polite">{feedback}</span>
     </button>
   );
@@ -301,7 +286,7 @@ function MessageFeedbackButtons({ runId }: { runId?: string }) {
         disabled={!runId || pending || value !== null}
         onClick={() => void submit("positive")}
       >
-        <ThumbUpIcon />
+        <CodexResponseIcon name="thumbUp" />
       </button>
       <button
         className="assistant-message-feedback"
@@ -313,18 +298,20 @@ function MessageFeedbackButtons({ runId }: { runId?: string }) {
         disabled={!runId || pending || value !== null}
         onClick={() => void submit("negative")}
       >
-        <ThumbDownIcon />
+        <CodexResponseIcon name="thumbDown" />
       </button>
       <span className="message-copy-status" aria-live="polite">{error}</span>
     </>
   );
 }
 
-function HarnessComposer() {
+function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const conversationScope = useConversationScope();
   const aui = useAui();
   const { routes, overrideRouteId } = useTaskModel();
   const threadRunning = useAuiState((state) => state.thread.isRunning);
+  const threadLoading = useAuiState((state) => state.thread.isLoading);
+  const composerCanSend = useAuiState((state) => state.composer.canSend);
   const messages = useAuiState((state) => state.thread.messages);
   const requestedInput = useMemo(() => latestConversationInput(messages), [messages]);
   const composerText = useAuiState((state) => state.composer.text);
@@ -339,7 +326,9 @@ function HarnessComposer() {
   const seededSkillLaunchRef = useRef<string | null>(null);
   const reuseNotice = useRunReuseNotice();
   const runLocked = selectComposerDisabled(runView);
-  useTaskComposerDraft(composerText);
+  const projectLaunchScope = useContext(ComposerDraftContext);
+  const projectLaunchReady = useThreadHistoryReady();
+  useTaskComposerSnapshot(projectLaunchReady && !threadLoading && !agentSelection.loading ? projectLaunchScope : null);
   useEffect(() => {
     if (!activeSkillLaunch) {
       seededSkillLaunchRef.current = null;
@@ -384,6 +373,7 @@ function HarnessComposer() {
   );
   const videoGenerating = videoGeneration.generating;
   const threadRuntime = useThreadRuntime();
+  const cancelActiveRun = useRunCancel();
   const scope = useContext(ComposerDraftContext);
   const queueKey = scope ? `harness:prompt-queue:${scope.userId}:${scope.threadId}` : null;
   const [queue, setQueue] = useState<QueuedPrompt[]>([]);
@@ -392,6 +382,7 @@ function HarnessComposer() {
   const [queuePaused, setQueuePaused] = useState(false);
   const [inputError, setInputError] = useState("");
   const [voiceActive, setVoiceActive] = useState(false);
+  const [followupVoiceActive, setFollowupVoiceActive] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [caret, setCaret] = useState(0);
   const [suggestionIndex, setSuggestionIndex] = useState(0);
@@ -400,6 +391,8 @@ function HarnessComposer() {
   const [steerAvailable, setSteerAvailable] = useState(false);
   const [steeringIds, setSteeringIds] = useState<string[]>([]);
   const [steeringNotice, setSteeringNotice] = useState("");
+  const [stopPending, setStopPending] = useState(false);
+  const stopInFlight = useRef(false);
   const steeringSentAt = useRef<Record<string, number>>({});
   const steeringRunId = queue.find((item) => item.steerRunId)?.steerRunId ?? runView?.runId;
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -508,7 +501,7 @@ function HarnessComposer() {
       setInputError("");
       aui.composer().setText("");
       await threadRuntime.composer.clearAttachments();
-      if (steer && steerAvailable && !next.attachments.length) await guide(next);
+      if (steer && !next.attachments.length) await guide(next);
 
     } catch (error) { setInputError(error instanceof Error ? error.message : "无法加入队列"); }
   }
@@ -540,7 +533,7 @@ function HarnessComposer() {
           if (item.status === "accepted") {
             setQueue((items) => items.filter((entry) => entry.id !== item.request_id));
             setSteeringIds((ids) => ids.filter((id) => id !== item.request_id));
-            setSteeringNotice("已送入当前运行，智能体会在后续处理时参考补充。");
+            setSteeringNotice("");
           } else if (["failed", "not_delivered", "unknown"].includes(item.status)) {
             setSteeringIds((ids) => ids.filter((id) => id !== item.request_id));
             setQueuePaused(true);
@@ -560,9 +553,8 @@ function HarnessComposer() {
   }, [steeringRunId, busy, hasPendingSteering]);
 
   async function guide(item: QueuedPrompt) {
-    if (!runView?.runId || !steerAvailable || steeringIds.includes(item.id)) return;
+    if (!runView?.runId || steeringIds.includes(item.id)) return;
     if (item.attachments.length) { setInputError("带附件的补充请加入队列；实时引导目前支持文本。"); return; }
-    setQueuePaused(true);
     setSteeringIds((ids) => [...ids, item.id]);
     steeringSentAt.current[item.id] = Date.now();
     setQueue((items) => items.map((entry) => entry.id === item.id ? { ...entry, steerRunId: runView.runId } : entry));
@@ -573,6 +565,7 @@ function HarnessComposer() {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request_id: item.id, text: item.text }),
       }));
       if (!response.ok) {
+        setQueuePaused(true);
         setSteeringIds((ids) => ids.filter((id) => id !== item.id));
         setQueue((items) => items.map((entry) => entry.id === item.id ? { ...entry, steerRunId: undefined } : entry));
         setInputError("当前运行无法接收引导，内容仍保留在队列中。");
@@ -582,19 +575,39 @@ function HarnessComposer() {
   useEffect(() => {
     if (queueLoaded && queue.length === 0 && steeringIds.length === 0) setQueuePaused(false);
   }, [queueLoaded, queue.length, steeringIds.length]);
+  useEffect(() => {
+    if (!showStop) {
+      if (stopInFlight.current) setSteeringNotice("");
+      stopInFlight.current = false; setStopPending(false);
+    }
+  }, [showStop]);
   async function stopRun() {
+    if (stopInFlight.current || !showStop) return;
+    stopInFlight.current = true;
+    setStopPending(true);
     setQueuePaused(true);
-    if (threadRunning) { aui.thread().cancelRun(); return; }
-    if (!runView?.runId || !showStop) return;
+    setInputError("");
+    setSteeringNotice("正在停止运行…");
     try {
+      if (!runView?.runId || ["completed", "failed", "rejected", "cancelled"].includes(runView.phase)) {
+        if (cancelActiveRun) { await cancelActiveRun(); return; }
+        throw new Error("尚未取得运行标识，请稍后重试。");
+      }
       const response = requireAuthenticatedResponse(await fetch(`/api/agui/runs/${encodeURIComponent(runView.runId)}/cancel`, { method: "POST" }));
       if (!response.ok) throw new Error("停止请求未成功，请重试。");
-      setSteeringNotice("已请求停止，待发送内容已暂停。");
-    } catch (error) { setInputError(error instanceof Error ? error.message : "停止请求未成功，请重试。"); }
+      // Keep the live stream until the server publishes its terminal state.
+      // The HTTP acceptance is not proof that execution has stopped yet.
+    } catch (error) {
+      stopInFlight.current = false;
+      setStopPending(false);
+      setSteeringNotice("");
+      setInputError(error instanceof Error ? error.message : "停止请求未成功，请重试。");
+    }
   }
   const composerSendLock = useRef(false);
   async function submitComposer(alternate = false) {
-    if (voiceActive) return;
+    if (voiceActive || followupVoiceActive) return;
+    if (projectLaunchScope) consumeProjectTaskLaunch(projectLaunchScope.userId, projectLaunchScope.threadId);
     if (command(composerText.trim())) return;
     if (videoRoute) { void generateVideo(); return; }
     if (busy || queue.length) {
@@ -607,27 +620,56 @@ function HarnessComposer() {
     try {
       const error = await sendComposerWithRecovery(threadRuntime.composer);
       if (error) setInputError(error);
+      else onSubmitted?.();
     } catch (error) {
       setInputError(error instanceof Error ? error.message : "发送失败，请重试。");
     } finally { composerSendLock.current = false; }
   }
+
+  useProjectTaskLaunch(
+    projectLaunchScope,
+    projectLaunchReady && !threadLoading && !agentSelection.loading &&
+      queueLoaded && !busy && !queue.length && !voiceActive && !followupVoiceActive &&
+      composerCanSend && Boolean(composerText.trim()),
+    async () => {
+      if (composerSendLock.current || !threadRuntime.composer.getState().canSend) return false;
+      composerSendLock.current = true;
+      try {
+        const error = await sendComposerWithRecovery(threadRuntime.composer);
+        if (error) {
+          setInputError(error);
+          // A real send failure stays visible for an explicit retry, never a loop.
+          if (projectLaunchScope) consumeProjectTaskLaunch(projectLaunchScope.userId, projectLaunchScope.threadId);
+          return false;
+        }
+        onSubmitted?.();
+        return true;
+      } catch (error) {
+        setInputError(error instanceof Error ? error.message : "项目任务未能发送，输入已保留，请重试。");
+        if (projectLaunchScope) consumeProjectTaskLaunch(projectLaunchScope.userId, projectLaunchScope.threadId);
+        return false;
+      } finally { composerSendLock.current = false; }
+    },
+    composerText.length === 0,
+  );
 
   async function generateVideo() {
     const prompt = composerText.trim();
     if (!videoRoute || !prompt || videoGenerating) return;
     setVideoValidationError(null);
     if (composerAttachments.some((attachment) => attachment.type !== "image")) {
-      setVideoValidationError("H3 参考素材只支持图片，请移除文档或其他文件。");
+      setVideoValidationError("视频参考素材只支持图片，请移除文档或其他文件。");
       return;
     }
     if (videoGeneration.settings.mode === "ref2va" && composerAttachments.length === 0) {
       setVideoValidationError("Ref2VA 至少需要添加一张参考图片。");
       return;
     }
-    const maximumReferences = videoGeneration.settings.mode === "ref2va" ? 9 : 2;
+    const officialVideo = videoRoute.apiFormat === "minimax_videos";
+    const maximumReferences = officialVideo ? 1 : videoGeneration.settings.mode === "ref2va" ? 9 : 2;
     if (composerAttachments.length > maximumReferences) {
       setVideoValidationError(
-        videoGeneration.settings.mode === "ref2va"
+        officialVideo ? "官方视频最多使用一张首帧图片。" : videoGeneration.settings.mode === "ref2va"
           ? "Ref2VA 最多使用九张参考图片。"
           : "自动模式最多使用两张参考图片。",
       );
@@ -666,6 +708,8 @@ function HarnessComposer() {
     videoGeneration.start({
       routeId: videoRoute.id,
       routeLabel: videoRoute.label,
+      apiFormat: videoRoute.apiFormat,
+      model: videoRoute.model,
       prompt,
       inputArtifactIds,
       attachments,
@@ -679,7 +723,7 @@ function HarnessComposer() {
       aria-busy={runLocked}
     >
       {conversationScope?.composerAccessory}
-      {requestedInput && !conversationScope?.composerAccessory && <ConversationInputCard key={requestedInput.messageId} input={requestedInput.input} disabled={runLocked || busy || threadRunning} onSubmit={answer => {
+      {requestedInput && !conversationScope?.composerAccessory && <FollowupInputPlacement key={requestedInput.messageId} messageId={requestedInput.messageId} input={requestedInput.input} modelRoute={overrideRouteId || ""} onVoiceActive={setFollowupVoiceActive} disabled={runLocked || busy || threadRunning || voiceActive} onSubmit={answer => {
         threadRuntime.append({ role: "user", content: [{type: "text", text: answer}] });
       }} />}
       {reuseNotice ? (
@@ -746,6 +790,9 @@ function HarnessComposer() {
         <>
           <VideoGenerationControls
             label={videoRoute.label}
+            routeId={videoRoute.id}
+            apiFormat={videoRoute.apiFormat}
+            model={videoRoute.model}
             referenceCount={composerAttachments.length}
             disabled={videoGenerating}
           />
@@ -756,7 +803,8 @@ function HarnessComposer() {
           ) : null}
         </>
       ) : null}
-      <PromptQueue items={queue} paused={queuePaused} busy={busy} canSteer={steerAvailable} sendingIds={steeringIds}
+      <PromptQueue items={queue.filter(item => !item.steerRunId || !runView?.items.some(event =>
+        ["run.steer.requested", "run.steer.accepted"].includes(event.event_type) && event.metadata.request_id === item.id))} paused={queuePaused} busy={busy} canSteer={steerAvailable} sendingIds={steeringIds}
         onChange={setQueue} onPause={(value) => { dispatching.current = false; setQueuePaused(value); }} onGuide={(item) => void guide(item)}
         onSend={(item) => {
           if (busy || threadRuntime.getState().isRunning || steeringIds.length) return;
@@ -782,7 +830,7 @@ function HarnessComposer() {
         {helpOpen && <div className="composer-assist composer-help-popover" role="dialog" aria-label="输入帮助">
           <button type="button" onClick={() => setHelpOpen(false)}>关闭</button>
           <p>/ 执行命令 · @ 选择知识库（可多选） · $ 引用技能</p>
-          <p>运行中 Enter {followUpBehavior === "steer" ? "调整方向" : "加入队列"}，Alt Enter 使用另一种方式，Shift Enter 换行。可在个人设置的配置中更改默认行为。</p>
+          <p>运行中 Enter {followUpBehavior === "steer" ? "补充说明" : "加入队列"}，Alt Enter 使用另一种方式，Shift Enter 换行。可在个人设置的配置中更改默认行为。</p>
         </div>}
         {activeSkillLaunch && selectedSkill && (
           <div className="composer-skill-context" aria-label="已识别的 Skill 提示" title="直接输入 $技能名 即可，无需额外点选；也可以直接描述需求。">
@@ -802,12 +850,12 @@ function HarnessComposer() {
           onComposingChange={(value) => { composingRef.current = value; }}
           className="aui-composer-input"
           aria-label="消息输入"
-          placeholder={conversationScope?.composerPlaceholder ?? (busy ? "继续补充…" : knowledge.selected.length ? "输入问题，将基于上方选中的知识库回答" : "随心输入，/ 命令 · @ 知识库 · $ 技能")}
+          placeholder={conversationScope?.composerPlaceholder ?? (busy ? "继续补充…" : "输入消息…")}
           rows={Math.min(8, Math.max(2, composerText.split("\n").length))}
           aria-controls={options.length ? "composer-suggestions" : undefined}
           aria-activedescendant={options.length ? `composer-option-${suggestionIndex}` : undefined}
           onChange={(event) => { voiceComposer.onChange(event.target.value); if (!composingRef.current) setCaret(event.target.selectionStart); }}
-          onCompositionEnd={(event) => setCaret(event.currentTarget.selectionStart)}
+          onCompositionEnd={(event) => { voiceComposer.onCompositionEnd(); setCaret(event.currentTarget.selectionStart); }}
           onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
           onPaste={(event) => {
             const files = Array.from(event.clipboardData.files);
@@ -851,20 +899,23 @@ function HarnessComposer() {
             onChange={agentSelection.onChange}
             onRefresh={agentSelection.onRefresh}
           />
-          <TaskModelControl disabled={Boolean(conversationScope) || runLocked || showStop || videoGenerating} /></>}
-          <VoiceInput key={scope?.threadId || "new"} disabled={busy}
+          </>}
+          <div className="composer-model-voice">
+          {(!conversationScope?.compactComposer || conversationScope.allowModelSelection) && <TaskModelControl disabled={Boolean(conversationScope && !conversationScope.allowModelSelection) || runLocked || showStop || videoGenerating} />}
+          <VoiceInput key={scope?.threadId || "new"} disabled={busy || followupVoiceActive}
             modelRoute={overrideRouteId || ""}
             onActive={(active) => { voiceComposer.onActive(active); setVoiceActive(active); }}
-            onDraft={voiceComposer.onDraft} onInsert={voiceComposer.onInsert} />
+            onInsert={voiceComposer.onRecorded} />
+          </div>
         </div>
         {showStop && !composerText.trim() && !composerAttachments.length ? (
-          <ConversationControl action="stop" aria-label="停止运行" onClick={() => void stopRun()} />
+          <ConversationControl action="stop" aria-label={stopPending ? "正在停止运行" : "停止运行"} disabled={stopPending} onClick={() => void stopRun()} />
         ) : videoRoute ? (
-          <ConversationControl action="send" disabled={voiceActive || videoGenerating || !composerText.trim()}
+          <ConversationControl action="send" disabled={voiceActive || followupVoiceActive || videoGenerating || !composerText.trim()}
             aria-label={videoGenerating ? "视频生成中" : "生成视频"}
             onClick={() => void generateVideo()} />
         ) : (
-          <ConversationControl action="send" aria-label={busy ? followUpBehavior === "steer" && steerAvailable && !composerAttachments.length ? "调整方向" : "加入队列" : queue.length ? "加入队列" : "发送消息"} title={busy ? `Enter ${followUpBehavior === "steer" ? "调整方向" : "加入队列"} · Alt Enter 切换` : "发送消息"} disabled={voiceActive || (!composerText.trim() && !composerAttachments.length)} onClick={() => submitComposer()} />
+          <ConversationControl action="send" aria-label={busy ? followUpBehavior === "steer" && steerAvailable && !composerAttachments.length ? "补充说明" : "加入队列" : queue.length ? "加入队列" : "发送消息"} title={busy ? `Enter ${followUpBehavior === "steer" ? "补充说明" : "加入队列"} · Alt Enter 切换` : "发送消息"} disabled={voiceActive || followupVoiceActive || (!composerText.trim() && !composerAttachments.length)} onClick={() => submitComposer()} />
         )}
         </div>
       </Composer.Root>
@@ -879,6 +930,7 @@ type ComposerDraftScope = {
 };
 
 const ComposerDraftContext = createContext<ComposerDraftScope | null>(null);
+const TaskForkContext = createContext<((task: TaskSummary) => void) | undefined>(undefined);
 type SkillLaunchContextValue = {
   launch: SkillCreatorLaunch | null;
   onDismiss: () => void;
@@ -906,56 +958,6 @@ const AgentSelectionContext = createContext<AgentSelectionContextValue>({
   onChange: () => undefined,
 });
 
-function useTaskComposerDraft(text: string) {
-  const scope = useContext(ComposerDraftContext);
-  const aui = useAui();
-  const auiRef = useRef(aui);
-  const latestText = useRef(text);
-  const [restored, setRestored] = useState(false);
-  auiRef.current = aui;
-  latestText.current = text;
-
-  useEffect(() => {
-    if (!scope) return;
-    setRestored(false);
-    const saved = loadTaskComposerDraft(
-      window.localStorage,
-      scope.userId,
-      scope.threadId,
-    );
-    if (saved && !latestText.current) {
-      auiRef.current.composer().setText(saved);
-    }
-    setRestored(true);
-  }, [scope]);
-
-  useEffect(() => {
-    if (!scope || !restored) return;
-    const timer = window.setTimeout(() => {
-      persistTaskComposerDraft(
-        window.localStorage,
-        scope.userId,
-        scope.threadId,
-        text,
-      );
-    }, 220);
-    return () => window.clearTimeout(timer);
-  }, [restored, scope, text]);
-
-  useEffect(() => {
-    if (!scope) return;
-    return () => {
-      persistTaskComposerDraft(
-        window.localStorage,
-        scope.userId,
-        scope.threadId,
-        latestText.current,
-      );
-    };
-  }, [scope]);
-
-  return restored;
-}
 
 function ApprovalToolBridge({
   details,
@@ -979,7 +981,10 @@ export function UserTaskWelcome() {
   const { selected } = useContext(AgentSelectionContext);
   // While the stored conversation is loading the thread is empty by definition,
   // so the welcome would flash and be replaced a moment later.
-  if (!useThreadHistoryReady()) return null;
+  const historyReady = useThreadHistoryReady();
+  const launchScope = useContext(ComposerDraftContext);
+  if (launchScope && hasPendingProjectTaskLaunch(launchScope.userId, launchScope.threadId)) return <div className="project-launch-space" aria-hidden="true" />;
+  if (!historyReady) return null;
   return (
     <ThreadWelcome.Root className="user-task-welcome">
       <ThreadWelcome.Center className="user-task-hero">
@@ -1137,6 +1142,7 @@ function HarnessToolPart(part: ToolCallMessagePartProps) {
   const status = toolStatus(part);
   const args = objectValue(part.args);
   const runView = useRunViewModel();
+  if (part.toolName === "harness_video_generation") return <DurableVideoGenerationPart data={args} />;
   if (part.toolName === "harness_run_activity") {
     return null;
   }
@@ -1154,6 +1160,10 @@ function HarnessToolPart(part: ToolCallMessagePartProps) {
   }
   if (part.toolName === "harness_present_artifact") {
     return <HarnessArtifactPart />;
+  }
+  if (part.toolName === "harness_present_ui") {
+    // Rendered once, below the answer, by the turn's presentation list.
+    return null;
   }
   if (shouldSuppressRawToolCard(runView, part.toolCallId)) {
     return null;
@@ -1192,8 +1202,10 @@ type AssistantPartLike = {
 };
 
 const responseProjectionToolNames = new Set([
+  "harness_video_generation",
   "harness_run_activity",
   "harness_present_artifact",
+  "harness_present_ui",
 ]);
 
 function isOperationalToolPart(part: AssistantPartLike) {
@@ -1219,9 +1231,11 @@ export function isIntermediateAssistantTextPart(
 function HiddenAssistantText() { return null; }
 
 export function AssistantResponse({ text, streaming }: { text: string; streaming: boolean }) {
+  const response = useRef<HTMLDivElement>(null);
+  useResponseMotion(response, Boolean(text));
   if (!text) return null;
   return (
-    <div className="assistant-answer" data-streaming={streaming ? "true" : "false"} aria-busy={streaming}>
+    <div ref={response} className="assistant-answer" data-streaming={streaming ? "true" : "false"} aria-busy={streaming}>
       <TextMessagePartProvider text={text} isRunning={streaming}>
         <MarkdownText />
       </TextMessagePartProvider>
@@ -1349,13 +1363,21 @@ export function ownsLiveResponse(
   return isLast && Boolean(liveMessageId) && messageId === liveMessageId;
 }
 
+/** Both streams must settle before presenting this turn's deliverables. */
+export function turnDeliverablesReady(messageStatus: string | undefined, ownedRunPhase?: string) {
+  return messageStatus !== "running" && (
+    !ownedRunPhase || ["completed", "failed", "rejected", "cancelled"].includes(ownedRunPhase)
+  );
+}
+
 export function shouldSuppressNativeAssistantText(
   ownsLive: boolean,
   live: Pick<LiveResponseSnapshot, "status" | "visible" | "text">,
+  awaitingMessage = false,
 ) {
   // Retain ownership of hidden progress until the durable history hand-off.
   // Only an empty stream can fall back to native text without duplicating prose.
-  return ownsLive && (live.status === "streaming" || Boolean(live.text.trim()));
+  return awaitingMessage || (ownsLive && (live.status === "streaming" || Boolean(live.text.trim())));
 }
 
 export function messageOwnsRun(messageId: string, runId: string) {
@@ -1377,60 +1399,123 @@ export function turnOwnsRun(
   );
 }
 
+type CapturedTurnResponse = { messageId: string; text: string };
+
+/** Keep the cleaned live projection when a turn stops being the latest one.
+ * The native stream may still contain pre-tool prose until history commits. */
+export function responseTextForTurn(messageId: string, nativeText: string, directStream: boolean,
+  live: Pick<LiveResponseSnapshot, "text" | "visible" | "status">,
+  captured: { current: CapturedTurnResponse | undefined }, awaitingMessage = false) {
+  if (captured.current?.messageId !== messageId) captured.current = undefined;
+  // A new optimistic turn may mount before runAgent resets the global store.
+  // Never borrow the previous turn's visible text during that interval.
+  if (awaitingMessage) {
+    captured.current = { messageId, text: "" };
+    return "";
+  }
+  if (directStream) {
+    const text = normalizeMessageText(live.visible ? live.text : "");
+    captured.current = { messageId, text };
+    return text;
+  }
+  if (captured.current) {
+    if (nativeText === captured.current.text || (live.status === "idle" && !captured.current.text)) captured.current = undefined;
+    else return captured.current.text;
+  }
+  return nativeText;
+}
+
 export function HarnessAssistantMessage() {
+  const redact = useConversationRedactor();
   const conversationScope = useConversationScope();
   const live = useLiveResponse();
   const isLast = useAuiState((state) => state.message.isLast);
   const messageId = useAuiState((state) => state.message.id);
   const messageStatus = useAuiState((state) => state.message.status);
   const runView = useRunViewModel();
+  const threadRuntime = useThreadRuntime({ optional: true });
   const showIncompleteRecovery = shouldOfferIncompleteRetry(messageStatus);
   const content = useAuiState((state) => state.message.content);
   const hasVideoGeneration = content.some(
-    (part) => part.type === "data" && part.name === VIDEO_GENERATION_PART_NAME,
+    (part) => (part.type === "data" && part.name === VIDEO_GENERATION_PART_NAME) || (part.type === "tool-call" && part.toolName === "harness_video_generation"),
   );
   // Own the native text slot as soon as a Harness message starts. Candidate
   // text may still be waiting to see whether a tool call follows, so basing
   // this only on visible text lets assistant-ui paint the same preface once.
   const ownsLive = ownsLiveResponse(isLast, messageId, live.messageId);
-  const directStream = shouldSuppressNativeAssistantText(ownsLive, live);
-  const copyText = directStream
-    ? normalizeMessageText(live.visible ? live.text : "")
-    : normalizeMessageText(
-        content
-          .flatMap((part, index) => (
-            part.type === "text" && !isIntermediateAssistantTextPart(content, index)
-              ? [part.text]
-              : []
-          ))
-          .join("\n"),
-      );
+  const pendingLive = isLast && messageStatus?.type === "running" &&
+    live.status !== "idle" && !ownsLive;
+  const directStream = shouldSuppressNativeAssistantText(ownsLive, live, pendingLive);
+  const capturedResponse = useRef<CapturedTurnResponse | undefined>(undefined);
+  const nativeText = normalizeMessageText(
+    content.flatMap((part, index) => (
+      part.type === "text" && !isIntermediateAssistantTextPart(content, index) ? [part.text] : []
+    )).join("\n"),
+  );
+  const responseCandidate = responseTextForTurn(messageId, nativeText, directStream, live, capturedResponse, pendingLive);
   const feedbackRun = feedbackRunId(messageId, isLast, runView?.runId);
   // Requirement: citations must be reachable from the reply itself, not only
   // from the collapsed execution summary. Deduplicate by chunk so repeated
   // retrieval in one run shows one chip per slice.
   const durablePart = content.find((part) => part.type === "tool-call" && part.toolName === "harness_run_activity");
   const durable = durablePart?.type === "tool-call" ? runActivitySchema.safeParse(durablePart.args.activity) : null;
+  const currentActivity = useRunActivity();
+  const ownedActivity = currentActivity && turnOwnsRun(messageId, currentActivity.run_id, isLast, runView?.runId)
+    ? currentActivity : undefined;
+  const terminalActivity = ownedActivity && (!durable?.success || durable.data.run_id === ownedActivity.run_id)
+    ? ownedActivity : durable?.success ? durable.data : undefined;
+  const copyText = redact(responseTextForDisplay(responseCandidate, terminalActivity));
   const capturedCitations = useRef<{ messageId: string; citations: RunCitation[] }>({ messageId, citations: [] });
   const turnCitations = citationsForTurn(messageId, isLast, runView, durable?.success ? durable.data : undefined);
   if (turnCitations) capturedCitations.current = { messageId, citations: turnCitations };
-  const answerCitations = capturedCitations.current.messageId === messageId ? capturedCitations.current.citations : [];
+  const answerCitations = !hasVideoGeneration && capturedCitations.current.messageId === messageId ? capturedCitations.current.citations : [];
+  const ownsActiveRun = Boolean(runView && turnOwnsRun(messageId, runView.runId, isLast, runView.runId));
+  const turnSettled = turnDeliverablesReady(messageStatus?.type, ownsActiveRun ? runView?.phase : undefined);
+  const userPrompt = useAuiState(state => {
+    const messages = state.thread.messages;
+    let index = messages.findIndex(message => message.id === messageId);
+    if (index < 0) index = messages.length;
+    for (let i = index - 1; i >= 0; i--) {
+      if (messages[i].role === "user") return messages[i].content.flatMap(part => part.type === "text" ? [part.text] : []).join("\n");
+    }
+    return "";
+  });
+  const webImages = useMemo(() => turnSettled ? replyWebImages(content, terminalActivity, copyText, userPrompt) : [], [content, terminalActivity, copyText, turnSettled, userPrompt]);
   const turnArtifacts = useMemo(
-    () => artifactsForTurn(content, runView?.runId, isLast),
-    [content, runView?.runId, isLast],
+    () => turnSettled ? artifactsForTurn(content, runView?.runId, isLast) : [],
+    [content, runView?.runId, isLast, turnSettled],
   );
+  // Interactive answer blocks arrive on the same tool-call channel artifacts do,
+  // so they are present live and after a reload without a second code path.
+  const turnPresentations = useMemo(() => turnSettled ? presentationsForMessage(content) : [], [content, turnSettled]);
+  // Only blocks the model authored came from a fence in this answer, so only that
+  // many fences may be hidden from the rendered Markdown.
+  const publishedBlocks = useMemo(() => modelBlockSources(turnPresentations), [turnPresentations]);
+  const draftScope = useContext(ComposerDraftContext);
+  const runPresentationAction: PresentationActionHandler | undefined = threadRuntime && !conversationScope ? submitUiAction : undefined;
+  const actionHistory = useMemo(() => draftScope ? createThreadHistoryAdapter(draftScope.threadId) : null, [draftScope]);
+  useEffect(() => () => actionHistory?.dispose(), [actionHistory]);
+  const refreshActionHistory = useCallback(() => {
+    if (!actionHistory || !threadRuntime || threadRuntime.getState().isRunning) return;
+    void actionHistory.loadSnapshot(repository => {
+      if (threadRuntime.getState().isRunning) return false;
+      threadRuntime.import(repository);
+    }).catch(() => { /* persisted history remains available on refresh */ });
+  }, [actionHistory, threadRuntime]);
+  const actionBusy = ["running", "queued", "waiting_approval"].includes(runView?.phase ?? "");
   return (
     <AnswerCitationProvider citations={answerCitations}>
+    <PublishedBlocksProvider sources={publishedBlocks}>
     <AssistantMessage.Root
       className="harness-assistant-message"
       data-test-run={conversationScope && messageId.startsWith("assistant-") ? messageId.replace(/^assistant-/, "") : undefined}
       data-turn-answer={copyText.replace(/\s+/g, " ").slice(0, 360)}
       data-direct-stream={directStream ? "true" : "false"}
     >
-      <TurnActivity
+      {!hasVideoGeneration ? <TurnActivity
         hasDurableProjection={hasRunActivityToolCall(content)}
         messageId={messageId}
-      />
+      /> : null}
       <AssistantMessage.Content
         components={{
           Text: HiddenAssistantText,
@@ -1443,9 +1528,28 @@ export function HarnessAssistantMessage() {
           },
         }}
       />
-      <AssistantResponse text={copyText} streaming={directStream ? live.status === "streaming" && !live.textComplete : messageStatus?.type === "running"} />
+      <AssistantResponse key={messageId} text={copyText} streaming={directStream ? live.status === "streaming" && !live.textComplete : messageStatus?.type === "running"} />
+      <div className="followup-input-anchor" data-followup-for={messageId} />
+      {!hasVideoGeneration && <TerminalResponseNotice activity={terminalActivity}
+        hasResponse={Boolean(copyText.trim()) || turnPresentations.length > 0 || turnArtifacts.length > 0} />}
+      {turnPresentations.length > 0 ? (
+        <div className="intelligent-ui-blocks">
+          {turnPresentations.map((presentation) => (
+            <IntelligentUiBlock
+              key={presentation.presentation_id}
+              value={presentation}
+              onAction={runPresentationAction}
+              connected={!conversationScope && Boolean(threadRuntime)}
+              onSettled={refreshActionHistory}
+              disabled={actionBusy}
+            />
+          ))}
+        </div>
+      ) : null}
+      <ReplyWebImages images={webImages} />
       <ReplyArtifactImages artifacts={turnArtifacts} answer={copyText}
         onPreview={conversationScope ? () => conversationScope.onOpenFiles() : undefined} />
+      {!hasVideoGeneration ? <ReplyArtifactVideos artifacts={turnArtifacts} /> : null}
       {answerCitations.length > 0 ? (
         <KnowledgeCitations citations={answerCitations} showSources={false} />
       ) : null}
@@ -1467,7 +1571,6 @@ export function HarnessAssistantMessage() {
           <ArtifactSummaryRow artifacts={turnArtifacts} />
         </div>
         <div className="assistant-message-controls">
-          <HarnessBranchPicker />
           <AssistantActionBar.Root
             className="assistant-feedback-actions"
             hideWhenRunning
@@ -1485,11 +1588,16 @@ export function HarnessAssistantMessage() {
       ) : null}
       {conversationScope?.afterMessage(messageId)}
     </AssistantMessage.Root>
+    </PublishedBlocksProvider>
     </AnswerCitationProvider>
   );
 }
 
 function TurnCompletion() {
+  const onForked = useContext(TaskForkContext);
+  const draftScope = useContext(ComposerDraftContext);
+  const conversationScope = useConversationScope();
+  const threadRunning = useAuiState((state) => state.thread.isRunning);
   const content = useAuiState((state) => state.message.content);
   const isLast = useAuiState((state) => state.message.isLast);
   const observed = useRunViewModel();
@@ -1499,40 +1607,8 @@ function TurnCompletion() {
   const activity = parsed?.success ? parsed.data : null;
   const view = activity ? reduceRunViewModel(undefined, activity) : isLast && observed && messageOwnsRun(messageId, observed.runId) ? observed : null;
   if (!view || view.phase !== "completed") return null;
-  const date = new Date(view.updatedAt);
-  if (!Number.isFinite(date.getTime())) return null;
-  return <time className="turn-completion" dateTime={view.updatedAt} title={date.toLocaleString("zh-CN")}>
-    {date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })}
-  </time>;
-}
-
-function HarnessBranchPicker() {
-  return (
-    <BranchPickerPrimitive.Root
-      className="harness-branch-picker"
-      hideWhenSingleBranch
-    >
-      <BranchPickerPrimitive.Previous asChild>
-        <button type="button" aria-label="上一个回答" title="上一个回答">
-          <svg viewBox="0 0 20 20" aria-hidden="true">
-            <path d="m12.5 4.5-5 5.5 5 5.5" />
-          </svg>
-        </button>
-      </BranchPickerPrimitive.Previous>
-      <span className="harness-branch-state" aria-label="回答版本">
-        <BranchPickerPrimitive.Number />
-        <i aria-hidden="true">/</i>
-        <BranchPickerPrimitive.Count />
-      </span>
-      <BranchPickerPrimitive.Next asChild>
-        <button type="button" aria-label="下一个回答" title="下一个回答">
-          <svg viewBox="0 0 20 20" aria-hidden="true">
-            <path d="m7.5 4.5 5 5.5-5 5.5" />
-          </svg>
-        </button>
-      </BranchPickerPrimitive.Next>
-    </BranchPickerPrimitive.Root>
-  );
+  return <TurnCompletionControl completedAt={view.updatedAt} onForked={onForked}
+    branchScope={isLast && !conversationScope && !threadRunning && !selectComposerDisabled(observed) ? draftScope : null} />;
 }
 
 function EditMessageIcon() {
@@ -1544,47 +1620,7 @@ function EditMessageIcon() {
   );
 }
 
-function CopyMessageIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <rect x="6.5" y="6.5" width="9" height="9" rx="1.5" />
-      <path d="M13.5 6.5v-2a1.5 1.5 0 0 0-1.5-1.5H4.5A1.5 1.5 0 0 0 3 4.5V12A1.5 1.5 0 0 0 4.5 13h2" />
-    </svg>
-  );
-}
-
-function CopySuccessIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="m4.5 10.2 3.4 3.4 7.6-7.7" />
-    </svg>
-  );
-}
-
-function ThumbUpIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M6.5 8.2 9.2 3c.3-.6 1-.9 1.6-.6.7.3 1.1 1 1 1.7l-.5 3h3.8c1 0 1.7.9 1.5 1.9l-1 5.3c-.1.8-.8 1.3-1.6 1.3H6.5Z" />
-      <path d="M3.4 8.2h3.1v7.4H3.4Z" />
-    </svg>
-  );
-}
-
-function ThumbDownIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="m6.5 11.8 2.7 5.2c.3.6 1 .9 1.6.6.7-.3 1.1-1 1-1.7l-.5-3h3.8c1 0 1.7-.9 1.5-1.9l-1-5.3c-.1-.8-.8-1.3-1.6-1.3H6.5Z" />
-      <path d="M3.4 4.4h3.1v7.4H3.4Z" />
-    </svg>
-  );
-}
-
 export { inputArtifactDownloadHref } from "./message-attachment-view";
-
-function HarnessMessageAttachment() {
-  const attachment = useAttachment((state) => state);
-  return <MessageAttachmentView attachment={attachment} />;
-}
 
 type MessageEditorState = {
   messageId: string;
@@ -1605,6 +1641,7 @@ function useMessageEditor() {
 }
 
 function HarnessUserMessage() {
+  const redact = useConversationRedactor();
   const message = useAuiState((state) => state.message);
   const isLastMessage = useAuiState((state) => state.message.isLast);
   const threadRunning = useAuiState((state) => state.thread.isRunning);
@@ -1625,11 +1662,14 @@ function HarnessUserMessage() {
       .map((part) => part.text)
       .join("\n"),
   );
-  const editing = editor?.messageId === message.id;
-  const draft = editing ? editor.draft : originalText;
+  const displayText = redact(originalText);
+  const sensitive = displayText !== originalText;
+  const editing = !sensitive && editor?.messageId === message.id;
+  const draft = editing && editor ? editor.draft : displayText;
 
   function beginEdit() {
-    setEditor({ messageId: message.id, draft: originalText });
+    if (sensitive) return;
+    setEditor({ messageId: message.id, draft: displayText });
   }
 
   function submitEdit(event: FormEvent<HTMLFormElement>) {
@@ -1658,10 +1698,8 @@ function HarnessUserMessage() {
 
   return (
     <>
-      <UserMessage.Root className="harness-user-message" data-turn-id={message.id} data-turn-label={(originalText || message.attachments?.map(item => item.name).join("、") || "附件消息").replace(/\s+/g, " ").slice(0, 180)} tabIndex={-1}>
-        <UserMessage.Attachments
-          components={{ Attachment: HarnessMessageAttachment }}
-        />
+      <UserMessage.Root className="harness-user-message" data-turn-id={message.id} data-turn-label={(displayText || message.attachments?.map(item => item.name).join("、") || "附件消息").replace(/\s+/g, " ").slice(0, 180)} tabIndex={-1}>
+        <MessageAttachmentGroup attachments={message.attachments ?? []} />
         <MessagePrimitive.If hasContent>
           {editing ? (
             <div className="user-message-edit-shell">
@@ -1689,7 +1727,7 @@ function HarnessUserMessage() {
             </div>
           ) : (
             <>
-              <SentUserContent key={message.id} />
+              <SentUserContent key={message.id} text={sensitive ? displayText : undefined} />
               <ActionBarPrimitive.Root
                 className="harness-user-action-bar"
                 autohide="never"
@@ -1697,9 +1735,9 @@ function HarnessUserMessage() {
                 <MessageCopyButton
                   className="user-message-action"
                   label="复制消息"
-                  text={originalText}
+                  text={displayText}
                 />
-                {isLatestUserMessage && !threadRunning ? (
+                {isLatestUserMessage && !threadRunning && !sensitive ? (
                   <button
                     className="user-message-action"
                     type="button"
@@ -1714,7 +1752,6 @@ function HarnessUserMessage() {
             </>
           )}
         </MessagePrimitive.If>
-        {editing ? null : <BranchPicker />}
       </UserMessage.Root>
       {preResponseActivity ? (
         <div
@@ -1739,6 +1776,8 @@ export function AgentThread({
   onDismissSkillLaunch = () => undefined,
   onAgentChange = () => undefined,
   onRefreshAgents,
+  onComposerSubmitted,
+  onForked,
 }: {
   userId: string;
   threadId: string;
@@ -1750,6 +1789,9 @@ export function AgentThread({
   onDismissSkillLaunch?: () => void;
   onAgentChange?: (agent: TaskAgent) => void;
   onRefreshAgents?: () => void;
+  /** Called after the composer successfully starts a run. */
+  onComposerSubmitted?: () => void;
+  onForked?: (task: TaskSummary) => void;
 }) {
   const frame = useRef<HTMLDivElement>(null);
   const [editor, setEditor] = useState<MessageEditorState>(null);
@@ -1779,12 +1821,25 @@ export function AgentThread({
     () => ({ launch: activeSkillLaunch, onDismiss: onDismissSkillLaunch }),
     [activeSkillLaunch, onDismissSkillLaunch],
   );
+  const ComposerComponent = useMemo(
+    () =>
+      onComposerSubmitted
+        ? function SubmittedComposer() {
+            return <HarnessComposer onSubmitted={onComposerSubmitted} />;
+          }
+        : HarnessComposer,
+    [onComposerSubmitted],
+  );
   return (
+    <TaskForkContext.Provider value={onForked}>
     <AgentSelectionContext.Provider value={agentSelection}>
       <SkillLaunchContext.Provider value={skillLaunch}>
         <ComposerDraftContext.Provider value={composerDraftScope}>
           <MessageEditorContext.Provider value={{ editor, setEditor }}>
-            <VideoGenerationProvider>
+            <VideoGenerationProvider task={selectedAgent ? {
+              threadId, agentName: selectedAgent.name, agentVersion: selectedAgent.version,
+              agentOwnerUserId: selectedAgent.ownerUserId, spaceId: selectedAgent.spaceId,
+            } : undefined}>
             <div className="harness-thread-frame" ref={frame}>
             <ConversationIndex frame={frame} threadId={threadId} pagination={historyPagination} />
             {historyPagination.loading ? (
@@ -1802,12 +1857,12 @@ export function AgentThread({
               components: { ToolFallback: HarnessToolPart },
             }}
             userMessage={{ allowEdit: true }}
-            branchPicker={{ allowBranchPicker: true }}
+            branchPicker={{ allowBranchPicker: false }}
             composer={{ allowAttachments: true }}
             components={{
               AssistantMessage: HarnessAssistantMessage,
               UserMessage: HarnessUserMessage,
-              Composer: HarnessComposer,
+              Composer: ComposerComponent,
               ThreadWelcome: UserTaskWelcome,
             }}
             strings={{
@@ -1816,10 +1871,6 @@ export function AgentThread({
               assistantMessage: {
                 reload: { tooltip: "重新运行" },
                 copy: { tooltip: "复制回答" },
-              },
-              branchPicker: {
-                previous: { tooltip: "上一个分支" },
-                next: { tooltip: "下一个分支" },
               },
               composer: {
                 send: { tooltip: "发送任务" },
@@ -1837,5 +1888,6 @@ export function AgentThread({
         </ComposerDraftContext.Provider>
       </SkillLaunchContext.Provider>
     </AgentSelectionContext.Provider>
+    </TaskForkContext.Provider>
   );
 }

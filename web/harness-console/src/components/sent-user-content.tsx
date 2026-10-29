@@ -1,10 +1,13 @@
 "use client";
 
 import { UserMessage } from "@assistant-ui/react-ui";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+
+import { CodexResponseIcon } from "./codex-response-icon";
 
 /** Folding belongs to submitted messages; the composer always remains editable. */
-export function SentUserContent() {
+export function SentUserContent({ text }: { text?: string }) {
+  const contentId = useId();
   const content = useRef<HTMLDivElement>(null);
   const [long, setLong] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -17,9 +20,10 @@ export function SentUserContent() {
     resize.observe(node);
     return () => resize.disconnect();
   }, []);
-  return <>
-    <UserMessage.Content ref={content} className="sent-user-content" data-collapsed={long && !expanded} />
-    {long && <button type="button" className="sent-user-expand" aria-expanded={expanded}
-      onClick={() => setExpanded(value => !value)}>{expanded ? "收起全文" : "展开全文"}</button>}
-  </>;
+  return <div className="sent-user-bubble" data-long={long}>
+    {text === undefined ? <UserMessage.Content id={contentId} ref={content} className="sent-user-content" data-collapsed={long && !expanded} /> : <div id={contentId} ref={content} className="sent-user-content" data-collapsed={long && !expanded}>{text}</div>}
+    {long && <button type="button" className="sent-user-expand" aria-expanded={expanded} aria-controls={contentId}
+      aria-label={expanded ? "收起全文" : "展开全文"} title={expanded ? "收起全文" : "展开全文"}
+      onClick={() => setExpanded(value => !value)}><CodexResponseIcon name="chevronDown" /></button>}
+  </div>;
 }

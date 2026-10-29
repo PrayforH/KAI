@@ -1,0 +1,66 @@
+{
+  "image_tag": "intelligent-ui-20261011g",
+  "scope": "A/B supplementary renderer acceptance; not WeChat article reproduction",
+  "cases": [
+    {
+      "expected_kind": "timeline",
+      "prompt": "请使用当前聊天支持的可视化时间线组件，不要纯文字列表或文件。节点：2026-10-01 需求确认（确定范围）、2026-10-05 协议冻结（固定协议）、2026-10-10 内部试运行（验证功能）。三个节点都要在时间线中显示，不联网。",
+      "session_id": "session_c025872c38034c9b99200d4869b6d091",
+      "run_id": "run_1c17a7bfb4e745f987c11496b1873381",
+      "status": "succeeded",
+      "published": [
+        {
+          "presentation_id": "ui_3000f5b10ed800753d8d4062",
+          "kind": "timeline",
+          "snapshot_hash": "dea76ecb25664f2566ba8bbc73344802d3d4c9109f57335cb8368601b0701e0f",
+          "replay_matches_snapshot": true,
+          "repeat_read_unchanged": true,
+          "data": {
+            "events": [
+              {
+                "at": "2026-10-01",
+                "title": "需求确认",
+                "detail": "确定范围"
+              },
+              {
+                "at": "2026-10-05",
+                "title": "协议冻结",
+                "detail": "固定协议"
+              },
+              {
+                "at": "2026-10-10",
+                "title": "内部试运行",
+                "detail": "验证功能"
+              }
+            ]
+          },
+          "config": {}
+        }
+      ],
+      "answer_text": "按你的要求，用时间线组件呈现三个节点（不联网，数据仅来自你提供的内容）：\n\n- 2026-10-01 需求确认 —— 确定范围\n- 2026-10-05 协议冻结 —— 固定协议\n- 2026-10-10 内部试运行 —— 验证功能\n\n三个节点按时间先后排列如下：\n\n```harness-ui\n{\"version\":1,\"kind\":\"timeline\",\"title\":\"项目关键节点\",\"fallback_text\":\"时间线包含三个节点：2026-10-01 需求确认（确定范围）、2026-10-05 协议冻结（固定协议）、2026-10-10 内部试运行（验证功能）。\",\"data\":{\"events\":[{\"date\":\"2026-10-01\",\"title\":\"需求确认\",\"description\":\"确定范围\"},{\"date\":\"2026-10-05\",\"title\":\"协议冻结\",\"description\":\"固定协议\"},{\"date\":\"2026-10-10\",\"title\":\"内部试运行\",\"description\":\"验证功能\"}]},\"config\":{}}\n```",
+      "passed": true
+    },
+    {
+      "expected_kind": "diagram",
+      "prompt": "请使用当前聊天支持的 diagram 流程图组件，不要输出普通 Markdown Mermaid 围栏或文件。流程：提交任务→排队→执行→返回结果；执行失败则重试，然后再次执行。不联网。",
+      "session_id": "session_27c3baf439184e28b8757268b605e960",
+      "run_id": "run_8c1f3dd613b94460ad8d457361ba745e",
+      "status": "succeeded",
+      "published": [
+        {
+          "presentation_id": "ui_a674fe3bf7b59400450375cc",
+          "kind": "diagram",
+          "snapshot_hash": "5386fa3abe63bf8bb243f0206b8fd235b459c3ce6cd712ef3ce3ff723caed446",
+          "replay_matches_snapshot": true,
+          "repeat_read_unchanged": true,
+          "data": {
+            "mermaid": "flowchart LR\n  n0[\"提交任务\"]\n  n1[\"排队\"]\n  n2[\"执行\"]\n  n3[\"重试\"]\n  n4[\"返回结果\"]\n  n0 --> n1\n  n1 --> n2\n  n2 -->|\"成功\"| n4\n  n2 -->|\"失败\"| n3\n  n3 -->|\"再次执行\"| n2"
+          },
+          "config": {}
+        }
+      ],
+      "answer_text": "流程可以用一个带分支的节点图表达：主干是“提交任务 → 排队 → 执行 → 返回结果”，执行节点上有一条失败回边指向“重试”，重试后再回到“执行”。\n\n```harness-ui\n{\"version\":1,\"kind\":\"diagram\",\"title\":\"任务处理流程（含失败重试）\",\"fallback_text\":\"流程图：提交任务 → 排队 → 执行 → 返回结果；执行失败时进入重试，重试后再次执行。\",\"data\":{\"nodes\":[{\"id\":\"submit\",\"label\":\"提交任务\"},{\"id\":\"queue\",\"label\":\"排队\"},{\"id\":\"execute\",\"label\":\"执行\"},{\"id\":\"retry\",\"label\":\"重试\"},{\"id\":\"result\",\"label\":\"返回结果\"}],\"edges\":[{\"from\":\"submit\",\"to\":\"queue\"},{\"from\":\"queue\",\"to\":\"execute\"},{\"from\":\"execute\",\"to\":\"result\",\"label\":\"成功\"},{\"from\":\"execute\",\"to\":\"retry\",\"label\":\"失败\"},{\"from\":\"retry\",\"to\":\"execute\",\"label\":\"再次执行\"}]}}\n```\n\n如果重试仍失败，通常还需要一个终态（如“达到最大重试次数后返回失败”），需要的话可以补上这条分支。",
+      "passed": true
+    }
+  ]
+}

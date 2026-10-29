@@ -32,3 +32,11 @@ it("does not duplicate content when a send rejects before clearing", async () =>
   expect(f.state.text).toBe("根据附件修改配置");
   expect(f.composer.addAttachment).not.toHaveBeenCalled();
 });
+
+it("reports a disabled runtime instead of treating its silent no-op as a successful send", async () => {
+  const f = fixture();
+  Object.assign(f.state, {canSend: false});
+  expect(await f.send()).toContain("尚未准备好");
+  expect(f.composer.send).not.toHaveBeenCalled();
+  expect(f.state.text).toBe("根据附件修改配置");
+});

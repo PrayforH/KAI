@@ -1,0 +1,48 @@
+{
+  "verified_at": "2026-10-12T04:58:20.884055+00:00",
+  "branch": "auto/intelligent-ui-v1",
+  "web_release": "intelligent-ui-20261012c",
+  "compose_project": "agent-evolution-173",
+  "web_entry": "http://172.20.109.173:3302/",
+  "http_status": 200,
+  "containers": {
+    "api": {
+      "image": "kai/axis-api:intelligent-ui-20261012b",
+      "sha256": "sha256:82f2f2f53c0b30c21a3d6b69692deb8fda12353e94f53c8dfd0432e0c8591603",
+      "health": "healthy"
+    },
+    "worker": {
+      "image": "kai/axis-api:intelligent-ui-20261012b",
+      "sha256": "sha256:82f2f2f53c0b30c21a3d6b69692deb8fda12353e94f53c8dfd0432e0c8591603",
+      "health": "healthy"
+    },
+    "web": {
+      "image": "kai/axis-web:intelligent-ui-20261012c",
+      "sha256": "sha256:3bd3786166f855a827b60d916aaa2e56592356f70056774594b84d6eadb7fd3b",
+      "health": "healthy"
+    }
+  },
+  "qa": {
+    "frontend_files": 167,
+    "frontend_passed": 1102,
+    "frontend_skipped": 1,
+    "tsc": "passed",
+    "production_build": "passed",
+    "backend_related_passed": 115,
+    "backend_source_changed_in_response_release": false
+  },
+  "browser_acceptance": "partial: Chrome native UI, existing test account in incognito; response light/dark, expand/collapse, actual code/message clipboard, paged single/multi/text questions, HTML lamb calculation/copy/reload passed; remaining article cases and motion/mobile/reduced-motion visual acceptance pending",
+  "rollback_config": "/data/agent-studio-evolution-20260920/backups/compose.pre-intelligent-ui-20261012c.json",
+  "feishu_revision": 45,
+  "feishu_url": "https://my.feishu.cn/docx/TCHHdVB3Oob3Rtxk3dIcQsa6nVg",
+  "source_sha256": {
+    "web/harness-console/src/app/response-design.css": "78ad4abe159dbfb910b6d35dedd6ca9f94210d3a08d53a921f83f41e9d211fd3",
+    "web/harness-console/src/components/codex-response-icon.tsx": "e9bc43e7eeb52b220a4ba046e4c423720d4c9c7850acb3d87188b3c6c6ecfafe",
+    "web/harness-console/src/components/use-response-motion.ts": "9652d84a37d3feec0833ff228fb0666bb1649d4fa43191df5817af4d089c7263",
+    "web/harness-console/src/components/markdown-text.tsx": "d936f72a49cc93edb826d2af27792742accc56344925e36a8443dfc8809b06d3",
+    "web/harness-console/src/components/source-link.tsx": "fe10d27d09828735176388335d5d4205404bc4579a9be9bc2436f9bec8ffd0df",
+    "web/harness-console/src/components/agent-thread.tsx": "d1f92409cb19c6c3c74cc67415e14d72374ce85585d36545ae41fa13717138c0",
+    "web/harness-console/src/components/conversation-input-card.tsx": "8acb59d8271b0f665ed7c6bb85c700812ff3c9f9175290fd037ca0a922e35947",
+    "web/harness-console/src/components/conversation-input-card.module.css": "f6e4c144c747d23bf6fdd32d4a9058dc6cacc5780080a7b0cf61e1e433a1dab3"
+  }
+}

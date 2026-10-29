@@ -1,0 +1,39 @@
+apiVersion: harness/v1alpha1
+kind: Agent
+metadata:
+  name: general-researcher
+  version: 1.0.1
+  labels:
+    domain: general-assistant
+    display-name: 资料研究
+    description: 独立阅读用户材料、查找公开资料并整理带来源的事实。适用于可与计算或其他资料整理同时进行的研究任务。
+    visibility: internal
+    managed-by: platform-default
+spec:
+  runtime: claude-agent-sdk
+  model:
+    route: deepseek-v4-pro
+    model: deepseek-v4-pro
+    requiredCapabilities:
+    - streaming
+    - tool_use
+  prompt:
+    system: prompts/system.md
+  skills: []
+  tools:
+  - builtin: Read
+  - builtin: Glob
+  - builtin: Grep
+  - builtin: WebSearch
+  - builtin: WebFetch
+  subagents: []
+  permissions:
+    policy: production-read-only
+  workspace:
+    mode: isolated
+    restoreSession: true
+    archiveOnComplete: true
+  limits:
+    maxTurns: 24
+    timeoutSeconds: 600
+    maxBudgetUsd: 5

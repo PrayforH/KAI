@@ -76,6 +76,9 @@ export function TaskAgentSwitcher({
   onChange,
   onRefresh,
   kind = "agent",
+  label,
+  description,
+  menuPlacement,
 }: {
   agents: readonly TaskAgent[];
   selected: TaskAgent | null;
@@ -84,6 +87,9 @@ export function TaskAgentSwitcher({
   onChange: (agent: TaskAgent) => void;
   onRefresh?: () => void;
   kind?: "agent" | "version";
+  label?: string;
+  description?: string;
+  menuPlacement?: "above" | "below";
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -112,8 +118,9 @@ export function TaskAgentSwitcher({
     const measure = () => {
       const rect = rootRef.current?.getBoundingClientRect();
       if (rect) {
-        setMenuHeight(Math.max(64, Math.min(280, kind === "version" ? window.innerHeight - rect.bottom - 16 : rect.top - 16)));
-        setMobileLeft(window.innerWidth <= 760 ? 12 - rect.left : undefined);
+        const below = menuPlacement ? menuPlacement === "below" : kind === "version";
+        setMenuHeight(Math.max(64, Math.min(280, below ? window.innerHeight - rect.bottom - 16 : rect.top - 16)));
+        setMobileLeft(menuPlacement ? undefined : window.innerWidth <= 760 ? 12 - rect.left : undefined);
       }
     };
     measure();
@@ -149,7 +156,7 @@ export function TaskAgentSwitcher({
       document.removeEventListener("focusin", closeFromFocus);
       document.removeEventListener("keydown", escape);
     };
-  }, [closeMenu, open, kind]);
+  }, [closeMenu, open, kind, menuPlacement]);
 
   const choose = (agent: TaskAgent) => {
     const mode = taskAgentSwitchMode(selected, agent);
@@ -168,8 +175,8 @@ export function TaskAgentSwitcher({
         aria-expanded={open}
         aria-controls={listboxId}
         aria-haspopup="dialog"
-        aria-label={kind === "version" ? "切换当前智能体版本" : "切换任务智能体"}
-        title="同一智能体可在当前任务切换版本；切换其他智能体会创建新任务"
+        aria-label={label ?? (kind === "version" ? "切换当前智能体版本" : "切换任务智能体")}
+        title={description ?? "同一智能体可在当前任务切换版本；切换其他智能体会创建新任务"}
         onClick={() => {
           if (!open) onRefresh?.();
           setQuery("");
@@ -187,7 +194,7 @@ export function TaskAgentSwitcher({
           </span>
         )}
         <span className="task-agent-switcher-copy">
-          <small>当前智能体</small>
+          <small>{label ?? "当前智能体"}</small>
           <strong>
             {kind === "version" ? (selected ? `v${selected.version}` : "版本") : selected?.displayName ?? (loading ? "正在读取…" : "选择智能体")}
           </strong>

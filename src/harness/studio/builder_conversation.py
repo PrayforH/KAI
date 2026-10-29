@@ -33,6 +33,9 @@ class BuilderMessage(StudioModel):
 
 
 class BuilderConversationRequest(StudioModel):
+    model_route_override: str | None = Field(
+        default=None, alias="modelRouteOverride", pattern=r"^[a-z][a-z0-9-]{0,63}$"
+    )
     expected_revision: int = Field(alias="expectedRevision", ge=1)
     messages: tuple[BuilderMessage, ...] = Field(min_length=1, max_length=20)
     run_context: str = Field(default="", alias="runContext", max_length=12_000)

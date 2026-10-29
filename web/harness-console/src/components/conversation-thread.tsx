@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ComponentProps } from "react";
 import { ThreadPrimitive, useAuiEvent } from "@assistant-ui/react";
 import { Composer, Thread, ThreadWelcome } from "@assistant-ui/react-ui";
+import { ConversationRedactionProvider } from "./conversation-redaction";
 import { attachConversationScroll } from "../lib/conversation-scroll";
 
 /** A single scroll owner shared by chat, Builder and agent verification. */
@@ -25,7 +26,7 @@ export function ConversationThread({ threadId, ...config }: ComponentProps<typeo
     ...messageComponents
   } = config.components ?? {};
   return (
-    <Thread.Root config={config}>
+    <ConversationRedactionProvider><Thread.Root config={{ ...config, branchPicker: { ...config.branchPicker, allowBranchPicker: false } }}>
       <ThreadPrimitive.Viewport className="aui-thread-viewport" ref={viewport} autoScroll={false} scrollToBottomOnRunStart={false} scrollToBottomOnInitialize={false} scrollToBottomOnThreadSwitch={false}>
         <Welcome />
         <Thread.Messages MessagesFooter={MessagesFooter} components={messageComponents} />
@@ -38,6 +39,6 @@ export function ConversationThread({ threadId, ...config }: ComponentProps<typeo
           <ComposerComponent />
         </Thread.ViewportFooter>
       </ThreadPrimitive.Viewport>
-    </Thread.Root>
+    </Thread.Root></ConversationRedactionProvider>
   );
 }

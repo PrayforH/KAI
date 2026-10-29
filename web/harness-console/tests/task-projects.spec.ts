@@ -12,13 +12,17 @@ const headerActions = readFileSync(
 );
 const page = readFileSync(join(process.cwd(), "src/app/page.tsx"), "utf8");
 const client = readFileSync(join(process.cwd(), "src/lib/studio-client.ts"), "utf8");
+const workbench = readFileSync(
+  join(process.cwd(), "src/components/workbench-rail.tsx"),
+  "utf8",
+);
+const projectRoute = readFileSync(
+  join(process.cwd(), "src/app/studio/projects/[projectId]/page.tsx"),
+  "utf8",
+);
 
 describe("project-grouped task list", () => {
-  it("renders 项目 above 任务 and drops the recency view", () => {
-    const projectsIndex = sidebar.indexOf("<ProjectFolderIcon />\n                项目");
-    const tasksIndex = sidebar.indexOf('>任务</span>');
-    expect(projectsIndex).toBeGreaterThan(-1);
-    expect(tasksIndex).toBeGreaterThan(projectsIndex);
+  it("drops the recency view", () => {
     // 最近/今天/昨天 buckets were replaced by the project containers.
     expect(sidebar).not.toContain("TASK_TIME_BUCKET_LABELS");
     expect(sidebar).not.toContain("recentBuckets");
@@ -29,6 +33,54 @@ describe("project-grouped task list", () => {
     expect(sidebar).toContain("!task.project_id || !known.has(task.project_id)");
     expect(sidebar).toContain('data-project-id={project.projectId}');
     expect(sidebar).toContain('aria-label="任务"');
+  });
+
+  it("opens the organizing home while retaining project task creation", () => {
+    expect(sidebar).toContain('aria-label={`项目操作 ${project.name}`}');
+    expect(sidebar).toContain("新建任务");
+    expect(sidebar).toContain("查看项目");
+    expect(sidebar).toContain("置顶");
+    expect(sidebar).toContain("移除项目");
+    expect(sidebar).toContain("<span>查看项目</span>");
+    expect(sidebar).toContain("编辑项目");
+    expect(sidebar).toContain("useConfirmationDialog");
+    expect(sidebar).not.toContain("查看 ${project.name} 的文件");
+    expect(sidebar).not.toContain('projectHref(project.projectId, "results")');
+    expect(sidebar).not.toContain("<ProjectFilesDialog");
+    expect(projectRoute).toContain("<ProjectHome");
+    expect(projectRoute).not.toContain('redirect("/")');
+    expect(page).toContain("projectId={activeProjectId}");
+    expect(page).toContain('className="task-project-breadcrumb"');
+    expect(page).toContain("createProjectTask(currentTask.project_id, nextAgent)");
+    expect(workbench).toContain("projectId");
+    expect(workbench).not.toContain("ProjectResourcesPanel");
+    expect(workbench).not.toContain("项目资源视图");
+  });
+
+  it("keeps project configuration on the project page, outside the task drawer", () => {
+    const home = readFileSync(join(process.cwd(), "src/components/project-home.tsx"), "utf8");
+    expect(home).toContain("<ProjectContextRail space={space} />");
+    expect(workbench).not.toContain("ProjectResourcesPanel");
+    expect(workbench).not.toContain("项目资源视图");
+  });
+
+  it("opens a dedicated dialog for each project resource card", () => {
+    const dialogs = readFileSync(
+      join(process.cwd(), "src/components/project-resource-dialogs.tsx"),
+      "utf8",
+    );
+    expect(dialogs).toContain("export function ProjectKnowledgeDialog");
+    expect(dialogs).toContain("export function ProjectSkillsDialog");
+    expect(dialogs).toContain("export function ProjectFilesDialog");
+    expect(dialogs).toContain("搜索文件和资源");
+    expect(dialogs).toContain("搜索技能、标签或来源");
+    expect(dialogs).toContain("搜索网页");
+    expect(dialogs).toContain("project_id=${encodeURIComponent(project.projectId)}");
+    expect(dialogs).toContain("任务产物");
+    expect(dialogs).toContain("/content?inline=1");
+    expect(client).toContain("knowledgeReferences?: string[]");
+    expect(client).toContain("addLink(projectId: string");
+    expect(client).toContain("deleteLink(projectId: string");
   });
 
   it("keeps tasks visible when their project disappears", () => {
@@ -44,7 +96,7 @@ describe("project-grouped task list", () => {
 
   it("moves tasks in and out of projects from the task menu", () => {
     expect(headerActions).toContain("moveToProject");
-    expect(headerActions).toContain('NestedMenu label="移入项目"');
+    expect(headerActions).toContain('variant === "row" ? "项目" : "移入项目"');
     expect(headerActions).toContain("移出当前项目");
     expect(headerActions).toContain("setTaskProject(task.thread_id, projectId)");
     expect(client).toContain("export async function setTaskProject");
@@ -70,7 +122,7 @@ describe("project and task sections share one column", () => {
   });
 
   it("uses compact project padding and a small indent for child tasks", () => {
-    expect(css).toMatch(/\.task-project-heading\s*\{[^}]*padding:\s*4px 30px 4px 8px;/);
+    expect(css).toMatch(/\.task-project-heading\s*\{[^}]*padding:\s*4px 62px 4px 8px;/);
     expect(css).toMatch(/\.task-list-item,\s*[\s\S]*?\.task-list-item\.is-active\s*\{[^}]*padding:\s*4px 6px 4px 34px;/);
   });
 });

@@ -32,6 +32,8 @@ class MemoryBankRepository(Protocol):
         limit: int | None,
         owner_id: str | None = None,
         active_at: datetime | None = None,
+        project_id: str | None = None,
+        include_project_scopes: bool = False,
     ) -> Sequence[MemoryEntry]: ...
 
     async def compare_and_set_entry(
@@ -76,15 +78,17 @@ class MemoryBankRepository(Protocol):
         now: datetime,
         *,
         limit: int,
+        project_id: str | None = None,
     ) -> Sequence[MemorySearchHit]: ...
 
 
 def dedup_key(entry: MemoryEntry) -> str | None:
     if entry.status not in {MemoryStatus.PENDING, MemoryStatus.ACTIVE}:
         return None
-    return hashlib.sha256(
-        f"{entry.owner_id}\0{entry.agent_name}\0{entry.content_hash}\0{entry.conditions}".encode()
-    ).hexdigest()
+    scope = f"{entry.owner_id}\0{entry.agent_name}\0{entry.content_hash}\0{entry.conditions}"
+    if entry.project_id is not None:
+        scope += f"\0project\0{entry.project_id}"
+    return hashlib.sha256(scope.encode()).hexdigest()
 
 
 class InMemoryMemoryBankRepository:
@@ -127,6 +131,8 @@ class InMemoryMemoryBankRepository:
         limit: int | None,
         owner_id: str | None = None,
         active_at: datetime | None = None,
+        project_id: str | None = None,
+        include_project_scopes: bool = False,
     ) -> Sequence[MemoryEntry]:
         values = [
             entry
@@ -134,6 +140,7 @@ class InMemoryMemoryBankRepository:
             if stored_tenant == tenant_id
             and stored_user == user_id
             and (agent_name is None or entry.agent_name == agent_name)
+            and (include_project_scopes or entry.project_id == project_id)
             and (statuses is None or entry.status in statuses)
             and (owner_id is None or entry.owner_id == owner_id)
             and (active_at is None or entry.expires_at is None or entry.expires_at > active_at)
@@ -263,6 +270,7 @@ class InMemoryMemoryBankRepository:
         now: datetime,
         *,
         limit: int,
+        project_id: str | None = None,
     ) -> Sequence[MemorySearchHit]:
         entries = await self.list_entries(
             tenant_id,
@@ -272,6 +280,7 @@ class InMemoryMemoryBankRepository:
             limit=None,
             owner_id=owner_id,
             active_at=now,
+            project_id=project_id,
         )
         hits: list[MemorySearchHit] = []
         for entry in entries:

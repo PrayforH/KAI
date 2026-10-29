@@ -210,12 +210,13 @@ it("preserves mixed thinking, tools and commentary order without duplicating the
       const rows = Array.from(host.querySelectorAll(".execution-reasoning, .execution-action, .execution-commentary"));
       expect(rows.map(row => row.classList.contains("execution-reasoning") ? "thinking" :
         row.classList.contains("execution-action") ? "tool" : "commentary")).toEqual([
-        "thinking", "tool", "commentary", "thinking", "tool",
+        "thinking", "tool", "commentary", "thinking", "tool", ...(status === "running" ? ["commentary"] : []),
       ]);
       expect(rows[0].textContent).toContain("Check source.");
       expect(rows[2].textContent).toContain("继续核验来源。");
       expect(rows[3].textContent).toContain("Validate result.");
-      expect(host.textContent).not.toContain("这是最终正文。");
+      if (status === "running") expect(host.textContent).toContain("这是最终正文。");
+      else expect(host.textContent).not.toContain("这是最终正文。");
     }
   } finally { await act(async () => root.unmount()); host.remove(); }
 });

@@ -1,0 +1,123 @@
+{
+  "image_tag": "intelligent-ui-20261012a",
+  "agent_name": "lead-agent",
+  "agent_version": "1.0.3+platform.99dfe677",
+  "scope": "Generation on 20261012a; files exist but inline validation rejected the flat artifact_id; immutable empty publications are preserved",
+  "cases": [
+    {
+      "id": "lamb",
+      "prompt": "周日想做烤羊腿招待朋友，人数还没定。请在回答里给一个能直接操作的人数计数器，默认5人，增加到8人时购物清单跟着重算，还有重置按钮。测试数据按每人带骨羊腿0.4kg、土豆300g计算，不联网。使用本项目支持的自包含HTML工具，先实际发布文件再引用，采用提供的状态握手协议，刷新后恢复人数。",
+      "session_id": "session_c9dd8508c88c4a50950294a5ae901500",
+      "run_id": "run_987f06943d26481595653593d8f481df",
+      "status": "succeeded",
+      "presentations": [],
+      "artifacts": [
+        {
+          "artifact_id": "artifact_9ab93866a322483ba5a9c91b6d11e86f",
+          "name": "roast-lamb-counter.html",
+          "media_type": "text/html",
+          "status": "ready",
+          "sha256": "241babe5b8cfd2e4a77c46f9d824e85ca15e88411c2dca92386725d12f40aa4d",
+          "size_bytes": 8311
+        }
+      ],
+      "html_artifacts": [
+        {
+          "artifact_id": "artifact_9ab93866a322483ba5a9c91b6d11e86f",
+          "name": "roast-lamb-counter.html",
+          "sha256": "241babe5b8cfd2e4a77c46f9d824e85ca15e88411c2dca92386725d12f40aa4d",
+          "bytes": 8311
+        }
+      ],
+      "interaction_acceptance": "pending_browser_verification",
+      "authored_blocks": [
+        {
+          "version": 1,
+          "kind": "html",
+          "title": "烤羊腿人数与购物清单",
+          "fallback_text": "人数计数器:默认5人,可增减到8人时购物清单自动重算,含重置按钮;每人按带骨羊腿0.4kg、土豆300g计算。",
+          "artifact_id": "artifact_9ab93866a322483ba5a9c91b6d11e86f"
+        }
+      ]
+    },
+    {
+      "id": "bill-rounding",
+      "prompt": "给我一个可操作的朋友聚餐分账器，支持改总金额和人数，计算每人的金额并显示合计，不联网。测试：总额1.00元、3人、税费小费都为0，显示每人的金额必须精确到分，所有人显示的金额相加必须等于1.00元；总额60元、5人、小费18%应合计70.80元。请用可操作的自包含HTML文件，实际发布后通过harness-ui内联展示，含重置并采用提供的状态恢复协议。",
+      "session_id": "session_2bc7afadcb7148df8b6cd14c49a48e6a",
+      "run_id": "run_6dd399a1863e4f69b970340a640a9c98",
+      "status": "succeeded",
+      "presentations": [],
+      "artifacts": [
+        {
+          "artifact_id": "artifact_b94d30cbadb04e3d8434b85f85b23115",
+          "name": "split-bill.html",
+          "media_type": "text/html",
+          "status": "ready",
+          "sha256": "65ae10d6fa85ae45c258e02ceb78d61ad10820355ef0923958b9106231c2129b",
+          "size_bytes": 10136
+        }
+      ],
+      "html_artifacts": [
+        {
+          "artifact_id": "artifact_b94d30cbadb04e3d8434b85f85b23115",
+          "name": "split-bill.html",
+          "sha256": "65ae10d6fa85ae45c258e02ceb78d61ad10820355ef0923958b9106231c2129b",
+          "bytes": 10136
+        }
+      ],
+      "interaction_acceptance": "pending_browser_verification",
+      "authored_blocks": [
+        {
+          "version": 1,
+          "kind": "html",
+          "title": "聚餐分账器",
+          "fallback_text": "可操作分账器 HTML：可改总金额/人数/税费%/小费%，整数分计算并固定分配余数，显示每人金额与合计，含重置和状态恢复协议。",
+          "artifact_id": "artifact_b94d30cbadb04e3d8434b85f85b23115"
+        }
+      ]
+    },
+    {
+      "id": "monty",
+      "prompt": "解释三门问题，并给我能直接选择车在1/2/3号门位置、固定初选门1、看主持人开一扇羊门、再选择坚持或换门的可操作演示。不要只输出静态表格，给真正可操作的自包含HTML文件，实际发布后通过harness-ui内联展示，不联网。三种车位置等可能，统计坚持1/3与换门2/3，重置可再次玩。",
+      "session_id": "session_9efedd86a45d421a90caedb0dac77ba1",
+      "run_id": "run_6752b4b437dd4716a1e87c7b43bc53ee",
+      "status": "succeeded",
+      "presentations": [],
+      "artifacts": [
+        {
+          "artifact_id": "artifact_507042760c664c4d8f13f5fee512b3b0",
+          "name": "monty-hall.html",
+          "media_type": "text/html",
+          "status": "ready",
+          "sha256": "0f530f132c5c27b15d92149a11447cc0361c925e5a1ee7485a38532a71639f4a",
+          "size_bytes": 11287
+        }
+      ],
+      "html_artifacts": [
+        {
+          "artifact_id": "artifact_507042760c664c4d8f13f5fee512b3b0",
+          "name": "monty-hall.html",
+          "sha256": "0f530f132c5c27b15d92149a11447cc0361c925e5a1ee7485a38532a71639f4a",
+          "bytes": 11287
+        }
+      ],
+      "interaction_acceptance": "pending_browser_verification",
+      "authored_blocks": [
+        {
+          "version": 1,
+          "kind": "html",
+          "title": "三门问题 · 可操作演示",
+          "fallback_text": "交互式三门问题演示：可选车的位置、主持人开羊门、选择坚持或换门，并统计坚持(1/3)与换门(2/3)胜率。",
+          "artifact_id": "artifact_507042760c664c4d8f13f5fee512b3b0",
+          "actions": [
+            {
+              "kind": "conversation",
+              "label": "用数学推导讲清为什么是2/3",
+              "prompt": "请用条件概率/贝叶斯的形式推导三门问题中坚持1/3、换门2/3"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

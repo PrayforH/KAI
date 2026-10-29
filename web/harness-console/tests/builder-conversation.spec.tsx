@@ -2,10 +2,16 @@
 import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import * as taskModelCatalog from "../src/lib/task-model-catalog";
 import { AgentBuilderAssistant } from "../src/components/agent-studio/agent-builder-overlays";
 import { DEFAULT_STUDIO_DRAFT, type StudioDraft } from "../src/lib/agent-studio";
 import { studioClient, studioDraftToSpec, type ApiAgentDraft, type StudioTryRun } from "../src/lib/studio-client";
 
+vi.mock("../src/lib/task-model-catalog", () => ({ loadTaskModelRoutes: async () => [
+  {id:"builder-first",label:"构建模型 A",model:"build-a",provider:"test",modelType:"chat",apiFormat:"openai_compatible",capabilities:["tool_use"]},
+  {id:"builder-second",label:"构建模型 B",model:"build-b",provider:"test",modelType:"vision",apiFormat:"openai_compatible",capabilities:["tool_use","vision"]},
+  {id:"builder-claude",label:"构建模型 C",model:"build-c",provider:"test",modelType:"chat",apiFormat:"anthropic_compatible",capabilities:["tool_use"]},
+] }));
 vi.mock("../src/components/auth-provider", () => ({useAuth: () => ({user:{user_id:"preview-user"},membership:{role:"owner"}})}));
 vi.mock("../src/components/agent-studio/agent-project-code", () => ({ AgentProjectCode: ({comparison, comparisonPending}: {comparison?: {before:{revision:number};after:{revision:number}};comparisonPending:boolean}) => <section aria-label="测试代码差异">{comparison?.before.revision} → {comparison?.after.revision} · {comparisonPending ? "待应用" : "已应用"}</section> }));
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -27,7 +33,7 @@ function api(draft: StudioDraft): ApiAgentDraft {
 }
 const run = { draftRevision: 1, run: { run_id: "run-1", status: "succeeded" },
   events: [], loop: [], approvals: [], artifacts: [], finalText: "试跑结果" } as unknown as StudioTryRun;
-beforeEach(() => {
+beforeEach(async () => {
   // Transfers prefer XHR so they can report progress; these tests stub fetch,
   // so they pin the composer to the fetch path.
   vi.stubGlobal("XMLHttpRequest", undefined);
@@ -75,7 +81,7 @@ beforeEach(() => {
       onClose={() => openChange(false)} onCreated={(flow) => { setDraft(flow.draft); setMode("run"); }} prepareDraft={async () => draft}
       onUpdated={(next) => { updated(next); setDraft(next); }} /></>;
   }
-  act(() => root.render(<Harness />));
+  await act(async () => root.render(<Harness />));
 });
 afterEach(() => { vi.unstubAllGlobals(); act(() => root.unmount()); host.remove(); vi.restoreAllMocks(); updated.mockReset(); });
 async function click(text: string) {
@@ -243,16 +249,16 @@ it("sends preview text directly and continues the previous turn, resetting after
   await previewSend("它的结论是什么？");
   expect(studioClient.converseBuilder).not.toHaveBeenCalled();
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[2]).toBe("它的结论是什么？");
-  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({ continueFromRunId: "run-1" });
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({ continueFromRunId: "run-1", modelRouteOverride: "builder-first" });
   expect(host.textContent).toContain("第一轮材料");
   await click("修改配置"); await send("换成表格"); await click("应用修改");
   await previewSend("使用新配置测试");
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[1]).toBe(2);
-  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({});
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({modelRouteOverride:"builder-first"});
   await act(async () => { (host.querySelector('[aria-label="新测试会话"]') as HTMLButtonElement).click(); });
   expect(host.textContent).toContain("已开启新的测试会话");
   await previewSend("新的独立测试");
-  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({});
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({modelRouteOverride:"builder-first"});
   expect(host.querySelectorAll("textarea")).toHaveLength(1);
 });
 it("keeps failed preview input retryable and supplies the selected turn as builder context", async () => {
@@ -276,7 +282,7 @@ it("reruns the latest example when applying a configuration change", async () =>
   await send("修改系统提示词，改进案例 B 的配置");
   await click("应用并重新试跑");
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[2]).toBe("后续案例 B");
-  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({});
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({modelRouteOverride:"builder-first"});
 });
 
 function modelRuns(task: string) {
@@ -296,7 +302,7 @@ it("uses one composer to edit and run without losing task context", async () => 
   expect(host.querySelector('[aria-label="智能体资产"]')).toBeNull();
   expect(host.querySelector('[aria-label="智能体构建助手"]')).toBeNull();
   modelRuns("业务原始问题"); await sendTest("业务原始问题"); modelRuns("继续追问"); await sendTest("继续追问");
-  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({continueFromRunId:"run-1"});
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({continueFromRunId:"run-1",modelRouteOverride:"builder-first"});
   await sendTest("修改系统提示词，输出改成表格");
   expect(JSON.parse(vi.mocked(studioClient.converseBuilder).mock.lastCall![1].runContext).task).toBe("继续追问");
   expect(host.querySelector('[aria-label="待确认的配置修改"]')).not.toBeNull();
@@ -304,11 +310,11 @@ it("uses one composer to edit and run without losing task context", async () => 
   expect(updated.mock.lastCall?.[0].revision).toBe(2);
   modelRuns("新配置测试"); await sendTest("新配置测试");
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[1]).toBe(2);
-  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({});
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({modelRouteOverride:"builder-first"});
   expect(host.textContent).toContain("业务原始问题");
   expect(host.querySelectorAll("textarea")).toHaveLength(1);
   await startNewConversation(); modelRuns("独立案例"); await sendTest("独立案例");
-  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({});
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({modelRouteOverride:"builder-first"});
 });
 
 it("preserves attachments and text after failed unified sends, and supplies files to both edit and run", async () => {
@@ -375,7 +381,7 @@ it("exports only on explicit preview and reuses that comparison when applying", 
   expect(host.querySelector('[aria-label="测试代码差异"]')?.textContent).toContain("已应用");
 });
 
-it("creates from the actual brief and reviews recommended Skills before installation", async () => {
+async function createRecommendedSkills() {
   vi.spyOn(studioClient, "createDraftFromTask").mockResolvedValue({draft: api(initial), recommendation: {
     generatedByModel: true, capabilityCatalogRevision: 7,
     recommendedSkills: [{packageId: "evidence-reporting", revision: 1, label: "证据报告", reason: "当前任务需要来源核验", risk: "low"}],
@@ -385,7 +391,11 @@ it("creates from the actual brief and reviews recommended Skills before installa
   }});
   act(() => newDraft());
   await send("联网核验公开资料并生成报告");
-  expect(studioClient.createDraftFromTask).toHaveBeenCalledWith({task: "联网核验公开资料并生成报告", runtimePreference: "auto"}, expect.any(Function), expect.any(AbortSignal));
+}
+
+it("creates from the actual brief and reviews recommended Skills before installation", async () => {
+  await createRecommendedSkills();
+  expect(studioClient.createDraftFromTask).toHaveBeenCalledWith({task: "联网核验公开资料并生成报告", runtimePreference: "auto", modelRouteOverride: "builder-first"}, expect.any(Function), expect.any(AbortSignal));
   expect(host.textContent).toContain("当前任务需要来源核验");
   expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
   await act(async () => { host.querySelector<HTMLInputElement>('[aria-label="推荐 Skill"] input')!.click(); });
@@ -434,7 +444,7 @@ it("starts an empty test conversation and can resume a chosen history with its l
   expect(panel().querySelector("textarea")!.value).toBe("");
   expect(panel().textContent).toContain("帮你做些什么？");
   modelRuns("第二组独立问题"); await sendTest("第二组独立问题");
-  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({});
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({modelRouteOverride:"builder-first"});
   expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(1);
   await act(async () => {
     (panel().querySelector('[aria-label="会话：新建或切换"]') as HTMLElement).click();
@@ -446,7 +456,7 @@ it("starts an empty test conversation and can resume a chosen history with its l
   });
   expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(2);
   modelRuns("回到第一组继续追问"); await sendTest("回到第一组继续追问");
-  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({continueFromRunId:"run-2"});
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({continueFromRunId:"run-2",modelRouteOverride:"builder-first"});
   expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(3);
 });
 
@@ -666,7 +676,7 @@ it.each(["claude-agent-sdk", "deepagents"] as const)("%s executes workspace task
   await sendTest("分析资料"); await sendTest("继续说明来源");
   expect(studioClient.converseBuilder).not.toHaveBeenCalled();
   expect(studioClient.readBuilderMaterials).not.toHaveBeenCalled();
-  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({builderTools:true,continueFromRunId:"run-1"});
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({builderTools:true,continueFromRunId:"run-1",modelRouteOverride:runtime === "deepagents" ? "builder-first" : "builder-claude"});
   expect(host.querySelectorAll("textarea")).toHaveLength(1);
 });
 
@@ -711,4 +721,105 @@ it("can discuss and cancel an unapplied tool proposal without applying it", asyn
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toMatchObject({builderTools:true,pendingProposal:{systemPrompt:"输出表格"}});
   expect(host.querySelector('[aria-label="待确认的配置修改"]')).toBeNull();
   expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
+});
+
+async function chooseBuilderModel(id: string) {
+  await act(async () => {
+    const select = host.querySelector<HTMLSelectElement>('[aria-label="选择本次任务使用的模型"]')!;
+    expect(select.disabled).toBe(false);
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(select, id);
+    select.dispatchEvent(new Event("change", {bubbles:true}));
+  });
+}
+it("uses an independent model for builder edits without changing the agent default", async () => {
+  expect(host.querySelector<HTMLSelectElement>('[aria-label="选择本次任务使用的模型"]')?.value).toBe("builder-first");
+  await chooseBuilderModel("builder-second");
+  expect(localStorage.getItem("agent-studio.builder-model:playground:draft-multi")).toBe("builder-second");
+  await click("修改配置"); await send("输出分成两段");
+  expect(vi.mocked(studioClient.converseBuilder).mock.lastCall?.[1]).toMatchObject({modelRouteOverride:"builder-second"});
+  expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled(); expect(updated).not.toHaveBeenCalled();
+});
+it("shows the main composer model selector in the embedded builder and sends its choice", async () => {
+  await act(async () => enableWorkspace());
+  await chooseBuilderModel("builder-second");
+  await send("帮我完善指令");
+  expect(vi.mocked(studioClient.converseBuilder).mock.lastCall?.[1]).toMatchObject({modelRouteOverride:"builder-second"});
+  expect(host.querySelector<HTMLSelectElement>('[aria-label="选择本次任务使用的模型"]')?.value).toBe("builder-second");
+});
+it("passes the chosen model to creation and preview runs, retaining it for followups", async () => {
+  vi.spyOn(studioClient,"createDraftFromTask").mockResolvedValue({draft:api(initial),recommendation:null});
+  await act(async () => newDraft()); await chooseBuilderModel("builder-second"); await send("创建整理助手");
+  expect(vi.mocked(studioClient.createDraftFromTask).mock.lastCall?.[0]).toMatchObject({modelRouteOverride:"builder-second"});
+  await click("试跑"); await send("第一轮测试");
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toMatchObject({modelRouteOverride:"builder-second"});
+  await chooseBuilderModel("builder-first"); await send("第二轮继续");
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toMatchObject({modelRouteOverride:"builder-first",continueFromRunId:"run-1"});
+  expect(updated).not.toHaveBeenCalled();
+});
+
+it("does not create a running message while the empty builder loads its model catalog", async () => {
+  let resolve!: (routes: taskModelCatalog.TaskModelRoute[]) => void;
+  vi.spyOn(taskModelCatalog, "loadTaskModelRoutes").mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  const target = document.createElement("div"); document.body.append(target);
+  await act(async () => root.render(<AgentBuilderAssistant open mode="run" draft={initial}
+    initialPrompt="" recommendation={null} knowledgeMcpReferences={[]} hasUnsavedChanges={false}
+    workspaceTarget={target} onClose={() => {}} onCreated={() => {}}
+    prepareDraft={async () => initial} onUpdated={() => {}} />));
+  expect(target.querySelector('[aria-label="停止运行"]')).toBeNull();
+  await act(async () => resolve([{id:"ready-model",label:"Ready",model:"ready",provider:"test",modelType:"chat",apiFormat:"openai_compatible",capabilities:["tool_use"]}]));
+  expect(target.querySelector('[aria-label="停止运行"]')).toBeNull();
+  expect(target.querySelector<HTMLSelectElement>('[aria-label="选择本次任务使用的模型"]')?.disabled).toBe(false);
+  await act(async () => root.render(<></>)); target.remove();
+});
+
+
+it("allows closing Skill recommendations without discarding selected choices or installing anything", async () => {
+  await createRecommendedSkills();
+  await act(async () => host.querySelector<HTMLInputElement>('[aria-label="推荐 Skill"] input')!.click());
+  await click("关闭 Skill 推荐");
+  expect(host.querySelector('[aria-label="推荐 Skill"]')).toBeNull();
+  expect(host.querySelector('[aria-label="展开 Skill 推荐"]')?.textContent).toContain("已选 1 项");
+  await click("展开 Skill 推荐");
+  expect(host.querySelector<HTMLInputElement>('[aria-label="推荐 Skill"] input')!.checked).toBe(true);
+  expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
+});
+
+it("automatically collapses unselected recommendations after an accepted verification run", async () => {
+  await createRecommendedSkills();
+  await act(async () => enableWorkspace());
+  await act(async () => switchMode("chat"));
+  expect(host.querySelector('[aria-label="推荐 Skill"]')).toBeNull();
+  await click("展开 Skill 推荐");
+  expect(host.querySelector('[aria-label="推荐 Skill"]')).not.toBeNull();
+  await send("/run 核验公开资料");
+  expect(studioClient.createTryRun).toHaveBeenCalled();
+  expect(host.querySelector('[aria-label="推荐 Skill"]')).toBeNull();
+  expect(host.querySelector('[aria-label="展开 Skill 推荐"]')).not.toBeNull();
+  await click("展开 Skill 推荐");
+  expect(host.querySelector('[aria-label="推荐 Skill"]')).not.toBeNull();
+  expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
+});
+
+it("keeps selected recommendations visible when entering validation and remembers manual expansion", async () => {
+  await createRecommendedSkills();
+  await act(async () => enableWorkspace());
+  await act(async () => host.querySelector<HTMLInputElement>('[aria-label="推荐 Skill"] input')!.click());
+  await act(async () => switchMode("chat"));
+  expect(host.querySelector<HTMLInputElement>('[aria-label="推荐 Skill"] input')!.checked).toBe(true);
+  await send("/run 核验公开资料");
+  expect(host.querySelector<HTMLInputElement>('[aria-label="推荐 Skill"] input')!.checked).toBe(true);
+  expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
+});
+
+it("does not hide recommendations after a failed run and opens fresh suggestions for a new draft", async () => {
+  await createRecommendedSkills();
+  await act(async () => enableWorkspace());
+  vi.mocked(studioClient.createTryRun).mockRejectedValueOnce(new Error("暂时无法运行"));
+  await send("/run 核验公开资料");
+  expect(host.querySelector('[aria-label="推荐 Skill"]')).not.toBeNull();
+  await click("关闭 Skill 推荐");
+  await act(async () => newDraft());
+  await send("创建一个新助手");
+  expect(host.querySelector('[aria-label="推荐 Skill"]')).not.toBeNull();
+  expect(host.querySelector<HTMLInputElement>('[aria-label="推荐 Skill"] input')!.checked).toBe(false);
 });

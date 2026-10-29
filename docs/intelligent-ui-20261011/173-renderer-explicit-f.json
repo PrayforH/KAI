@@ -1,0 +1,26 @@
+{
+  "image_tag": "intelligent-ui-20261011f",
+  "scope": "A/B supplementary renderer acceptance; not WeChat article reproduction",
+  "cases": [
+    {
+      "expected_kind": "timeline",
+      "prompt": "请使用当前聊天支持的可视化时间线组件，不要纯文字列表或文件。节点：2026-10-01 需求确认（确定范围）、2026-10-05 协议冻结（固定协议）、2026-10-10 内部试运行（验证功能）。三个节点都要在时间线中显示，不联网。",
+      "session_id": "session_e9fec878fbd44a508d506a53db6d88e4",
+      "run_id": "run_eef2336ff39c4aa2bc24818a35370e5b",
+      "status": "succeeded",
+      "published": [],
+      "answer_text": "以下是三个里程碑的可视化时间线，均按时间顺序展示。\n\n- **2026-10-01 需求确认**：确定项目范围。\n- **2026-10-05 协议冻结**：固定协议，后续不再变更。\n- **2026-10-10 内部试运行**：验证功能。\n\n整体节奏：需求→协议→试运行，节点间隔约 4–5 天，属于紧凑的短周期安排。\n\n```harness-ui\n{\"version\":1,\"kind\":\"timeline\",\"title\":\"项目里程碑时间线\",\"fallback_text\":\"2026-10-01 需求确认（确定范围）；2026-10-05 协议冻结（固定协议）；2026-10-10 内部试运行（验证功能）。\",\"data\":{\"events\":[{\"date\":\"2026-10-01\",\"title\":\"需求确认\",\"description\":\"确定范围\"},{\"date\":\"2026-10-05\",\"title\":\"协议冻结\",\"description\":\"固定协议\"},{\"date\":\"2026-10-10\",\"title\":\"内部试运行\",\"description\":\"验证功能\"}]}}\n```",
+      "passed": false
+    },
+    {
+      "expected_kind": "diagram",
+      "prompt": "请使用当前聊天支持的 diagram 流程图组件，不要输出普通 Markdown Mermaid 围栏或文件。流程：提交任务→排队→执行→返回结果；执行失败则重试，然后再次执行。不联网。",
+      "session_id": "session_197e19aad850415db2ac952c6d839cc6",
+      "run_id": "run_81c569fb73ea45b69a5b0c47836ef30e",
+      "status": "succeeded",
+      "published": [],
+      "answer_text": "流程如下：任务提交后进入队列等待，调度执行；执行成功后返回结果，执行失败则进入重试，重试后再次执行。\n\n```harness-ui\n{\"version\":1,\"kind\":\"diagram\",\"title\":\"任务执行流程\",\"fallback_text\":\"流程图：提交任务 → 排队 → 执行 → 返回结果；执行失败时进入重试并再次执行。\",\"data\":{\"nodes\":[{\"id\":\"submit\",\"label\":\"提交任务\",\"shape\":\"start\"},{\"id\":\"queue\",\"label\":\"排队\"},{\"id\":\"exec\",\"label\":\"执行\"},{\"id\":\"done\",\"label\":\"返回结果\",\"shape\":\"end\"},{\"id\":\"retry\",\"label\":\"重试\"}],\"edges\":[{\"from\":\"submit\",\"to\":\"queue\"},{\"from\":\"queue\",\"to\":\"exec\"},{\"from\":\"exec\",\"to\":\"done\"},{\"from\":\"exec\",\"to\":\"retry\",\"label\":\"失败\"},{\"from\":\"retry\",\"to\":\"exec\",\"label\":\"再次执行\"}]}}\n```",
+      "passed": false
+    }
+  ]
+}

@@ -3,8 +3,8 @@ FROM ${NODE_IMAGE}
 
 # Build pin for the pre-baked sandbox CLI. The runtime no longer compares a
 # configured literal against it, but keep it aligned with the CLI bundled by
-# the pinned claude-agent-sdk (2.1.259) so the fleet runs one version.
-ARG CLAUDE_CODE_VERSION=2.1.259
+# the pinned claude-agent-sdk (2.1.301) so the fleet runs one version.
+ARG CLAUDE_CODE_VERSION=2.1.301
 ARG NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
 
 RUN apt-get update \

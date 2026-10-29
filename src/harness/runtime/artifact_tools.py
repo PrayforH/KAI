@@ -14,6 +14,7 @@ from claude_agent_sdk import McpSdkServerConfig, SdkMcpTool, create_sdk_mcp_serv
 
 from harness.core.models import Artifact
 from harness.observability.provider import Observability
+from harness.presentation.document import validate_html_document
 
 
 class ArtifactUploader(Protocol):
@@ -55,6 +56,7 @@ class ArtifactPublisher:
         sync_workspace: Callable[[], Awaitable[None]],
         max_file_bytes: int,
         observability: Observability | None = None,
+        validate_generated_html: bool = False,
     ) -> None:
         if max_file_bytes < 1:
             raise ValueError("artifact size limit must be positive")
@@ -67,6 +69,7 @@ class ArtifactPublisher:
         self._sync_workspace = sync_workspace
         self._max_file_bytes = max_file_bytes
         self._observability = observability
+        self._validate_generated_html = validate_generated_html
 
     async def publish(
         self,
@@ -122,21 +125,27 @@ class ArtifactPublisher:
             raise ValueError("artifact path must reference a file")
         size = resolved.stat().st_size
         if size > self._max_file_bytes:
-            raise ValueError(
-                f"artifact exceeds maximum size of {self._max_file_bytes} bytes"
-            )
+            raise ValueError(f"artifact exceeds maximum size of {self._max_file_bytes} bytes")
 
         display_name = name.strip() if isinstance(name, str) else ""
         source_suffix = PurePosixPath(resolved.name).suffix
         if display_name and source_suffix and not PurePosixPath(display_name).suffix:
             display_name = f"{display_name}{source_suffix}"
+        content = resolved.read_bytes()
+        content_type = (
+            media_type or mimetypes.guess_type(resolved.name)[0] or "application/octet-stream"
+        )
+        if (
+            self._validate_generated_html
+            and content_type.split(";", 1)[0].strip().lower() == "text/html"
+        ):
+            await validate_html_document(content)
         artifact = await self._artifacts.upload(
             tenant_id=self._tenant_id,
             run_id=self._run_id,
             name=display_name or resolved.name,
-            media_type=(media_type or mimetypes.guess_type(resolved.name)[0]
-                        or "application/octet-stream"),
-            content=resolved.read_bytes(),
+            media_type=content_type,
+            content=content,
         )
         payload = artifact.model_dump(mode="json")
         payload["source_path"] = relative.as_posix()
@@ -189,9 +198,7 @@ async def _publish_artifact(arguments: dict[str, Any]) -> dict[str, Any]:
         "content": [
             {
                 "type": "text",
-                "text": json.dumps(
-                    artifact.model_dump(mode="json"), separators=(",", ":")
-                ),
+                "text": json.dumps(artifact.model_dump(mode="json"), separators=(",", ":")),
             }
         ]
     }
@@ -222,6 +229,4 @@ publish_artifact_tool = SdkMcpTool(
 
 
 def create_artifact_mcp_server() -> McpSdkServerConfig:
-    return create_sdk_mcp_server(
-        "harness-artifacts", tools=[publish_artifact_tool]
-    )
+    return create_sdk_mcp_server("harness-artifacts", tools=[publish_artifact_tool])

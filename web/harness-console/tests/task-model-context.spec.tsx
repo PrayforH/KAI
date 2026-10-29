@@ -58,4 +58,14 @@ describe("TaskModelControl", () => {
     expect(html).toContain("跟随 Agent");
     expect(html).not.toContain("仅本次任务");
   });
+  it("keeps independent builder choices explicit without an Agent default option", () => {
+    const html = renderToStaticMarkup(<TaskModelProvider independent routes={routes}
+      agentDefaultRouteId="deepseek-v4-flash" overrideRouteId="deepseek-v4-flash"
+      onOverrideChange={() => undefined}><TaskModelControl disabled={false} /></TaskModelProvider>);
+    expect(html).toContain('<option value="deepseek-v4-flash" selected="">');
+    expect(html).not.toContain('value=""');
+    expect(html).not.toContain("跟随 Agent");
+    expect(html).toContain("当前对话");
+  });
+
 });

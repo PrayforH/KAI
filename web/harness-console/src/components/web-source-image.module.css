@@ -1,0 +1,6 @@
+.frame { display: inline-block; vertical-align: top; margin: 8px 0; width: min(100%, 320px); max-width: 100%; }
+.preview { display: block; width: 100%; padding: 0; border: 1px solid var(--codex-line); border-radius: 10px; overflow: hidden; background: var(--codex-surface-subtle); cursor: zoom-in; }
+.preview img { display: block; width: 100%; height: auto; max-height: 240px; object-fit: contain; }
+.preview:focus-visible { outline: 2px solid var(--codex-muted); outline-offset: 3px; }
+:global(.conversation-image-group) .frame { flex: 0 1 160px; width: 160px; margin: 0; }
+:global(.conversation-image-group) .preview img { height: 120px; object-fit: cover; }

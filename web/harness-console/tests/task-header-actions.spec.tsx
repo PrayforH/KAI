@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskHeaderActions } from "../src/components/task-header-actions";
 import type { TaskSummary } from "../src/lib/task-history";
 
-const { setTaskPinned, setTaskTitle, setTaskArchived, notifyTaskListChanged, setTaskProject } = vi.hoisted(() => ({
+const { forkTask, setTaskPinned, setTaskTitle, setTaskArchived, notifyTaskListChanged, setTaskProject } = vi.hoisted(() => ({
+  forkTask: vi.fn(),
   setTaskPinned: vi.fn(),
   setTaskTitle: vi.fn(),
   setTaskArchived: vi.fn(),
@@ -13,9 +14,13 @@ const { setTaskPinned, setTaskTitle, setTaskArchived, notifyTaskListChanged, set
   setTaskProject: vi.fn(),
 }));
 
+vi.mock("../src/components/auth-provider", () => ({ useAuth: () => ({ user: { user_id: "user-1" } }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+
 vi.mock("../src/lib/studio-client", () => ({ setTaskProject }));
 
 vi.mock("../src/lib/task-history", () => ({
+  forkTask,
   setTaskPinned,
   setTaskTitle,
   setTaskArchived,
@@ -58,6 +63,7 @@ describe("task header actions", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     vi.clearAllMocks();
+    forkTask.mockResolvedValue(task({ thread_id: "branch-1" }));
     setTaskPinned.mockResolvedValue(undefined);
     setTaskTitle.mockResolvedValue("新标题");
     setTaskArchived.mockResolvedValue(undefined);
@@ -89,6 +95,7 @@ describe("task header actions", () => {
     });
     expect(menuItems()).toEqual([
       "置顶任务",
+      "分支到新聊天",
       "重命名任务",
       "归档任务",
     ]);
@@ -119,6 +126,7 @@ describe("task header actions", () => {
     });
     expect(menuItems()).toEqual([
       "取消置顶任务",
+      "分支到新聊天",
       "重命名任务",
       "归档任务",
     ]);
@@ -138,7 +146,7 @@ describe("task header actions", () => {
     }));
     render(<TaskHeaderActions task={task({ project_id: "current" })} projects={projects} />);
     act(() => container.querySelector<HTMLButtonElement>(".task-header-more")!.click());
-    expect(menuItems()).toEqual(["置顶任务", "重命名任务", "移入项目", "归档任务"]);
+    expect(menuItems()).toEqual(["置顶任务", "分支到新聊天", "重命名任务", "移入项目", "提炼为项目技能", "归档任务"]);
     act(() => container.querySelector<HTMLButtonElement>(".nested-menu-trigger")!.click());
     expect(setTaskProject).not.toHaveBeenCalled();
     const options = container.querySelectorAll<HTMLButtonElement>(".nested-menu-panel button");
@@ -156,7 +164,7 @@ describe("task header actions", () => {
     });
     act(() => {
       container
-        .querySelectorAll<HTMLButtonElement>(".task-header-menu button")[1]
+        .querySelector<HTMLButtonElement>(".task-header-menu button:nth-child(3)")
         ?.click();
     });
     const input = document.body.querySelector<HTMLInputElement>(".task-rename-dialog input");
@@ -187,8 +195,8 @@ describe("task header actions", () => {
       container.querySelector<HTMLButtonElement>(".task-header-more")?.click();
     });
     const archiveButton = container
-      .querySelectorAll<HTMLButtonElement>(".task-header-menu button")[2];
-    expect(archiveButton.disabled).toBe(true);
+      .querySelector<HTMLButtonElement>(".task-header-menu button:nth-child(4)");
+    expect(archiveButton!.disabled).toBe(true);
     expect(setTaskArchived).not.toHaveBeenCalled();
   });
 
@@ -200,11 +208,75 @@ describe("task header actions", () => {
     });
     await act(async () => {
       container
-        .querySelectorAll<HTMLButtonElement>(".task-header-menu button")[2]
+        .querySelector<HTMLButtonElement>(".task-header-menu button:nth-child(4)")
         ?.click();
     });
     expect(setTaskArchived).toHaveBeenCalledWith("thread-1", true);
     expect(onArchived).toHaveBeenCalled();
     expect(notifyTaskListChanged).toHaveBeenCalled();
   });
+  it("provides the project-row actions, copies an authorized task URL and restores keyboard focus", async () => {
+    const onChanged = vi.fn();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    render(<TaskHeaderActions task={task({ project_id: "current" })} variant="row" onChanged={onChanged} />);
+    const trigger = container.querySelector<HTMLButtonElement>(".task-header-more")!;
+    act(() => trigger.click());
+    const menu = document.querySelector('[role="menu"][aria-label="任务操作 分析任务"]')!;
+    expect(Array.from(menu.querySelectorAll('[role="menuitem"]'), item => item.textContent)).toEqual([
+      "复制任务链接", "在新标签中打开", "分支到新聊天", "重命名", "置顶", "项目", "提炼为项目技能", "归档",
+    ]);
+    const external = menu.querySelector('a')!;
+    expect(external.getAttribute("target")).toBe("_blank");
+    expect(external.getAttribute("href")).toBe("/?thread=thread-1");
+    await act(async () => (menu.querySelector("button") as HTMLButtonElement).click());
+    expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/?thread=thread-1`);
+    expect(document.querySelector('[role="status"]')?.textContent).toContain("任务链接已复制");
+    act(() => trigger.click());
+    const second = document.querySelector('[role="menu"][aria-label="任务操作 分析任务"]')!;
+    act(() => second.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(document.querySelector('[role="menu"][aria-label="任务操作 分析任务"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    act(() => trigger.click());
+    const pin = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === "置顶")!;
+    await act(async () => pin.click());
+    expect(setTaskPinned).toHaveBeenCalledWith("thread-1", true);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    delete (navigator as any).clipboard;
+  });
+
+  it("refreshes the project after moving a row and keeps preparing tasks unarchivable", async () => {
+    const onChanged = vi.fn();
+    render(<TaskHeaderActions task={task({ project_id: "current", status: "provisioning" })} variant="row" onChanged={onChanged} />);
+    act(() => container.querySelector<HTMLButtonElement>(".task-header-more")!.click());
+    const archive = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === "归档")!;
+    expect(archive.disabled).toBe(true);
+    act(() => document.querySelector<HTMLButtonElement>(".nested-menu-trigger")!.click());
+    await act(async () => document.querySelector<HTMLButtonElement>(".nested-menu-panel button")!.click());
+    expect(setTaskProject).toHaveBeenCalledWith("thread-1", null);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("creates a branch and selects the returned durable task once", async () => {
+    const onForked = vi.fn();
+    render(<TaskHeaderActions task={task()} variant="row" onForked={onForked} />);
+    act(() => container.querySelector<HTMLButtonElement>(".task-header-more")!.click());
+    const fork = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      .find(item => item.textContent === "分支到新聊天")!;
+    await act(async () => fork.click());
+    expect(forkTask).toHaveBeenCalledWith("thread-1", "user-1");
+    expect(onForked).toHaveBeenCalledWith(expect.objectContaining({ thread_id: "branch-1" }));
+  });
+
+  it("pins from the project row shortcut without opening the task menu", async () => {
+    const onChanged = vi.fn();
+    render(<TaskHeaderActions task={task()} variant="row" showPinControl onChanged={onChanged} />);
+    const pin = container.querySelector<HTMLButtonElement>('[aria-label="置顶 分析任务"]')!;
+    expect(pin.querySelector('[data-codex-task-icon="pin"]')).not.toBeNull();
+    await act(async () => pin.click());
+    expect(setTaskPinned).toHaveBeenCalledWith("thread-1", true);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+  });
+
 });

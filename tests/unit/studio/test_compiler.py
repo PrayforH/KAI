@@ -98,6 +98,37 @@ def catalog_with_team_search():
     )
 
 
+def test_mcp_visibility_restricts_agents_that_can_bind_it() -> None:
+    catalog = catalog_with_team_search()
+    catalog = catalog.model_copy(
+        update={
+            "mcp_servers": tuple(
+                server.model_copy(
+                    update={
+                        "visibility": "selected",
+                        "visible_agent_ids": ("agent-other",),
+                    }
+                )
+                if server.reference == TEAM_SEARCH
+                else server
+                for server in catalog.mcp_servers
+            )
+        }
+    )
+    source = draft().model_copy(update={"agent_id": "agent-a"})
+    source = source.model_copy(
+        update={
+            "spec": source.spec.model_copy(
+                update={"mcp_servers": (TEAM_SEARCH,)}
+            )
+        }
+    )
+
+    validation = AgentDraftCompiler(catalog).validate(source)
+
+    assert any(issue.code == "mcp_server_not_visible" for issue in validation.issues)
+
+
 def test_default_draft_compiles_to_existing_reproducible_bundle_contract() -> None:
     compiler = AgentDraftCompiler(default_capability_catalog())
 

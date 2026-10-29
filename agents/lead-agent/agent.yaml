@@ -2,7 +2,7 @@ apiVersion: harness/v1alpha1
 kind: Agent
 metadata:
   name: lead-agent
-  version: 1.0.3
+  version: 1.1.1
   labels:
     domain: general-assistant
     template: orchestrator
@@ -34,7 +34,20 @@ spec:
   - builtin: Bash
   - builtin: WebSearch
   - builtin: WebFetch
-  subagents: []
+  - builtin: Task
+  subagents:
+  - alias: researcher
+    ref: general-researcher@1.0.1
+    description: 独立阅读用户材料、查找公开资料并整理带来源的事实。适用于可与计算或其他资料整理同时进行的研究任务。
+    background: true
+  - alias: analyst
+    ref: general-analyst@1.0.1
+    description: 执行独立的数据计算、文件分析或小范围产物制作，返回计算依据、验证结果和文件路径。
+    background: true
+  - alias: reviewer
+    ref: general-reviewer@1.0.1
+    description: 独立核验材料、计算结论、方案漏洞和交付要求。已有结果时进行复核；不依赖其他结果的检查可并行。
+    background: true
   hooks: []
   permissions:
     policy: production-orchestrator

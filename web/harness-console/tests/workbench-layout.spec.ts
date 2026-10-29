@@ -50,6 +50,9 @@ const videoGeneration = readFileSync(
   join(process.cwd(), "src/components/video-generation.tsx"),
   "utf8",
 );
+const videoResult = readFileSync(
+  join(process.cwd(), "src/components/video-generation-result.tsx"), "utf8",
+);
 const activitySummary = readFileSync(
   join(process.cwd(), "src/components/activity-summary.tsx"),
   "utf8",
@@ -132,8 +135,7 @@ describe("full-page agent workbench", () => {
   it("uses a compact project icon language in the task tree", () => {
     expect(taskSidebar).toContain("function ProjectFolderIcon()");
     expect(taskSidebar).toContain("<ProjectFolderIcon />");
-    // Keep the Codex-style top seam in both expanded and collapsed states.
-    expect(taskSidebar).toContain('d="M2.75 8h14.5"');
+    expect(taskSidebar).toContain('<SidebarIcon name="folder" className="task-project-folder" />');
     expect(webCodexStyles).toMatch(
       /\.task-project-heading svg,[\s\S]*?stroke-width:\s*1\.6;/s,
     );
@@ -141,7 +143,7 @@ describe("full-page agent workbench", () => {
 
   it("presents a user task workspace instead of an internal validation console", () => {
     expect(taskSidebar).toContain("<ProductBrandMark");
-    expect(taskSidebar).toContain("{PRODUCT_NAME}");
+    expect(taskSidebar).toContain("<ProductWordmark />");
     expect(taskSidebar).toContain('className="task-sidebar-collapse"');
     expect(taskSidebar).not.toContain('className="task-rail-brand-text"');
     expect(page).toContain("<TaskAgentSwitcher");
@@ -271,8 +273,8 @@ describe("full-page agent workbench", () => {
     expect(taskSidebar).not.toContain("已归档");
     expect(taskSidebar).not.toContain('aria-label="搜索最近任务"');
     expect(taskSidebar).toContain("(expanded ? projectTasks : projectTasks.slice(0, 5))");
-    expect(taskSidebar).toContain('className="task-list-archive"');
-    expect(taskSidebar).toContain("setTaskArchived");
+    expect(taskSidebar).toContain('className="task-row-actions"');
+    expect(taskSidebar).toContain("<TaskHeaderActions");
     expect(taskSidebar).toContain("loadTasks(false)");
     expect(taskSidebar).not.toContain("恢复并打开任务");
     expect(taskSidebar).toContain('className="task-sidebar-brand"');
@@ -348,15 +350,15 @@ describe("full-page agent workbench", () => {
     expect(taskSidebar).not.toContain("currentStatusRef");
   });
 
-  it("keeps the branch counter out of the message editor", () => {
-    // The editor replaces the message body; the 2/2 branch picker belongs to the
-    // resting message and was showing underneath the input.
-    expect(agentThread).toContain("{editing ? null : <BranchPicker />}");
+  it("does not show branch counters beneath user messages or replies", () => {
+    expect(agentThread).not.toContain("<BranchPicker");
+    expect(agentThread).not.toContain("<HarnessBranchPicker");
+    expect(agentThread).toContain("branchPicker={{ allowBranchPicker: false }}");
   });
 
   it("keeps an active task pinned while allowing another Agent to start a new task", () => {
-    expect(page).toContain('runStream.status === "running"');
-    expect(page).toContain('runView?.phase === "waiting_approval"');
+    expect(page).toContain('taskVersionBusy(runStream, runView)');
+    expect(readFileSync(join(process.cwd(), "src/lib/task-version.ts"), "utf8")).toContain('"waiting_approval"');
     expect(page).toContain("taskAgentSwitchMode(selectedAgent, nextAgent)");
     expect(page).toContain('mode === "version" && currentTaskBusy');
     expect(page).toContain("currentTaskBusy={currentTaskBusy}");
@@ -502,20 +504,20 @@ describe("full-page agent workbench", () => {
   it("preserves unsent task text across refreshes and task switches", () => {
     expect(page).toContain("<AgentThread");
     expect(page).toContain("threadId={threadId}");
-    expect(agentThread).toContain("loadTaskComposerDraft");
-    expect(agentThread).toContain("persistTaskComposerDraft");
+    expect(agentThread).toContain("useTaskComposerSnapshot");
     expect(agentThread).not.toContain("未发送内容已保存在当前浏览器");
-    expect(agentThread).toContain("auiRef.current.composer().setText(saved)");
   });
 
-  it("uses Codex neutrals and keeps the workbench strictly black, white and gray", () => {
+  it("uses neutral workbench surfaces and reserves Codex blue for the needs-input chip", () => {
     expect(webCodexStyles).toContain("body.codex-theme-v1:has(.console-shell)");
     expect(webCodexStyles).toContain("--codex-accent: #ececec");
     expect(webCodexStyles).toContain(".harness-composer-shell .task-agent-switcher");
     expect(webCodexStyles).toContain(".aui-thread-viewport:has(.user-task-welcome)");
     expect(webCodexStyles).toContain("width: 100%;\n  height: 100dvh;");
     expect(webCodexStyles).not.toContain("background-image: radial-gradient");
-    expect(webCodexStyles).not.toContain("#339cff");
+    const neutralStyles = webCodexStyles.replace(/body\.codex-theme-v1 \.task-input-badge \{[^}]*\}/g, "");
+    expect(neutralStyles).not.toContain("#339cff");
+    expect(webCodexStyles).toContain("background: #339cff26");
     expect(webCodexStyles).not.toContain("#16b364");
     expect(webCodexStyles).not.toContain("#f36d21");
     expect(webCodexStyles).not.toContain("#ff7d32");
@@ -523,13 +525,13 @@ describe("full-page agent workbench", () => {
 
   it("runs managed video models through a dedicated conversation composer path", () => {
     expect(agentThread).toContain('route.modelType === "video_generation"');
-    expect(videoGeneration).toContain("/videos`");
+    expect(videoGeneration).toContain("/videos${existingJobId");
     expect(videoGeneration).toContain("inputArtifactIds");
     expect(videoGeneration).toContain("自定义时长（4–15 秒）");
-    expect(videoGeneration).toContain("下载 MP4");
-    expect(videoGeneration).toContain("重新生成");
-    expect(videoGeneration).toContain("沿用参数");
-    expect(videoGeneration).toContain("<video");
+    expect(videoResult).toContain("下载 MP4");
+    expect(videoResult).toContain("重新生成");
+    expect(videoResult).toContain("沿用参数");
+    expect(videoResult).toContain("<video");
     expect(styles).toContain(".composer-video-settings");
     expect(styles).toContain(".video-answer-card");
     expect(styles).toContain(".aui-composer-video-send");
@@ -730,7 +732,7 @@ describe("full-page agent workbench", () => {
     expect(markdown).toContain("<ScrollableTable {...props}>");
     expect(markdown).toContain("smooth={false}");
     // Normalization runs before reveal; wiki links remain a Markdown plugin.
-    expect(markdown).toContain("normalizeMessageText(part.text)");
+    expect(markdown).toContain("normalizeMessageText(stripHarnessUiFences(part.text, published))");
     expect(markdown).toContain("normalizeMessageText");
     expect(markdown).not.toContain("codexStreamSmoothing");
     expect(styles).toMatch(

@@ -17,17 +17,17 @@ it("renders a fresh timer, preserves it across remounts, and resets for the next
   const duration = () => container.querySelector(".execution-duration")?.textContent;
   try {
     await act(async () => root.render(<ActivitySummary activity={activity} />));
-    expect(duration()).toContain("已持续 0s");
+    expect(duration()).toContain("已用时 0秒");
     await act(async () => vi.advanceTimersByTime(3_000));
-    expect(duration()).toContain("已持续 3s");
+    expect(duration()).toContain("已用时 3秒");
     await act(async () => root.render(null));
     await act(async () => vi.advanceTimersByTime(2_000));
     await act(async () => root.render(<ActivitySummary activity={activity} />));
-    expect(duration()).toContain("已持续 5s");
+    expect(duration()).toContain("已用时 5秒");
     await act(async () => root.render(<ActivitySummary activity={{ ...activity, run_id: "timer-dom-b" }} />));
-    expect(duration()).toContain("已持续 0s");
+    expect(duration()).toContain("已用时 0秒");
     await act(async () => vi.advanceTimersByTime(1_000));
-    expect(duration()).toContain("已持续 1s");
+    expect(duration()).toContain("已用时 1秒");
   } finally { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); }
 });
 

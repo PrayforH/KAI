@@ -29,6 +29,7 @@ import type { TaskModelRoute } from "../lib/task-model-catalog";
 import { TaskKnowledgeProvider } from "./task-knowledge-context";
 import { DurableHistorySync } from "./durable-history-sync";
 import { ThreadHistoryReadyProvider } from "./thread-history-ready";
+import { RunCancelProvider } from "./run-cancel-context";
 import { TaskModelProvider } from "./task-model-context";
 
 
@@ -39,6 +40,7 @@ export function AssistantRuntimeShell({
   agentVersion,
   agentOwnerUserId,
   spaceId,
+  projectId,
   agentDefaultModelRoute,
   modelRoutes,
   modelRouteOverride,
@@ -51,6 +53,8 @@ export function AssistantRuntimeShell({
   agentVersion: string;
   agentOwnerUserId?: string;
   spaceId?: string;
+  /** Bind the first Run of this thread to a project without pre-creating a task. */
+  projectId?: string;
   agentDefaultModelRoute: string | null;
   modelRoutes: TaskModelRoute[];
   modelRouteOverride: string | null;
@@ -90,6 +94,7 @@ export function AssistantRuntimeShell({
     });
     if (agentOwnerUserId) query.set("agent_owner_user_id", agentOwnerUserId);
     if (spaceId) query.set("space_id", spaceId);
+    if (projectId) query.set("project_id", projectId);
     const next = new HarnessHttpAgent({
       url: `/api/agui?${query.toString()}`,
       modelRouteOverride: conversationalModelRouteOverride,
@@ -104,6 +109,7 @@ export function AssistantRuntimeShell({
     agentVersion,
     conversationalModelRouteOverride,
     knowledgeReferences,
+    projectId,
     refreshDurableHistory,
     spaceId,
     threadId,
@@ -178,6 +184,7 @@ export function AssistantRuntimeShell({
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
+      <RunCancelProvider value={() => agent.cancelActiveRun()}>
       <ThreadHistoryReadyProvider value={historyReady}>
       <DurableHistorySync threadId={threadId} revision={historyRevision} history={history} onSettled={() => setHistoryReady(true)} />
       <TaskModelProvider
@@ -199,6 +206,7 @@ export function AssistantRuntimeShell({
         </TaskKnowledgeProvider>
       </TaskModelProvider>
       </ThreadHistoryReadyProvider>
+    </RunCancelProvider>
     </AssistantRuntimeProvider>
   );
 }

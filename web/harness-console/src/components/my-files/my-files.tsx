@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { CardDownloadLink } from "../card-action-button";
 import { useEffect, useMemo, useState } from "react";
 import { requireAuthenticatedResponse } from "../../lib/client-auth";
 import styles from "./my-files.module.css";
@@ -175,7 +176,7 @@ export function MyFiles() {
                 <time dateTime={file.created_at}>{formatDate(file.created_at)}</time>
                 <div className={styles.actions}>
                   <Link href={`/?thread=${encodeURIComponent(file.thread_id)}`}>打开任务</Link>
-                  <a href={`/api/harness/artifacts/${encodeURIComponent(file.artifact_id)}`} download>下载</a>
+                  <CardDownloadLink href={`/api/harness/artifacts/${encodeURIComponent(file.artifact_id)}`} download label={`下载 ${file.name}`} />
                 </div>
               </article>
             );
@@ -187,7 +188,7 @@ export function MyFiles() {
             <div className={`${styles.state} ${styles.error}`} role="alert"><strong>文件索引暂时不可用</strong><span>{error}</span><button type="button" onClick={() => setRefreshKey((value) => value + 1)}>重新加载</button></div>
           )}
           {!loading && !error && files.length === 0 && (
-            <div className={styles.state}><strong>还没有生成文件</strong><span>当任务产出 Word、Excel、PPT、PDF、图片或其他附件后，会自动出现在这里。</span><Link href="/">新建任务</Link></div>
+            <div className={styles.state}><strong>还没有生成文件</strong><Link href="/">新建任务</Link></div>
           )}
           {!loading && !error && files.length > 0 && visibleFiles.length === 0 && (
             <div className={styles.state}><strong>没有匹配的文件</strong><span>换一个关键词或文件类型。</span><button type="button" onClick={() => { setQuery(""); setKind("all"); }}>清除筛选</button></div>

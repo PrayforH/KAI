@@ -160,14 +160,15 @@ describe("execution ribbon", () => {
     expect(html).toContain("正在处理");
     expect(html).not.toMatch(/class="execution-phase execution-state-sweep"/);
     expect(html).toContain('class="execution-state-sweep" data-running="true"');
-    expect((html.match(/class="execution-state-sweep" data-running="true"/g) ?? []).length).toBe(2);
-    expect(html).toContain("已持续 6s");
+    expect((html.match(/class="execution-state-sweep" data-running="true"/g) ?? []).length).toBe(1);
+    expect(html).toContain("已用时 6秒");
     expect(html).toContain('aria-expanded="true"');
     expect(html).not.toContain('class="execution-state-mark"');
     expect(html).not.toContain('class="execution-summary-icon"');
-    expect(html).toContain("运行了 2 个子任务");
+    expect(html).toContain('aria-label="子智能体协作"');
+    expect(html).toContain("1 个执行中 · 1/2 已完成");
     expect(html).toContain("搜索了 1 次内容 · 读取了 1 个文件");
-    expect(html).toContain("6s");
+    expect(html).toContain("6秒");
   });
 
   it("keeps active work expanded when response text starts", () => {
@@ -214,7 +215,7 @@ describe("execution ribbon", () => {
 
     expect(html).toContain('data-open="false"');
     expect(html).toContain('aria-expanded="false"');
-    expect(html).toContain('<div class="execution-process-reveal" hidden="" aria-hidden="true" inert=""><div class="execution-tree">');
+    expect(html).toContain('<div class="execution-tree"><div class="execution-process-reveal" hidden="" aria-hidden="true" inert="">');
   });
 
   it("automatically folds the completed Codex transcript", () => {
@@ -308,7 +309,7 @@ describe("execution ribbon", () => {
     expect(html).toContain("我先读取 <strong>设计文档</strong>，再检查发布边界。");
     expect(html).not.toContain('<strong>进展</strong>');
     expect(html).toContain('data-active="false"');
-    expect(html).not.toContain("最终结论已经整理完成。");
+    expect(html).toContain("最终结论已经整理完成。");
     expect(completedHtml).not.toContain("最终结论已经整理完成。");
     expect(html.indexOf("我先读取")).toBeLessThan(
       html.indexOf("搜索了 1 次内容 · 读取了 1 个文件"),
@@ -401,7 +402,7 @@ describe("execution ribbon", () => {
 
     expect(html).not.toContain("已准备运行环境");
     expect(html).not.toContain("已生成回复");
-    expect(html).toContain("处理完成");
+    expect(html).toContain("已完成");
     expect(html).not.toContain("正在生成本轮回复");
     expect(html).not.toContain("模型执行完成");
     expect(html).not.toContain("这是单独渲染的最终回答。");
@@ -537,7 +538,7 @@ describe("execution ribbon", () => {
     expect(html).not.toContain(">正在准备运行环境<");
   });
 
-  it("renders tasks and tools as flat Codex actions without nested disclosures", () => {
+  it("groups helper progress separately while keeping tools as flat Codex actions", () => {
     const html = renderToStaticMarkup(<ActivitySummary activity={activity} />);
 
     expect(html.match(/<section class="execution-ribbon/g)).toHaveLength(1);
@@ -545,7 +546,8 @@ describe("execution ribbon", () => {
     expect(html).not.toContain("execution-tool");
     expect(html).toContain("fact-checker");
     expect(html).toContain("risk-reviewer");
-    expect(html).toContain("运行了 2 个子任务");
+    expect(html).toContain('aria-label="子智能体协作"');
+    expect(html).toContain("1 个执行中 · 1/2 已完成");
     expect(html).toContain("搜索了 1 次内容 · 读取了 1 个文件");
   });
 
@@ -900,4 +902,33 @@ describe("execution ribbon", () => {
     expect(html).toContain("phase-completed");
     expect(html).toContain("搜索了 1 次内容 · 读取了 1 个文件");
   });
+});
+
+
+it("places received guidance between the surrounding execution steps", () => {
+  const received = runActivitySchema.parse({...activity, items: [activity.items[0],
+    {id: "before", event_type: "tool.request",kind: "tool",status: "succeeded",title: "调用 Read",timestamp: "2026-07-14T00:00:02Z",sequence: 2,metadata: {tool_call_id: "before",name: "Read",arguments: {file_path: "before.md"}}},
+    {id: "guidance", event_type: "run.steer.accepted",kind: "analysis",status: "succeeded",title: "已接收补充说明",summary: "改用新格式",timestamp: "2026-07-14T00:00:03Z",sequence: 3,metadata: {request_id: "guidance"}},
+    {id: "after", event_type: "tool.request",kind: "tool",status: "running",title: "调用 Read",timestamp: "2026-07-14T00:00:04Z",sequence: 4,metadata: {tool_call_id: "after",name: "Read",arguments: {file_path: "after.md"}}}
+  ]});
+  const html = renderToStaticMarkup(<ActivitySummary activity={received} />);
+  expect(html).toContain('data-steering-status="accepted"');
+  expect(html).not.toContain("补充说明 · 已接收");
+  expect(html.indexOf("before.md")).toBeLessThan(html.indexOf("改用新格式"));
+  expect(html.indexOf("改用新格式")).toBeLessThan(html.indexOf("after.md"));
+});
+
+
+it("replaces pending guidance with one received user bubble, which stays outside folded work", () => {
+  const requested = {id: "request",event_type: "run.steer.requested",kind: "analysis",status: "waiting",title: "等待接收",summary: "保留目录结构",sequence: 2,timestamp: "2026-07-14T00:00:02Z",metadata: {request_id: "same-request"}};
+  const accepted = {...requested,id: "receipt",event_type: "run.steer.accepted",status: "succeeded",sequence: 3};
+  const pending = runActivitySchema.parse({...activity,items: [activity.items[0],requested]});
+  expect(renderToStaticMarkup(<ActivitySummary activity={pending} />)).toContain('data-steering-status="pending"');
+  const completed = runActivitySchema.parse({...activity,status: "succeeded",items: [activity.items[0],requested,accepted,{...activity.items[0],id: "finished",event_type: "run.succeeded",status: "succeeded",sequence: 4}]});
+  const html = renderToStaticMarkup(<ActivitySummary activity={completed} />);
+  expect(html.match(/保留目录结构/g)).toHaveLength(1);
+  expect(html).toContain('data-steering-status="accepted"');
+  expect(html).not.toContain('data-steering-status="pending"');
+  expect(html).toContain('class="steering-user-message"');
+  expect(html).not.toContain('execution-guidance');
 });
