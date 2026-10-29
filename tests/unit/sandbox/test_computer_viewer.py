@@ -301,9 +301,10 @@ def test_client_extensions_are_aligned_but_never_forwarded():
     policy = RfbClientFilter(VERSION)
     messages = policy.feed(HANDSHAKE + pipeline, input_allowed=False)
     forwarded = [chunk for kind, chunk in messages if kind != "discard"]
-    # Exactly the three handshake messages reach the guest; nothing else.
+    # Exactly the three handshake messages reach the guest; nothing else,
+    # and nothing is echoed back to the client either.
     assert forwarded == [VERSION, b"\x01", b"\x01"]
-    assert len(messages) == 7
+    assert [kind for kind, _ in messages] == ["negotiate", "negotiate", "negotiate"]
     assert not policy.resync_required
     # And the stream is still aligned: a following request parses cleanly.
     follow = struct.pack(">BBHHHH", 3, 0, 0, 0, 1280, 800)
