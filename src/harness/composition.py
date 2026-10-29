@@ -32,6 +32,7 @@ from harness.assistant.conversation import PersonalConversation
 from harness.assistant.delegation import (
     AssistantDelegationGateway,
     assistant_delegation_overlay,
+    coordinator_session,
 )
 from harness.assistant.file_delivery import ChannelFiles
 from harness.assistant.memory_tools import MemoryBankGateway, assistant_memory_overlay
@@ -1612,7 +1613,10 @@ def build_production_container(
         )
         delegation_overlay = (
             assistant_delegation_overlay(
-                AssistantDelegationGateway(container.assistant), run, session
+                AssistantDelegationGateway(container.assistant),
+                run,
+                session,
+                coordinator_thread=await coordinator_session(container.agui, session),
             )
             if container.assistant is not None and session.agent_name
             else PlatformToolOverlay()

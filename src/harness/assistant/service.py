@@ -73,7 +73,14 @@ class AssistantService:
                 tenant_id=tenant_id, user_id=user_id, project_id=brief.project_id
             )
 
-    async def create(self, tenant_id: str, user_id: str, brief: ObjectiveBrief) -> Objective:
+    async def create(
+        self,
+        tenant_id: str,
+        user_id: str,
+        brief: ObjectiveBrief,
+        *,
+        idempotency_key: str | None = None,
+    ) -> Objective:
         await self.validate(tenant_id, user_id, brief)
         now = datetime.now(UTC)
         if brief.ends_at and brief.ends_at <= now:
@@ -87,7 +94,8 @@ class AssistantService:
                 createdAt=now,
                 updatedAt=now,
                 nextCheckAt=next_check(brief.schedule, after=now, ends_at=brief.ends_at),
-            )
+            ),
+            idempotency_key=idempotency_key,
         )
 
     async def process_once(self) -> None:

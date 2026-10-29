@@ -1,11 +1,14 @@
 """Delegation tool behaviour against a typed in-memory gateway."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
 
-from harness.assistant.delegation import assistant_delegation_overlay
+from harness.assistant.delegation import (
+    assistant_delegation_overlay,
+    coordinator_session,
+)
 from harness.assistant.models import (
     Objective,
     ObjectiveAction,
@@ -14,23 +17,33 @@ from harness.assistant.models import (
     ObjectiveExecutionStatus,
     ObjectiveStatus,
 )
-from harness.core.errors import ConflictError
+from harness.core.errors import ConflictError, NotFoundError
 from harness.core.models import Run, RunStatus, Session
 
 NOW = datetime(2026, 10, 28, 3, 0, tzinfo=UTC)
 
 
 class FakeGateway:
-    """Records calls and stores objectives in memory."""
+    """Records calls and stores objectives in memory.
+
+    Mirrors the real repository contract: ``executions`` returns newest first,
+    and ``create`` is idempotent on the caller's key.
+    """
 
     def __init__(self) -> None:
         self.objectives: dict[str, Objective] = {}
         self.records: dict[str, list[ObjectiveExecution]] = {}
         self.created: list[ObjectiveBrief] = []
+        self.idempotency_keys: dict[str, str | None] = {}
         self.notes: list[tuple[str, str]] = []
         self.enqueue_error: Exception | None = None
 
-    async def create(self, tenant_id: str, user_id: str, brief: ObjectiveBrief) -> Objective:
+    async def create(
+        self, tenant_id: str, user_id: str, brief: ObjectiveBrief, *, idempotency_key: str | None
+    ) -> Objective:
+        for objective_id, key in self.idempotency_keys.items():
+            if key is not None and key == idempotency_key:
+                return self.objectives[objective_id]
         self.created.append(brief)
         objective = Objective(
             **brief.model_dump(),
@@ -42,6 +55,7 @@ class FakeGateway:
             updatedAt=NOW,
         )
         self.objectives[objective.objective_id] = objective
+        self.idempotency_keys[objective.objective_id] = idempotency_key
         return objective
 
     async def enqueue(
@@ -49,6 +63,9 @@ class FakeGateway:
     ) -> ObjectiveExecution:
         if self.enqueue_error is not None:
             raise self.enqueue_error
+        for existing in self.records.get(objective_id, []):
+            if existing.trigger_key == trigger_key:
+                return existing
         execution = ObjectiveExecution(
             executionId=f"objective_run_{trigger_key}",
             objectiveId=objective_id,
@@ -59,9 +76,9 @@ class FakeGateway:
             brief=self.objectives[objective_id],
             threadId=f"assistant_{objective_id}",
             status=ObjectiveExecutionStatus.PENDING,
-            createdAt=NOW,
+            createdAt=NOW + timedelta(minutes=len(self.records.get(objective_id, []))),
         )
-        self.records.setdefault(objective_id, []).append(execution)
+        self.records.setdefault(objective_id, []).insert(0, execution)
         return execution
 
     async def list_objectives(self, tenant_id: str, user_id: str) -> list[Objective]:
@@ -105,7 +122,7 @@ class FakeGateway:
         return updated
 
 
-def overlay(gateway: FakeGateway) -> Any:
+def overlay(gateway: FakeGateway, *, coordinator_thread: bool = True) -> Any:
     run = Run(
         run_id="run-1",
         session_id="session-1",
@@ -125,7 +142,9 @@ def overlay(gateway: FakeGateway) -> Any:
         environment="production",
         runtime_type="claude-agent-sdk",
     )
-    return assistant_delegation_overlay(gateway, run, session)
+    return assistant_delegation_overlay(
+        gateway, run, session, coordinator_thread=coordinator_thread
+    )
 
 
 def text_of(result: dict[str, Any]) -> str:
@@ -137,7 +156,8 @@ async def test_create_task_persists_and_enqueues_one_execution():
     gateway = FakeGateway()
     tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
     result = await tools["assistant_create_task"]({"task": "整理季度报告初稿"})
-    assert "后台任务已创建" in text_of(result)
+    assert "已安排" in text_of(result)
+    assert "已创建并开始执行" not in text_of(result)
     assert len(gateway.created) == 1
     brief = gateway.created[0]
     assert brief.agent_name == "kai-personal-assistant" and brief.schedule is None
@@ -145,6 +165,58 @@ async def test_create_task_persists_and_enqueues_one_execution():
     execution = gateway.records["objective_0001"][0]
     assert execution.trigger_key == "delegate:run-1:objective_0001"
     assert execution.thread_id == "assistant_objective_0001"
+    assert gateway.idempotency_keys["objective_0001"] is not None
+    assert gateway.idempotency_keys["objective_0001"].startswith("delegate:run-1:")
+
+
+@pytest.mark.asyncio
+async def test_repeated_tool_call_reuses_the_same_objective():
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    first = await tools["assistant_create_task"]({"task": "整理季度报告初稿"})
+    second = await tools["assistant_create_task"]({"task": "整理季度报告初稿"})
+    assert len(gateway.created) == 1
+    assert "objective_0001" in text_of(second)
+    assert "objective_0001" in text_of(first)
+    # Only one durable execution intent exists for the repeated request.
+    assert len(gateway.records["objective_0001"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_delegation_tools_only_exist_for_the_coordinator_thread():
+    gateway = FakeGateway()
+    overlay_off_coordinator = overlay(gateway, coordinator_thread=False)
+    assert overlay_off_coordinator.tools == () and not overlay_off_coordinator.instructions
+
+
+@pytest.mark.asyncio
+async def test_coordinator_session_resolves_the_personal_thread():
+    from types import SimpleNamespace
+
+    from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
+
+    class Agui:
+        def __init__(self, thread_id: str | None) -> None:
+            self._thread_id = thread_id
+
+        async def get_thread_record_for_session(self, **_kwargs: Any):
+            if self._thread_id is None:
+                raise NotFoundError("no binding")
+            return SimpleNamespace(thread_id=self._thread_id)
+
+    session = Session(
+        session_id="session-1",
+        tenant_id="t",
+        user_id="u",
+        agent_name="kai-personal-assistant",
+        agent_version="1",
+        created_at=NOW,
+        environment="production",
+        runtime_type="claude-agent-sdk",
+    )
+    assert await coordinator_session(Agui(PERSONAL_ASSISTANT_THREAD), session)
+    assert not await coordinator_session(Agui("assistant_objective_x"), session)
+    assert not await coordinator_session(Agui(None), session)
 
 
 @pytest.mark.asyncio
@@ -154,7 +226,7 @@ async def test_create_task_supports_periodic_schedule():
     result = await tools["assistant_create_task"](
         {"task": "每小时检查页面", "interval_minutes": 60}
     )
-    assert "已创建" in text_of(result)
+    assert "已安排" in text_of(result)
     assert gateway.created[0].schedule is not None
     assert gateway.created[0].schedule.interval_minutes == 60
 
@@ -169,13 +241,33 @@ async def test_create_task_rejects_bad_interval():
 
 
 @pytest.mark.asyncio
-async def test_status_lists_objectives_with_latest_execution():
+async def test_status_lists_objectives_with_revision_and_latest_execution():
     gateway = FakeGateway()
     tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
     await tools["assistant_create_task"]({"task": "观察某页面变化"})
+    # The newest execution wins: the gateway returns newest first, so an older
+    # queued execution must not shadow a newer failure.
+    pending = gateway.records["objective_0001"][0]
+    failed = pending.model_copy(
+        update={"status": ObjectiveExecutionStatus.FAILED, "summary": "失败"}
+    )
+    gateway.records["objective_0001"] = [failed, pending]
     status = await tools["assistant_task_status"]({})
     body = text_of(status)
-    assert "[active]" in body and "最近执行：pending" in body
+    assert "[active]" in body and "最近执行：failed" in body
+    assert "revision=1" in body
+    assert "expected_revision" in body
+
+
+@pytest.mark.asyncio
+async def test_update_task_reports_the_new_revision():
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    await tools["assistant_create_task"]({"task": "任务"})
+    ok = await tools["assistant_update_task"](
+        {"objective_id": "objective_0001", "action": "pause", "expected_revision": 1}
+    )
+    assert "revision=2" in text_of(ok)
 
 
 @pytest.mark.asyncio

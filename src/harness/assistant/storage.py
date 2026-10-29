@@ -14,6 +14,13 @@ class ObjectiveRow(Base):
     __table_args__ = (
         Index("ix_assistant_objectives_owner", "tenant_id", "user_id", "created_at"),
         Index("ix_assistant_objectives_due", "status", "next_check_at"),
+        Index(
+            "uq_assistant_objective_idempotency",
+            "tenant_id",
+            "user_id",
+            "idempotency_key",
+            unique=True,
+        ),
     )
 
     objective_id: Mapped[str] = mapped_column(String(128), primary_key=True)
@@ -21,6 +28,7 @@ class ObjectiveRow(Base):
     user_id: Mapped[str] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(32))
     revision: Mapped[int] = mapped_column(Integer)
+    idempotency_key: Mapped[str | None] = mapped_column(String(128))
     next_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

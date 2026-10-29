@@ -4,11 +4,17 @@ A long task must never hold the conversation hostage: the model parks it as an
 objective with its own execution thread, keeps chatting, and reports progress
 from the durable record instead of from its own memory of the run. The overlay
 depends on a narrow gateway, not the whole assistant service.
+
+Only the personal assistant coordination thread carries these tools: objective
+executions run in their own threads and must not be able to delegate further
+(recursion), and unrelated agents never gain delegation.
 """
 
+import hashlib
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
 from harness.assistant.models import (
     Objective,
     ObjectiveAction,
@@ -23,18 +29,20 @@ from harness.runtime.platform_tools import PlatformTool, PlatformToolOverlay
 
 INSTRUCTIONS = (
     "耗时超过一分钟的执行类任务，先调用 assistant_create_task 放到后台"
-    "（它会获得独立线程并自动开始执行），"
-    "然后立即回复用户任务已开始；期间可以继续回答其他消息。\n"
-    "assistant_task_status 查询后台任务的状态与结果摘要；"
-    "assistant_update_task 暂停/恢复/停止任务。\n"
-    "不要把简单问答包装成后台任务。"
+    "（它会获得独立线程并进入后台执行队列），"
+    "然后立即回复用户任务已安排；期间可以继续回答其他消息。\n"
+    "assistant_task_status 查询后台任务的真实执行状态与 revision；"
+    "assistant_update_task 需要 expected_revision，取自最近一次状态查询。\n"
+    "入队只表示已安排，不代表后台已在执行；不要把简单问答包装成后台任务。"
 )
 
 
 class DelegationGateway(Protocol):
     """The five objective operations delegation needs, nothing more."""
 
-    async def create(self, tenant_id: str, user_id: str, brief: ObjectiveBrief) -> Objective: ...
+    async def create(
+        self, tenant_id: str, user_id: str, brief: ObjectiveBrief, *, idempotency_key: str | None
+    ) -> Objective: ...
 
     async def enqueue(
         self, tenant_id: str, user_id: str, objective_id: str, *, trigger_key: str
@@ -44,7 +52,9 @@ class DelegationGateway(Protocol):
 
     async def executions(
         self, tenant_id: str, user_id: str, objective_id: str
-    ) -> list[ObjectiveExecution]: ...
+    ) -> list[ObjectiveExecution]:
+        """Return the objective's executions, newest first."""
+        ...
 
     async def update(
         self,
@@ -66,8 +76,16 @@ def _text(message: str) -> dict[str, Any]:
 
 
 def assistant_delegation_overlay(
-    gateway: DelegationGateway, run: Run, session: Session
+    gateway: DelegationGateway,
+    run: Run,
+    session: Session,
+    *,
+    coordinator_thread: bool,
 ) -> PlatformToolOverlay:
+    if not coordinator_thread:
+        # Background objective executions and unrelated agents never delegate;
+        # only the personal assistant coordination thread carries these tools.
+        return PlatformToolOverlay()
     tenant_id, user_id = session.tenant_id, session.user_id
 
     async def create_task(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -82,6 +100,7 @@ def assistant_delegation_overlay(
             schedule = ObjectiveSchedule.model_validate({"intervalMinutes": interval})
         raw_title = str(arguments.get("title", "")).strip()
         title = (raw_title or task.splitlines()[0])[:120]
+        completion_criteria = str(arguments.get("completion_criteria", ""))[:2_000]
         brief = ObjectiveBrief.model_validate(
             {
                 "title": title,
@@ -89,11 +108,19 @@ def assistant_delegation_overlay(
                 "agentName": session.agent_name,
                 "agentVersion": session.agent_version,
                 "schedule": schedule.model_dump(by_alias=True) if schedule else None,
-                "completionCriteria": str(arguments.get("completion_criteria", ""))[:2_000],
+                "completionCriteria": completion_criteria,
             }
         )
+        # Retried tool calls inside one run reuse the same durable objective
+        # instead of piling up duplicates; the repository enforces the key.
+        key_material = "\0".join((run.run_id, title, task, str(interval), completion_criteria))
+        idempotency_key = (
+            f"delegate:{run.run_id}:{hashlib.sha256(key_material.encode()).hexdigest()[:32]}"
+        )
         try:
-            objective = await gateway.create(tenant_id, user_id, brief)
+            objective = await gateway.create(
+                tenant_id, user_id, brief, idempotency_key=idempotency_key
+            )
             execution = await gateway.enqueue(
                 tenant_id,
                 user_id,
@@ -107,9 +134,10 @@ def assistant_delegation_overlay(
                 {
                     "type": "text",
                     "text": (
-                        f"后台任务已创建并开始执行：{objective.objective_id}\n"
-                        f"执行线程：{execution.thread_id}；状态查询用 assistant_task_status。"
-                        "请立即回复用户任务已开始。"
+                        f"后台任务已安排（排队等待后台执行）：{objective.objective_id}\n"
+                        f"执行线程：{execution.thread_id}；入队不代表已在执行，"
+                        "真实状态和 revision 用 assistant_task_status 查询。"
+                        "请立即回复用户任务已安排到后台。"
                     ),
                 }
             ]
@@ -140,15 +168,20 @@ def assistant_delegation_overlay(
             if objective.status is ObjectiveStatus.CANCELLED:
                 continue
             executions = await gateway.executions(tenant_id, user_id, objective.objective_id)
-            latest = executions[-1] if executions else None
+            latest = executions[0] if executions else None
             state = latest.status.value if latest else "queued"
             summary = (latest.summary or "")[:400] if latest else ""
-            label = f"- [{objective.status.value}] {objective.title}（{objective.objective_id}）"
+            label = (
+                f"- [{objective.status.value}] {objective.title}"
+                f"（{objective.objective_id}）revision={objective.revision}"
+            )
             if latest:
                 label += f" 最近执行：{state}"
             if summary:
                 label += f"\n  摘要：{summary}"
             lines.append(label)
+        if lines:
+            lines.append("更新任务请把上面列出的 revision 作为 expected_revision。")
         body = "\n".join(lines) if lines else "当前没有后台任务。"
         return {"content": [{"type": "text", "text": body}]}
 
@@ -172,7 +205,8 @@ def assistant_delegation_overlay(
         except (ConflictError, NotFoundError, PermissionDeniedError) as error:
             return _text(f"任务更新失败：{error}")
         return _text(
-            f"任务 {updated.objective_id} 现在是 {updated.status.value}。"
+            f"任务 {updated.objective_id} 现在是 {updated.status.value}"
+            f"，revision={updated.revision}。"
             "停止当前执行与停用后续调度是同一个明确动作，不会误伤其他任务。"
         )
 
@@ -260,8 +294,12 @@ class AssistantDelegationGateway:
         # available; the overlay boundary above stays narrow.
         self._assistant = assistant
 
-    async def create(self, tenant_id: str, user_id: str, brief: ObjectiveBrief) -> Objective:
-        return await self._assistant.create(tenant_id, user_id, brief)
+    async def create(
+        self, tenant_id: str, user_id: str, brief: ObjectiveBrief, *, idempotency_key: str | None
+    ) -> Objective:
+        return await self._assistant.create(
+            tenant_id, user_id, brief, idempotency_key=idempotency_key
+        )
 
     async def enqueue(
         self, tenant_id: str, user_id: str, objective_id: str, *, trigger_key: str
@@ -303,7 +341,7 @@ class AssistantDelegationGateway:
             tenant_id,
             user_id,
             objective_id,
-            expected_revision=self._revision_of(tenant_id, user_id, objective_id),
+            expected_revision=await self._revision_of(tenant_id, user_id, objective_id),
             now=datetime.now(UTC),
             note=note,
         )
@@ -311,3 +349,21 @@ class AssistantDelegationGateway:
     async def _revision_of(self, tenant_id: str, user_id: str, objective_id: str) -> int:
         objective = await self._assistant.repository.get(tenant_id, user_id, objective_id)
         return objective.revision
+
+
+async def coordinator_session(agui: Any, session: Session) -> bool:
+    """Whether this session runs the personal assistant coordination thread.
+
+    Objective executions live in their own threads and must never delegate
+    again; unresolved (non AG-UI) sessions are not coordinators either.
+    """
+
+    try:
+        record = await agui.get_thread_record_for_session(
+            tenant_id=session.tenant_id,
+            user_id=session.user_id,
+            session_id=session.session_id,
+        )
+    except NotFoundError:
+        return False
+    return record.thread_id == PERSONAL_ASSISTANT_THREAD

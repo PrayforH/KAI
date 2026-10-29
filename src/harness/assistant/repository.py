@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 
 from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from harness.assistant.lifecycle import next_check, transition
@@ -103,19 +104,55 @@ class PostgresAssistantRepository:
             raise NotFoundError("Objective not found")
         return row
 
-    async def create(self, objective: Objective) -> Objective:
+    async def create(
+        self, objective: Objective, *, idempotency_key: str | None = None
+    ) -> Objective:
+        if idempotency_key is not None and not 1 <= len(idempotency_key) <= 128:
+            raise ValueError("invalid objective idempotency key")
         async with self._context(write=True) as session:
-            row = ObjectiveRow(
-                objective_id=objective.objective_id,
-                tenant_id=objective.tenant_id,
-                user_id=objective.user_id,
-                created_at=objective.created_at,
-            )
-            _store(row, objective)
-            session.add(row)
-            await session.flush()
-            _event(session, objective, "created", objective.instructions, objective.created_at)
+            if idempotency_key is not None:
+                existing = await self._find_idempotent(
+                    session, objective.tenant_id, objective.user_id, idempotency_key
+                )
+                if existing is not None:
+                    return _objective(existing)
+            try:
+                async with session.begin_nested():
+                    row = ObjectiveRow(
+                        objective_id=objective.objective_id,
+                        tenant_id=objective.tenant_id,
+                        user_id=objective.user_id,
+                        idempotency_key=idempotency_key,
+                        created_at=objective.created_at,
+                    )
+                    _store(row, objective)
+                    session.add(row)
+                    await session.flush()
+                    _event(
+                        session, objective, "created", objective.instructions, objective.created_at
+                    )
+            except IntegrityError:
+                # A concurrent caller with the same key won the race; its
+                # objective is the one true delegate for this request.
+                existing = await self._find_idempotent(
+                    session, objective.tenant_id, objective.user_id, idempotency_key or ""
+                )
+                if existing is None:
+                    raise
+                return _objective(existing)
         return objective
+
+    @staticmethod
+    async def _find_idempotent(
+        session: AsyncSession, tenant_id: str, user_id: str, idempotency_key: str
+    ) -> ObjectiveRow | None:
+        return await session.scalar(
+            select(ObjectiveRow).where(
+                ObjectiveRow.tenant_id == tenant_id,
+                ObjectiveRow.user_id == user_id,
+                ObjectiveRow.idempotency_key == idempotency_key,
+            )
+        )
 
     async def get(self, tenant_id: str, user_id: str, objective_id: str) -> Objective:
         async with self._context() as session:
