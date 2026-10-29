@@ -94,7 +94,8 @@ vi.mock("../src/components/task-agent-switcher", () => ({
     </button>
   ),
 }));
-vi.mock("../src/components/project-resource-dialogs", () => ({
+vi.mock("../src/components/project-resource-dialogs", async original => ({
+  ...(await original<object>()),
   ProjectModal: ({ title, children, onClose }: any) => (
     <div role="dialog" aria-label={title}>
       <h2>{title}</h2>
@@ -102,7 +103,7 @@ vi.mock("../src/components/project-resource-dialogs", () => ({
       {children}
     </div>
   ),
-  ProjectFilesDialog: () => <div>资料管理</div>,
+  ProjectFilesDialog: ({ initialAction }: any) => <div>资料管理{initialAction === "link" && <input aria-label="网页地址" />}</div>,
   ProjectKnowledgeDialog: () => <div>知识管理</div>,
   ProjectSkillsDialog: () => <div>技能引用</div>,
 }));
@@ -205,7 +206,7 @@ it("opens an independent organizing home without creating a task or mounting a c
   expect(host.querySelectorAll("[data-project-resources] > section")).toHaveLength(3);
   expect(host.querySelector(".assistant-runtime-shell")).toBeNull();
   expect(mock.createTask).not.toHaveBeenCalled();
-  await click("上传文件或添加链接");
+  await click("文件和资源");
   expect(host.textContent).toContain("资料管理");
   expect(mock.createTask).not.toHaveBeenCalled();
 });
@@ -455,4 +456,38 @@ it("carries the chosen model into the user-scoped main-conversation task setting
   const { loadTaskModelOverride } = await import("../src/lib/task-model-catalog");
   expect(loadTaskModelOverride(createUserScopedStorage(localStorage, "owner"), "new-project-task")).toBe("claude-test");
   expect(loadTaskModelOverride(createUserScopedStorage(localStorage, "another-user"), "new-project-task")).toBeNull();
+});
+
+
+it("opens the link form directly from the resource card", async () => {
+  await act(async () => root.render(<ProjectHome projectId="project-1" />));
+  await click("添加网页");
+  expect(host.querySelector('[aria-label="网页地址"]')).not.toBeNull();
+  expect(mock.createTask).not.toHaveBeenCalled();
+});
+
+it("uploads a file into this project's resources without starting a task", async () => {
+  vi.mocked(fetch).mockImplementation(async (input) => String(input) === "/api/input-artifacts"
+    ? Response.json({ input_artifact_id: "uploaded-file" })
+    : Response.json(String(input).startsWith("/api/agui") ? [] : [artifact]));
+  await act(async () => root.render(<ProjectHome projectId="project-1" />));
+  const input = host.querySelector<HTMLInputElement>('input[aria-label="上传项目文件"]')!;
+  Object.defineProperty(input, "files", { value: [new File(["report"], "报告.docx")] });
+  await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+  expect(mock.attachDocument).toHaveBeenCalledWith("project-1", "uploaded-file");
+  expect(host.textContent).toContain("已添加 报告.docx");
+  expect(mock.createTask).not.toHaveBeenCalled();
+});
+
+it("shows a failed upload without attaching a missing artifact", async () => {
+  vi.mocked(fetch).mockImplementation(async (input) => String(input) === "/api/input-artifacts"
+    ? Response.json({ detail: { message: "文件超过大小限制" } }, { status: 413 })
+    : Response.json(String(input).startsWith("/api/agui") ? [] : [artifact]));
+  await act(async () => root.render(<ProjectHome projectId="project-1" />));
+  const input = host.querySelector<HTMLInputElement>('input[aria-label="上传项目文件"]')!;
+  Object.defineProperty(input, "files", { value: [new File(["report"], "报告.docx")] });
+  await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("文件超过大小限制");
+  expect(mock.attachDocument).not.toHaveBeenCalled();
+  expect(host.querySelector<HTMLButtonElement>('[aria-label="上传项目资源"]')?.disabled).toBe(false);
 });

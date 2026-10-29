@@ -405,56 +405,55 @@
 }
 .contextRail {
   --project-card: #191919;
-  --project-card-raised: #1d1d1d;
-  --project-card-resource: #171717;
-  --project-card-button: #242424;
-  --project-card-border: #2c2c2c;
+  --project-card-raised: #222222;
+  --project-card-border: #2d2d2d;
+  --project-card-border-hover: #404040;
+  --project-resource-row-height: 32px;
   display: grid;
-  gap: 12px;
+  gap: 16px;
+  grid-auto-rows: max-content;
   min-width: 0;
-  padding-top: 0;
   min-height: 0;
-  grid-template-rows: minmax(240px, 1fr) minmax(260px, 1.1fr) minmax(140px, .7fr);
-  align-content: stretch;
+  align-content: start;
   overscroll-behavior-y: contain;
-  padding-bottom: 4px;
-  padding-right: 4px;
+  padding: 0 4px 4px 0;
   scrollbar-gutter: stable;
   overflow-y: auto;
   scrollbar-width: thin;
 }
 .contextCard {
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-  height: 100%;
   min-width: 0;
-  min-height: 0;
   overflow: hidden;
   border: 1px solid var(--project-card-border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--project-card);
   box-shadow: none;
+  transition: border-color 160ms ease;
 }
+.contextCard:hover,
+.contextCard:focus-within { border-color: var(--project-card-border-hover); }
 .cardSection {
-  display: flex;
-  flex: 1 1 0;
-  flex-direction: column;
+  --section-surface: var(--project-card);
   min-width: 0;
-  min-height: 0;
-  padding: 12px 16px;
+  padding: 18px;
+  background: var(--section-surface);
+  transition: background 160ms ease;
 }
+.cardSection[data-resource-section="instructions"] { --section-surface: var(--project-card-raised); }
+.cardSection:hover,
+.cardSection:focus-within { background: color-mix(in srgb, var(--codex-ink) 3%, var(--section-surface)); }
 .cardContent {
-  flex: 1 1 0;
   min-width: 0;
-  min-height: 0;
+  max-height: calc(5 * var(--project-resource-row-height));
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior-y: contain;
-  scrollbar-gutter: stable;
   scrollbar-width: thin;
-  padding-right: 4px;
+  scrollbar-color: transparent transparent;
 }
+.cardSection:is(:hover, :focus-within) .cardContent { scrollbar-color: var(--project-card-border-hover) transparent; }
+.cardSection[data-resource-section="instructions"] .cardContent { max-height: 110px; }
+.cardSection[data-resource-section="connectors"] .cardContent { max-height: 232px; }
 .cardContent:focus-visible {
   outline: 1px solid var(--codex-muted);
   outline-offset: -1px;
@@ -464,95 +463,174 @@
 .cardContent > :last-child { margin-bottom: 0; }
 .cardActions {
   display: flex;
-  flex: 0 0 auto;
-  margin-top: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
 }
-.contextCard[data-card="instructions"] { background: var(--project-card-raised); }
-.contextCard[data-card="resources"] { background: var(--project-card-resource); }
 .contextCard .button {
-  background: var(--project-card-button);
-  border-color: var(--project-card-border);
+  flex: 1;
+  font-size: 13px !important;
+  min-width: 0;
+  min-height: 34px;
+  border-color: var(--project-card-border-hover);
+  background: transparent;
+  border-radius: 9px;
+  white-space: nowrap;
 }
+.cardSection[data-resource-section="instructions"] .button { flex: none; }
 .contextCard .button:hover { background: var(--codex-surface-hover); }
 :global(html[data-color-mode="light"]) .contextRail {
-  --project-card: #f7f7f7;
-  --project-card-raised: #f3f3f3;
-  --project-card-resource: #fafafa;
-  --project-card-button: #ffffff;
-  --project-card-border: #e6e6e6;
-}
-.contextCard h2 {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 550;
-  line-height: 1.5;
+  --project-card: #ffffff;
+  --project-card-raised: #f5f5f5;
+  --project-card-border: #e5e5e5;
+  --project-card-border-hover: #cecece;
 }
 .contextCard .sectionHead {
-  flex: 0 0 auto;
-  margin-bottom: 8px;
+  align-items: center;
+  min-height: 24px;
+  margin-bottom: 10px;
   gap: 8px;
 }
+.cardSection:has(.sectionHead:last-child) .sectionHead { margin-bottom: 0; }
 .contextCard .muted {
-  margin: 8px 0 12px;
-  line-height: 1.6;
+  margin: 0;
+  font-size: 13px;
+  line-height: 22px;
 }
 .cardHeading {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 5px;
+  min-width: 0;
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--codex-ink);
-  font-size: 13px !important;
-  font-weight: 550 !important;
-  line-height: 1.5;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  line-height: 24px;
   cursor: pointer;
 }
-.cardHeading span {
-  color: var(--codex-muted);
+.cardHeading .controlIcon { transition: transform 160ms ease; }
+.cardHeading:hover .controlIcon { transform: translateX(2px); }
+.cardIconButton,
+.connectAction {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: 28px;
+  padding: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--codex-muted);
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
 }
-.cardDivider {
-  flex: 0 0 1px;
-  height: 1px;
-  background: var(--codex-line);
-  margin: 0;
-}
+.cardIconButton { width: 28px; }
+.cardIconButton .controlIcon { width: 18px; height: 18px; flex-basis: 18px; color: inherit; }
+.cardIconButton:hover { background: var(--codex-surface-hover); color: var(--codex-ink); }
+.connectAction { padding-inline: 5px; color: var(--codex-link, #168bf5); font-size: 12px !important; }
+.connectAction:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+.cardDivider { height: 1px; background: var(--project-card-border); }
 .instructionPreview {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 12px;
-  line-height: 1.7;
-  margin: 8px 0 12px;
+  font-size: 13px;
+  line-height: 22px;
+  margin: 0;
   color: var(--codex-ink-soft);
 }
-.compactList {
-  margin: 8px 0 10px;
-  padding: 0;
-  list-style: none;
-}
-.compactList li {
+.compactList,
+.connectorIcons { margin: 0; padding: 0; list-style: none; }
+.compactList li { min-width: 0; }
+.compactList a,
+.resourceRow {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 6px 0;
-  line-height: 1.5;
+  gap: 9px;
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--project-resource-row-height);
+  min-width: 0;
+  padding: 5px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: var(--codex-ink-soft);
-  font-size: 12px;
+  font-size: 13px !important;
+  line-height: 22px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease;
+}
+.compactList a > span,
+.resourceRow > span {
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.compactList a {
-  color: inherit;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-decoration: none;
+.compactList a:hover,
+.resourceRow:hover { background: var(--codex-surface-hover); color: var(--codex-ink); }
+.resourceGlyph {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--codex-muted);
 }
-.compactList a:hover {
-  text-decoration: underline;
+.fileBadge {
+  position: relative;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 21px;
+  color: #80858e;
+}
+.fileBadge svg { width: 17px; height: 21px; fill: currentColor; stroke: var(--section-surface); stroke-width: .7; }
+.fileBadge > span { position: absolute; top: 8px; font-size: 7px; font-weight: 650; line-height: 10px; color: white; }
+.fileBadge[data-format="word"] { color: #4477d9; }
+.fileBadge[data-format="sheet"] { color: #3e9367; }
+.fileBadge[data-format="slides"] { color: #d08145; }
+.fileBadge[data-format="pdf"] { color: #cc6262; }
+.fileBadge[data-format="pdf"] > span { font-size: 5px; }
+.connectorIcons { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.connectorIcons li { display: flex; align-items: center; min-height: 40px; }
+.connectorIcon {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 9px;
+  border: 1px solid var(--project-card-border);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+.connectorIcon:hover { background: var(--codex-surface-hover); border-color: var(--project-card-border-hover); }
+.connectorIcon .resourceGlyph { width: 21px; height: 21px; flex-basis: 21px; }
+.connectorIcon [data-glyph="database"] { color: #6c9cce; }
+.connectorIcon [data-glyph="map"] { color: #61a27f; }
+.connectorIcon [data-glyph="globe"] { color: #6593ce; }
+.hiddenFile { display: none; }
+.contextRail :is(button, a):focus-visible { outline-offset: -2px; }
+.uploadError { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--codex-danger, #c86464); }
+@media (prefers-reduced-motion: reduce) {
+  .contextCard, .cardSection, .cardHeading .controlIcon, .cardIconButton, .connectAction,
+  .compactList a, .resourceRow, .connectorIcon { transition: none; }
+  .cardHeading:hover .controlIcon { transform: none; }
 }
 .dialogContent {
   padding: 8px 24px 24px;
@@ -676,15 +754,11 @@
     margin-bottom: 32px;
   }
   .contextRail {
-    grid-template-rows: none;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: start;
     max-height: none;
     overflow: visible;
   }
-  .contextCard { height: 180px; }
-  .contextCard[data-card="instructions"] { height: 320px; }
-  .contextCard[data-card="resources"] { height: 360px; }
 }
 @media (max-width: 520px) {
   .page {
@@ -794,11 +868,8 @@
   stroke-linejoin: round;
   color: var(--codex-muted);
 }
-.expandedChevron { display: inline-flex; transform: rotate(180deg); }
 .contextCard > :last-child { margin-bottom: 0; }
 .contextCard .cardHeading > .controlIcon { width: 14px; height: 14px; flex-basis: 14px; }
-.contextCard .textLink { font-size: 11px !important; }
-.compactList + .textLink { margin-top: 2px; }
 .projectComposer :global(.aui-composer-root) { background: var(--codex-surface); }
 .projectMain .recentTasks .sectionHead { padding-inline: 10px; margin-bottom: 8px; }
 .projectMain .recentTasks .status { width: 5px; height: 5px; }

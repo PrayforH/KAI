@@ -67,7 +67,7 @@ function matches(query: string, ...values: Array<string | null | undefined>): bo
   return values.some((value) => value?.toLowerCase().includes(needle));
 }
 
-async function uploadProjectDocument(file: File): Promise<string> {
+export async function uploadProjectDocument(file: File): Promise<string> {
   const form = new FormData();
   form.append("file", file);
   const response = await fetch("/api/input-artifacts", { method: "POST", body: form });
@@ -466,11 +466,13 @@ export function ProjectSkillsDialog({
 export function ProjectFilesDialog({
   project,
   mode,
+  initialAction,
   onClose,
   onChanged,
 }: {
   project: ApiProject;
   mode: "manage" | "browse";
+  initialAction?: "link";
   onClose: () => void;
   onChanged?: () => void;
 }) {
@@ -479,7 +481,7 @@ export function ProjectFilesDialog({
   const [artifacts, setArtifacts] = useState<ProjectArtifact[]>([]);
   const [query, setQuery] = useState("");
   const [uploading, setUploading] = useState(false);
-  const [linkFormOpen, setLinkFormOpen] = useState(false);
+  const [linkFormOpen, setLinkFormOpen] = useState(initialAction === "link");
   const [linkUrl, setLinkUrl] = useState("");
   const [linkTitle, setLinkTitle] = useState("");
   const [addingLink, setAddingLink] = useState(false);
@@ -660,6 +662,7 @@ export function ProjectFilesDialog({
             onChange={(event) => setLinkUrl(event.target.value)}
             placeholder="https://example.com/brief"
             aria-label="网页地址"
+            autoFocus
           />
           <input
             value={linkTitle}
