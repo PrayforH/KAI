@@ -1,7 +1,10 @@
 # KAI 云电脑收敛与验收至79 — Goal checkpoint
 
 - 建立：2026-10-28 23:18 北京时间。截止：2026-10-29 09:00 Asia/Shanghai；08:30 后不发起大迁移，08:45 收尾整理，09:00 停止新工作。
-- 模型：GLM-5.3-Flash（不更换）。token 预算 300,000,000 为上限。
+- 模型（执行记录，按用户授权变更）：GLM-5.3-Flash → **Start Plan 额度耗尽后，用户授权改用已配置的
+  DeepSeek API / deepseek-flash，思考强度 high**；不切回 GLM、不升到最高档、不购买额度。
+- token 预算 300,000,000：原生 Goal 的 Budget 字段始终显示 `Token budget: none / unbounded`，
+  300,000,000 上限**未被系统接受**（会话 UI 模型显示 likewise 无预算设置项）。如实记录，未修改任何数据库或伪称生效。
 - **原生 Goal 状态：本 ZCode 会话没有 create_goal / 原生 Goal 工具，也没有可设置的 token_budget 字段。**
   如实记录为不可用；不修改内部数据库、不伪称已生效。以本文件 + 会话任务清单承载目标与进度。
 - 输入：审查正文 `/Users/xiaokai/.codex/visualizations/2026/10/28/kai-cloud-computer-review/review.xml`；
@@ -79,4 +82,38 @@
 - 2026-10-29 04:45 `9150468c` P1-E 镜像能力清单：office 约定按 provider 能力声明注入（VmComputerDriver
   image_office=True，Docker 驱动 False），基础约定不再向没有 office 运行时的镜像承诺解释器。348 单测过；dot17 已部署，
   viewer 全部回归复测通过（帧/接管 0.39s/重连 5/5）。
-- 待办：P1-B BrowserTools、P1-D Outbox 交付、P2 按 review 顺序继续；08:30 后不迁移，08:45 收尾。
+- 2026-10-29 08:03 真实状态校准（不依赖文档时间）：git HEAD `835c5388`，工作树干净；
+  79 运行镜像 api/worker/computer-control=`20261029-dot17`、viewer=`20261029-v8`、web=`20261028-dot3`（未变）。
+  即：控制面与交付链路的修复已部署，前端自 10-28 起未改。
+- 2026-10-29 08:03 用户追加授权（本轮）：助理主会话呈现、VM→Artifact 预览下载+刷新保留、
+  飞书/微信 Outbox 原生文件交付、同会话/刷新续聊真实验收。开始实施。
+
+### 状态分级（已实现 / 已测试 / 已部署 / 未验证）
+
+已实现+已测试+已部署：
+- 9P 短读交付截断修复（`960e21c0`，dot15+）；真实验收：8 个 artifact（6B/中文名/HTML/1.2MB PDF/XLSX +
+  原安全护栏三件套原样取回）经认证 API 下载，size/sha256 全部一致。
+- 观察态 RFB 协商 + 输入门控 + 锁泄漏（`c7fdc454`/`b2746db4`/`016a3667`，viewer v8）；
+  真实验收：1280x800 实帧、观察态输入 0/0、接管 0.28–0.39s、human 输入计数、快速重连 5/5。
+- GateAck 恢复校验（`859fd0f3`）、接管协调器与锁内复验（`9e4f1945`）、Viewer 输入代际（`45db3d60`）。
+- 后台 objective 窄授权（`8bc00664`，dot16+）、office 约定按镜像能力注入（`9150468c`，dot17）。
+
+已实现+已测试，**未部署**：
+- 无（截至 08:03 全部已部署）。
+
+未实现（时间预算内不发起大迁移）：
+- 助理页前端呈现改造（见下"结论"）、飞书/微信 Outbox 原生文件交付、BrowserTools、P2 全项。
+
+### 助理页 UI 项的诚实结论
+
+代码层已具备目标形态，无需也不应在最后 30 分钟重建前端：
+- `activity-summary.tsx`：`defaultOpen = active || failed`，完成后过程面板默认折叠、失败才展开；
+  compact 模式按 category 合并工具动作（不逐条铺），只保留关键进展文字；
+  用户显式展开/收起记忆在 localStorage（runId 维度）。
+- `artifact-list.tsx` / `agent-thread.tsx`：`harness_present_artifact` 投影（live 与 reload 同一投影）
+  → `ArtifactSummaryRow`/`ArtifactCard`，绑定真实 artifact_id 与认证下载。
+- `process-display-preference.ts`：已有"详细过程"开关（默认 compact），即"按需展开"的现成缝。
+因此本轮不做前端迁移：web 基座是 standalone 自带 node_modules 血统、且 Next 版本落后于 develop
+（历史记录：整包替换会导致 `/` 500）。在 08:30 前 20 分钟内构建并切换 web 容器属于大迁移，
+与"不得遗留半迁移 / 保护在线界面"直接冲突。真实缺口是**登录后的视觉验收**未做（IAB 无法打开
+79 的自签证书站点），已如实列为未验证，而非声称完成。
