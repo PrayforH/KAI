@@ -159,6 +159,30 @@
 - 观察态：1280×800 实帧；观察态输入 0/0；接管 0.28–0.39s；human 输入计数；重连 5/5。
 - 续聊：两轮同会话，`OMEGA7` 复述成功，`same_session=true`，`thread_sessions=1`。
 
+### 重连连锁故障的定位与修复（用户报障后，真实时间 ~09:00–09:40）
+
+用户报「重连一直连不上」。定位过程与结论（全部为线上证据）：
+
+1. nginx 60 分钟内 7 次 `101`、0 次拒绝 → 连接被接受后又被断，不是被拒；间隔约 4 秒 = 浏览器自动重试。
+2. guest x11vnc 日志：浏览器会话只到「Client Protocol Version 3.8」，从未出现 `Protocol version sent`
+   → 客户端后续字节没到 guest。这是我 `c7fdc454` 引入的过滤器：它只认识自己探针发过的类型，
+   遇到 `Fence`(248)/`EnableContinuousUpdates`(150)/`xvp`(250)/`SetDesktopSize`(251) 直接断开。
+   **探针照实现写，5/5 通过，正好把 bug 锁死。**
+3. `0b2239fb`（v9）：改为按真实长度解析并**转发**这四类 → 握手能完成（guest 出现
+   `Protocol version sent` / `Using tight encoding`），但 ~1–1.5 秒后仍 `Client gone`。
+4. 加一行下车原因日志（v10）后抓到：`desktop session ended by to_browser: returned` —— 是 SSH 侧 EOF。
+   同一容器手动跑同一条 SSH 保持 8 秒并收到帧数据都正常，说明 SSH/guest 本身没问题。
+5. guest 日志显示它 **明确忽略** `-312 Fence` / `-313 ContinuousUpdates` → 把服务端不支持的扩展
+   转发过去会让 x11vnc 主动踢客户端。
+6. `9d62fb48`（v11）：这四类**只解析对齐、不转发**；真正未定义类型仍 fail-closed。
+
+验证（v11 已部署，仅 viewer 单服务）：
+- noVNC 式序言 + 3 秒：`still connected ... OPEN`。
+- 8 秒持续取帧：`state=OPEN bytes_received=11592`（路径 nginx → viewer → guest）。
+- viewer 单测 12 passed；回归断言"只有 3 条握手被转发，扩展被吞掉"。
+
+**仍未验证**：浏览器自身画面（我要你硬刷新一次才能确认；我没有浏览器侧证据，不声称已通过）。
+
 ### 收尾快照（真实证据）
 
 - 最终基线（08:24，真实时间）：`pytest tests/unit/sandbox tests/unit/feishu` = **379 passed, 2 skipped**；
