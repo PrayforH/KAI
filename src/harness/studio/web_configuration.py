@@ -112,7 +112,10 @@ class WebConfigurationService:
         return await self.get(tenant_id, user_id)
 
     async def client(self, identity: ExecutionIdentity) -> PublicWebClient:
-        data = await self._read(identity.tenant_id, identity.user_id)
+        return await self.client_for_user(identity.tenant_id, identity.user_id)
+
+    async def client_for_user(self, tenant_id: str, user_id: str) -> PublicWebClient:
+        data = await self._read(tenant_id, user_id)
         if not self.enabled or not data["enabled"]:
             raise WebAccessError("已在个人设置中关闭联网。可开启后重试；无需重新发布智能体。")
         provider = self.provider if data["provider"] == "platform" else data["provider"]

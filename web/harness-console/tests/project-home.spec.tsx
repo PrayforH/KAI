@@ -138,6 +138,8 @@ const click = async (label: string) => {
   await act(async () => button!.click());
 };
 beforeEach(() => {
+  HTMLDialogElement.prototype.showModal = function() { this.setAttribute("open", ""); };
+  HTMLDialogElement.prototype.close = function() { this.removeAttribute("open"); };
   vi.clearAllMocks();
   const storage = new Map<string, string>();
   vi.stubGlobal("localStorage", {
@@ -246,8 +248,8 @@ it("keeps archived task outputs separate from inputs until the user collects one
     host.querySelector('a[href="/?thread=old-archived-task"]'),
   ).not.toBeNull();
   expect(mock.attachDocument).not.toHaveBeenCalled();
-  await click("保存到项目成果");
-  expect(mock.saveResult).toHaveBeenCalledWith("project-1", "output-1");
+  await click("加入项目资源");
+  expect(mock.saveResult).toHaveBeenCalledWith("project-1", "output-1", true);
   expect(mock.attachDocument).not.toHaveBeenCalled();
   await click("加入项目资料");
   expect(mock.attachDocument).toHaveBeenCalledWith("project-1", "snapshot-1");
@@ -461,8 +463,9 @@ it("carries the chosen model into the user-scoped main-conversation task setting
 
 it("opens the link form directly from the resource card", async () => {
   await act(async () => root.render(<ProjectHome projectId="project-1" />));
-  await click("添加网页");
-  expect(host.querySelector('[aria-label="网页地址"]')).not.toBeNull();
+  await click("搜索网页");
+  expect(document.querySelector('[aria-label="搜索网络资源或输入 URL"]')).not.toBeNull();
+  expect(document.querySelector('[aria-label="搜索网页"] input[type="file"]')).toBeNull();
   expect(mock.createTask).not.toHaveBeenCalled();
 });
 
@@ -489,5 +492,5 @@ it("shows a failed upload without attaching a missing artifact", async () => {
   await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
   expect(host.querySelector('[role="alert"]')?.textContent).toContain("文件超过大小限制");
   expect(mock.attachDocument).not.toHaveBeenCalled();
-  expect(host.querySelector<HTMLButtonElement>('[aria-label="上传项目资源"]')?.disabled).toBe(false);
+  expect(host.querySelector<HTMLButtonElement>('[aria-label="上传文件"]')?.disabled).toBe(false);
 });

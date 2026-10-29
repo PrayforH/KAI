@@ -422,7 +422,14 @@ class AguiRunService:
                 if self._project_skill_snapshots is None:
                     raise ConflictError("Project Skill snapshot storage is unavailable")
                 captured_skills = await self._project_skill_snapshots.capture(
-                    tenant_id, project_context.skill_references, session.runtime_type
+                    tenant_id,
+                    project_context.skill_references,
+                    session.runtime_type,
+                    **(
+                        {"local": project_context.local_skill_snapshots}
+                        if project_context.local_skill_snapshots
+                        else {}
+                    ),
                 )
             effective_input_ids = list(
                 dict.fromkeys(

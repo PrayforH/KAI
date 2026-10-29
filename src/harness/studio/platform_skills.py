@@ -41,8 +41,7 @@ _COMPATIBLE_RUNTIMES: tuple[AgentRuntimeType, ...] = (
 )
 _SOURCE_REVISION = "platform-skills-v1"
 _SOURCE_ROOT = (
-    "https://github.com/PrayforH/agent-studio/blob/main/"
-    "src/harness/studio/platform_skills.py"
+    "https://github.com/PrayforH/agent-studio/blob/main/src/harness/studio/platform_skills.py"
 )
 _OPENAI_SKILL_CREATOR_REVISION = "49f948faa9258a0c61caceaf225e179651397431"
 _OPENAI_SKILL_CREATOR_URL = (
@@ -460,7 +459,6 @@ def _all_platform_skill_catalog() -> PlatformSkillCatalog:
                 source_url=_OPENAI_SKILL_CREATOR_URL,
                 source_revision=_OPENAI_SKILL_CREATOR_REVISION,
             ),
-
         ),
     )
 
@@ -468,9 +466,15 @@ def _all_platform_skill_catalog() -> PlatformSkillCatalog:
 def default_platform_skill_catalog() -> PlatformSkillCatalog:
     """Active reviewed packages; historical package lookup remains available."""
     catalog = _all_platform_skill_catalog()
-    return catalog.model_copy(update={"packages": tuple(
-        package for package in catalog.packages
-        if package.package_id not in RETIRED_PLATFORM_SKILLS)})
+    return catalog.model_copy(
+        update={
+            "packages": tuple(
+                package
+                for package in catalog.packages
+                if package.package_id not in RETIRED_PLATFORM_SKILLS
+            )
+        }
+    )
 
 
 def platform_skill_catalog_listing() -> PlatformSkillCatalogListing:
@@ -559,9 +563,7 @@ def imported_platform_skill(package: PlatformSkillPackage) -> ImportedSkill:
         sourceContentHash=package.content_hash,
         riskLevel=package.risk_level,
         findings=package.findings,
-        warnings=(
-            f"已从平台 Skill 包 {package.package_id}@{package.revision} 导入草稿快照",
-        ),
+        warnings=(f"已从平台 Skill 包 {package.package_id}@{package.revision} 导入草稿快照",),
     )
 
 
@@ -574,24 +576,25 @@ def _platform_skill_snapshot(package: PlatformSkillPackage) -> SkillSnapshot:
     Skill through the draft.
     """
 
-    skill = package.skill
+    return authored_skill_snapshot(
+        package.skill, source=f"project:{package.package_id}@{package.revision}"
+    )
+
+
+def authored_skill_snapshot(skill: DraftSkill, *, source: str) -> SkillSnapshot:
     frontmatter = yaml.safe_dump(
         {"name": skill.name, "description": skill.description},
         sort_keys=False,
         allow_unicode=True,
     ).strip()
     contents: dict[str, bytes] = {
-        "SKILL.md": (
-            f"---\n{frontmatter}\n---\n\n{skill.instructions.strip()}\n"
-        ).encode(),
+        "SKILL.md": (f"---\n{frontmatter}\n---\n\n{skill.instructions.strip()}\n").encode(),
     }
     for file in skill.files:
         if file.content is not None:
             contents[file.path] = file.content.encode("utf-8")
         elif file.content_base64 is not None:
-            contents[file.path] = base64.b64decode(
-                file.content_base64, validate=True
-            )
+            contents[file.path] = base64.b64decode(file.content_base64, validate=True)
     digest = hashlib.sha256()
     snapshots: list[SkillFileSnapshot] = []
     for path in sorted(contents):
@@ -609,7 +612,7 @@ def _platform_skill_snapshot(package: PlatformSkillPackage) -> SkillSnapshot:
     return SkillSnapshot(
         name=skill.name,
         description=skill.description,
-        source=f"project:{package.package_id}@{package.revision}",
+        source=source,
         files=tuple(snapshots),
         content_hash=digest.hexdigest(),
     )

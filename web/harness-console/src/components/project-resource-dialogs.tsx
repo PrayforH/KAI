@@ -3,20 +3,22 @@
 import Link from "next/link";
 import {
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
   type ChangeEvent,
   type ReactNode,
 } from "react";
-import { createPortal } from "react-dom";
+import { ProjectModal } from "./project-modal";
+export { ProjectModal } from "./project-modal";
+import { ProjectWebSearchDialog } from "./project-web-search-dialog";
 import {
   projectClient,
   studioClient,
   type ApiProject,
   type ApiProjectDocument,
   type ApiProjectLink,
+  type ApiProjectSkill,
   type StudioKnowledgeBase,
   type StudioPlatformSkillPackage,
 } from "../lib/studio-client";
@@ -137,62 +139,6 @@ function EmptyState({
       <p>{description}</p>
       {action}
     </div>
-  );
-}
-
-export function ProjectModal({
-  title,
-  subtitle,
-  toolbar,
-  footer,
-  onClose,
-  children,
-  className,
-}: {
-  className?: string;
-  title: string;
-  subtitle?: string;
-  toolbar?: ReactNode;
-  footer?: ReactNode;
-  onClose: () => void;
-  children: ReactNode;
-}) {
-  const ref = useRef<HTMLDialogElement>(null);
-  const titleId = useId();
-
-  useEffect(() => {
-    const dialog = ref.current;
-    if (!dialog) return;
-    dialog.showModal();
-    return () => dialog.close();
-  }, []);
-
-  return createPortal(
-    <dialog
-      ref={ref}
-      className={[styles.dialog, className].filter(Boolean).join(" ")}
-      aria-labelledby={titleId}
-      onCancel={(event) => {
-        event.preventDefault();
-        onClose();
-      }}
-    >
-      <header className={styles.head}>
-        <div>
-          <h2 id={titleId}>{title}</h2>
-          {subtitle ? <p>{subtitle}</p> : null}
-        </div>
-        <button type="button" className={styles.close} aria-label="关闭" onClick={onClose}>
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path d="m4 4 8 8M12 4l-8 8" />
-          </svg>
-        </button>
-      </header>
-      {toolbar ? <div className={styles.toolbar}>{toolbar}</div> : null}
-      <div className={styles.body}>{children}</div>
-      {footer ? <footer className={styles.footer}>{footer}</footer> : null}
-    </dialog>,
-    document.body,
   );
 }
 
@@ -357,6 +303,18 @@ export function ProjectSkillsDialog({
   const [query, setQuery] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
+  const [localPending, setLocalPending] = useState("");
+  const localSkills = (project.localSkills ?? []).filter(item => matches(query, item.displayName, item.skill.name, item.skill.description));
+  async function changeLocal(item: ApiProjectSkill, remove = false) {
+    setLocalPending(item.skillId); setNotice(null);
+    try {
+      if (remove) await projectClient.deleteSkill(project.projectId, item.skillId);
+      else await projectClient.setSkillEnabled(project.projectId, item, !item.enabled);
+      onChanged();
+      window.dispatchEvent(new CustomEvent("harness:project-results-changed", {detail: {projectId:project.projectId}}));
+    } catch (cause) { setNotice({tone:"error", text:cause instanceof Error ? cause.message : "修改项目技能失败"}); }
+    finally { setLocalPending(""); }
+  }
   const visible = useMemo(
     () =>
       packages.filter((item) =>
@@ -406,7 +364,7 @@ export function ProjectSkillsDialog({
   return (
     <ProjectModal
       title="技能"
-      subtitle="从平台技能目录选择，随项目带到每个任务；同名时 Agent 自带的技能优先。"
+      subtitle="仅影响当前项目；智能体自带技能随其发布版本管理。"
       onClose={onClose}
       toolbar={
         <SearchField value={query} onChange={setQuery} placeholder="搜索技能、标签或来源" />
@@ -431,7 +389,19 @@ export function ProjectSkillsDialog({
       }
     >
       {notice?.tone === "error" ? <p className={styles.error}>{notice.text}</p> : null}
-      {visible.length === 0 ? <p className={styles.loading}>没有匹配的技能。</p> : null}
+      {visible.length === 0 && localSkills.length === 0 ? <p className={styles.loading}>没有匹配的技能。</p> : null}
+      {localSkills.length > 0 && <section className={styles.section}><h3>项目技能</h3><ul className={styles.list}>
+        {localSkills.map(item => <li key={item.skillId} className={styles.localSkill}>
+          <div><strong>{item.displayName}</strong><small>{item.enabled ? "已启用" : "草稿"} · v{item.revision}</small></div>
+          <p>{item.skill.description}</p>
+          <details><summary>查看步骤和文件</summary><pre>{item.skill.instructions}</pre>{item.skill.files?.map(file=><details key={file.path}><summary>{file.path}</summary><pre>{file.content ?? "二进制附件"}</pre></details>)}</details>
+          <div className={styles.localActions}>
+            <button type="button" className={styles.secondary} disabled={Boolean(localPending)} aria-label={`${item.enabled ? "停用" : "启用"} ${item.displayName}`} onClick={()=>void changeLocal(item)}>{item.enabled ? "停用" : "启用"}</button>
+            {!item.enabled && <button type="button" className={styles.secondary} disabled={Boolean(localPending)} onClick={()=>void changeLocal(item,true)}>删除草稿</button>}
+          </div>
+        </li>)}
+      </ul></section>}
+      {visible.length > 0 && localSkills.length > 0 && <h3>平台技能</h3>}
       <ul className={styles.list}>
         {visible.map((pkg) => {
           const value = reference(pkg);
@@ -481,10 +451,7 @@ export function ProjectFilesDialog({
   const [artifacts, setArtifacts] = useState<ProjectArtifact[]>([]);
   const [query, setQuery] = useState("");
   const [uploading, setUploading] = useState(false);
-  const [linkFormOpen, setLinkFormOpen] = useState(initialAction === "link");
-  const [linkUrl, setLinkUrl] = useState("");
-  const [linkTitle, setLinkTitle] = useState("");
-  const [addingLink, setAddingLink] = useState(false);
+  const [webSearchOpen, setWebSearchOpen] = useState(initialAction === "link");
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<Notice>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -550,27 +517,6 @@ export function ProjectFilesDialog({
       });
     } finally {
       setUploading(false);
-    }
-  }
-
-  async function addLink() {
-    if (!linkUrl.trim() || addingLink) return;
-    setAddingLink(true);
-    setNotice(null);
-    try {
-      await projectClient.addLink(project.projectId, linkUrl.trim(), linkTitle.trim());
-      setLinkUrl("");
-      setLinkTitle("");
-      setLinkFormOpen(false);
-      await reload();
-      onChanged?.();
-    } catch (cause) {
-      setNotice({
-        tone: "error",
-        text: cause instanceof Error ? cause.message : "添加网页失败，请重试。",
-      });
-    } finally {
-      setAddingLink(false);
     }
   }
 
@@ -645,9 +591,9 @@ export function ProjectFilesDialog({
               <button
                 type="button"
                 className={styles.secondary}
-                onClick={() => setLinkFormOpen((current) => !current)}
+                onClick={() => setWebSearchOpen(true)}
               >
-                添加网页
+                搜索网页
               </button>
             </div>
           ) : null}
@@ -655,31 +601,7 @@ export function ProjectFilesDialog({
       }
     >
       {notice?.tone === "error" ? <p className={styles.error}>{notice.text}</p> : null}
-      {linkFormOpen ? (
-        <div className={styles.linkForm}>
-          <input
-            value={linkUrl}
-            onChange={(event) => setLinkUrl(event.target.value)}
-            placeholder="https://example.com/brief"
-            aria-label="网页地址"
-            autoFocus
-          />
-          <input
-            value={linkTitle}
-            onChange={(event) => setLinkTitle(event.target.value)}
-            placeholder="标题（可选）"
-            aria-label="网页标题"
-          />
-          <button
-            type="button"
-            className={styles.primary}
-            disabled={addingLink || !linkUrl.trim()}
-            onClick={() => void addLink()}
-          >
-            {addingLink ? "添加中…" : "添加"}
-          </button>
-        </div>
-      ) : null}
+      {webSearchOpen && <ProjectWebSearchDialog project={project} onClose={() => setWebSearchOpen(false)} onChanged={() => { void reload(); onChanged?.(); }} />}
       {loading ? <p className={styles.loading}>正在读取项目文件…</p> : null}
       {!loading && totalVisible === 0 ? (
         <EmptyState

@@ -8,7 +8,7 @@ import { PanelResizeHandle } from "./panel-resize-handle";
 import { RailResizeHandle, canSplitRail } from "./rail-resize-handle";
 import { SidebarPanelIcon } from "./panel-icons";
 import { RailFilePreview, previewKindFor, type PreviewKind, type PreviewTarget } from "./rail-file-preview";
-import { SaveProjectResultButton } from "./save-project-result-button";
+import { ProjectArtifactActions } from "./project-skill-extract-dialog";
 import { ProjectResourcesPanel } from "./project-resources-panel";
 
 
@@ -477,7 +477,7 @@ export function WorkbenchRail({
                 <div className="rail-preview-column">
                   {projectId && !workspace && selected.artifact_id && (
                     <div className="rail-project-save">
-                      <SaveProjectResultButton key={`${projectId}:${selected.artifact_id}`} projectId={projectId} artifactId={selected.artifact_id} />
+                      <ProjectArtifactActions key={`${projectId}:${selected.artifact_id}`} projectId={projectId} threadId={threadId} artifactId={selected.artifact_id} sourceTitle={selected.name} />
                     </div>
                   )}
                   {workspace && selectedFile ? workspace.renderPreview(selectedFile) : <RailFilePreview target={selected} />}

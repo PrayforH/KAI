@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import secrets
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
@@ -25,13 +26,16 @@ from harness.projects.models import (
     ProjectResources,
     ProjectResult,
     ProjectRunContext,
+    ProjectSkill,
 )
 from harness.projects.repositories import (
     ProjectConnectorCatalog,
     ProjectRepository,
     ProjectResourceRepository,
 )
-from harness.studio.platform_skills import platform_skill_package
+from harness.studio.models import DraftSkill
+from harness.studio.platform_skills import authored_skill_snapshot, platform_skill_package
+from harness.studio.skill_import import SkillImportError, validate_authored_skill
 
 
 def _default_id(prefix: str) -> str:
@@ -272,8 +276,105 @@ class ProjectService:
         if archived is not None:
             updates["archived_at"] = self._clock() if archived else None
         updated = current.model_copy(update=updates)
-        await self._repository.replace(updated)
+        self._validate_enabled_skills(updated)
+        await self._repository.replace(updated, expected_updated_at=current.updated_at)
         return updated
+
+    @staticmethod
+    def _validate_enabled_skills(project: Project) -> None:
+        names = [item.skill.name for item in project.local_skills if item.enabled]
+        for reference in project.skill_references:
+            package_id, _, revision = reference.partition("@")
+            names.append(platform_skill_package(package_id, int(revision)).skill.name)
+        if len(names) != len(set(names)):
+            raise ConflictError("项目中已有同名的启用技能")
+        if len(names) > MAX_PROJECT_SKILLS:
+            raise ConflictError("启用的项目技能数量已达上限")
+
+    async def save_skill(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        project_id: str,
+        display_name: str,
+        skill: DraftSkill,
+        source_thread_id: str = "",
+    ) -> ProjectSkill:
+        project = await self.get(tenant_id=tenant_id, user_id=user_id, project_id=project_id)
+        if len(project.local_skills) >= MAX_PROJECT_SKILLS:
+            raise ConflictError("项目技能数量已达上限")
+        try:
+            validate_authored_skill(skill)
+        except (SkillImportError, ValueError) as error:
+            raise ConflictError(str(error)) from error
+        if any(file.retained for file in skill.files):
+            raise ConflictError("项目技能必须包含完整的文件内容")
+        if len(json.dumps(skill.model_dump(mode="json"), ensure_ascii=False).encode()) > 128 * 1024:
+            raise ConflictError("项目技能内容不能超过 128 KiB")
+        if not display_name.strip() or len(skill.name) > 64:
+            raise ConflictError("技能名称不能为空，标识不能超过 64 个字符")
+        now = self._clock()
+        item = ProjectSkill(
+            skillId=self._ids("project_skill"),
+            displayName=display_name.strip(),
+            skill=skill.model_copy(update={"source": None}),
+            sourceThreadId=source_thread_id,
+            createdAt=now,
+            updatedAt=now,
+        )
+        updated = project.model_copy(
+            update={"local_skills": (*project.local_skills, item), "updated_at": now}
+        )
+        await self._repository.replace(updated, expected_updated_at=project.updated_at)
+        return item
+
+    async def set_skill_enabled(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        project_id: str,
+        skill_id: str,
+        revision: int,
+        enabled: bool,
+    ) -> ProjectSkill:
+        project = await self.get(tenant_id=tenant_id, user_id=user_id, project_id=project_id)
+        item = next((item for item in project.local_skills if item.skill_id == skill_id), None)
+        if item is None:
+            raise NotFoundError("项目技能不存在")
+        if item.revision != revision:
+            raise ConflictError("技能版本已变化，请刷新后重试")
+        now = self._clock()
+        changed = item.model_copy(update={"enabled": enabled, "updated_at": now})
+        updated = project.model_copy(
+            update={
+                "local_skills": tuple(
+                    changed if other.skill_id == skill_id else other
+                    for other in project.local_skills
+                ),
+                "updated_at": now,
+            }
+        )
+        self._validate_enabled_skills(updated)
+        await self._repository.replace(updated, expected_updated_at=project.updated_at)
+        return changed
+
+    async def delete_skill(
+        self, *, tenant_id: str, user_id: str, project_id: str, skill_id: str
+    ) -> None:
+        project = await self.get(tenant_id=tenant_id, user_id=user_id, project_id=project_id)
+        if not any(item.skill_id == skill_id for item in project.local_skills):
+            raise NotFoundError("项目技能不存在")
+        updated = project.model_copy(
+            update={
+                "local_skills": tuple(
+                    item for item in project.local_skills if item.skill_id != skill_id
+                ),
+                "updated_at": self._clock(),
+            }
+        )
+        await self._repository.replace(updated, expected_updated_at=project.updated_at)
 
     async def instructions_for(self, *, tenant_id: str, user_id: str, project_id: str) -> str:
         """Return the project's instructions after checking ownership.
@@ -383,6 +484,11 @@ class ProjectService:
         if self._document_resolver is None:
             raise ConflictError("Project document verification is unavailable")
         existing = await self._resources.list_documents(tenant_id, project_id)
+        attached = next(
+            (item for item in existing if item.input_artifact_id == input_artifact_id), None
+        )
+        if attached is not None:
+            return attached
         if len(existing) >= MAX_PROJECT_DOCUMENTS:
             raise ConflictError(f"a project accepts at most {MAX_PROJECT_DOCUMENTS} documents")
         artifact = await self._document_resolver(tenant_id, user_id, input_artifact_id)
@@ -397,7 +503,16 @@ class ProjectService:
             sha256=getattr(artifact, "sha256", None),
             createdAt=self._clock(),
         )
-        await self._resources.add_document(document)
+        try:
+            await self._resources.add_document(document)
+        except ConflictError:
+            current = await self._resources.list_documents(tenant_id, project_id)
+            duplicate = next(
+                (item for item in current if item.input_artifact_id == input_artifact_id), None
+            )
+            if duplicate is None:
+                raise
+            return duplicate
         return document
 
     async def detach_document(
@@ -486,7 +601,14 @@ class ProjectService:
                 "## 项目网页\n"
                 + "\n".join(f"- {item.title or item.url}：{item.url}" for item in links)
             )
-        if project.skill_references:
+        active_skills = tuple(item for item in project.local_skills if item.enabled)
+        local_snapshots = tuple(
+            authored_skill_snapshot(
+                item.skill, source=f"project-skill:{project_id}/{item.skill_id}@{item.revision}"
+            )
+            for item in active_skills
+        )
+        if project.skill_references or active_skills:
             labels: list[str] = []
             for reference in project.skill_references:
                 package_id, _, revision = reference.partition("@")
@@ -495,6 +617,9 @@ class ProjectService:
                     labels.append(f"- {package.display_name}（{reference}）")
                 except (ConflictError, NotFoundError, ValueError):
                     labels.append(f"- {reference}")
+            labels.extend(
+                f"- {item.display_name}：{item.skill.description}" for item in active_skills
+            )
             sections.append("## 项目技能\n" + "\n".join(labels))
         text = (
             f'<project_context project="{project.name}">\n'
@@ -531,11 +656,15 @@ class ProjectService:
             },
             text=text,
             documentIds=tuple(item.input_artifact_id for item in documents),
-            skillReferences=project.skill_references,
+            skillReferences=(
+                *project.skill_references,
+                *(snapshot.source for snapshot in local_snapshots),
+            ),
+            localSkillSnapshots=local_snapshots,
             knowledgeReferences=project.knowledge_references,
             memoryCount=len(memories),
             documentCount=len(documents),
-            skillCount=len(project.skill_references),
+            skillCount=len(project.skill_references) + len(active_skills),
             knowledgeCount=len(project.knowledge_references),
             linkCount=len(links),
         )

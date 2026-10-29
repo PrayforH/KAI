@@ -5,7 +5,8 @@ import Link from "next/link";
 import { ActionMenuPopover } from "./action-menu-popover";
 import { projectClient, studioClient, type StudioCapabilities } from "../lib/studio-client";
 import type { ProjectSpaceState } from "./use-project-space";
-import { ProjectFilesDialog, ProjectModal, uploadProjectDocument } from "./project-resource-dialogs";
+import { ProjectModal, uploadProjectDocument } from "./project-resource-dialogs";
+import { ProjectWebSearchDialog } from "./project-web-search-dialog";
 import { ProjectResourceIcon } from "./project-resource-icon";
 import { errorText } from "./project-space-shared";
 import styles from "./project-home.module.css";
@@ -39,12 +40,10 @@ function ProjectCardSection({ kind, heading, children, actions, label }: {
 export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
   const { project, resources, setDialog, knowledgeNames, skillNames, refreshResources, setNotice } = space;
   const [skillMenuOpen, setSkillMenuOpen] = useState(false);
-  const [uploadMenuOpen, setUploadMenuOpen] = useState(false);
-  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [webSearchOpen, setWebSearchOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const skillTrigger = useRef<HTMLButtonElement>(null);
-  const uploadTrigger = useRef<HTMLButtonElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const [connectors, setConnectors] = useState<StudioCapabilities["mcpServers"]>([]);
   useEffect(() => {
@@ -121,15 +120,10 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
           </button>
         } actions={<>
           <input ref={fileInput} type="file" className={styles.hiddenFile} aria-label="上传项目文件" disabled={uploading} onChange={event => void upload(event)} />
-          <button type="button" ref={uploadTrigger} className={styles.button} aria-label="上传项目资源" aria-haspopup="menu" aria-expanded={uploadMenuOpen} disabled={uploading}
-            onClick={() => setUploadMenuOpen(value => !value)} onKeyDown={event => { if (event.key === "ArrowDown") { event.preventDefault(); setUploadMenuOpen(true); } }}>
-            <ProjectControlIcon name="upload" />{uploading ? "上传中…" : "上传"}<ProjectControlIcon name="down" />
+          <button type="button" className={styles.button} aria-label="上传文件" disabled={uploading} onClick={() => fileInput.current?.click()}>
+            <ProjectControlIcon name="upload" />{uploading ? "上传中…" : "上传"}
           </button>
-          <button type="button" className={styles.button} onClick={() => setLinkDialogOpen(true)}><ProjectControlIcon name="link" />添加网页</button>
-          {uploadMenuOpen && <ActionMenuPopover anchor={uploadTrigger} align="start" label="上传项目资源" onClose={() => setUploadMenuOpen(false)}>
-            <button type="button" role="menuitem" onClick={() => { setUploadMenuOpen(false); fileInput.current?.click(); }}><ProjectControlIcon name="upload" /><span>上传文件</span></button>
-            <button type="button" role="menuitem" onClick={() => { setUploadMenuOpen(false); setLinkDialogOpen(true); }}><ProjectControlIcon name="link" /><span>添加网页</span></button>
-          </ActionMenuPopover>}
+          <button type="button" className={styles.button} onClick={() => setWebSearchOpen(true)}><ProjectControlIcon name="link" />搜索网页</button>
           {uploadError && <p className={styles.uploadError} role="alert">{uploadError}</p>}
         </>}>
           {!!(resources.documents.length + resources.links.length) && <ul className={styles.compactList}>
@@ -160,8 +154,9 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
             </button>
           </ActionMenuPopover>}
         </>}>
-          {!!project.skillReferences?.length && <ul className={styles.compactList}>
-            {project.skillReferences.map((ref) => <li key={ref}>
+          {!!(project.skillReferences?.length || project.localSkills?.length) && <ul className={styles.compactList}>
+            {project.localSkills?.map(item => <li key={item.skillId}><button type="button" className={styles.resourceRow} title={item.skill.description} onClick={() => setDialog("skills")}><ProjectResourceIcon kind="skill" name={item.displayName} /><span>{item.displayName}</span>{!item.enabled && <small>草稿</small>}</button></li>)}
+            {project.skillReferences?.map((ref) => <li key={ref}>
               <button type="button" className={styles.resourceRow} title={skillNames.get(ref) ?? ref} onClick={() => setDialog("skills")}>
                 <ProjectResourceIcon kind="skill" name={skillNames.get(ref) ?? ref} /><span>{skillNames.get(ref) ?? ref}</span>
               </button>
@@ -184,7 +179,7 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
         </ProjectCardSection>
       </section>
     </aside>
-    {linkDialogOpen && <ProjectFilesDialog project={project} mode="manage" initialAction="link" onClose={() => setLinkDialogOpen(false)} onChanged={() => void refreshResources()} />}
+    {webSearchOpen && <ProjectWebSearchDialog project={project} onClose={() => setWebSearchOpen(false)} onChanged={() => void refreshResources()} />}
   </>;
 }
 

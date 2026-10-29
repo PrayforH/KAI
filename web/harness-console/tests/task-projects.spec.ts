@@ -81,7 +81,7 @@ describe("project-grouped task list", () => {
     expect(dialogs).toContain("export function ProjectFilesDialog");
     expect(dialogs).toContain("搜索文件和资源");
     expect(dialogs).toContain("搜索技能、标签或来源");
-    expect(dialogs).toContain("添加网页");
+    expect(dialogs).toContain("搜索网页");
     expect(dialogs).toContain("project_id=${encodeURIComponent(project.projectId)}");
     expect(dialogs).toContain("任务产物");
     expect(dialogs).toContain("/content?inline=1");

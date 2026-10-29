@@ -146,7 +146,7 @@ describe("task header actions", () => {
     }));
     render(<TaskHeaderActions task={task({ project_id: "current" })} projects={projects} />);
     act(() => container.querySelector<HTMLButtonElement>(".task-header-more")!.click());
-    expect(menuItems()).toEqual(["置顶任务", "分支到新聊天", "重命名任务", "移入项目", "归档任务"]);
+    expect(menuItems()).toEqual(["置顶任务", "分支到新聊天", "重命名任务", "移入项目", "提炼为项目技能", "归档任务"]);
     act(() => container.querySelector<HTMLButtonElement>(".nested-menu-trigger")!.click());
     expect(setTaskProject).not.toHaveBeenCalled();
     const options = container.querySelectorAll<HTMLButtonElement>(".nested-menu-panel button");
@@ -224,7 +224,7 @@ describe("task header actions", () => {
     act(() => trigger.click());
     const menu = document.querySelector('[role="menu"][aria-label="任务操作 分析任务"]')!;
     expect(Array.from(menu.querySelectorAll('[role="menuitem"]'), item => item.textContent)).toEqual([
-      "复制任务链接", "在新标签中打开", "分支到新聊天", "重命名", "置顶", "项目", "归档",
+      "复制任务链接", "在新标签中打开", "分支到新聊天", "重命名", "置顶", "项目", "提炼为项目技能", "归档",
     ]);
     const external = menu.querySelector('a')!;
     expect(external.getAttribute("target")).toBe("_blank");

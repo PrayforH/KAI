@@ -197,6 +197,11 @@ export function useProjectSpace(
       setError(errorText(cause));
     }
   }
+  useEffect(() => {
+    const changed = (event: Event) => { if ((event as CustomEvent<{projectId:string}>).detail?.projectId === projectId) void refreshResources(); };
+    window.addEventListener("harness:project-results-changed", changed);
+    return () => window.removeEventListener("harness:project-results-changed", changed);
+  }, [projectId]);
   function chooseTab(next: ProjectTab) {
     setTab(next);
     setQuery("");

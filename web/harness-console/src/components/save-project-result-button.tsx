@@ -33,6 +33,7 @@ export function SaveProjectResultButton({
             const result = await projectClient.saveResult(
               projectId,
               artifactId,
+              true,
             );
             setSaved(true);
             onSaved?.(result);
@@ -54,8 +55,8 @@ export function SaveProjectResultButton({
         {pending
           ? "保存中…"
           : saved || initiallySaved
-            ? "已保存到项目成果"
-            : "保存到项目成果"}
+            ? "已加入项目资源"
+            : "加入项目资源"}
       </button>
       {error && (
         <span className={styles.saveResultError} role="alert">
