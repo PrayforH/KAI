@@ -2,13 +2,17 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { assistantRequest, type Objective, type Execution, type Notice } from "../../lib/assistant-client";
+import { assistantRequest, type Objective, type Execution, type Notice, type Specialist, type Handover } from "../../lib/assistant-client";
 import styles from "./assistant-manager.module.css";
 
 type Agent = { name: string; version: string; display_name: string; owner_user_id?: string; space_id?: string };
 type Project = { projectId: string; name: string };
 const statusLabel = { active: "持续跟进", paused: "已暂停", completed: "已完成", cancelled: "已停止",
   pending: "等待执行", running: "执行中", succeeded: "执行成功", failed: "执行失败" };
+const specialistLabel = { draft: "待配置", needs_input: "待补充配置", validating: "验证中",
+  ready: "待启用", active: "运行中", paused: "已暂停", blocked: "受阻", archived: "已归档" };
+const handoverLabel = { sent: "已发送", received: "已接收", applied: "已安排执行",
+  executing: "执行中", pending_input: "待补充", failed: "失败" };
 const date = (value: string) => new Date(value).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
 export function AssistantManager() {
@@ -18,7 +22,10 @@ export function AssistantManager() {
   const [executions, setExecutions] = useState<Execution[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [tab, setTab] = useState<"objectives" | "inbox">("objectives");
+  const [tab, setTab] = useState<"objectives" | "inbox" | "specialists">("objectives");
+  const [specialists, setSpecialists] = useState<Specialist[]>([]);
+  const [handovers, setHandovers] = useState<Handover[]>([]);
+  const [selectedSpecialist, setSelectedSpecialist] = useState("");
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Objective | null>(null);
   const [busy, setBusy] = useState(false);
@@ -31,11 +38,14 @@ export function AssistantManager() {
     if (target) setSelected(target);
   }, []);
   const selectedItem = items.find(item => item.objectiveId === selected);
+  const selectedSpecialistItem = specialists.find(item => item.specialistId === selectedSpecialist);
   const load = useCallback(async () => {
     const [next, notices] = await Promise.all([
       assistantRequest<Objective[]>("objectives"), assistantRequest<Notice[]>("inbox"),
     ]);
     setItems(next); setInbox(notices);
+    void assistantRequest<Specialist[]>("specialists").then(list => setSpecialists(list)).catch(() => {});
+    void assistantRequest<Handover[]>("handovers").then(list => setHandovers(list)).catch(() => {});
   }, []);
   useEffect(() => {
     let alive = true;
@@ -97,7 +107,7 @@ export function AssistantManager() {
     <header className={styles.header}><div><h1>持续事项</h1><p>把需要持续跟进的工作交给 KAI，随时查看进展、补充要求。</p></div>
       <button className={styles.primary} onClick={() => { setEditing(null); setCreating(true); setTab("objectives"); }}>新建持续事项</button></header>
     <nav className={styles.tabs} aria-label="助理视图">
-      {([['objectives', '持续事项'], ['inbox', `待看结果${inbox.some(n => !n.readAt) ? ` · ${inbox.filter(n => !n.readAt).length}` : ''}`]] as const).map(([id, label]) =>
+      {([['objectives', '持续事项'], ['inbox', `待看结果${inbox.some(n => !n.readAt) ? ` · ${inbox.filter(n => !n.readAt).length}` : ''}`], ['specialists', '专职子助理']] as const).map(([id, label]) =>
         <button key={id} aria-pressed={tab === id} onClick={() => setTab(id)}>{label}</button>)}
     </nav>
     {error && <p role="alert" className={styles.error}>{error} <button onClick={() => void perform(async () => {})}>刷新</button></p>}
@@ -105,8 +115,45 @@ export function AssistantManager() {
     {tab === "inbox" && <div className={styles.notices}>{!inbox.length && <p className={styles.empty}>执行结束后，结果会出现在这里。</p>}
       {inbox.map(item => <article key={item.itemId}><div className={styles.row}><h2>{item.title}</h2><time>{date(item.createdAt)}</time></div><p>{item.content}</p><div className={styles.actions}>
         <button onClick={() => { setSelected(item.objectiveId); setTab("objectives"); }}>查看事项</button>
+        {item.threadId && <Link href={`/?thread=${encodeURIComponent(item.threadId)}`}>打开原任务 →</Link>}
         {!item.readAt && <button disabled={busy} onClick={() => void perform(async () => { await assistantRequest(`inbox/${item.itemId}/read`, "POST"); })}>标为已读</button>}</div></article>)}
     </div>}
+    {tab === "specialists" && <div className={styles.workspace}><div className={styles.list}>
+      {!specialists.length && <div className={styles.empty}><h2>还没有专职子助理</h2><p>在对话里说“帮我长期关注某账号花费”，KAI 会按职责创建专职子助理并给出转交回执；缺配置时不会启动。</p></div>}
+      {specialists.map(item => <button className={styles.item} data-selected={selectedSpecialist === item.specialistId} key={item.specialistId} onClick={() => setSelectedSpecialist(item.specialistId)}>
+        <span className={styles.row}><strong>{item.name}</strong><span className={styles.badge}>{specialistLabel[item.status]}</span></span>
+        <span className={styles.excerpt}>{item.description || item.agentName}</span>
+        <small>{handovers.find(h => h.specialistId === item.specialistId) ? `最近转交：${handoverLabel[handovers.find(h => h.specialistId === item.specialistId)!.status]}` : "尚无转交"}</small></button>)}
+    </div><div className={styles.detail}>{selectedSpecialistItem ? <>
+      <div className={styles.row}><h2>{selectedSpecialistItem.name}</h2><span className={styles.badge}>{specialistLabel[selectedSpecialistItem.status]}</span></div>
+      <p className={styles.instructions}>{selectedSpecialistItem.description || "（未填写职责说明）"}</p>
+      <p className={styles.muted}>执行智能体：{selectedSpecialistItem.agentName} · {selectedSpecialistItem.agentVersion}</p>
+      <div className={styles.actions}>
+        {selectedSpecialistItem.status === "ready" && <button className={styles.primary} disabled={busy} onClick={() => void perform(async () => {
+          await assistantRequest(`specialists/${selectedSpecialistItem.specialistId}/status`, "POST", { status: "active", expectedRevision: selectedSpecialistItem.revision });
+          setMessage("已启用持续运行；下一次检查时间以服务端记录为准。");
+        })}>启用持续运行</button>}
+        {selectedSpecialistItem.status === "active" && <button disabled={busy} onClick={() => void perform(async () => {
+          await assistantRequest(`specialists/${selectedSpecialistItem.specialistId}/status`, "POST", { status: "paused", expectedRevision: selectedSpecialistItem.revision });
+          setMessage("已暂停该子助理的全部职责。");
+        })}>暂停</button>}
+      </div>
+      <form onSubmit={event => { event.preventDefault(); const form = event.currentTarget;
+        const schedule = Number(new FormData(form).get("schedule")); const notify = String(new FormData(form).get("notify"));
+        void perform(async () => { await assistantRequest(`specialists/${selectedSpecialistItem.specialistId}/config`, "POST",
+          { config: { ...(schedule ? { schedule_minutes: schedule } : {}), ...(notify ? { notify_channel: notify } : {}) }, expectedRevision: selectedSpecialistItem.revision });
+          setMessage("配置已保存；缺项补齐后状态会转为待启用。"); });
+      }}><label>检查频率<select name="schedule" defaultValue={Number(selectedSpecialistItem.config.schedule_minutes ?? 0)}><option value="0">（不修改）</option><option value="60">每小时</option><option value="360">每 6 小时</option><option value="1440">每 24 小时</option></select></label>
+      <label>通知渠道<select name="notify" defaultValue={String(selectedSpecialistItem.config.notify_channel ?? "")}><option value="">（不修改）</option><option value="inbox">站内收件</option></select></label>
+      <button disabled={busy}>保存配置</button></form>
+      <h3>转交记录</h3>
+      {!handovers.filter(h => h.specialistId === selectedSpecialistItem.specialistId).length && <p className={styles.muted}>尚无转交记录。</p>}
+      {handovers.filter(h => h.specialistId === selectedSpecialistItem.specialistId).map(h => <article className={styles.execution} key={h.handoverId}>
+        <div className={styles.row}><strong>{handoverLabel[h.status]}</strong><time>{date(h.createdAt)}</time></div>
+        {h.summary && <p>{h.summary}</p>}
+        {h.objectiveId && <Link href={`/?thread=${encodeURIComponent(`assistant_${h.objectiveId}`)}`}>打开职责会话 →</Link>}
+      </article>)}
+    </> : <p className={styles.empty}>选择一个专职子助理，查看配置与转交记录。</p>}</div></div>}
     {tab === "objectives" && (creating ? <form className={styles.form} onSubmit={create}>
       <h2>{editing ? "编辑事项" : "新建持续事项"}</h2><label>事项名称<input defaultValue={editing?.title} name="title" required maxLength={120} placeholder="例如：跟进采购整改材料" /></label>
       <label>跟进要求<textarea defaultValue={editing?.instructions} name="instructions" required maxLength={20000} rows={5} placeholder="说明需要做什么、关注哪些变化，以及什么时候需要你确认。" /></label>

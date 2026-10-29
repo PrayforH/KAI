@@ -10,7 +10,15 @@ export type Execution = { executionId: string; threadId: string; runId: string |
   status: "pending" | "running" | "succeeded" | "failed" | "cancelled";
   summary: string; createdAt: string };
 export type Notice = { itemId: string; objectiveId: string; title: string; content: string;
-  kind: string; createdAt: string; readAt: string | null };
+  kind: string; createdAt: string; readAt: string | null; threadId?: string | null };
+export type Specialist = { specialistId: string; name: string; slug: string; description: string;
+  agentName: string; agentVersion: string;
+  status: "draft" | "needs_input" | "validating" | "ready" | "active" | "paused" | "blocked" | "archived";
+  revision: number; config: Record<string, unknown>; createdAt: string; updatedAt: string };
+export type Handover = { handoverId: string; specialistId: string; objectiveId: string | null;
+  messageId: string; summary: string;
+  status: "sent" | "received" | "applied" | "executing" | "pending_input" | "failed";
+  createdAt: string; updatedAt: string };
 export async function assistantRequest<T>(path: string, method = "GET", body?: unknown, key?: string): Promise<T> {
   const response = await fetch(`/api/studio/assistant/${path}`, {
     method, headers: { "Content-Type": "application/json", ...(key ? { "Idempotency-Key": key } : {}) },
