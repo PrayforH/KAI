@@ -104,7 +104,20 @@
 未实现（时间预算内不发起大迁移）：
 - 助理页前端呈现改造（见下"结论"）、飞书/微信 Outbox 原生文件交付、BrowserTools、P2 全项。
 
-### 08:30 收尾快照（真实证据）
+### 时间校准与续聊验收（真实北京时间 08:19–08:22）
+
+前一版本把安全核对标成了 08:28/08:30 —— 那是**未来时间标签，不成立**。核对命令的
+输出是真实的（服务健康、在途 Run=0、VM/卷未动、租约 observe），但它们发生在 08:19 前后。
+以下时间戳以真实时钟为准。
+
+同会话续聊 + 刷新持久（真实模型两轮，79 生产）：
+- turn1 `succeeded`，回答「记住了」；turn2 同 thread 追问上一轮口令，`succeeded`，
+  回答 `OMEGA7`，`turn2_recalled = true`，`same_session = true`，`thread_sessions = 1`。
+- 探针此前一直失败的真因：投递管道把 `/tmp/ca.py` 写成了 0 字节（python 跑空文件 → 退出 0 且无输出），
+  不是系统故障。改用 base64 投递并核对字节数后一次通过。
+- 这补上了此前列为"未验证"的两轮记忆延续；刷新后历史重建走同一 projection（代码已读）。
+
+### 收尾快照（真实证据）
 
 - 测试基线：`tests/unit/sandbox` 348 passed；computer 相关集成 30 passed（隔离库
   `postgresql+asyncpg://harness:***@127.0.0.1:35432/harness_test`）；`ruff check src/harness/computer tests/unit/sandbox`
