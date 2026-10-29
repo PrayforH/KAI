@@ -201,7 +201,8 @@ it("opens an independent organizing home without creating a task or mounting a c
   expect(host.querySelector('[role="tablist"]')).toBeNull();
   expect(host.textContent).toContain("文件和资源");
   expect(host.textContent).toContain("连接器");
-  expect(host.textContent).toContain("项目成果");
+  expect(host.querySelector('[data-card="results"]')).toBeNull();
+  expect(host.querySelectorAll("[data-project-resources] > section")).toHaveLength(3);
   expect(host.querySelector(".assistant-runtime-shell")).toBeNull();
   expect(mock.createTask).not.toHaveBeenCalled();
   await click("上传文件或添加链接");
@@ -415,7 +416,7 @@ it("keeps resource previews without repeated onboarding text", async () => {
   expect(host.textContent).not.toContain("添加文件和网页，供本项目的所有任务使用。");
   expect(host.textContent).not.toContain("为项目任务补充可复用的工作流程。");
   expect(host.textContent).not.toContain("关联已有知识库，供任务检索。");
-  expect(host.textContent).toContain("暂无成果");
+  expect(host.textContent).not.toContain("暂无成果");
 });
 
 it("keeps project launch out of IME confirmation and hands the draft to the main conversation", async () => {
