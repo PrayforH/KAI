@@ -491,8 +491,8 @@ async def search_project_web(
             identity.tenant_id, identity.user_id
         )
         payload = await client.search(query, include_images=False, max_results=8)
-        results = []
-        seen = set()
+        results: list[dict[str, str]] = []
+        seen: set[str] = set()
         for item in payload.get("results", []):
             try:
                 url = public_url(str(item.get("url", "")))
@@ -602,7 +602,7 @@ async def extract_project_skill(
     service: Annotated[ProjectService, Depends(get_project_service)],
     container: Annotated[ApiContainer, Depends(get_container)],
 ):
-    from harness.agui.routes import read_run_history
+    from harness.agui.routes import AguiHistoryTextPart, read_run_history
     from harness.studio.skill_builder import (
         SkillConversationContext,
         SkillConversationMessage,
@@ -626,7 +626,7 @@ async def extract_project_skill(
         runs = await container.runs.list_for_sessions(
             identity.tenant_id, list(binding.session_ids), limit=4
         )
-        source = []
+        source: list[str] = []
         for run in sorted(runs, key=lambda run: run.created_at):
             for message in await read_run_history(container, identity, run):
                 if message.role not in {"user", "assistant"}:
@@ -634,7 +634,11 @@ async def extract_project_skill(
                 content = (
                     message.content
                     if isinstance(message.content, str)
-                    else "\n".join(part.text for part in message.content if hasattr(part, "text"))
+                    else "\n".join(
+                        part.text
+                        for part in message.content
+                        if isinstance(part, AguiHistoryTextPart)
+                    )
                 )
                 if content:
                     source.append(f"{message.role}: {content[:6000]}")

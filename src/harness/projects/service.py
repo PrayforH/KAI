@@ -68,6 +68,8 @@ def _normalize_link_url(url: str) -> str:
     return value
 
 
+TaskProjectWriter = Callable[[str, str, str, str | None], Awaitable[str | None]]
+TaskProjectClearer = Callable[[str, str], Awaitable[object]]
 DocumentResolver = Callable[[str, str, str], Awaitable[InputArtifact]]
 KnowledgeResolver = Callable[[str, str, tuple[str, ...]], Awaitable[None]]
 KnowledgeBindingResolver = Callable[
@@ -93,8 +95,8 @@ class ProjectService:
         *,
         clock: Callable[[], datetime] | None = None,
         id_generator: Callable[[str], str] | None = None,
-        task_project_writer=None,
-        task_project_clearer=None,
+        task_project_writer: TaskProjectWriter | None = None,
+        task_project_clearer: TaskProjectClearer | None = None,
         resources: ProjectResourceRepository | None = None,
         document_resolver: DocumentResolver | None = None,
         knowledge_resolver: KnowledgeResolver | None = None,
@@ -183,10 +185,10 @@ class ProjectService:
         await self._knowledge_resolver(tenant_id, user_id, references)
         return references
 
-    def configure_task_project_clearer(self, clearer) -> None:
+    def configure_task_project_clearer(self, clearer: TaskProjectClearer) -> None:
         self._task_project_clearer = clearer
 
-    def configure_task_project_writer(self, writer) -> None:
+    def configure_task_project_writer(self, writer: TaskProjectWriter) -> None:
         if self._task_project_writer is not None:
             raise RuntimeError("task project writer is already configured")
         self._task_project_writer = writer
