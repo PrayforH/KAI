@@ -73,7 +73,7 @@ web `npm test` 1379 过 + `npm run build` 过。
 | 2.4 | 互斥派发：原线程有未终结 Run 时托管执行保持 pending，下一租约周期接续（用户直聊与派发共用线程不抢跑） | 已实现+已测试 |
 | 2.5 | 结构化检查点：assistant_checkpoints（执行结束同事务落库）；task_status 带检查点与托管线程 | 已实现+已测试 |
 | 2.6 | 工具：assistant_resolve_target（候选解析不猜最近）/ assistant_manage_work（绑定/查重/agent 一致性）/ assistant_send_instruction（accepted/queued 分明，走 steer） | 已实现+已测试 |
-| 2.7 | 结果回流主会话（主会话内嵌结果卡片）与飞书/微信引用→内部任务路由 | 部分（收件卡已带 thread_id、站内 Inbox 可溯源；主会话投影卡与渠道引用映射待后续批次，未验证） |
+| 2.7 | 结果回流主会话：主助理页「后台任务进展」条（需要你处理/正在推进/已交付三类卡、打开原任务、隐藏/展开）轮询收件箱；渠道引用映射 | 主会话进展条已实现+已部署(79)+chunk 指纹验证；真实点击链路与飞书/微信引用映射未验证 |
 
 已测试（阶段2，提交 9f0eda93）：tests/unit 2199 过（1 个既有 cryptography-vex 失败在基线复现；
 3 个同名测试文件收集冲突为仓库既有问题、基线一致）；integration storage 400 过（1 个既有 VM-host 失败在基线复现）；

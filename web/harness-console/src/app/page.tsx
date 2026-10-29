@@ -16,6 +16,7 @@ import {
 import { AgentThread } from "../components/agent-thread";
 import { AuthProvider, useAuth } from "../components/auth-provider";
 import { AssistantChannelStatus } from "../components/assistant-channel-status";
+import { AssistantProgressStrip } from "../components/assistant-progress-strip";
 import { AssistantComputerLink } from "../components/assistant-computer-link";
 import { AssistantComputerPane } from "../components/assistant-computer-pane";
 import { AssistantRuntimeShell } from "../components/assistant-runtime-shell";
@@ -844,6 +845,7 @@ function AuthenticatedHome() {
               />
             ) : (
             <div className="chat-surface">
+              {personalAssistant && <AssistantProgressStrip />}
               {versionSwitchError && <p role="alert">{versionSwitchError}</p>}
               {threadId && selectedAgent ? (
                 <AssistantRuntimeShell

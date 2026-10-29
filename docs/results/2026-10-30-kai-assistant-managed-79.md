@@ -67,3 +67,8 @@
   「打开原任务」直达链接（inbox 现携带 threadId）。web 镜像二次构建并只滚动 web 服务，
   运行容器 chunk 含「专职子助理」文案，`/assistant` 页 200。
 - 该批次的真机点击链路同样属于 5.4（需本人登录会话）。
+
+- 阶段2.7 主会话结果投影补齐：`/assistant` 页新增「后台任务进展」条
+  （`AssistantProgressStrip`：按 8.5 只展示 需要你处理/正在推进/已交付 三类卡片，
+  15 秒轮询收件箱、打开原任务、可隐藏），web 镜像三次构建并滚动，运行容器 chunk
+  含 `assistant-progress-strip`/`后台任务进展`，`/assistant` 200。
