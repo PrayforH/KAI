@@ -137,3 +137,44 @@ class ObjectiveCheckpointRow(Base):
     status: Mapped[str] = mapped_column(String(32))
     summary: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class SpecialistRow(Base):
+    """专职子助理。slug 在用户内唯一，用于创建前查重。"""
+
+    __tablename__ = "assistant_specialists"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "user_id", "slug", name="uq_assistant_specialist_slug"),
+        Index("ix_assistant_specialists_owner", "tenant_id", "user_id", "created_at"),
+    )
+
+    specialist_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(128))
+    user_id: Mapped[str] = mapped_column(String(128))
+    slug: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32))
+    revision: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class SpecialistHandoverRow(Base):
+    __tablename__ = "assistant_handovers"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "user_id", "message_id", name="uq_assistant_handover_message"
+        ),
+        Index("ix_assistant_handovers_specialist", "specialist_id", "created_at"),
+    )
+
+    handover_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    specialist_id: Mapped[str] = mapped_column(String(128))
+    objective_id: Mapped[str | None] = mapped_column(String(128))
+    tenant_id: Mapped[str] = mapped_column(String(128))
+    user_id: Mapped[str] = mapped_column(String(128))
+    message_id: Mapped[str] = mapped_column(String(256))
+    status: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)

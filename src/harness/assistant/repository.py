@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from harness.assistant.lifecycle import next_check, transition
 from harness.assistant.models import (
     AssistantInboxItem,
+    HandoverStatus,
     ManagedTask,
     Objective,
     ObjectiveAction,
@@ -24,6 +25,9 @@ from harness.assistant.models import (
     ObjectiveExecution,
     ObjectiveExecutionStatus,
     ObjectiveStatus,
+    Specialist,
+    SpecialistHandover,
+    SpecialistStatus,
 )
 from harness.assistant.storage import (
     AssistantInboxRow,
@@ -32,6 +36,8 @@ from harness.assistant.storage import (
     ObjectiveEventRow,
     ObjectiveExecutionRow,
     ObjectiveRow,
+    SpecialistHandoverRow,
+    SpecialistRow,
 )
 from harness.core.errors import ConflictError, NotFoundError
 from harness.storage.database import SessionFactory
@@ -645,3 +651,187 @@ class PostgresAssistantRepository:
             if row is None:
                 raise NotFoundError("Notice not found")
             row.read_at = row.read_at or now
+
+    async def create_specialist(self, specialist: Specialist) -> Specialist:
+        """Create a specialist; the slug is the dedupe key inside one user."""
+        async with self._context(write=True) as session:
+            existing = await session.scalar(
+                select(SpecialistRow).where(
+                    SpecialistRow.tenant_id == specialist.tenant_id,
+                    SpecialistRow.user_id == specialist.user_id,
+                    SpecialistRow.slug == specialist.slug,
+                )
+            )
+            if existing is not None:
+                return Specialist.model_validate(existing.payload)
+            try:
+                async with session.begin_nested():
+                    session.add(
+                        SpecialistRow(
+                            specialist_id=specialist.specialist_id,
+                            tenant_id=specialist.tenant_id,
+                            user_id=specialist.user_id,
+                            slug=specialist.slug,
+                            status=specialist.status.value,
+                            revision=specialist.revision,
+                            created_at=specialist.created_at,
+                            updated_at=specialist.updated_at,
+                            payload=specialist.model_dump(mode="json", by_alias=True),
+                        )
+                    )
+                    await session.flush()
+            except IntegrityError:
+                existing = await session.scalar(
+                    select(SpecialistRow).where(
+                        SpecialistRow.tenant_id == specialist.tenant_id,
+                        SpecialistRow.user_id == specialist.user_id,
+                        SpecialistRow.slug == specialist.slug,
+                    )
+                )
+                if existing is None:
+                    raise
+                return Specialist.model_validate(existing.payload)
+        return specialist
+
+    async def get_specialist(
+        self, tenant_id: str, user_id: str, specialist_id: str
+    ) -> Specialist:
+        async with self._context() as session:
+            row = await session.scalar(
+                select(SpecialistRow).where(
+                    SpecialistRow.tenant_id == tenant_id,
+                    SpecialistRow.user_id == user_id,
+                    SpecialistRow.specialist_id == specialist_id,
+                )
+            )
+            if row is None:
+                raise NotFoundError("Specialist not found")
+            return Specialist.model_validate(row.payload)
+
+    async def list_specialists(self, tenant_id: str, user_id: str) -> list[Specialist]:
+        async with self._context() as session:
+            rows = await session.scalars(
+                select(SpecialistRow)
+                .where(SpecialistRow.tenant_id == tenant_id, SpecialistRow.user_id == user_id)
+                .order_by(SpecialistRow.updated_at.desc())
+                .limit(100)
+            )
+            return [Specialist.model_validate(row.payload) for row in rows]
+
+    async def update_specialist(
+        self,
+        tenant_id: str,
+        user_id: str,
+        specialist_id: str,
+        *,
+        expected_revision: int,
+        config: dict[str, object] | None = None,
+        status: SpecialistStatus | None = None,
+        now: datetime,
+    ) -> Specialist:
+        if config is None and status is None:
+            raise ValueError("exactly one specialist change is required")
+        if config is not None and status is not None:
+            raise ValueError("exactly one specialist change is required")
+        async with self._context(write=True) as session:
+            row = await session.scalar(
+                select(SpecialistRow)
+                .where(
+                    SpecialistRow.tenant_id == tenant_id,
+                    SpecialistRow.user_id == user_id,
+                    SpecialistRow.specialist_id == specialist_id,
+                )
+                .with_for_update()
+            )
+            if row is None:
+                raise NotFoundError("Specialist not found")
+            current = Specialist.model_validate(row.payload)
+            if current.revision != expected_revision:
+                raise ConflictError("Specialist changed; reload before applying this change")
+            changes: dict[str, object] = {"revision": current.revision + 1, "updated_at": now}
+            if config is not None:
+                merged = dict(current.config)
+                merged.update(config)
+                changes["config"] = merged
+            if status is not None:
+                changes["status"] = status.value
+            updated = Specialist.model_validate(current.model_dump() | changes)
+            row.status = updated.status.value
+            row.revision = updated.revision
+            row.updated_at = now
+            row.payload = updated.model_dump(mode="json", by_alias=True)
+        return updated
+
+    async def record_handover(self, handover: SpecialistHandover) -> SpecialistHandover:
+        """Idempotent on the source message id: replays never duplicate receipts."""
+        async with self._context(write=True) as session:
+            existing = await session.scalar(
+                select(SpecialistHandoverRow).where(
+                    SpecialistHandoverRow.tenant_id == handover.tenant_id,
+                    SpecialistHandoverRow.user_id == handover.user_id,
+                    SpecialistHandoverRow.message_id == handover.message_id,
+                )
+            )
+            if existing is not None:
+                return SpecialistHandover.model_validate(existing.payload)
+            session.add(
+                SpecialistHandoverRow(
+                    handover_id=handover.handover_id,
+                    specialist_id=handover.specialist_id,
+                    objective_id=handover.objective_id,
+                    tenant_id=handover.tenant_id,
+                    user_id=handover.user_id,
+                    message_id=handover.message_id,
+                    status=handover.status.value,
+                    created_at=handover.created_at,
+                    updated_at=handover.updated_at,
+                    payload=handover.model_dump(mode="json", by_alias=True),
+                )
+            )
+        return handover
+
+    async def update_handover(
+        self,
+        tenant_id: str,
+        user_id: str,
+        handover_id: str,
+        *,
+        status: HandoverStatus,
+        now: datetime,
+    ) -> SpecialistHandover:
+        async with self._context(write=True) as session:
+            row = await session.scalar(
+                select(SpecialistHandoverRow)
+                .where(
+                    SpecialistHandoverRow.tenant_id == tenant_id,
+                    SpecialistHandoverRow.user_id == user_id,
+                    SpecialistHandoverRow.handover_id == handover_id,
+                )
+                .with_for_update()
+            )
+            if row is None:
+                raise NotFoundError("Handover not found")
+            current = SpecialistHandover.model_validate(row.payload)
+            updated = current.model_copy(update={"status": status, "updatedAt": now})
+            row.status = status.value
+            row.updated_at = now
+            row.payload = updated.model_dump(mode="json", by_alias=True)
+            return updated
+
+    async def handovers(
+        self, tenant_id: str, user_id: str, *, specialist_id: str | None = None
+    ) -> list[SpecialistHandover]:
+        clauses = [
+            SpecialistHandoverRow.tenant_id == tenant_id,
+            SpecialistHandoverRow.user_id == user_id,
+        ]
+        if specialist_id is not None:
+            clauses.append(SpecialistHandoverRow.specialist_id == specialist_id)
+        async with self._context() as session:
+            rows = await session.scalars(
+                select(SpecialistHandoverRow)
+                .where(*clauses)
+                .order_by(SpecialistHandoverRow.created_at.desc())
+                .limit(50)
+            )
+            return [SpecialistHandover.model_validate(row.payload) for row in rows]

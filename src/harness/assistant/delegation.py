@@ -12,7 +12,7 @@ executions run in their own threads and must not be able to delegate further
 
 import hashlib
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
 from harness.assistant.models import (
@@ -93,6 +93,26 @@ class DelegationGateway(Protocol):
 
     async def checkpoints(
         self, tenant_id: str, user_id: str, objective_id: str, *, limit: int = 3
+    ) -> list[Any]: ...
+
+    async def delegate_to_specialist(
+        self,
+        tenant_id: str,
+        user_id: str,
+        *,
+        name: str,
+        description: str,
+        agent_name: str,
+        agent_version: str,
+        task: str,
+        mode: str,
+        message_id: str,
+    ) -> dict[str, Any]: ...
+
+    async def list_specialists(self, tenant_id: str, user_id: str) -> list[Any]: ...
+
+    async def specialist_handovers(
+        self, tenant_id: str, user_id: str, *, specialist_id: str | None = None
     ) -> list[Any]: ...
 
 
@@ -294,6 +314,77 @@ def assistant_delegation_overlay(
         )
         return _text(f"补充[{outcome['status']}]：{label}。{outcome['message']}")
 
+    async def delegate_specialist(arguments: dict[str, Any]) -> dict[str, Any]:
+        """按职责创建/复用专职子助理并转交；缺项不启动，回执如实。"""
+        name = str(arguments.get("name", "")).strip()
+        task = str(arguments.get("task", "")).strip()
+        if not 1 <= len(name) <= 80:
+            return _text("职责名称需在 1–80 字之间。")
+        if not 1 <= len(task) <= 20_000:
+            return _text("职责说明需在 1–20000 字之间。")
+        mode = str(arguments.get("mode", "autonomous"))
+        if mode not in ("autonomous", "follow_only"):
+            return _text("mode 必须是 autonomous 或 follow_only。")
+        try:
+            outcome = await gateway.delegate_to_specialist(
+                tenant_id,
+                user_id,
+                name=name,
+                description=str(arguments.get("description", "")).strip(),
+                agent_name=str(arguments.get("agent_name", "")).strip()
+                or session.agent_name,
+                agent_version=str(arguments.get("agent_version", "")).strip()
+                or session.agent_version,
+                task=task,
+                mode=mode,
+                message_id=f"delegate-specialist:{run.run_id}:{name}",
+            )
+        except (ConflictError, NotFoundError, PermissionDeniedError, ValueError) as error:
+            return _text(f"转交未完成：{error}")
+        status = str(outcome["status"])
+        lines = [f"转交回执[{status}]：handover={outcome['handover_id']}"]
+        lines.append(
+            f"子助理：{outcome['specialist_id']}"
+            + ("（新建）" if outcome["created_specialist"] else "（复用已有实例）")
+        )
+        objective_id = outcome.get("objective_id")
+        if objective_id is not None:
+            lines.append(f"职责：{objective_id}")
+        raw_missing = outcome.get("missing")
+        missing: list[str] = (
+            [str(item) for item in cast(list[object], raw_missing)]
+            if isinstance(raw_missing, list)
+            else []
+        )
+        if missing:
+            lines.append(f"待补充配置：{'、'.join(missing)}；缺项不启动。")
+        if status == "applied":
+            lines.append("首次执行已安排（排队中）。")
+        return _text("\n".join(lines))
+
+    async def specialist_status(_arguments: dict[str, Any]) -> dict[str, Any]:
+        try:
+            specialists = await gateway.list_specialists(tenant_id, user_id)
+            handovers: list[Any] = await gateway.specialist_handovers(tenant_id, user_id)
+        except (NotFoundError, PermissionDeniedError) as error:
+            return _text(f"子助理查询失败：{error}")
+        if not specialists:
+            return _text("当前没有专职子助理。")
+        lines: list[str] = []
+        for specialist in specialists[:10]:
+            latest = next(
+                (item for item in handovers if item.specialist_id == specialist.specialist_id),
+                None,
+            )
+            label = (
+                f"- [{specialist.status.value}] {specialist.name}"
+                f"（{specialist.specialist_id}）revision={specialist.revision}"
+            )
+            if latest is not None:
+                label += f" 最近转交：{latest.status.value}"
+            lines.append(label)
+        return _text("\n".join(lines))
+
     async def task_status(_arguments: dict[str, Any]) -> dict[str, Any]:
         try:
             objectives = await gateway.list_objectives(tenant_id, user_id)
@@ -452,6 +543,29 @@ def assistant_delegation_overlay(
                 handler=send_instruction,
             ),
             PlatformTool(
+                name="assistant_delegate_to_specialist",
+                description="为长期可复用职责创建/复用专职子助理并转交；缺配置时不启动，回执标注缺项。",
+                schema={
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "maxLength": 80},
+                        "description": {"type": "string", "maxLength": 2000},
+                        "task": {"type": "string", "maxLength": 20000},
+                        "mode": {"type": "string", "enum": ["autonomous", "follow_only"]},
+                        "agent_name": {"type": "string"},
+                        "agent_version": {"type": "string"},
+                    },
+                    "required": ["name", "task"],
+                },
+                handler=delegate_specialist,
+            ),
+            PlatformTool(
+                name="assistant_specialist_status",
+                description="查询专职子助理列表、配置状态与最近转交回执。",
+                schema={"type": "object", "properties": {}},
+                handler=specialist_status,
+            ),
+            PlatformTool(
                 name="assistant_update_task",
                 description="暂停/恢复/完成/停止一个后台任务。",
                 schema={
@@ -566,6 +680,41 @@ class AssistantDelegationGateway:
     ) -> list[ObjectiveCheckpoint]:
         return await self._assistant.repository.checkpoints(
             tenant_id, user_id, objective_id, limit=limit
+        )
+
+    async def delegate_to_specialist(
+        self,
+        tenant_id: str,
+        user_id: str,
+        *,
+        name: str,
+        description: str,
+        agent_name: str,
+        agent_version: str,
+        task: str,
+        mode: str,
+        message_id: str,
+    ) -> dict[str, Any]:
+        return await self._assistant.delegate_to_specialist(
+            tenant_id,
+            user_id,
+            name=name,
+            description=description,
+            agent_name=agent_name,
+            agent_version=agent_version,
+            task=task,
+            mode=DelegationMode(mode),
+            message_id=message_id,
+        )
+
+    async def list_specialists(self, tenant_id: str, user_id: str) -> list[Any]:
+        return await self._assistant.repository.list_specialists(tenant_id, user_id)
+
+    async def specialist_handovers(
+        self, tenant_id: str, user_id: str, *, specialist_id: str | None = None
+    ) -> list[Any]:
+        return await self._assistant.repository.handovers(
+            tenant_id, user_id, specialist_id=specialist_id
         )
 
 

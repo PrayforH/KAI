@@ -3,7 +3,8 @@
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from pydantic import Field
 
 from harness.api.dependencies import Identity, ensure_permission, require_identity
 from harness.assistant.models import (
@@ -14,11 +15,25 @@ from harness.assistant.models import (
     ObjectiveEvent,
     ObjectiveExecution,
     ObjectiveNoteRequest,
+    Specialist,
+    SpecialistHandover,
+    SpecialistStatus,
     UpdateObjectiveRequest,
 )
 from harness.assistant.service import AssistantService
+from harness.studio.models import StudioModel
 
 router = APIRouter(prefix="/v1/studio/assistant", tags=["assistant"])
+
+
+class SpecialistConfigRequest(StudioModel):
+    config: dict[str, object]
+    expected_revision: int = Field(alias="expectedRevision", ge=1)
+
+
+class SpecialistStatusRequest(StudioModel):
+    status: SpecialistStatus
+    expected_revision: int = Field(alias="expectedRevision", ge=1)
 
 
 def service(request: Request) -> AssistantService:
@@ -142,4 +157,73 @@ async def inbox(identity: Reader, assistant: Service) -> list[AssistantInboxItem
 async def read_notice(item_id: str, identity: Reader, assistant: Service) -> None:
     await assistant.repository.read_notice(
         identity.tenant_id, identity.user_id, item_id, datetime.now(UTC)
+    )
+
+
+@router.get("/specialists")
+async def list_specialists(identity: Reader, assistant: Service) -> list[Specialist]:
+    return await assistant.repository.list_specialists(identity.tenant_id, identity.user_id)
+
+
+@router.post("/specialists", status_code=201)
+async def create_specialist(body: Specialist, identity: Writer, assistant: Service) -> Specialist:
+    """创建专职子助理；slug 查重返回既有实例而不重复创建。"""
+    created, _ = await assistant.create_specialist(
+        identity.tenant_id,
+        identity.user_id,
+        name=body.name,
+        description=body.description,
+        agent_name=body.agent_name,
+        agent_version=body.agent_version,
+    )
+    return created
+
+
+@router.get("/specialists/{specialist_id}")
+async def get_specialist(specialist_id: str, identity: Reader, assistant: Service) -> Specialist:
+    return await assistant.repository.get_specialist(
+        identity.tenant_id, identity.user_id, specialist_id
+    )
+
+
+@router.post("/specialists/{specialist_id}/config")
+async def configure_specialist(
+    specialist_id: str,
+    body: SpecialistConfigRequest,
+    identity: Writer,
+    assistant: Service,
+) -> Specialist:
+    return await assistant.configure_specialist(
+        identity.tenant_id,
+        identity.user_id,
+        specialist_id,
+        config=body.config,
+        expected_revision=body.expected_revision,
+    )
+
+
+@router.post("/specialists/{specialist_id}/status")
+async def set_specialist_status(
+    specialist_id: str,
+    body: SpecialistStatusRequest,
+    identity: Writer,
+    assistant: Service,
+) -> Specialist:
+    return await assistant.set_specialist_status(
+        identity.tenant_id,
+        identity.user_id,
+        specialist_id,
+        status=body.status,
+        expected_revision=body.expected_revision,
+    )
+
+
+@router.get("/handovers")
+async def list_handovers(
+    identity: Reader,
+    assistant: Service,
+    specialist_id: str | None = Query(default=None),
+) -> list[SpecialistHandover]:
+    return await assistant.repository.handovers(
+        identity.tenant_id, identity.user_id, specialist_id=specialist_id
     )

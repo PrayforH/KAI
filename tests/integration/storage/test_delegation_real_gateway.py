@@ -409,3 +409,150 @@ async def test_reconcile_holds_pending_while_the_original_thread_is_busy(
     )
     held = await service._reconcile(execution)  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
     assert held is execution
+
+
+@pytest.mark.asyncio
+async def test_specialist_create_is_deduped_and_config_gates_status(
+    database: DatabaseFixture,
+) -> None:
+    from harness.assistant.models import SpecialistStatus
+
+    service = make_service(database)
+    first, created = await service.create_specialist(
+        "tenant-a",
+        "user-a",
+        name="费用监控",
+        description="长期关注账号花费",
+        agent_name="audit-agent",
+        agent_version="1.0.0",
+    )
+    assert created and first.status is SpecialistStatus.NEEDS_INPUT
+    again, created_again = await service.create_specialist(
+        "tenant-a",
+        "user-a",
+        name="费用监控",
+        description="长期关注账号花费",
+        agent_name="audit-agent",
+        agent_version="1.0.0",
+    )
+    assert not created_again and again.specialist_id == first.specialist_id
+
+    # 保存不等于验证：缺项时保持 needs_input；补齐后转 ready。
+    updated = await service.configure_specialist(
+        "tenant-a",
+        "user-a",
+        first.specialist_id,
+        config={"schedule_minutes": 60},
+        expected_revision=first.revision,
+    )
+    assert updated.status is SpecialistStatus.NEEDS_INPUT
+    ready = await service.configure_specialist(
+        "tenant-a",
+        "user-a",
+        first.specialist_id,
+        config={"notify_channel": "inbox"},
+        expected_revision=updated.revision,
+    )
+    assert ready.status is SpecialistStatus.READY
+
+    # 缺项不启用：新建的第二个实例在补齐配置前不能进入 active。
+    from harness.core.errors import ConflictError
+
+    second, second_created = await service.create_specialist(
+        "tenant-a",
+        "user-a",
+        name="project-patrol",
+        description="巡检项目状态",
+        agent_name="audit-agent",
+        agent_version="1.0.0",
+    )
+    assert second_created
+    with pytest.raises(ConflictError, match="缺项"):
+        await service.set_specialist_status(
+            "tenant-a",
+            "user-a",
+            second.specialist_id,
+            status=SpecialistStatus.ACTIVE,
+            expected_revision=second.revision,
+        )
+
+
+@pytest.mark.asyncio
+async def test_delegate_to_specialist_creates_deduped_handover_and_objective(
+    database: DatabaseFixture,
+) -> None:
+    service = make_service(database)
+    service._agui = cast(Any, _StubAgui())  # pyright: ignore[reportPrivateUsage]
+    outcome = await service.delegate_to_specialist(
+        "tenant-a",
+        "user-a",
+        name="费用监控",
+        description="长期关注账号花费",
+        agent_name="audit-agent",
+        agent_version="1.0.0",
+        task="长期关注某账号花费",
+        mode=cast(Any, 'autonomous'),
+        message_id="delegate-specialist:run-1:费用监控",
+    )
+    # 配置缺项：职责已登记但回执为 pending_input，不启动执行。
+    assert outcome["status"] == "pending_input"
+    assert outcome["missing"] == ["schedule_minutes", "notify_channel"]
+    specialist = await service.repository.get_specialist(
+        "tenant-a", "user-a", str(outcome["specialist_id"])
+    )
+    objectives = await service.repository.list("tenant-a", "user-a")
+    assert len(objectives) == 1 and objectives[0].specialist_id == specialist.specialist_id
+
+    replay = await service.delegate_to_specialist(
+        "tenant-a",
+        "user-a",
+        name="费用监控",
+        description="长期关注账号花费",
+        agent_name="audit-agent",
+        agent_version="1.0.0",
+        task="长期关注某账号花费",
+        mode=cast(Any, 'autonomous'),
+        message_id="delegate-specialist:run-1:费用监控",
+    )
+    assert replay["handover_id"] == outcome["handover_id"]
+    assert await service.repository.list("tenant-a", "user-a") == objectives
+
+
+@pytest.mark.asyncio
+async def test_completed_specialist_config_enables_first_execution(
+    database: DatabaseFixture,
+) -> None:
+    from harness.assistant.models import SpecialistStatus
+
+    service = make_service(database)
+    service._agui = cast(Any, _StubAgui())  # pyright: ignore[reportPrivateUsage]
+    outcome = await service.delegate_to_specialist(
+        "tenant-a",
+        "user-a",
+        name="行业研究",
+        description="每日行业快报",
+        agent_name="audit-agent",
+        agent_version="1.0.0",
+        task="每天整理行业动态",
+        mode=cast(Any, 'autonomous'),
+        message_id="delegate-specialist:run-2:行业研究",
+    )
+    specialist = await service.repository.get_specialist(
+        "tenant-a", "user-a", str(outcome["specialist_id"])
+    )
+    configured = await service.configure_specialist(
+        "tenant-a",
+        "user-a",
+        specialist.specialist_id,
+        config={"schedule_minutes": 1440, "notify_channel": "inbox"},
+        expected_revision=specialist.revision,
+    )
+    assert configured.status is SpecialistStatus.READY
+    enabled = await service.set_specialist_status(
+        "tenant-a",
+        "user-a",
+        specialist.specialist_id,
+        status=SpecialistStatus.ACTIVE,
+        expected_revision=configured.revision,
+    )
+    assert enabled.status is SpecialistStatus.ACTIVE

@@ -65,11 +65,19 @@ web `npm test` 1379 过 + `npm run build` 过。
 
 ## 阶段 2：已有任务托管闭环与跨端交付（8.2/8.3/8.4/8.7 P1）
 
-- 绑定原 thread（ManagedTask 关联）、只跟进/自主推进、结构化检查点、互斥派发、运行中补充（accepted/queued/failed 不混淆）。
-- 结果回流主会话：VM→Artifact→鉴权预览/下载→Outbox 原生文件；补发不重跑模型；sender accepted 与用户打开分别记录。
-- Web/飞书/微信目标路由与歧义澄清；引用 ID 无可靠映射时用短任务编号。
+| 项 | 内容 | 状态 |
+| --- | --- | --- |
+| 2.1 | Objective 扩展 managedThreadId + mode（autonomous/follow_only）；旧事项不变 | 已实现+已测试 |
+| 2.2 | assistant_managed_tasks 表（0056，部分唯一索引：同用户同 thread 至多一个执行托管者）+ 查重返回既有托管者 | 已实现+已测试 |
+| 2.3 | 托管执行在原线程续跑（execution.thread_id=原 thread）；follow_only 永不执行 | 已实现+已测试 |
+| 2.4 | 互斥派发：原线程有未终结 Run 时托管执行保持 pending，下一租约周期接续（用户直聊与派发共用线程不抢跑） | 已实现+已测试 |
+| 2.5 | 结构化检查点：assistant_checkpoints（执行结束同事务落库）；task_status 带检查点与托管线程 | 已实现+已测试 |
+| 2.6 | 工具：assistant_resolve_target（候选解析不猜最近）/ assistant_manage_work（绑定/查重/agent 一致性）/ assistant_send_instruction（accepted/queued 分明，走 steer） | 已实现+已测试 |
+| 2.7 | 结果回流主会话（主会话内嵌结果卡片）与飞书/微信引用→内部任务路由 | 部分（收件卡已带 thread_id、站内 Inbox 可溯源；主会话投影卡与渠道引用映射待后续批次，未验证） |
 
-状态：未开始。
+已测试（阶段2，提交 9f0eda93）：tests/unit 2199 过（1 个既有 cryptography-vex 失败在基线复现；
+3 个同名测试文件收集冲突为仓库既有问题、基线一致）；integration storage 400 过（1 个既有 VM-host 失败在基线复现）；
+ruff 全过；pyright 剖面与基线一致（2449/1160/234）。
 
 ## 阶段 3：持久专职子助理、首次配置与转交（8.9/8.10/8.11）
 

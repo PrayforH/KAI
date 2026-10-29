@@ -38,11 +38,22 @@ class FakeGateway:
         self.notes: list[tuple[str, str]] = []
         self.bindings: list[dict[str, Any]] = []
         self.resolved_queries: list[str] = []
+        self.delegate_calls: list[dict[str, Any]] = []
         self.instruct_outcome: dict[str, Any] = {
             "status": "queued",
             "message": "当前没有进行中的执行",
         }
         self.checkpoint_summaries: list[Any] = []
+        self.specialists: list[Any] = []
+        self.handovers: list[Any] = []
+        self.delegate_outcome: dict[str, Any] = {
+            "handover_id": "handover-1",
+            "specialist_id": "specialist-1",
+            "objective_id": "objective-9",
+            "status": "pending_input",
+            "missing": ["schedule_minutes", "notify_channel"],
+            "created_specialist": True,
+        }
         self.enqueue_error: Exception | None = None
 
     async def create(
@@ -129,6 +140,32 @@ class FakeGateway:
         self, tenant_id: str, user_id: str, objective_id: str, *, limit: int = 3
     ) -> list[Any]:
         return self.checkpoint_summaries
+
+    async def delegate_to_specialist(
+        self,
+        tenant_id: str,
+        user_id: str,
+        *,
+        name: str,
+        description: str,
+        agent_name: str,
+        agent_version: str,
+        task: str,
+        mode: str,
+        message_id: str,
+    ) -> dict[str, Any]:
+        self.delegate_calls.append(
+            {"name": name, "task": task, "mode": mode, "message_id": message_id}
+        )
+        return self.delegate_outcome
+
+    async def list_specialists(self, tenant_id: str, user_id: str) -> list[Any]:
+        return self.specialists
+
+    async def specialist_handovers(
+        self, tenant_id: str, user_id: str, *, specialist_id: str | None = None
+    ) -> list[Any]:
+        return self.handovers
 
     async def add_note(
         self, tenant_id: str, user_id: str, objective_id: str, *, note: str
@@ -451,3 +488,56 @@ async def test_status_includes_the_latest_checkpoint():
     gateway.checkpoint_summaries = [SimpleNamespace(summary="已完成数据校验，下一步生成图表")]
     status = await tools["assistant_task_status"]({})
     assert "已完成数据校验" in text_of(status)
+
+
+@pytest.mark.asyncio
+async def test_delegate_to_specialist_reports_missing_config_without_starting():
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    result = await tools["assistant_delegate_to_specialist"](
+        {"name": "费用监控", "task": "长期关注某账号花费"}
+    )
+    body = text_of(result)
+    assert "pending_input" in body and "schedule_minutes" in body and "缺项不启动" in body
+    call = gateway.delegate_calls[0]
+    assert call["mode"] == "autonomous"
+
+
+@pytest.mark.asyncio
+async def test_delegate_replay_reports_receipt_without_recreating():
+    gateway = FakeGateway()
+    gateway.delegate_outcome = {
+        "handover_id": "handover-1",
+        "specialist_id": "specialist-1",
+        "objective_id": "objective-9",
+        "status": "sent",
+        "missing": [],
+        "created_specialist": False,
+    }
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    result = await tools["assistant_delegate_to_specialist"](
+        {"name": "费用监控", "task": "长期关注花费"}
+    )
+    assert "复用已有实例" in text_of(result)
+
+
+@pytest.mark.asyncio
+async def test_specialist_status_lists_instances_and_receipts():
+    gateway = FakeGateway()
+    from types import SimpleNamespace
+
+    gateway.specialists = [
+        SimpleNamespace(
+            specialist_id="specialist-1",
+            name="费用监控",
+            status=SimpleNamespace(value="needs_input"),
+            revision=2,
+        )
+    ]
+    gateway.handovers = [
+        SimpleNamespace(specialist_id="specialist-1", status=SimpleNamespace(value="pending_input"))
+    ]
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    result = await tools["assistant_specialist_status"]({})
+    body = text_of(result)
+    assert "费用监控" in body and "pending_input" in body

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -15,7 +16,9 @@ from harness.application.agents import AgentService
 from harness.application.runs import RunService
 from harness.assistant.lifecycle import next_check
 from harness.assistant.models import (
+    SPECIALIST_REQUIRED_CONFIG,
     DelegationMode,
+    HandoverStatus,
     ManagedTask,
     ManagedTaskSource,
     Objective,
@@ -23,6 +26,9 @@ from harness.assistant.models import (
     ObjectiveExecution,
     ObjectiveExecutionStatus,
     ObjectiveStatus,
+    Specialist,
+    SpecialistHandover,
+    SpecialistStatus,
 )
 from harness.assistant.repository import PostgresAssistantRepository
 from harness.auth.service import AuthService
@@ -86,6 +92,7 @@ class AssistantService:
         managed_thread_id: str | None = None,
         mode: DelegationMode | None = None,
         source: ManagedTaskSource = ManagedTaskSource.API,
+        specialist_id: str | None = None,
     ) -> Objective:
         await self.validate(tenant_id, user_id, brief)
         now = datetime.now(UTC)
@@ -113,6 +120,7 @@ class AssistantService:
                 tenantId=tenant_id,
                 userId=user_id,
                 managedThreadId=managed_thread_id,
+                specialistId=specialist_id,
                 mode=mode or DelegationMode.AUTONOMOUS,
                 createdAt=now,
                 updatedAt=now,
@@ -343,3 +351,219 @@ class AssistantService:
                 or f"本次执行状态：{run.status.value}",
             )
         return ObjectiveExecution.model_validate(execution.model_dump() | changes)
+
+    # ------------------------------------------------------------------
+    # 持久专职子助理（8.9–8.11）：复用已发布能力模板，不引入第二套发布系统。
+    # ------------------------------------------------------------------
+
+    async def create_specialist(
+        self,
+        tenant_id: str,
+        user_id: str,
+        *,
+        name: str,
+        description: str,
+        agent_name: str,
+        agent_version: str,
+    ) -> tuple[Specialist, bool]:
+        await self._agents.get_published(tenant_id, user_id, agent_name, agent_version)
+        now = datetime.now(UTC)
+        specialist = Specialist(
+            specialistId=f"specialist_{uuid4().hex}",
+            tenantId=tenant_id,
+            userId=user_id,
+            name=name[:80],
+            slug=_specialist_slug(name),
+            description=description[:2_000],
+            agentName=agent_name,
+            agentVersion=agent_version,
+            status=SpecialistStatus.NEEDS_INPUT,
+            createdAt=now,
+            updatedAt=now,
+        )
+        stored = await self.repository.create_specialist(specialist)
+        return stored, stored.specialist_id == specialist.specialist_id
+
+    async def configure_specialist(
+        self,
+        tenant_id: str,
+        user_id: str,
+        specialist_id: str,
+        *,
+        config: dict[str, object],
+        expected_revision: int,
+    ) -> Specialist:
+        """配置命令落为带 revision 的结构化更新；保存后按完整集重新判定状态。"""
+        if not config:
+            raise ConflictError("empty specialist configuration")
+        schedule = config.get("schedule_minutes")
+        if schedule is not None and (
+            not isinstance(schedule, int) or not 15 <= schedule <= 525_600
+        ):
+            raise ConflictError("schedule_minutes 必须是 15–525600 之间的整数（分钟）")
+        updated = await self.repository.update_specialist(
+            tenant_id,
+            user_id,
+            specialist_id,
+            expected_revision=expected_revision,
+            config=config,
+            now=datetime.now(UTC),
+        )
+        missing = _specialist_missing_config(updated.config)
+        target = SpecialistStatus.READY if not missing else SpecialistStatus.NEEDS_INPUT
+        if updated.status not in {SpecialistStatus.ACTIVE, SpecialistStatus.PAUSED} and (
+            target is not updated.status
+        ):
+            updated = await self.repository.update_specialist(
+                tenant_id,
+                user_id,
+                specialist_id,
+                expected_revision=updated.revision,
+                status=target,
+                now=datetime.now(UTC),
+            )
+        return updated
+
+    async def set_specialist_status(
+        self,
+        tenant_id: str,
+        user_id: str,
+        specialist_id: str,
+        *,
+        status: SpecialistStatus,
+        expected_revision: int,
+    ) -> Specialist:
+        if status is SpecialistStatus.ACTIVE:
+            current = await self.repository.get_specialist(tenant_id, user_id, specialist_id)
+            missing = _specialist_missing_config(current.config)
+            if missing:
+                raise ConflictError(f"配置缺项，不能启用：{'、'.join(missing)}")
+            if current.status is not SpecialistStatus.READY:
+                raise ConflictError("只有 ready 状态可以启用持续运行")
+        return await self.repository.update_specialist(
+            tenant_id,
+            user_id,
+            specialist_id,
+            expected_revision=expected_revision,
+            status=status,
+            now=datetime.now(UTC),
+        )
+
+    async def delegate_to_specialist(
+        self,
+        tenant_id: str,
+        user_id: str,
+        *,
+        name: str,
+        description: str,
+        agent_name: str,
+        agent_version: str,
+        task: str,
+        mode: DelegationMode,
+        message_id: str,
+    ) -> dict[str, object]:
+        """创建或复用专职子助理并转交职责；回执分 sent/received/pending_input。"""
+        now = datetime.now(UTC)
+        specialist, created = await self.create_specialist(
+            tenant_id,
+            user_id,
+            name=name,
+            description=description,
+            agent_name=agent_name,
+            agent_version=agent_version,
+        )
+        missing = _specialist_missing_config(specialist.config)
+        handover = await self.repository.record_handover(
+            SpecialistHandover(
+                handoverId=f"handover_{uuid4().hex}",
+                tenantId=tenant_id,
+                userId=user_id,
+                specialistId=specialist.specialist_id,
+                messageId=message_id,
+                summary=task[:400],
+                status=HandoverStatus.SENT,
+                createdAt=now,
+                updatedAt=now,
+            )
+        )
+        if not created and handover.status is not HandoverStatus.SENT:
+            # 重复转交按 message 幂等：回执不重建，职责不重复创建。
+            return {
+                "handover_id": handover.handover_id,
+                "specialist_id": specialist.specialist_id,
+                "objective_id": handover.objective_id,
+                "status": handover.status.value,
+                "missing": missing,
+                "created_specialist": False,
+            }
+        criteria = "由用户判断职责是否完成"
+        brief = ObjectiveBrief.model_validate(
+            {
+                "title": name[:120] or "专职职责",
+                "instructions": task,
+                "agentName": agent_name,
+                "agentVersion": agent_version,
+                "completionCriteria": criteria,
+            }
+        )
+        objective = await self.create(
+            tenant_id,
+            user_id,
+            brief,
+            idempotency_key=f"delegate-specialist:{handover.message_id}",
+            mode=mode,
+            specialist_id=specialist.specialist_id,
+        )
+        updated_handover = await self.repository.update_handover(
+            tenant_id,
+            user_id,
+            handover.handover_id,
+            status=HandoverStatus.RECEIVED,
+            now=datetime.now(UTC),
+        )
+        if mode is DelegationMode.FOLLOW_ONLY or missing:
+            # 缺项不启动：职责先保存为待配置，不提前调度。
+            if missing:
+                updated_handover = await self.repository.update_handover(
+                    tenant_id,
+                    user_id,
+                    handover.handover_id,
+                    status=HandoverStatus.PENDING_INPUT,
+                    now=datetime.now(UTC),
+                )
+            return {
+                "handover_id": updated_handover.handover_id,
+                "specialist_id": specialist.specialist_id,
+                "objective_id": objective.objective_id,
+                "status": updated_handover.status.value,
+                "missing": missing,
+                "created_specialist": created,
+            }
+        await self.repository.update_handover(
+            tenant_id,
+            user_id,
+            handover.handover_id,
+            status=HandoverStatus.APPLIED,
+            now=datetime.now(UTC),
+        )
+        return {
+            "handover_id": handover.handover_id,
+            "specialist_id": specialist.specialist_id,
+            "objective_id": objective.objective_id,
+            "status": HandoverStatus.APPLIED.value,
+            "missing": [],
+            "created_specialist": created,
+        }
+
+
+def _specialist_slug(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
+    return (slug or "specialist")[:64]
+
+
+def _specialist_missing_config(config: dict[str, object]) -> list[str]:
+    return [
+        key
+        for key in SPECIALIST_REQUIRED_CONFIG
+        if not isinstance(config.get(key), (str, int)) or config.get(key) == ""
+    ]

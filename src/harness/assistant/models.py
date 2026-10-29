@@ -107,6 +107,8 @@ class Objective(ObjectiveBrief):
     revision: int = Field(default=1, ge=1)
     # 接管既有会话时绑定原 thread：执行在该线程续跑，而不是替身线程。
     managed_thread_id: str | None = Field(default=None, alias="managedThreadId", max_length=128)
+    # 由专职子助理承接的职责：定时能力属于职责，不属于头像或名称。
+    specialist_id: str | None = Field(default=None, alias="specialistId", max_length=128)
     mode: DelegationMode = DelegationMode.AUTONOMOUS
     next_check_at: AwareDatetime | None = Field(default=None, alias="nextCheckAt")
     created_at: AwareDatetime = Field(alias="createdAt")
@@ -205,3 +207,63 @@ class ObjectiveCheckpoint(StudioModel):
     status: ObjectiveExecutionStatus
     summary: str = ""
     created_at: AwareDatetime = Field(alias="createdAt")
+
+
+class SpecialistStatus(StrEnum):
+    """8.10 配置状态机：保存不等于验证，缺项不启动。"""
+
+    DRAFT = "draft"
+    NEEDS_INPUT = "needs_input"
+    VALIDATING = "validating"
+    READY = "ready"
+    ACTIVE = "active"
+    PAUSED = "paused"
+    BLOCKED = "blocked"
+    ARCHIVED = "archived"
+
+
+class Specialist(StudioModel):
+    """持久专职子助理：复用已发布能力模板的实例配置，不引入第二套发布系统。"""
+
+    specialist_id: str = Field(alias="specialistId")
+    tenant_id: str = Field(alias="tenantId")
+    user_id: str = Field(alias="userId")
+    name: str = Field(min_length=1, max_length=80)
+    slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,63}$")
+    description: str = Field(default="", max_length=2_000)
+    agent_name: str = Field(alias="agentName", pattern=r"^[a-z][a-z0-9-]{0,127}$")
+    agent_version: str = Field(alias="agentVersion", min_length=1, max_length=128)
+    status: SpecialistStatus = SpecialistStatus.DRAFT
+    revision: int = Field(default=1, ge=1)
+    # 结构化运行配置：调度、阈值、通知等；凭据只存引用（credential_ref）。
+    config: dict[str, object] = Field(default_factory=dict)
+    created_at: AwareDatetime = Field(alias="createdAt")
+    updated_at: AwareDatetime = Field(alias="updatedAt")
+
+
+class HandoverStatus(StrEnum):
+    """8.11 转交回执：发送≠接收≠执行。"""
+
+    SENT = "sent"
+    RECEIVED = "received"
+    APPLIED = "applied"
+    EXECUTING = "executing"
+    PENDING_INPUT = "pending_input"
+    FAILED = "failed"
+
+
+class SpecialistHandover(StudioModel):
+    handover_id: str = Field(alias="handoverId")
+    tenant_id: str = Field(alias="tenantId")
+    user_id: str = Field(alias="userId")
+    specialist_id: str = Field(alias="specialistId")
+    objective_id: str | None = Field(default=None, alias="objectiveId")
+    message_id: str = Field(alias="messageId")
+    summary: str = ""
+    status: HandoverStatus = HandoverStatus.SENT
+    created_at: AwareDatetime = Field(alias="createdAt")
+    updated_at: AwareDatetime = Field(alias="updatedAt")
+
+
+# 首次配置的最小完整集：缺任一项不得启用持续调度。
+SPECIALIST_REQUIRED_CONFIG = ("schedule_minutes", "notify_channel")
