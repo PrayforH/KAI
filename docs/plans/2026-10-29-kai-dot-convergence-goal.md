@@ -104,6 +104,32 @@
 未实现（时间预算内不发起大迁移）：
 - 助理页前端呈现改造（见下"结论"）、飞书/微信 Outbox 原生文件交付、BrowserTools、P2 全项。
 
+### 08:30 收尾快照（真实证据）
+
+- 测试基线：`tests/unit/sandbox` 348 passed；computer 相关集成 30 passed（隔离库
+  `postgresql+asyncpg://harness:***@127.0.0.1:35432/harness_test`）；`ruff check src/harness/computer tests/unit/sandbox`
+  All checks passed。集成测库此前缺 `harness_test`，本轮新建；conftest 改为 `DROP SCHEMA public CASCADE`
+  以覆盖 feishu/evolution 对 assistant 表的跨域外键。
+- 79 安全核对（08:28）：api/worker/control/viewer/web/postgres/minio/redis/feishu/weixin 全健康；
+  在途 Run = 0；VM runner `kai-computer-owner-preview-20261027` Up 22h、旧 Docker computer Up 44h、
+  `kai-computer*` 卷 5 个齐全；桌面租约 `observe:124`（未留在 human 占用）。
+- 证据归档（节点）：`/data/kai-dot-20261028/acceptance-20261029/observe-frame.png`
+  （1280x800，157109 B，sha256 `28dc1559c2d6bf34…`）、viewer/human-input 验收日志；
+  `/data/kai-dot-20261028/rescue-outputs-20261028/`（9 个原产物保护副本，哈希与工作卷一致）。
+- 回滚：compose 备份 `/data/kai-dot-20261028/compose.private.backup-20261029.json`；镜像按 tag 逐服务回退
+  （api/worker/control 回 `20261028-dot12`，viewer 回 `20261027-v2`）。
+
+### 未验证（不声称完成）
+
+- 同会话两轮记忆延续的端到端对话：探针脚本在 79 上未能跑通（脚本自身问题，非系统故障），未取得证据。
+  数据面已知：`PersonalConversation.submit` 以同一 thread + previous prompts 提交，且本轮真实 Run
+  `run_7d56400e…` 正是该路径且成功。
+- 刷新后"结果卡仍在"的浏览器视觉证据：投影重建路径已读代码确认（`agui/routes.py` 用与 live 相同的
+  projection 重建 `harness_present_artifact`），但受 79 自签证书限制，IAB 无法打开登录页做截图。
+- 飞书/微信 Outbox 原生文件交付：未实现（`SdkSender` 仅发 text/interactive，无 `im/v1/files` 上传）。
+- BrowserTools（CDP/DOM 优先）、P2 全项（模板派生、每用户 Viewer、配额、OpenSandbox SDK 薄适配、快照契约）。
+- observation/frame 与 VM boot 代际绑定：仅完成 Viewer 输入代际（`45db3d60`）；frame 与 boot_id 绑定未实现。
+
 ### 助理页 UI 项的诚实结论
 
 代码层已具备目标形态，无需也不应在最后 30 分钟重建前端：
