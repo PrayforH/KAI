@@ -15,6 +15,7 @@ import pytest
 from harness.assistant.delegation import AssistantDelegationGateway, assistant_delegation_overlay
 from harness.assistant.lifecycle import next_check
 from harness.assistant.models import (
+    ManagedTask,
     Objective,
     ObjectiveBrief,
     ObjectiveExecutionStatus,
@@ -203,3 +204,208 @@ async def test_repository_returns_executions_newest_first_and_create_is_idempote
     )
     executions = await repo.executions("tenant-a", "user-a", "objective-a")
     assert [item.execution_id for item in executions] == [newer.execution_id, older.execution_id]
+
+
+class _StubAgui:
+    """Binding lookups for managed threads."""
+
+    def __init__(self, agent_name: str = "audit-agent", agent_version: str = "1.0.0") -> None:
+        self.agent_name = agent_name
+        self.agent_version = agent_version
+        self.active_session_runs: list[Any] = []
+
+    async def get_binding(self, *, tenant_id: str, user_id: str, thread_id: str):
+        return SimpleNamespace(
+            session_id=f"session-for-{thread_id}",
+            agent_name=self.agent_name,
+            agent_version=self.agent_version,
+            project_id=None,
+        )
+
+    async def list_bindings(
+        self, tenant_id: str, user_id: str, *, limit: int = 50
+    ) -> list[SimpleNamespace]:
+        return []
+
+    async def create_run_with_result(self, **_kwargs: Any):  # pragma: no cover - mutex test only
+        raise AssertionError("run creation must not happen while the thread is busy")
+
+
+class _StubRuns:
+    def __init__(self, active: list[Any] | None = None) -> None:
+        self._active = active or []
+        self.steer_calls: list[tuple[str, str]] = []
+
+    async def list_for_sessions(self, _tenant_id: str, _session_ids: list[str], *, limit: int):
+        return self._active
+
+    async def find_by_idempotency_key(self, *_args: Any, **_kwargs: Any):
+        return None
+
+    async def steer(self, tenant_id: str, run_id: str, request_id: str, text: str):
+        self.steer_calls.append((run_id, request_id))
+        return {"request_id": request_id, "status": "requested"}
+
+
+@pytest.mark.asyncio
+async def test_managed_binding_is_unique_per_thread_and_objective(
+    database: DatabaseFixture,
+) -> None:
+    service = make_service(database)
+    managed = ManagedTask(
+        managedId="managed-1",
+        objectiveId="objective-m",
+        tenantId="tenant-a",
+        userId="user-a",
+        threadId="thread-taken",
+        createdAt=NOW,
+    )
+    await service.repository.create(
+        Objective(
+            objectiveId="objective-m",
+            tenantId="tenant-a",
+            userId="user-a",
+            title="跟进",
+            instructions="i",
+            agentName="audit-agent",
+            agentVersion="1.0.0",
+            managedThreadId="thread-taken",
+            createdAt=NOW,
+            updatedAt=NOW,
+        )
+    )
+    created, is_new = await service.repository.bind_managed(managed)
+    assert is_new and created.managed_id == "managed-1"
+    same, is_new_again = await service.repository.bind_managed(
+        managed.model_copy(update={"managedId": "managed-2"})
+    )
+    assert not is_new_again and same.managed_id == "managed-1"
+
+
+@pytest.mark.asyncio
+async def test_managed_objective_executes_on_the_original_thread(
+    database: DatabaseFixture,
+) -> None:
+    service = make_service(database)
+    service._agui = cast(Any, _StubAgui())  # pyright: ignore[reportPrivateUsage]
+    objective = await service.create(
+        "tenant-a",
+        "user-a",
+        brief(),
+        managed_thread_id="original-thread",
+    )
+    assert objective.managed_thread_id == "original-thread"
+    execution = await service.repository.enqueue(
+        "tenant-a", "user-a", objective.objective_id, trigger_key="m1", now=NOW
+    )
+    assert execution.thread_id == "original-thread"
+    bindings = await service.repository.managed_bindings("tenant-a", "user-a")
+    assert len(bindings) == 1 and bindings[0].objective_id == objective.objective_id
+
+
+@pytest.mark.asyncio
+async def test_follow_only_objective_never_starts_executions(
+    database: DatabaseFixture,
+) -> None:
+    from harness.core.errors import ConflictError
+
+    service = make_service(database)
+    service._agui = cast(Any, _StubAgui())  # pyright: ignore[reportPrivateUsage]
+    objective = await service.create(
+        "tenant-a",
+        "user-a",
+        brief(),
+        managed_thread_id="thread-o",
+        mode=cast(Any, "follow_only"),
+    )
+    assert objective.mode.value == "follow_only"
+    with pytest.raises(ConflictError, match="follow-only"):
+        await service.repository.enqueue(
+            "tenant-a", "user-a", objective.objective_id, trigger_key="x", now=NOW
+        )
+
+
+@pytest.mark.asyncio
+async def test_finished_execution_writes_a_structured_checkpoint(
+    database: DatabaseFixture,
+) -> None:
+    service = make_service(database)
+    service._agui = cast(Any, _StubAgui())  # pyright: ignore[reportPrivateUsage]
+    objective = await service.create("tenant-a", "user-a", brief(), managed_thread_id="thread-c")
+    execution = await service.repository.enqueue(
+        "tenant-a", "user-a", objective.objective_id, trigger_key="c1", now=NOW
+    )
+    claim = await service.repository.claim(NOW)
+    assert claim is not None
+    finished = execution.model_copy(
+        update={
+            "status": ObjectiveExecutionStatus.SUCCEEDED,
+            "summary": "已完成数据校验，下一步生成图表",
+            "finished_at": NOW,
+        }
+    )
+    assert await service.repository.save_execution(finished, claim[1], NOW)
+    checkpoints = await service.repository.checkpoints(
+        "tenant-a", "user-a", objective.objective_id
+    )
+    assert len(checkpoints) == 1
+    assert checkpoints[0].summary == "已完成数据校验，下一步生成图表"
+    assert checkpoints[0].status is ObjectiveExecutionStatus.SUCCEEDED
+    notices = await service.repository.inbox("tenant-a", "user-a")
+    assert notices[0].thread_id == "thread-c"
+
+
+@pytest.mark.asyncio
+async def test_instruct_queues_without_a_running_execution(database: DatabaseFixture) -> None:
+    service = make_service(database)
+    runs = _StubRuns()
+    service._runs = cast(Any, runs)  # pyright: ignore[reportPrivateUsage]
+    service._agui = cast(Any, _StubAgui())  # pyright: ignore[reportPrivateUsage]
+    objective = await service.create("tenant-a", "user-a", brief())
+    outcome = await service.instruct(
+        "tenant-a", "user-a", objective.objective_id, "改用 CSV", request_id="r1"
+    )
+    assert outcome["status"] == "queued" and runs.steer_calls == []
+    events = await service.repository.events("tenant-a", "user-a", objective.objective_id)
+    assert [item.content for item in events if item.kind == "note"] == ["改用 CSV"]
+
+
+@pytest.mark.asyncio
+async def test_instruct_steers_a_running_managed_execution(database: DatabaseFixture) -> None:
+    service = make_service(database)
+    objective = await service.create("tenant-a", "user-a", brief())
+    execution = await service.repository.enqueue(
+        "tenant-a", "user-a", objective.objective_id, trigger_key="s1", now=NOW
+    )
+    claim = await service.repository.claim(NOW)
+    assert claim is not None
+    await service.repository.save_execution(
+        execution.model_copy(
+            update={"status": ObjectiveExecutionStatus.RUNNING, "run_id": "run-9"}
+        ),
+        claim[1],
+        NOW,
+    )
+    runs = _StubRuns()
+    service._runs = cast(Any, runs)  # pyright: ignore[reportPrivateUsage]
+    service._agui = cast(Any, _StubAgui())  # pyright: ignore[reportPrivateUsage]
+    outcome = await service.instruct(
+        "tenant-a", "user-a", objective.objective_id, "优先导出", request_id="r2"
+    )
+    assert outcome["status"] == "accepted" and runs.steer_calls == [("run-9", "r2")]
+
+
+@pytest.mark.asyncio
+async def test_reconcile_holds_pending_while_the_original_thread_is_busy(
+    database: DatabaseFixture,
+) -> None:
+
+    service = make_service(database)
+    service._agui = cast(Any, _StubAgui())  # pyright: ignore[reportPrivateUsage]
+    service._runs = cast(Any, _StubRuns(active=[SimpleNamespace(status=RunStatus.RUNNING)]))  # pyright: ignore[reportPrivateUsage]
+    objective = await service.create("tenant-a", "user-a", brief(), managed_thread_id="thread-busy")
+    execution = await service.repository.enqueue(
+        "tenant-a", "user-a", objective.objective_id, trigger_key="b1", now=NOW
+    )
+    held = await service._reconcile(execution)  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
+    assert held is execution

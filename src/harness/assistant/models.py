@@ -40,6 +40,27 @@ class NotificationMode(StrEnum):
     NONE = "none"
 
 
+class DelegationMode(StrEnum):
+    """只跟进读取并汇报差距；自主推进在授权范围内执行下一步。"""
+
+    AUTONOMOUS = "autonomous"
+    FOLLOW_ONLY = "follow_only"
+
+
+class ManagedTaskRole(StrEnum):
+    """同一用户同一 thread 至多一个主动执行托管者；关注者只读。"""
+
+    EXECUTE = "execute"
+    OBSERVE = "observe"
+
+
+class ManagedTaskSource(StrEnum):
+    WEB = "web"
+    FEISHU = "feishu"
+    WEIXIN = "weixin"
+    API = "api"
+
+
 class ObjectiveSchedule(StudioModel):
     """A bounded periodic check; None on the objective means manual only."""
 
@@ -84,6 +105,9 @@ class Objective(ObjectiveBrief):
     user_id: str = Field(alias="userId")
     status: ObjectiveStatus = ObjectiveStatus.ACTIVE
     revision: int = Field(default=1, ge=1)
+    # 接管既有会话时绑定原 thread：执行在该线程续跑，而不是替身线程。
+    managed_thread_id: str | None = Field(default=None, alias="managedThreadId", max_length=128)
+    mode: DelegationMode = DelegationMode.AUTONOMOUS
     next_check_at: AwareDatetime | None = Field(default=None, alias="nextCheckAt")
     created_at: AwareDatetime = Field(alias="createdAt")
     updated_at: AwareDatetime = Field(alias="updatedAt")
@@ -149,5 +173,35 @@ class AssistantInboxItem(StudioModel):
     kind: str
     title: str
     content: str
+    thread_id: str | None = Field(default=None, alias="threadId")
     created_at: AwareDatetime = Field(alias="createdAt")
     read_at: AwareDatetime | None = Field(default=None, alias="readAt")
+
+
+class ManagedTask(StudioModel):
+    """托管关联：objective 与原 thread 的稳定绑定，带授权来源。"""
+
+    managed_id: str = Field(alias="managedId")
+    objective_id: str = Field(alias="objectiveId")
+    tenant_id: str = Field(alias="tenantId")
+    user_id: str = Field(alias="userId")
+    thread_id: str = Field(alias="threadId")
+    project_id: str | None = Field(default=None, alias="projectId", max_length=128)
+    role: ManagedTaskRole = ManagedTaskRole.EXECUTE
+    source: ManagedTaskSource = ManagedTaskSource.API
+    created_at: AwareDatetime = Field(alias="createdAt")
+
+
+class ObjectiveCheckpoint(StudioModel):
+    """一次执行结束后的结构化检查点，可追溯且支撑恢复。"""
+
+    checkpoint_id: str = Field(alias="checkpointId")
+    objective_id: str = Field(alias="objectiveId")
+    execution_id: str = Field(alias="executionId")
+    tenant_id: str = Field(alias="tenantId")
+    user_id: str = Field(alias="userId")
+    run_id: str | None = Field(default=None, alias="runId")
+    revision: int = Field(ge=1)
+    status: ObjectiveExecutionStatus
+    summary: str = ""
+    created_at: AwareDatetime = Field(alias="createdAt")

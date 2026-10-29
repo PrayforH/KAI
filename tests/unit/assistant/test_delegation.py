@@ -36,10 +36,24 @@ class FakeGateway:
         self.created: list[ObjectiveBrief] = []
         self.idempotency_keys: dict[str, str | None] = {}
         self.notes: list[tuple[str, str]] = []
+        self.bindings: list[dict[str, Any]] = []
+        self.resolved_queries: list[str] = []
+        self.instruct_outcome: dict[str, Any] = {
+            "status": "queued",
+            "message": "当前没有进行中的执行",
+        }
+        self.checkpoint_summaries: list[Any] = []
         self.enqueue_error: Exception | None = None
 
     async def create(
-        self, tenant_id: str, user_id: str, brief: ObjectiveBrief, *, idempotency_key: str | None
+        self,
+        tenant_id: str,
+        user_id: str,
+        brief: ObjectiveBrief,
+        *,
+        idempotency_key: str | None,
+        managed_thread_id: str | None = None,
+        mode: str | None = None,
     ) -> Objective:
         for objective_id, key in self.idempotency_keys.items():
             if key is not None and key == idempotency_key:
@@ -51,6 +65,8 @@ class FakeGateway:
             tenantId=tenant_id,
             userId=user_id,
             status=ObjectiveStatus.ACTIVE,
+            managedThreadId=managed_thread_id,
+            mode=mode or "autonomous",  # pyright: ignore[reportArgumentType]
             createdAt=NOW,
             updatedAt=NOW,
         )
@@ -66,6 +82,7 @@ class FakeGateway:
         for existing in self.records.get(objective_id, []):
             if existing.trigger_key == trigger_key:
                 return existing
+        managed = self.objectives[objective_id].managed_thread_id
         execution = ObjectiveExecution(
             executionId=f"objective_run_{trigger_key}",
             objectiveId=objective_id,
@@ -74,7 +91,7 @@ class FakeGateway:
             triggerKey=trigger_key,
             objectiveRevision=1,
             brief=self.objectives[objective_id],
-            threadId=f"assistant_{objective_id}",
+            threadId=managed or f"assistant_{objective_id}",
             status=ObjectiveExecutionStatus.PENDING,
             createdAt=NOW + timedelta(minutes=len(self.records.get(objective_id, []))),
         )
@@ -88,6 +105,30 @@ class FakeGateway:
         self, tenant_id: str, user_id: str, objective_id: str
     ) -> list[ObjectiveExecution]:
         return self.records.get(objective_id, [])
+
+    async def resolve_targets(
+        self, tenant_id: str, user_id: str, query: str, *, limit: int = 5
+    ) -> list[dict[str, Any]]:
+        self.resolved_queries.append(query)
+        needle = query.strip().lower()
+        matches = [
+            item
+            for item in self.bindings
+            if needle in item["thread_id"].lower()
+            or needle in (item["title"] or "").lower()
+        ]
+        return matches[:limit]
+
+    async def instruct(
+        self, tenant_id: str, user_id: str, objective_id: str, text: str, *, request_id: str
+    ) -> dict[str, Any]:
+        await self.add_note(tenant_id, user_id, objective_id, note=text)
+        return self.instruct_outcome
+
+    async def checkpoints(
+        self, tenant_id: str, user_id: str, objective_id: str, *, limit: int = 3
+    ) -> list[Any]:
+        return self.checkpoint_summaries
 
     async def add_note(
         self, tenant_id: str, user_id: str, objective_id: str, *, note: str
@@ -306,3 +347,107 @@ async def test_enqueue_failure_reports_instead_of_raising():
     tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
     result = await tools["assistant_create_task"]({"task": "任务"})
     assert "未能创建" in text_of(result)
+
+
+@pytest.mark.asyncio
+async def test_manage_work_binds_the_original_thread():
+    gateway = FakeGateway()
+    gateway.bindings = [
+        {
+            "thread_id": "task-thread-1",
+            "title": "季度报告",
+            "agent_name": "kai-personal-assistant",
+            "agent_version": "1",
+            "project_id": None,
+            "managed_objective_id": None,
+        }
+    ]
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    result = await tools["assistant_manage_work"]({"thread_id": "task-thread-1"})
+    body = text_of(result)
+    assert "已接管原任务" in body and "task-thread-1" in body
+    objective = gateway.objectives["objective_0001"]
+    assert objective.managed_thread_id == "task-thread-1"
+    # The execution continues on the original thread, not a stand-in.
+    assert gateway.records["objective_0001"][0].thread_id == "task-thread-1"
+    # A second takeover reports the existing coordinator instead of duplicating.
+    gateway.bindings[0]["managed_objective_id"] = "objective_0001"
+    again = await tools["assistant_manage_work"]({"thread_id": "task-thread-1"})
+    assert "不重复接管" in text_of(again)
+
+
+@pytest.mark.asyncio
+async def test_manage_work_follow_only_does_not_execute():
+    gateway = FakeGateway()
+    gateway.bindings = [
+        {
+            "thread_id": "task-thread-2",
+            "title": "采购跟进",
+            "agent_name": "kai-personal-assistant",
+            "agent_version": "1",
+            "project_id": None,
+            "managed_objective_id": None,
+        }
+    ]
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    result = await tools["assistant_manage_work"](
+        {"thread_id": "task-thread-2", "mode": "follow_only"}
+    )
+    assert "只跟进" in text_of(result)
+    assert gateway.records.get("objective_0001") is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_target_lists_candidates_for_ambiguous_names():
+    gateway = FakeGateway()
+    gateway.bindings = [
+        {
+            "thread_id": "thread-a",
+            "title": "季度报告",
+            "agent_name": "agent-a",
+            "agent_version": "1",
+            "project_id": None,
+            "managed_objective_id": None,
+        },
+        {
+            "thread_id": "thread-b",
+            "title": "季度报告 二稿",
+            "agent_name": "agent-a",
+            "agent_version": "1",
+            "project_id": None,
+            "managed_objective_id": None,
+        },
+    ]
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    result = await tools["assistant_resolve_target"]({"query": "季度报告"})
+    body = text_of(result)
+    assert "thread-a" in body and "thread-b" in body
+
+
+@pytest.mark.asyncio
+async def test_send_instruction_reports_the_delivery_status():
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    await tools["assistant_create_task"]({"task": "任务"})
+    gateway.instruct_outcome = {"status": "accepted", "message": "已提交当前运行"}
+    accepted = await tools["assistant_send_instruction"](
+        {"objective_id": "objective_0001", "context": "改用 CSV"}
+    )
+    assert "accepted" in text_of(accepted) and "已送达当前执行" in text_of(accepted)
+    gateway.instruct_outcome = {"status": "queued", "message": "当前执行未就绪"}
+    queued = await tools["assistant_send_instruction"](
+        {"objective_id": "objective_0001", "context": "改用 CSV"}
+    )
+    assert "queued" in text_of(queued) and "下一次执行" in text_of(queued)
+
+
+@pytest.mark.asyncio
+async def test_status_includes_the_latest_checkpoint():
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    await tools["assistant_create_task"]({"task": "任务"})
+    from types import SimpleNamespace
+
+    gateway.checkpoint_summaries = [SimpleNamespace(summary="已完成数据校验，下一步生成图表")]
+    status = await tools["assistant_task_status"]({})
+    assert "已完成数据校验" in text_of(status)

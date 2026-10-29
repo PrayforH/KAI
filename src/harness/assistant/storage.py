@@ -3,7 +3,17 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from harness.storage.models import Base
@@ -83,3 +93,47 @@ class AssistantInboxRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class ManagedTaskRow(Base):
+    """托管关联。一个 thread 至多一个主动执行托管者（部分唯一索引约束）。"""
+
+    __tablename__ = "assistant_managed_tasks"
+    __table_args__ = (
+        Index(
+            "uq_assistant_managed_execute",
+            "tenant_id",
+            "user_id",
+            "thread_id",
+            unique=True,
+            postgresql_where=text("role = 'execute'"),
+        ),
+        Index("ix_assistant_managed_objective", "objective_id", "created_at"),
+    )
+
+    managed_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    objective_id: Mapped[str] = mapped_column(ForeignKey("assistant_objectives.objective_id"))
+    tenant_id: Mapped[str] = mapped_column(String(128))
+    user_id: Mapped[str] = mapped_column(String(128))
+    thread_id: Mapped[str] = mapped_column(String(128))
+    project_id: Mapped[str | None] = mapped_column(String(128))
+    role: Mapped[str] = mapped_column(String(16))
+    source: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class ObjectiveCheckpointRow(Base):
+    __tablename__ = "assistant_checkpoints"
+    __table_args__ = (Index("ix_assistant_checkpoints_objective", "objective_id", "created_at"),)
+
+    checkpoint_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    objective_id: Mapped[str] = mapped_column(ForeignKey("assistant_objectives.objective_id"))
+    execution_id: Mapped[str] = mapped_column(String(128))
+    tenant_id: Mapped[str] = mapped_column(String(128))
+    user_id: Mapped[str] = mapped_column(String(128))
+    run_id: Mapped[str | None] = mapped_column(String(128))
+    revision: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(32))
+    summary: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

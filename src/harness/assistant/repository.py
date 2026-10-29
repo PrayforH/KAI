@@ -15,9 +15,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from harness.assistant.lifecycle import next_check, transition
 from harness.assistant.models import (
     AssistantInboxItem,
+    ManagedTask,
     Objective,
     ObjectiveAction,
     ObjectiveBrief,
+    ObjectiveCheckpoint,
     ObjectiveEvent,
     ObjectiveExecution,
     ObjectiveExecutionStatus,
@@ -25,6 +27,8 @@ from harness.assistant.models import (
 )
 from harness.assistant.storage import (
     AssistantInboxRow,
+    ManagedTaskRow,
+    ObjectiveCheckpointRow,
     ObjectiveEventRow,
     ObjectiveExecutionRow,
     ObjectiveRow,
@@ -286,6 +290,8 @@ class PostgresAssistantRepository:
         objective = _objective(row)
         if objective.status is not ObjectiveStatus.ACTIVE:
             raise ConflictError("Only active objectives can run")
+        if objective.mode.value == "follow_only":
+            raise ConflictError("A follow-only objective does not start executions")
         if objective.ends_at is not None and objective.ends_at <= now:
             raise ConflictError("The objective's execution period has ended")
         if await session.scalar(
@@ -321,7 +327,7 @@ class PostgresAssistantRepository:
             objectiveRevision=objective.revision,
             brief=brief,
             context="\n\n".join(reversed(notes))[-32_000:],
-            threadId=f"assistant_{objective.objective_id}",
+            threadId=objective.managed_thread_id or f"assistant_{objective.objective_id}",
             createdAt=now,
         )
         session.add(
@@ -440,13 +446,29 @@ class PostgresAssistantRepository:
                     )
                 )
                 _event(session, objective, "execution_finished", execution.execution_id, now)
+                summary = execution.summary or "本次执行已结束，请查看任务记录。"
+                session.add(
+                    ObjectiveCheckpointRow(
+                        checkpoint_id=f"checkpoint_{execution.execution_id}",
+                        objective_id=execution.objective_id,
+                        execution_id=execution.execution_id,
+                        tenant_id=execution.tenant_id,
+                        user_id=execution.user_id,
+                        run_id=execution.run_id,
+                        revision=execution.objective_revision,
+                        status=execution.status.value,
+                        summary=summary,
+                        created_at=now,
+                    )
+                )
                 item = AssistantInboxItem(
                     itemId=f"notice_{execution.execution_id}",
                     objectiveId=execution.objective_id,
                     executionId=execution.execution_id,
                     kind=execution.status.value,
                     title=objective.title,
-                    content=execution.summary or "本次执行已结束，请查看任务记录。",
+                    content=summary,
+                    threadId=execution.thread_id,
                     createdAt=now,
                 )
                 session.add(
@@ -461,6 +483,135 @@ class PostgresAssistantRepository:
                     )
                 )
             return True
+
+    async def bind_managed(self, task: ManagedTask) -> tuple[ManagedTask, bool]:
+        """Bind an objective to an original thread; the execute slot is unique.
+
+        Returns the durable binding and whether this call created it, so a
+        retried delegation reports the existing coordinator instead of a
+        duplicate takeover.
+        """
+        async with self._context(write=True) as session:
+            existing = await session.scalar(
+                select(ManagedTaskRow).where(
+                    ManagedTaskRow.tenant_id == task.tenant_id,
+                    ManagedTaskRow.user_id == task.user_id,
+                    ManagedTaskRow.thread_id == task.thread_id,
+                    ManagedTaskRow.role == task.role.value,
+                )
+            )
+            if existing is not None:
+                return ManagedTask.model_validate(existing.payload), False
+            try:
+                async with session.begin_nested():
+                    session.add(
+                        ManagedTaskRow(
+                            managed_id=task.managed_id,
+                            objective_id=task.objective_id,
+                            tenant_id=task.tenant_id,
+                            user_id=task.user_id,
+                            thread_id=task.thread_id,
+                            project_id=task.project_id,
+                            role=task.role.value,
+                            source=task.source.value,
+                            created_at=task.created_at,
+                            payload=task.model_dump(mode="json", by_alias=True),
+                        )
+                    )
+                    await session.flush()
+            except IntegrityError:
+                existing = await session.scalar(
+                    select(ManagedTaskRow).where(
+                        ManagedTaskRow.tenant_id == task.tenant_id,
+                        ManagedTaskRow.user_id == task.user_id,
+                        ManagedTaskRow.thread_id == task.thread_id,
+                        ManagedTaskRow.role == task.role.value,
+                    )
+                )
+                if existing is None:
+                    raise
+                return ManagedTask.model_validate(existing.payload), False
+        return task, True
+
+    async def managed_bindings(
+        self,
+        tenant_id: str,
+        user_id: str,
+        *,
+        objective_id: str | None = None,
+        thread_id: str | None = None,
+    ) -> list[ManagedTask]:
+        clauses = [ManagedTaskRow.tenant_id == tenant_id, ManagedTaskRow.user_id == user_id]
+        if objective_id is not None:
+            clauses.append(ManagedTaskRow.objective_id == objective_id)
+        if thread_id is not None:
+            clauses.append(ManagedTaskRow.thread_id == thread_id)
+        async with self._context() as session:
+            rows = await session.scalars(
+                select(ManagedTaskRow)
+                .where(*clauses)
+                .order_by(ManagedTaskRow.created_at.desc())
+                .limit(100)
+            )
+            return [ManagedTask.model_validate(row.payload) for row in rows]
+
+    async def save_checkpoint(self, checkpoint: ObjectiveCheckpoint) -> None:
+        async with self._context(write=True) as session:
+            objective = await self._owned(
+                session, checkpoint.tenant_id, checkpoint.user_id, checkpoint.objective_id
+            )
+            session.add(
+                ObjectiveCheckpointRow(
+                    checkpoint_id=checkpoint.checkpoint_id,
+                    objective_id=checkpoint.objective_id,
+                    execution_id=checkpoint.execution_id,
+                    tenant_id=checkpoint.tenant_id,
+                    user_id=checkpoint.user_id,
+                    run_id=checkpoint.run_id,
+                    revision=checkpoint.revision,
+                    status=checkpoint.status.value,
+                    summary=checkpoint.summary,
+                    created_at=checkpoint.created_at,
+                )
+            )
+            _event(
+                session,
+                _objective(objective),
+                "checkpoint",
+                checkpoint.summary or checkpoint.status.value,
+                checkpoint.created_at,
+            )
+
+    async def checkpoints(
+        self, tenant_id: str, user_id: str, objective_id: str, *, limit: int = 10
+    ) -> list[ObjectiveCheckpoint]:
+        async with self._context() as session:
+            await self._owned(session, tenant_id, user_id, objective_id)
+            rows = await session.scalars(
+                select(ObjectiveCheckpointRow)
+                .where(
+                    ObjectiveCheckpointRow.objective_id == objective_id,
+                    ObjectiveCheckpointRow.tenant_id == tenant_id,
+                    ObjectiveCheckpointRow.user_id == user_id,
+                )
+                .order_by(ObjectiveCheckpointRow.created_at.desc())
+                .limit(limit)
+            )
+            return [
+                ObjectiveCheckpoint(
+                    checkpointId=row.checkpoint_id,
+                    objectiveId=row.objective_id,
+                    executionId=row.execution_id,
+                    tenantId=row.tenant_id,
+                    userId=row.user_id,
+                    runId=row.run_id,
+                    revision=row.revision,
+                    status=ObjectiveExecutionStatus(row.status),
+                    summary=row.summary,
+                    createdAt=row.created_at,
+                )
+                for row in rows
+            ]
 
     async def inbox(self, tenant_id: str, user_id: str) -> list[AssistantInboxItem]:
         async with self._context() as session:

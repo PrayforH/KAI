@@ -15,6 +15,9 @@ from harness.application.agents import AgentService
 from harness.application.runs import RunService
 from harness.assistant.lifecycle import next_check
 from harness.assistant.models import (
+    DelegationMode,
+    ManagedTask,
+    ManagedTaskSource,
     Objective,
     ObjectiveBrief,
     ObjectiveExecution,
@@ -80,23 +83,131 @@ class AssistantService:
         brief: ObjectiveBrief,
         *,
         idempotency_key: str | None = None,
+        managed_thread_id: str | None = None,
+        mode: DelegationMode | None = None,
+        source: ManagedTaskSource = ManagedTaskSource.API,
     ) -> Objective:
         await self.validate(tenant_id, user_id, brief)
         now = datetime.now(UTC)
         if brief.ends_at and brief.ends_at <= now:
             raise ConflictError("The execution period must end in the future")
-        return await self.repository.create(
+        if managed_thread_id is not None:
+            # 接管原会话：线程必须存在、属于该用户，且底层智能体一致，
+            # 否则执行会脱离原会话的上下文与授权。
+            binding = await self._agui.get_binding(
+                tenant_id=tenant_id, user_id=user_id, thread_id=managed_thread_id
+            )
+            if (binding.agent_name, binding.agent_version) != (
+                brief.agent_name,
+                brief.agent_version,
+            ):
+                raise ConflictError("托管原任务必须使用原会话的智能体与版本")
+            if brief.project_id and binding.project_id and brief.project_id != binding.project_id:
+                raise ConflictError("托管原任务必须使用原会话的项目")
+            if not brief.project_id and binding.project_id:
+                brief = brief.model_copy(update={"project_id": binding.project_id})
+        objective = await self.repository.create(
             Objective(
                 **brief.model_dump(),
                 objectiveId=f"objective_{uuid4().hex}",
                 tenantId=tenant_id,
                 userId=user_id,
+                managedThreadId=managed_thread_id,
+                mode=mode or DelegationMode.AUTONOMOUS,
                 createdAt=now,
                 updatedAt=now,
                 nextCheckAt=next_check(brief.schedule, after=now, ends_at=brief.ends_at),
             ),
             idempotency_key=idempotency_key,
         )
+        if managed_thread_id is not None:
+            await self.repository.bind_managed(
+                ManagedTask(
+                    managedId=f"managed_{uuid4().hex}",
+                    objectiveId=objective.objective_id,
+                    tenantId=tenant_id,
+                    userId=user_id,
+                    threadId=managed_thread_id,
+                    projectId=objective.project_id,
+                    createdAt=now,
+                )
+            )
+        return objective
+
+    async def resolve_targets(self, tenant_id: str, user_id: str, query: str, *, limit: int = 5):
+        """把自然语言目标解析成可核验的候选原任务，不猜最近一条。"""
+        needle = query.strip().lower()
+        bindings = await self._agui.list_bindings(
+            tenant_id=tenant_id, user_id=user_id, limit=50, archived=False
+        )
+        scored = [
+            binding
+            for binding in bindings
+            if not needle
+            or needle in (binding.title or "").lower()
+            or needle in binding.thread_id.lower()
+        ]
+        managed = {
+            task.thread_id: task.objective_id
+            for task in await self.repository.managed_bindings(tenant_id, user_id)
+        }
+        candidates: list[dict[str, object]] = []
+        for binding in scored[:limit]:
+            detailed = await self._agui.get_binding(
+                tenant_id=tenant_id, user_id=user_id, thread_id=binding.thread_id
+            )
+            candidates.append(
+                {
+                    "thread_id": binding.thread_id,
+                    "title": binding.title,
+                    "agent_name": detailed.agent_name,
+                    "agent_version": detailed.agent_version,
+                    "project_id": detailed.project_id,
+                    "managed_objective_id": managed.get(binding.thread_id),
+                }
+            )
+        return candidates
+
+    async def instruct(
+        self, tenant_id: str, user_id: str, objective_id: str, text: str, *, request_id: str
+    ) -> dict[str, object]:
+        """运行中补充：走 steer 记录 accepted，未就绪时入档为 queued。"""
+        objective = await self.repository.get(tenant_id, user_id, objective_id)
+        await self.repository.update(
+            tenant_id,
+            user_id,
+            objective_id,
+            expected_revision=objective.revision,
+            now=datetime.now(UTC),
+            note=text,
+        )
+        executions = await self.repository.executions(tenant_id, user_id, objective_id)
+        latest = executions[0] if executions else None
+        active_run_id = (
+            latest.run_id
+            if latest is not None
+            and latest.status is ObjectiveExecutionStatus.RUNNING
+            and latest.run_id
+            else None
+        )
+        if active_run_id is not None:
+            try:
+                await self._runs.steer(tenant_id, active_run_id, request_id, text)
+            except (ConflictError, NotFoundError):
+                return {
+                    "status": "queued",
+                    "run_id": active_run_id,
+                    "message": "当前执行未就绪或已结束；补充已入档，将进入下一次执行的上下文。",
+                }
+            return {
+                "status": "accepted",
+                "run_id": active_run_id,
+                "message": "补充已提交到当前运行的引导通道，最终送达以执行记录为准。",
+            }
+        return {
+            "status": "queued",
+            "message": "当前没有进行中的执行；补充已入档，将进入下一次执行的上下文。",
+        }
 
     async def process_once(self) -> None:
         await self.repository.schedule_due(datetime.now(UTC))
@@ -173,6 +284,19 @@ class AssistantService:
         else:
             await self.validate(execution.tenant_id, execution.user_id, execution.brief)
             if run is None:
+                if objective.managed_thread_id == execution.thread_id:
+                    # 托管派发与用户直聊共用原线程：存在未终结运行时不并发启动，
+                    # 执行保持 pending，由下一个租约周期接续。
+                    binding = await self._agui.get_binding(
+                        tenant_id=execution.tenant_id,
+                        user_id=execution.user_id,
+                        thread_id=execution.thread_id,
+                    )
+                    session_runs = await self._runs.list_for_sessions(
+                        execution.tenant_id, [binding.session_id], limit=10
+                    )
+                    if any(not item.status.is_terminal for item in session_runs):
+                        return execution
                 criteria = execution.brief.completion_criteria or "由用户判断事项是否完成"
                 prompt = (
                     f"持续事项：{execution.brief.title}\n\n{execution.brief.instructions}"

@@ -49,7 +49,19 @@
   `reply_to_message_id` 持久化、发送后可定位原消息；刷新/跨端/权限失效行为。
 - 卡片持久数据与真实动作回执。
 
-状态：未开始。
+| 项 | 内容 | 状态 |
+| --- | --- | --- |
+| 1.1 | 引用协议后端：forwardedProps.replyTo 校验→run.input.reply_to 持久化；history 每页带 replies 映射；GET messages/{id} 按 ID 定位端点 | 已实现+已测试 |
+| 1.2 | 引用条 UI：用户/助手消息操作区回复按钮；输入框内顶部引用条+细线分隔；取消保留草稿 | 已实现+已测试(单测) |
+| 1.3 | 发送路径：HarnessHttpAgent.setReplyTo 一次性附带；草稿刷新恢复引用；切换会话不带引用 | 已实现+已测试(单测) |
+| 1.4 | 渲染：被引用消息头（点按定位/按 ID 取上下文/原消息不可用降级）；个人助理占位符「消息 KAI」 | 已实现+已测试(单测) |
+| 1.5 | 专属主助理页面深化（结果优先卡片增强、配置身份独立化） | 部分（既有 /assistant 专属线程+AssistantResults 已在 79 上线；后续批次继续） |
+| 1.6 | 生产构建 `next build` 通过；vitest 1379 过（4 个 nav spec 失败在基线复现，非本轮引入） | 已实现+已测试 |
+
+已测试（阶段1，提交 072c4148）：后端 `pytest tests/unit/agui tests/integration/api/test_agui_reply_reference.py
+tests/integration/api/test_agui_history_pagination.py` 104 过；typecheck 剖面与基线一致（2449/1160/234）；ruff 全过；
+web `npm test` 1379 过 + `npm run build` 过。
+未验证：真实浏览器点击链路与 79 部署后视觉验收（阶段5）。
 
 ## 阶段 2：已有任务托管闭环与跨端交付（8.2/8.3/8.4/8.7 P1）
 

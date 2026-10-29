@@ -16,9 +16,11 @@ from typing import Any, Protocol
 
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
 from harness.assistant.models import (
+    DelegationMode,
     Objective,
     ObjectiveAction,
     ObjectiveBrief,
+    ObjectiveCheckpoint,
     ObjectiveExecution,
     ObjectiveSchedule,
     ObjectiveStatus,
@@ -31,17 +33,28 @@ INSTRUCTIONS = (
     "耗时超过一分钟的执行类任务，先调用 assistant_create_task 放到后台"
     "（它会获得独立线程并进入后台执行队列），"
     "然后立即回复用户任务已安排；期间可以继续回答其他消息。\n"
-    "assistant_task_status 查询后台任务的真实执行状态与 revision；"
+    "接管用户已有任务（用户给出任务链接/ID 或点名任务）时，"
+    "先 assistant_resolve_target 解析候选，确认后 assistant_manage_work 绑定原线程，"
+    "mode=follow_only 只跟进汇报，mode=autonomous 才允许代为推进。\n"
+    "assistant_task_status 查询后台任务的真实执行状态、检查点与 revision；"
+    "assistant_send_instruction 给托管任务补充要求（accepted=已送达当前执行，queued=进入下一轮）；"
     "assistant_update_task 需要 expected_revision，取自最近一次状态查询。\n"
     "入队只表示已安排，不代表后台已在执行；不要把简单问答包装成后台任务。"
 )
 
 
 class DelegationGateway(Protocol):
-    """The five objective operations delegation needs, nothing more."""
+    """The objective operations delegation needs, nothing more."""
 
     async def create(
-        self, tenant_id: str, user_id: str, brief: ObjectiveBrief, *, idempotency_key: str | None
+        self,
+        tenant_id: str,
+        user_id: str,
+        brief: ObjectiveBrief,
+        *,
+        idempotency_key: str | None,
+        managed_thread_id: str | None = None,
+        mode: str | None = None,
     ) -> Objective: ...
 
     async def enqueue(
@@ -69,6 +82,18 @@ class DelegationGateway(Protocol):
     async def add_note(
         self, tenant_id: str, user_id: str, objective_id: str, *, note: str
     ) -> Objective: ...
+
+    async def resolve_targets(
+        self, tenant_id: str, user_id: str, query: str, *, limit: int = 5
+    ) -> list[dict[str, Any]]: ...
+
+    async def instruct(
+        self, tenant_id: str, user_id: str, objective_id: str, text: str, *, request_id: str
+    ) -> dict[str, Any]: ...
+
+    async def checkpoints(
+        self, tenant_id: str, user_id: str, objective_id: str, *, limit: int = 3
+    ) -> list[Any]: ...
 
 
 def _text(message: str) -> dict[str, Any]:
@@ -158,6 +183,117 @@ def assistant_delegation_overlay(
             f"已补充到任务 {updated.objective_id}；将进入下一次执行的上下文，不打断进行中的执行。"
         )
 
+    async def resolve_target(arguments: dict[str, Any]) -> dict[str, Any]:
+        """把用户点名的目标解析成可核验的候选原任务；歧义时列候选，不猜。"""
+        query = str(arguments.get("query", "")).strip()
+        if not 1 <= len(query) <= 200:
+            return _text("目标描述需在 1–200 字之间。")
+        try:
+            candidates = await gateway.resolve_targets(tenant_id, user_id, query)
+        except (NotFoundError, PermissionDeniedError) as error:
+            return _text(f"目标解析失败：{error}")
+        if not candidates:
+            return _text("没有匹配的任务；请用户给出更准确的名称或任务链接。")
+        lines = [
+            f"- {item['title'] or item['thread_id']}"
+            f"（thread={item['thread_id']}，agent={item['agent_name']}@{item['agent_version']}）"
+            + (
+                f"，已由 {item['managed_objective_id']} 托管"
+                if item["managed_objective_id"]
+                else ""
+            )
+            for item in candidates
+        ]
+        return _text(
+            "候选任务（用 thread 调 assistant_manage_work 绑定）：\n" + "\n".join(lines)
+        )
+
+    async def manage_work(arguments: dict[str, Any]) -> dict[str, Any]:
+        """接管既有任务：绑定原线程，只跟进或自主推进，不复制历史、不开替身。"""
+        thread_id = str(arguments.get("thread_id", "")).strip()
+        if not 1 <= len(thread_id) <= 128:
+            return _text("thread_id 必填（先用 assistant_resolve_target 解析）。")
+        task = str(arguments.get("task", "")).strip() or "跟进该任务，汇报进展、结果与差距。"
+        if not 1 <= len(task) <= 20_000:
+            return _text("任务说明需在 1–20000 字之间。")
+        mode = str(arguments.get("mode", "autonomous"))
+        if mode not in ("autonomous", "follow_only"):
+            return _text("mode 必须是 autonomous 或 follow_only。")
+        completion_criteria = str(arguments.get("completion_criteria", ""))[:2_000]
+        try:
+            candidates = await gateway.resolve_targets(tenant_id, user_id, thread_id)
+            match = next((item for item in candidates if item["thread_id"] == thread_id), None)
+            if match is None:
+                return _text("找不到该任务线程或无权访问。")
+            if match["managed_objective_id"]:
+                return _text(
+                    f"该任务已由 {match['managed_objective_id']} 托管，不重复接管；"
+                    "如需调整请用 assistant_update_task。"
+                )
+            brief = ObjectiveBrief.model_validate(
+                {
+                    "title": (
+                        str(arguments.get("title", "")).strip() or match["title"] or thread_id
+                    )[:120],
+                    "instructions": task,
+                    "agentName": match["agent_name"],
+                    "agentVersion": match["agent_version"],
+                    "projectId": match["project_id"],
+                    "completionCriteria": completion_criteria,
+                }
+            )
+            objective = await gateway.create(
+                tenant_id,
+                user_id,
+                brief,
+                idempotency_key=None,
+                managed_thread_id=thread_id,
+                mode=mode,
+            )
+        except (ConflictError, NotFoundError, PermissionDeniedError, ValueError) as error:
+            return _text(f"托管未能建立：{error}")
+        if mode == "follow_only":
+            return _text(
+                f"已开始只跟进 {objective.objective_id}（线程 {thread_id}）："
+                "将汇报进展与差距，不代为执行。"
+            )
+        try:
+            execution = await gateway.enqueue(
+                tenant_id,
+                user_id,
+                objective.objective_id,
+                trigger_key=f"manage:{run.run_id}:{objective.objective_id}",
+            )
+        except (ConflictError, ValueError) as error:
+            return _text(f"托管已建立但首次执行未安排：{error}")
+        return _text(
+            f"已接管原任务 {objective.objective_id}（线程 {thread_id}），"
+            f"首次执行已安排（排队中，执行线程 {execution.thread_id}）。"
+        )
+
+    async def send_instruction(arguments: dict[str, Any]) -> dict[str, Any]:
+        """托管任务的补充：accepted=已送达当前执行；queued=进入下一轮。"""
+        objective_id = str(arguments.get("objective_id", "")).strip()
+        note = str(arguments.get("context", "")).strip()
+        if not 1 <= len(note) <= 8_000:
+            return _text("补充内容需在 1–8000 字之间。")
+        try:
+            outcome = await gateway.instruct(
+                tenant_id,
+                user_id,
+                objective_id,
+                note,
+                request_id=f"delegate:{run.run_id}:{objective_id}",
+            )
+        except (NotFoundError, PermissionDeniedError) as error:
+            return _text(f"补充未入档：{error}")
+        label = (
+            "已送达当前执行（accepted）"
+            if outcome["status"] == "accepted"
+            else "已入档，进入下一次执行（queued）"
+        )
+        return _text(f"补充[{outcome['status']}]：{label}。{outcome['message']}")
+
     async def task_status(_arguments: dict[str, Any]) -> dict[str, Any]:
         try:
             objectives = await gateway.list_objectives(tenant_id, user_id)
@@ -175,8 +311,18 @@ def assistant_delegation_overlay(
                 f"- [{objective.status.value}] {objective.title}"
                 f"（{objective.objective_id}）revision={objective.revision}"
             )
+            if objective.managed_thread_id:
+                label += f" 托管线程：{objective.managed_thread_id}"
             if latest:
                 label += f" 最近执行：{state}"
+            try:
+                checkpoints = await gateway.checkpoints(
+                    tenant_id, user_id, objective.objective_id
+                )
+            except (NotFoundError, PermissionDeniedError):
+                checkpoints = []
+            if checkpoints and checkpoints[0].summary:
+                label += f"\n  检查点：{checkpoints[0].summary[:300]}"
             if summary:
                 label += f"\n  摘要：{summary}"
             lines.append(label)
@@ -265,6 +411,47 @@ def assistant_delegation_overlay(
                 handler=add_context,
             ),
             PlatformTool(
+                name="assistant_resolve_target",
+                description="把用户点名的任务解析成候选（thread、智能体、是否已被托管）；歧义时列候选确认。",
+                schema={
+                    "type": "object",
+                    "properties": {"query": {"type": "string", "maxLength": 200}},
+                    "required": ["query"],
+                },
+                handler=resolve_target,
+            ),
+            PlatformTool(
+                name="assistant_manage_work",
+                description=(
+                    "接管用户已有任务：绑定原线程。mode=follow_only 只跟进；autonomous 代为推进。"
+                ),
+                schema={
+                    "type": "object",
+                    "properties": {
+                        "thread_id": {"type": "string", "maxLength": 128},
+                        "task": {"type": "string", "maxLength": 20000},
+                        "title": {"type": "string", "maxLength": 120},
+                        "mode": {"type": "string", "enum": ["autonomous", "follow_only"]},
+                        "completion_criteria": {"type": "string", "maxLength": 2000},
+                    },
+                    "required": ["thread_id"],
+                },
+                handler=manage_work,
+            ),
+            PlatformTool(
+                name="assistant_send_instruction",
+                description="给托管任务补充要求：运行中经引导通道送达（accepted），否则入档下一轮（queued）。",
+                schema={
+                    "type": "object",
+                    "properties": {
+                        "objective_id": {"type": "string"},
+                        "context": {"type": "string", "maxLength": 8000},
+                    },
+                    "required": ["objective_id", "context"],
+                },
+                handler=send_instruction,
+            ),
+            PlatformTool(
                 name="assistant_update_task",
                 description="暂停/恢复/完成/停止一个后台任务。",
                 schema={
@@ -295,10 +482,22 @@ class AssistantDelegationGateway:
         self._assistant = assistant
 
     async def create(
-        self, tenant_id: str, user_id: str, brief: ObjectiveBrief, *, idempotency_key: str | None
+        self,
+        tenant_id: str,
+        user_id: str,
+        brief: ObjectiveBrief,
+        *,
+        idempotency_key: str | None,
+        managed_thread_id: str | None = None,
+        mode: str | None = None,
     ) -> Objective:
         return await self._assistant.create(
-            tenant_id, user_id, brief, idempotency_key=idempotency_key
+            tenant_id,
+            user_id,
+            brief,
+            idempotency_key=idempotency_key,
+            managed_thread_id=managed_thread_id,
+            mode=DelegationMode(mode) if mode is not None else None,
         )
 
     async def enqueue(
@@ -349,6 +548,25 @@ class AssistantDelegationGateway:
     async def _revision_of(self, tenant_id: str, user_id: str, objective_id: str) -> int:
         objective = await self._assistant.repository.get(tenant_id, user_id, objective_id)
         return objective.revision
+
+    async def resolve_targets(
+        self, tenant_id: str, user_id: str, query: str, *, limit: int = 5
+    ) -> list[dict[str, Any]]:
+        return await self._assistant.resolve_targets(tenant_id, user_id, query, limit=limit)
+
+    async def instruct(
+        self, tenant_id: str, user_id: str, objective_id: str, text: str, *, request_id: str
+    ) -> dict[str, Any]:
+        return await self._assistant.instruct(
+            tenant_id, user_id, objective_id, text, request_id=request_id
+        )
+
+    async def checkpoints(
+        self, tenant_id: str, user_id: str, objective_id: str, *, limit: int = 3
+    ) -> list[ObjectiveCheckpoint]:
+        return await self._assistant.repository.checkpoints(
+            tenant_id, user_id, objective_id, limit=limit
+        )
 
 
 async def coordinator_session(agui: Any, session: Session) -> bool:
