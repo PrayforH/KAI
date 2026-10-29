@@ -46,7 +46,7 @@ describe("project-grouped task list", () => {
     expect(sidebar).toContain("置顶");
     expect(sidebar).toContain("移除项目");
     expect(sidebar).toContain("<span>查看项目</span>");
-    expect(sidebar).not.toContain("编辑项目");
+    expect(sidebar).toContain("编辑项目");
     expect(sidebar).toContain("useConfirmationDialog");
     expect(sidebar).not.toContain("查看 ${project.name} 的文件");
     expect(sidebar).not.toContain('projectHref(project.projectId, "results")');
@@ -57,7 +57,8 @@ describe("project-grouped task list", () => {
     expect(page).toContain('className="task-project-breadcrumb"');
     expect(page).toContain("createProjectTask(currentTask.project_id, nextAgent)");
     expect(workbench).toContain("projectId");
-    expect(workbench).toContain("<ProjectResourcesPanel projectId={projectId} />");
+    expect(workbench).not.toContain("ProjectResourcesPanel");
+    expect(workbench).not.toContain("项目资源视图");
   });
 
   it("shows project knowledge, files and skills beside the task conversation", () => {

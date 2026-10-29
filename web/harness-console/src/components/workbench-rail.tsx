@@ -9,7 +9,6 @@ import { RailResizeHandle, canSplitRail } from "./rail-resize-handle";
 import { SidebarPanelIcon } from "./panel-icons";
 import { RailFilePreview, previewKindFor, type PreviewKind, type PreviewTarget } from "./rail-file-preview";
 import { ProjectArtifactActions } from "./project-skill-extract-dialog";
-import { ProjectResourcesPanel } from "./project-resources-panel";
 
 
 function RefreshIcon() {
@@ -48,18 +47,6 @@ function FolderIcon() {
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"
       strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M3.1 6.2a1.8 1.8 0 0 1 1.8-1.8h2.7l1.5 1.8h6a1.8 1.8 0 0 1 1.8 1.8v6.1a1.8 1.8 0 0 1-1.8 1.8H4.9a1.8 1.8 0 0 1-1.8-1.8z" />
-    </svg>
-  );
-}
-
-function ProjectViewIcon() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3.2" y="3.2" width="5.6" height="5.6" rx="1.2" />
-      <rect x="11.2" y="3.2" width="5.6" height="5.6" rx="1.2" />
-      <rect x="3.2" y="11.2" width="5.6" height="5.6" rx="1.2" />
-      <rect x="11.2" y="11.2" width="5.6" height="5.6" rx="1.2" />
     </svg>
   );
 }
@@ -149,8 +136,6 @@ export function WorkbenchRail({
   onToggleExpanded,
   threadId,
   projectId,
-  viewRequest,
-  onViewRequestHandled,
   previewRequest,
   runPhase,
   workspace,
@@ -164,18 +149,10 @@ export function WorkbenchRail({
   onToggleExpanded: () => void;
   threadId: string;
   projectId?: string | null;
-  viewRequest?: { view: "files" | "project"; nonce: number } | null;
-  onViewRequestHandled?: (nonce: number) => void;
   previewRequest?: (PreviewTarget & { nonce: number }) | null;
   /** A phase change means the run may have written new artifacts. */
   runPhase: string | null;
 }) {
-  const [railView, setRailView] = useState<"files" | "project">(
-    "files",
-  );
-  useEffect(() => {
-    setRailView("files");
-  }, [projectId]);
   const [query, setQuery] = useState("");
   const [expandedGroups, setExpandedGroups] = useState<string[]>(["最终产出"]);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -203,15 +180,6 @@ export function WorkbenchRail({
     index: Math.min(current.items.length - 1, Math.max(0, current.index + delta)),
   }));
 
-  useEffect(() => {
-    if (!viewRequest) return;
-    setRailView(viewRequest.view);
-    if (viewRequest.view === "files") {
-      setTrail({ items: [null], index: 0 });
-    }
-    onViewRequestHandled?.(viewRequest.nonce);
-  }, [viewRequest?.nonce]);
-
   // A task switch shows that task's files, never the previous selection.
   useEffect(() => {
     setTrail({ items: [null], index: 0 });
@@ -221,7 +189,6 @@ export function WorkbenchRail({
   // A new preview takes precedence over the reset when switching to its task.
   useEffect(() => {
     if (!previewRequest || (previewRequest.thread_id && previewRequest.thread_id !== threadId)) return;
-    setRailView("files");
     show(previewRequest);
   }, [previewRequest, threadId]);
 
@@ -352,28 +319,13 @@ export function WorkbenchRail({
       <div className="workbench-rail-panel" aria-hidden={!open}>
         <header className="rail-bar">
           <div className="rail-bar-views">
-            {projectId ? (
-              <button
-                type="button"
-                className="rail-bar-button"
-                aria-label="项目资源视图"
-                title="项目资源"
-                aria-current={railView === "project" ? "page" : undefined}
-                onClick={() => setRailView("project")}
-              >
-                <ProjectViewIcon />
-              </button>
-            ) : null}
             <button
               type="button"
               className="rail-bar-button"
               aria-label="文件列表"
               title="文件列表"
-              aria-current={railView === "files" && !selected ? "page" : undefined}
-              onClick={() => {
-                setRailView("files");
-                show(null);
-              }}
+              aria-current={!selected ? "page" : undefined}
+              onClick={() => show(null)}
             >
               <FolderIcon />
             </button>
@@ -406,7 +358,6 @@ export function WorkbenchRail({
             </button>
           </div>
         </header>
-        {railView === "files" ? (
         <div className="rail-toolbar">
           <button
             type="button"
@@ -459,11 +410,7 @@ export function WorkbenchRail({
             <RefreshIcon />
           </button>}
         </div>
-        ) : null}
         <div className="workbench-rail-body">
-          {railView === "project" && projectId ? (
-            <ProjectResourcesPanel projectId={projectId} />
-          ) : (
           <section
             className="workbench-rail-section rail-files-section"
             data-previewing={selected ? "true" : undefined}
@@ -485,7 +432,6 @@ export function WorkbenchRail({
               </>
             ) : fileList}
           </section>
-          )}
         </div>
       </div>
     </aside>

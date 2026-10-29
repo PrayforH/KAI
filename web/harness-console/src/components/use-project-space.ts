@@ -198,9 +198,18 @@ export function useProjectSpace(
     }
   }
   useEffect(() => {
-    const changed = (event: Event) => { if ((event as CustomEvent<{projectId:string}>).detail?.projectId === projectId) void refreshResources(); };
+    const changed = (event: Event) => {
+      if ((event as CustomEvent<{projectId:string}>).detail?.projectId !== projectId) return;
+      void refreshResources().then(next => {
+        if (next && event.type === "harness:projects-changed") setName(next.project.name);
+      });
+    };
     window.addEventListener("harness:project-results-changed", changed);
-    return () => window.removeEventListener("harness:project-results-changed", changed);
+    window.addEventListener("harness:projects-changed", changed);
+    return () => {
+      window.removeEventListener("harness:project-results-changed", changed);
+      window.removeEventListener("harness:projects-changed", changed);
+    };
   }, [projectId]);
   function chooseTab(next: ProjectTab) {
     setTab(next);

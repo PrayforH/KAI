@@ -6,7 +6,7 @@ import { TaskHeaderActions } from "./task-header-actions";
 import { SidebarIcon } from "./sidebar-icon";
 import Link from "next/link";
 import { projectHref } from "../lib/project-space";
-import { ProjectCreateDialog } from "./project-create-dialog";
+import { ProjectCreateDialog, ProjectEditDialog } from "./project-create-dialog";
 import { useConfirmationDialog } from "./confirmation-dialog";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
@@ -143,6 +143,7 @@ export function TaskSidebar({
   const [creatingProjectId, setCreatingProjectId] = useState<string | null>(null);
   const [projectCreateError, setProjectCreateError] = useState("");
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
+  const [projectToEdit, setProjectToEdit] = useState<ApiProject | null>(null);
   const [projectMenuId, setProjectMenuId] = useState<string | null>(null);
   const [pinningProjectId, setPinningProjectId] = useState("");
   const projectCreationPending = useRef(false);
@@ -217,7 +218,7 @@ export function TaskSidebar({
   }, [activeNav, currentThreadId, tasks, user.user_id]);
 
   useDialogFocus({
-    open: overlayOpen && !projectDialogOpen,
+    open: overlayOpen && !projectDialogOpen && !projectToEdit,
     panelRef: sidebarRef,
     initialFocusRef: closeButtonRef,
     onEscape: onToggle,
@@ -659,6 +660,10 @@ export function TaskSidebar({
                           <Link role="menuitem" href={projectHref(project.projectId)} onClick={() => setProjectMenuId(null)}>
                             <ProjectFolderIcon /><span>查看项目</span>
                           </Link>
+                          <button type="button" role="menuitem" onClick={() => {
+                            setProjectMenuId(null);
+                            setProjectToEdit(project);
+                          }}><SidebarIcon name="compose" /><span>编辑项目</span></button>
                           <button
                             type="button"
                             role="menuitem"
@@ -796,6 +801,13 @@ export function TaskSidebar({
         onCreated={(project) => {
           setExpandedTaskGroups((current) => new Set(current).add(`project:${project.projectId}`));
           onProjectsChanged?.();
+        }}
+      />}
+      {projectToEdit && <ProjectEditDialog project={projectToEdit}
+        onClose={() => setProjectToEdit(null)}
+        onSaved={(project) => {
+          onProjectsChanged?.();
+          window.dispatchEvent(new CustomEvent("harness:projects-changed", {detail: {projectId: project.projectId}}));
         }}
       />}
       {confirmationDialog}
