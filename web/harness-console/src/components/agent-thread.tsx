@@ -853,6 +853,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       {steeringNotice && <p className="composer-status-announcement" role="status">{steeringNotice}</p>}
       {inputError && <p className="composer-input-error" role="alert">{inputError}</p>}
       {!conversationScope?.compactComposer && <TaskKnowledgeSelection disabled={busy || Boolean(conversationScope)} />}
+      <ReplyComposerBar />
       <Composer.Root onSubmitCapture={(event: FormEvent) => { event.preventDefault(); event.stopPropagation(); if (!composingRef.current) submitComposer(); }}>
         <ComposerAssist options={options} index={suggestionIndex} onChoose={chooseSuggestion} />
         {wikiSlug ? (
@@ -877,7 +878,6 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
             }}>×</button>
           </div>
         )}
-        <ReplyComposerBar />
         <Composer.Attachments components={{ Attachment: HarnessComposerAttachment }} />
         <div
           className="composer-input-wrap"

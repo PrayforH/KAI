@@ -36,6 +36,7 @@ export function AssistantManager() {
   const [tab, setTab] = useState<"objectives" | "inbox" | "specialists" | "managed">("objectives");
   const [panel, setPanel] = useState<ManagedPanel | null>(null);
   const [bindThread, setBindThread] = useState("");
+  const [panelRevision, setPanelRevision] = useState(0);
   const [specialists, setSpecialists] = useState<Specialist[]>([]);
   const [handovers, setHandovers] = useState<Handover[]>([]);
   const [selectedSpecialist, setSelectedSpecialist] = useState("");
@@ -58,7 +59,7 @@ export function AssistantManager() {
       .then((data) => { if (active) setPanel(data); })
       .catch(() => { if (active) setPanel(null); });
     return () => { active = false; };
-  }, [selected, tab]);
+  }, [selected, tab, panelRevision]);
   const selectedSpecialistItem = specialists.find(item => item.specialistId === selectedSpecialist);
   const load = useCallback(async () => {
     const [next, notices] = await Promise.all([
@@ -166,7 +167,9 @@ export function AssistantManager() {
       <form onSubmit={event => { event.preventDefault();
         void perform(async () => {
           await assistantRequest(`objectives/${selectedItem.objectiveId}/managed`, "POST", { threadId: bindThread.trim() });
-          setBindThread(""); setMessage("已纳入该职责的关注范围（只读跟进）。");
+          setBindThread("");
+          setPanelRevision((current) => current + 1);
+          setMessage("已纳入该职责的关注范围（只读跟进）。");
         });
       }}><label>纳管一个既有任务（线程 ID）<input value={bindThread} onChange={e => setBindThread(e.target.value)} required maxLength={128} placeholder="例如 kai-personal-assistant-v1 之外的线程 ID" /></label>
       <button disabled={busy || !bindThread.trim()}>纳管</button></form>

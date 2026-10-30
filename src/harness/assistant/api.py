@@ -171,9 +171,20 @@ async def list_specialists(identity: Reader, assistant: Service) -> list[Special
     return await assistant.repository.list_specialists(identity.tenant_id, identity.user_id)
 
 
+class SpecialistCreateRequest(StudioModel):
+    """创建请求只接受职责与能力来源；租户与用户由身份推导，绝不接受客户端伪造。"""
+
+    name: str = Field(min_length=1, max_length=80)
+    description: str = Field(default="", max_length=2_000)
+    agent_name: str = Field(alias="agentName", pattern=r"^[a-z][a-z0-9-]{0,127}$")
+    agent_version: str = Field(alias="agentVersion", min_length=1, max_length=128)
+
+
 @router.post("/specialists", status_code=201)
-async def create_specialist(body: Specialist, identity: Writer, assistant: Service) -> Specialist:
-    """创建专职子助理；slug 查重返回既有实例而不重复创建。"""
+async def create_specialist(
+    body: SpecialistCreateRequest, identity: Writer, assistant: Service
+) -> Specialist:
+    """创建专职子助理；同名职责复用既有实例，不会重复创建。"""
     created, _ = await assistant.create_specialist(
         identity.tenant_id,
         identity.user_id,
