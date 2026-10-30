@@ -401,3 +401,40 @@ API 确认 `config.appearance={"color":"#ff2d95","avatar":"star"}`、revision 4�
 
 **边界**：仅作用于绑定 Bot 的职责；普通定时任务不受此闸门（仍是预算/终止期闸门）。
 跳过的周期不补跑（与"避免浪费"一致）；skip 记录在 Bot 上可读，不在 run 流里（没有 run 发生）。
+
+
+### P1-2（api r13→r15）：子助理领域记忆 scope 真验收（Goal R3）
+
+**路径确认**：读侧 `MemoryBankGateway(scope=specialist:{slug})`（composition `specialist_memory_scope`）
+单测已有；**真验收发现两处读写不一致缺口，均已修**：
+
+1. **写侧**：自动提取入队按 `session.agent_name` 落 scope → 职责线程写进底层 agent 的记忆，
+   自己却读不到（`7dc8c84a`）。
+2. **读侧**：`harness-memory` MCP 工具（search/propose/read）与预加载 projection 都用
+   `identity.agent_name` → 职责线程能读到 lead-agent 的条目（79 实测复现：
+   bot 会话 search_memory 返回 `DELTA100314` 等 lead-agent 记忆）（`cb6f4331` + `9dfbf7f4`）。
+
+**统一判定**：`PostgresMemoryBankRepository.resolve_session_scope` —— session_id（或经
+`agui_thread_bindings` 反查的 thread_id）为 `assistant_<objective_id>` 且 objective 绑定
+specialist → `specialist:{slug}`；否则 None。写侧（提取入队）与读侧（projection、
+harness-memory 工具经 `MemoryBankService.scoped_identity`）共用，与 composition 同判。
+
+**79 真验收证据**（登录态，specialist_86149d1e…＝行业快报监控，slug `zhs-3cf716bb44`）
+- 写：`POST /api/memory-bank/proposals {"agentName":"specialist:zhs-3cf716bb44",...}` →
+  `memory_8be6787bccf3…`（v1 pending）→ confirm 200 → v2 active。
+- 读回：`GET /api/memory-bank/entries?agentName=specialist:zhs-3cf716bb44` → 仅该条；
+  `agentName=kai-personal-assistant` 与 `agentName=archive-assistant-agent` → **0 条，无泄漏**。
+- 语义召回：`POST /api/memory-bank/search {"agentName":"specialist:zhs-3cf716bb44","query":"P1-2 验收 领域记忆 scope"}`
+  → 命中 score 0.826；同 query 在主助理 scope → 0 hits。
+- 会话内工具召回（真实对话，UI）：bot 会话发「分别用 search_memory 搜 P1-2 验收 和 部署验收」→
+  run_8de1ac1e… 两次 search_memory 的 tool.result 都只含 specialist 条目（payload 原文核对），
+  **不再出现 lead-agent 条目**；匿名 `GET /memory-bank/entries` 与 `POST /search` 均 401。
+
+**测命令与结果**
+- `pytest tests/unit/assistant/test_memory_tools.py -q` → 5 passed（新增 scoped_identity 换算/不换算）
+- `pytest tests/unit/memory_bank tests/unit/runtime/test_memory_tools.py -q` → 37 passed
+- `pytest tests/integration/storage/test_memory_bank_postgres.py -q` → 8 passed
+  （新增：production-shaped 职责线程 session_→绑定→objective→specialist 链路下，
+  提取 job.agent_name == specialist:{slug}）
+- `pytest tests/integration/storage/test_delegation_real_gateway.py -q` → 30 passed（预算/委派闸门未破坏）
+- ruff 全绿。已知边界：全树 collect 的同名文件问题依旧（前文已记）。
