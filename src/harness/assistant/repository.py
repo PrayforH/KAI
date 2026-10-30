@@ -891,14 +891,18 @@ class PostgresAssistantRepository:
             if status is not None:
                 changes["status"] = status.value
             if profile is not None:
-                # 标题属于呈现信息，跟描述一起落 config；名称是身份字段，单独改。
+                # 标题/外观属于呈现信息，跟描述一起落 config；名称是身份字段，单独改。
                 for key in ("name", "description"):
                     if profile.get(key) is not None:
                         changes[key] = profile[key]
-                title = profile.get("title")
-                if title is not None:
+                presentation = {
+                    key: profile[key]
+                    for key in ("title", "appearance")
+                    if profile.get(key) is not None
+                }
+                if presentation:
                     merged = dict(current.config)
-                    merged["title"] = title
+                    merged.update(presentation)
                     changes["config"] = merged
             updated = Specialist.model_validate(current.model_dump() | changes)
             row.status = updated.status.value

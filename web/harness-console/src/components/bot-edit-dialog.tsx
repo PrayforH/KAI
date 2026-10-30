@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { assistantRequest, type Specialist } from "../lib/assistant-client";
+import { BOT_COLORS, BOT_SHAPES } from "./create-bot-dialog";
 import styles from "./bot-edit-dialog.module.css";
 
 type Duty = {
@@ -46,6 +47,8 @@ export function BotEditDialog({
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [color, setColor] = useState<string>(BOT_COLORS[7]);
+  const [avatar, setAvatar] = useState<string>("blob");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -58,6 +61,10 @@ export function BotEditDialog({
         setName(data.specialist.name);
         setTitle(String((data.specialist.config as { title?: string })?.title ?? ""));
         setDescription(data.specialist.description ?? "");
+        const appearance = (data.specialist.config as { appearance?: { color?: string; avatar?: string } })
+          ?.appearance;
+        if (appearance?.color) setColor(appearance.color);
+        if (appearance?.avatar) setAvatar(appearance.avatar);
       })
       .catch((cause) => {
         if (alive) setError(cause instanceof Error ? cause.message : "读取失败");
@@ -76,6 +83,7 @@ export function BotEditDialog({
         name: name.trim() || detail.specialist.name,
         title,
         description,
+        appearance: { color, avatar },
         expectedRevision: detail.specialist.revision,
       });
       onSaved();
@@ -91,6 +99,45 @@ export function BotEditDialog({
         <button type="button" className={styles.close} aria-label="关闭" onClick={onClose}>
           ×
         </button>
+        <div className={styles.appearance}>
+          <div className={styles.avatarPreview} style={{ background: `${color}22` }}>
+            <svg viewBox="0 0 64 64" aria-hidden="true">
+              <path
+                d={(BOT_SHAPES.find((item) => item.id === avatar) ?? BOT_SHAPES[0]).path}
+                fill={color}
+              />
+            </svg>
+          </div>
+          <div className={styles.colors}>
+            {BOT_COLORS.map((item) => (
+              <button
+                key={item}
+                type="button"
+                aria-label={`颜色 ${item}`}
+                data-selected={item === color ? "true" : undefined}
+                className={styles.swatch}
+                style={{ background: item }}
+                onClick={() => setColor(item)}
+              />
+            ))}
+          </div>
+          <div className={styles.shapes}>
+            {BOT_SHAPES.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                aria-label={`形状 ${item.id}`}
+                data-selected={item.id === avatar ? "true" : undefined}
+                className={styles.shapeButton}
+                onClick={() => setAvatar(item.id)}
+              >
+                <svg viewBox="0 0 64 64" aria-hidden="true">
+                  <path d={item.path} fill={item.id === avatar ? color : "#5b5b5b"} />
+                </svg>
+              </button>
+            ))}
+          </div>
+        </div>
         <label className={styles.field}>
           <span>姓名</span>
           <input value={name} maxLength={80} onChange={(event) => setName(event.target.value)} />

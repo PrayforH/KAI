@@ -255,11 +255,12 @@ async def get_specialist(specialist_id: str, identity: Reader, assistant: Servic
 
 
 class SpecialistProfileRequest(StudioModel):
-    """编辑 Bot：名称/标题/描述，纯呈现信息。"""
+    """编辑 Bot：名称/标题/描述/外观，纯呈现信息。"""
 
     name: str | None = Field(default=None, min_length=1, max_length=80)
     title: str | None = Field(default=None, max_length=80)
     description: str | None = Field(default=None, max_length=2_000)
+    appearance: SpecialistAppearance | None = None
     expected_revision: int = Field(alias="expectedRevision", ge=1)
 
 
@@ -274,6 +275,7 @@ async def update_specialist_profile(
         name=body.name,
         title=body.title,
         description=body.description,
+        appearance=body.appearance.model_dump() if body.appearance else None,
         expected_revision=body.expected_revision,
     )
 

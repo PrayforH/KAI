@@ -106,3 +106,67 @@
 }
 
 .primary:disabled { opacity: 0.6; cursor: default; }
+
+/* 外观选择：与新建 Bot 弹窗同一套色板/形状 */
+.appearance { display: grid; gap: 12px; justify-items: center; }
+
+.avatarPreview {
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.avatarPreview svg { width: 38px; height: 38px; }
+
+.colors {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+  justify-items: center;
+  padding: 14px 10px;
+  border: 1px solid #303030;
+  border-radius: 14px;
+  background: #151515;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.swatch {
+  width: 24px;
+  height: 24px;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+}
+
+.swatch[data-selected="true"] {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px #1b1b1b inset;
+}
+
+.shapes {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+  justify-items: center;
+  width: 100%;
+}
+
+.shapeButton {
+  width: 38px;
+  height: 38px;
+  padding: 4px;
+  display: grid;
+  place-items: center;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.shapeButton svg { width: 26px; height: 26px; }
+
+.shapeButton[data-selected="true"] { border-color: #2563eb; }
