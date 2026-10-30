@@ -298,6 +298,15 @@ class FeishuService:
                         # the model Run. Recovery need not download or transcribe again.
                         return True
                     prepared = incoming.prepared
+                    reply_to = None
+                    if not row.run_id and incoming.reply_to_message_id:
+                        # 原生引用 id → 内部消息；解析不到时不外发猜测。
+                        reply_to = await self.conversation.reply_reference(
+                            binding.tenant_id,
+                            binding.user_id,
+                            platform_message_id=incoming.reply_to_message_id,
+                            prefix="feishu-chat-",
+                        )
                     run = (
                         await self.conversation.runs.get(binding.tenant_id, row.run_id)
                         if row.run_id
@@ -308,6 +317,7 @@ class FeishuService:
                             prepared.text if prepared else incoming.text,
                             artifacts=prepared.artifacts if prepared else (),
                             model_route=prepared.model_route if prepared else None,
+                            reply_to=reply_to,
                         )
                     )
                     row.run_id = run.run_id

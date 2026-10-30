@@ -50,6 +50,8 @@ class WeixinMessageRow(Base):
     status: Mapped[str] = mapped_column(String(32), default="pending")
     run_id: Mapped[str | None] = mapped_column(String(128))
     reply: Mapped[str | None] = mapped_column(String)
+    # 引用回复：被引用平台消息换算成的内部 run 键（weixin-chat-<sha256>）。
+    reply_to_key: Mapped[str | None] = mapped_column(String(128))
     error_code: Mapped[str | None] = mapped_column(String(64))
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

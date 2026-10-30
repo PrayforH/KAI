@@ -80,6 +80,8 @@ class Incoming(StudioModel):
     code_digest: str = ""
     action_digest: str = ""
     message_id: str = Field(default="", max_length=128)
+    # 原生引用 id（parent_id/root_id）：服务层据此映射回内部消息。
+    reply_to_message_id: str = Field(default="", max_length=128)
     resources: list[MessageResource] = Field(default_factory=list[MessageResource], max_length=10)
     prepared: PreparedMessage | None = None
     control: ControlIntent | None = None

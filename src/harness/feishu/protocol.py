@@ -116,6 +116,10 @@ def normalize(payload: dict[str, Any], app_id: str) -> Incoming | None:
                 return None
             # Even malformed bind attempts must not store their credential as chat text.
             binding = content.startswith("绑定")
+            # 飞书把"回复某条消息"表达为 parent_id/root_id；这是可靠的原生引用 id，
+            # 交给服务层映射到内部消息，不以自然语言摘要猜测。
+            quoted = message.get("parent_id") or message.get("root_id") or ""
+            quoted_id = quoted if isinstance(quoted, str) else ""
             return Incoming(
                 actor=actor,
                 key=f"message:{message_id}",
@@ -124,6 +128,7 @@ def normalize(payload: dict[str, Any], app_id: str) -> Incoming | None:
                 text="" if binding else content,
                 code_digest=digest(content[2:].strip().upper()) if binding else "",
                 resources=[] if binding else resources,
+                reply_to_message_id=quoted_id[:128],
             )
         if header["event_type"] == "card.action.trigger":
             operator = event["operator"]

@@ -1,6 +1,6 @@
 """The personal assistant conversation, shared by Web and private channels."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import cast
 
 from ag_ui.core import (
@@ -60,6 +60,7 @@ class PersonalConversation:
         *,
         artifacts: Sequence[InputArtifact] = (),
         model_route: str | None = None,
+        reply_to: Mapping[str, str] | None = None,
     ) -> Run:
         coordinates = dict(
             tenant_id=tenant_id, user_id=user_id, thread_id=PERSONAL_ASSISTANT_THREAD
@@ -141,10 +142,52 @@ class PersonalConversation:
                 ],
                 tools=[],
                 context=[],
-                forwarded_props={"modelRoute": model_route} if model_route else {},
+                forwarded_props={
+                    **({"modelRoute": model_route} if model_route else {}),
+                    # 渠道引用走同一内部引用协议；摘录只用于展示。
+                    **({"replyTo": dict(reply_to)} if reply_to else {}),
+                },
             ),
         )
         return created.run
+
+    async def reply_reference(
+        self, tenant_id: str, user_id: str, *, platform_message_id: str, prefix: str
+    ) -> Mapping[str, str] | None:
+        """把渠道消息 id 映射成内部引用（user-<run_id>）。
+
+        只认该用户自己线程里、由这条渠道消息产生的运行；找不到就返回 None，
+        调用方据此保留原文并说明"无法定位原消息"，绝不猜最近一条。
+        """
+        if not platform_message_id:
+            return None
+        return await self.reply_reference_by_key(
+            tenant_id, user_id, key=prefix + platform_message_id
+        )
+
+    async def reply_reference_by_key(
+        self, tenant_id: str, user_id: str, *, key: str
+    ) -> Mapping[str, str] | None:
+        """同一映射的另一入口：渠道已把平台 id 折算成内部 run 键时使用。"""
+        if not key:
+            return None
+        try:
+            record = await self.agui.get_thread_record(
+                tenant_id=tenant_id, user_id=user_id, thread_id=PERSONAL_ASSISTANT_THREAD
+            )
+        except NotFoundError:
+            return None
+        for session_id in reversed(record.session_ids):
+            run = await self.runs.find_by_idempotency_key(tenant_id, session_id, key)
+            if run is None:
+                continue
+            prompt = run.input.get("prompt")
+            excerpt = prompt[:200] if isinstance(prompt, str) else None
+            return {
+                "messageId": f"user-{run.run_id}",
+                **({"excerpt": excerpt} if excerpt else {}),
+            }
+        return None
 
     async def answer(self, run: Run) -> str:
         events = await self.events.list_after(run.tenant_id, run.run_id, 0)

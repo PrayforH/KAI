@@ -390,6 +390,17 @@ class WeixinService:
                 key = hashlib.sha256(
                     (credentials["bot"] + ":" + str(identifier)).encode()
                 ).hexdigest()
+                # 引用：微信在 refer/quote 里给出被引用消息 id 时，按同一算法
+                # 换算成内部 run 键；取不到就留空，由服务层说明无法定位。
+                quoted_id = _quoted_message_id(msg)
+                reply_to_key = (
+                    "weixin-chat-"
+                    + hashlib.sha256(
+                        (credentials["bot"] + ":" + quoted_id).encode()
+                    ).hexdigest()
+                    if quoted_id
+                    else None
+                )
                 await s.execute(
                     insert(Message)
                     .values(
@@ -405,6 +416,7 @@ class WeixinService:
                         context_ciphertext=self.seal(row, "context", {"context": context}),
                         status="ready" if reply else "pending",
                         reply=reply,
+                        reply_to_key=reply_to_key,
                         attempts=0,
                         created_at=now(),
                     )
@@ -565,6 +577,13 @@ class WeixinService:
                     prepared = (
                         PreparedMessage.model_validate(row.prepared) if row.prepared else None
                     )
+                    reply_to = None
+                    if not row.run_id and row.reply_to_key:
+                        # 引用映射不到内部消息时保持为空：回复里说明无法定位，
+                        # 而不是凭"最近一条"猜目标。
+                        reply_to = await self.conversation.reply_reference_by_key(
+                            tenant, user, key=row.reply_to_key
+                        )
                     if row.run_id:
                         run = await self.conversation.runs.get(tenant, row.run_id)
                     elif prepared:
@@ -575,6 +594,7 @@ class WeixinService:
                             prepared.text,
                             artifacts=prepared.artifacts,
                             model_route=prepared.model_route,
+                            reply_to=reply_to,
                         )
                     else:
                         run = await self.conversation.submit(
@@ -582,6 +602,7 @@ class WeixinService:
                             user,
                             "weixin-chat-" + row.message_key,
                             row.text,
+                            reply_to=reply_to,
                         )
                     row.run_id = run.run_id
                     if not run.status.is_terminal:
@@ -736,3 +757,16 @@ class WeixinService:
                 for key, label, passed, detail in checks
             ],
         }
+
+
+def _quoted_message_id(msg: dict[str, Any]) -> str:
+    """微信侧被引用消息 id 的保守提取：只在明确的引用结构里取，取不到返回空。"""
+    for holder in (msg.get("refer"), msg.get("quote"), msg.get("refer_msg")):
+        if not isinstance(holder, dict):
+            continue
+        fields = cast(dict[str, object], holder)
+        for name in ("message_id", "msg_id"):
+            value = fields.get(name)
+            if isinstance(value, str) and value:
+                return value
+    return ""
