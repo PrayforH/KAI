@@ -55,6 +55,7 @@ class DelegationGateway(Protocol):
         idempotency_key: str | None,
         managed_thread_id: str | None = None,
         mode: str | None = None,
+        parent_objective_id: str | None = None,
     ) -> Objective: ...
 
     async def enqueue(
@@ -131,6 +132,7 @@ def assistant_delegation_overlay(
     *,
     coordinator_thread: bool,
     read_only: bool = False,
+    parent_objective_id: str | None = None,
 ) -> PlatformToolOverlay:
     if not coordinator_thread:
         # Background objective executions and unrelated agents never delegate;
@@ -169,7 +171,11 @@ def assistant_delegation_overlay(
         )
         try:
             objective = await gateway.create(
-                tenant_id, user_id, brief, idempotency_key=idempotency_key
+                tenant_id,
+                user_id,
+                brief,
+                idempotency_key=idempotency_key,
+                parent_objective_id=parent_objective_id,
             )
             execution = await gateway.enqueue(
                 tenant_id,
@@ -472,21 +478,48 @@ def assistant_delegation_overlay(
         )
 
     if read_only:
-        # 项目协调者的执行线程：只读查看纳管任务，不授予创建/推进/控制权。
-        return PlatformToolOverlay(
-            tools=(
+        # 项目协调者的执行线程：默认只读；只有在职责被授予新建任务范围时，
+        # 才额外获得"仅新建"能力（数量上限由服务端事务内校验）。
+        tools = [
+            PlatformTool(
+                name="assistant_task_status",
+                description="查询纳管任务列表与最新检查点（只读）。",
+                schema={"type": "object", "properties": {}},
+                handler=task_status,
+            )
+        ]
+        if parent_objective_id is not None:
+            tools.append(
                 PlatformTool(
-                    name="assistant_task_status",
-                    description="查询纳管任务列表与最新检查点（只读）。",
-                    schema={"type": "object", "properties": {}},
-                    handler=task_status,
-                ),
-            ),
-            instructions=(
-                "你是项目协调职责的执行者：通过 assistant_task_status 读取纳管任务与检查点，"
-                "汇总进展与差距；不得创建新任务，也不得直接推进或控制它们。"
-            ),
+                    name="assistant_create_task",
+                    description=(
+                        "在职责授权范围内新建一个后续任务；超出授权数量会被拒绝。"
+                    ),
+                    schema={
+                        "type": "object",
+                        "properties": {
+                            "task": {"type": "string", "maxLength": 20000},
+                            "title": {"type": "string", "maxLength": 120},
+                            "completion_criteria": {
+                                "type": "string",
+                                "maxLength": 2000,
+                            },
+                        },
+                        "required": ["task"],
+                    },
+                    handler=create_task,
+                )
+            )
+        instructions = (
+            "你是项目协调职责的执行者：通过 assistant_task_status 读取纳管任务与检查点，"
+            "汇总进展与差距；不得直接推进或控制它们。"
+            + (
+                "被授权新建后续任务时用 assistant_create_task，超出授权数量会被拒绝。"
+                if parent_objective_id is not None
+                else "不得创建新任务。"
+            )
         )
+        return PlatformToolOverlay(tools=tuple(tools), instructions=instructions)
 
     return PlatformToolOverlay(
         tools=(
@@ -651,6 +684,7 @@ class AssistantDelegationGateway:
         idempotency_key: str | None,
         managed_thread_id: str | None = None,
         mode: str | None = None,
+        parent_objective_id: str | None = None,
     ) -> Objective:
         return await self._assistant.create(
             tenant_id,
@@ -659,6 +693,7 @@ class AssistantDelegationGateway:
             idempotency_key=idempotency_key,
             managed_thread_id=managed_thread_id,
             mode=DelegationMode(mode) if mode is not None else None,
+            parent_objective_id=parent_objective_id,
         )
 
     async def enqueue(
@@ -796,6 +831,37 @@ async def objective_observer_session(assistant: Any, agui: Any, session: Session
     except (NotFoundError, PermissionDeniedError):
         return False
     return bool(bindings)
+
+
+async def observer_create_scope(
+    assistant: Any, agui: Any, session: Session
+) -> str | None:
+    """协调职责被授予"新建任务范围"时返回其 objective_id，否则 None。"""
+
+    if not session.agent_name:
+        return None
+    try:
+        record = await agui.get_thread_record_for_session(
+            tenant_id=session.tenant_id,
+            user_id=session.user_id,
+            session_id=session.session_id,
+        )
+    except NotFoundError:
+        return None
+    thread_id = record.thread_id
+    if not thread_id.startswith("assistant_"):
+        return None
+    objective_id = thread_id.removeprefix("assistant_")
+    try:
+        objective = await assistant.repository.get(
+            session.tenant_id, session.user_id, objective_id
+        )
+    except (NotFoundError, PermissionDeniedError):
+        return None
+    budget = objective.budget
+    if budget is None or budget.max_new_tasks is None:
+        return None
+    return objective.objective_id
 
 
 async def specialist_memory_scope(assistant: Any, agui: Any, session: Session) -> str | None:

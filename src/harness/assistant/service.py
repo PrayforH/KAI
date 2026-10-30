@@ -101,6 +101,7 @@ class AssistantService:
         mode: DelegationMode | None = None,
         source: ManagedTaskSource = ManagedTaskSource.API,
         specialist_id: str | None = None,
+        parent_objective_id: str | None = None,
     ) -> Objective:
         await self.validate(tenant_id, user_id, brief)
         now = datetime.now(UTC)
@@ -121,9 +122,25 @@ class AssistantService:
                 raise ConflictError("托管原任务必须使用原会话的项目")
             if not brief.project_id and binding.project_id:
                 brief = brief.model_copy(update={"project_id": binding.project_id})
+        if parent_objective_id is not None:
+            # 新建任务授权范围：父职责必须存在、属于本人，且未超出授权数量。
+            if parent_objective_id == managed_thread_id:
+                raise ConflictError("无法把职责绑定到自身派生出的任务")
+            parent = await self.repository.get(tenant_id, user_id, parent_objective_id)
+            budget = parent.budget
+            allowed = budget.max_new_tasks if budget is not None else None
+            if allowed is None:
+                raise ConflictError("该职责未被授权在项目内新建任务")
+            if await self.repository.count_children(
+                tenant_id, user_id, parent_objective_id
+            ) >= allowed:
+                raise ConflictError(
+                    f"已达新建任务授权上限（{allowed}），请调整授权范围后再派发"
+                )
         objective = await self.repository.create(
             Objective(
                 **brief.model_dump(),
+                parentObjectiveId=parent_objective_id,
                 objectiveId=f"objective_{uuid4().hex}",
                 tenantId=tenant_id,
                 userId=user_id,
@@ -717,6 +734,51 @@ class AssistantService:
             status=status,
             now=datetime.now(UTC),
         )
+
+    async def trial_specialist(
+        self,
+        tenant_id: str,
+        user_id: str,
+        specialist_id: str,
+        *,
+        expected_revision: int,
+    ) -> dict[str, object]:
+        """首次试运行：只跑一次检查并回报真实结果；缺项与未就绪都拒绝。
+
+        试运行成功不等于"已启用持续运行"，状态仍是 ready，由用户显式启用。
+        """
+        specialist = await self.repository.get_specialist(
+            tenant_id, user_id, specialist_id
+        )
+        if specialist.revision != expected_revision:
+            raise ConflictError("Subsist 配置已变化，请刷新后重试")
+        missing = _specialist_missing_config(specialist.config)
+        if missing:
+            raise ConflictError(f"配置缺项，不能试运行：{'、'.join(missing)}")
+        if specialist.status not in {SpecialistStatus.READY, SpecialistStatus.ACTIVE}:
+            raise ConflictError("只有待启用或运行中的子助理可以试运行")
+        objectives = [
+            item
+            for item in await self.repository.list(tenant_id, user_id)
+            if item.specialist_id == specialist.specialist_id
+        ]
+        if not objectives:
+            raise ConflictError("该子助理还没有绑定职责")
+        objective = objectives[0]
+        execution = await self.repository.enqueue(
+            tenant_id,
+            user_id,
+            objective.objective_id,
+            trigger_key=f"trial:{specialist.specialist_id}:{expected_revision}",
+            now=datetime.now(UTC),
+        )
+        return {
+            "specialistId": specialist.specialist_id,
+            "objectiveId": objective.objective_id,
+            "executionId": execution.execution_id,
+            "status": execution.status.value,
+            "scheduled": "已安排一次试运行（排队中）；结果以执行记录为准。",
+        }
 
     async def delegate_to_specialist(
         self,

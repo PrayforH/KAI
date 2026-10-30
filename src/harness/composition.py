@@ -34,6 +34,7 @@ from harness.assistant.delegation import (
     assistant_delegation_overlay,
     coordinator_session,
     objective_observer_session,
+    observer_create_scope,
     specialist_memory_scope,
 )
 from harness.assistant.file_delivery import ChannelFiles
@@ -1630,6 +1631,13 @@ def build_production_container(
                     session,
                     coordinator_thread=True,
                     read_only=observer,
+                    parent_objective_id=(
+                        await observer_create_scope(
+                            container.assistant, container.agui, session
+                        )
+                        if observer
+                        else None
+                    ),
                 )
         memory_overlay = PlatformToolOverlay()
         if container.memory_bank is not None and session.agent_name:

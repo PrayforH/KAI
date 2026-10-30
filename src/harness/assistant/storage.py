@@ -41,6 +41,7 @@ class ObjectiveRow(Base):
     status: Mapped[str] = mapped_column(String(32))
     revision: Mapped[int] = mapped_column(Integer)
     idempotency_key: Mapped[str | None] = mapped_column(String(128))
+    parent_objective_id: Mapped[str | None] = mapped_column(String(128))
     next_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

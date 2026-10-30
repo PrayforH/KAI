@@ -1097,3 +1097,93 @@ async def test_shared_desktop_is_single_executor_with_queueing(
         now=NOW + timedelta(seconds=40 + 901),
     )
     assert stale is not None and stale.objective_id == "objective-three"
+
+
+@pytest.mark.asyncio
+async def test_child_task_creation_respects_the_authorization_scope(
+    database: DatabaseFixture,
+) -> None:
+    """新建任务范围：无权时拒绝、超出上限时拒绝、限额内成功并计入父职责。"""
+    service = make_service(database)
+    service._agui = cast(Any, _StubAgui())  # pyright: ignore[reportPrivateUsage]
+    plain = await service.create("tenant-a", "user-a", brief())
+    with pytest.raises(ConflictError, match="未被授权"):
+        await service.create(
+            "tenant-a", "user-a", brief(), parent_objective_id=plain.objective_id
+        )
+
+    parent = await service.create(
+        "tenant-a",
+        "user-a",
+        ObjectiveBrief.model_validate(
+            {
+                "title": "项目协调",
+                "instructions": "协调项目内后续任务",
+                "agentName": "audit-agent",
+                "agentVersion": "1.0.0",
+                "budget": {"maxNewTasks": 1},
+            }
+        ),
+        managed_thread_id="thread-project",
+    )
+    child = await service.create(
+        "tenant-a", "user-a", brief(), parent_objective_id=parent.objective_id
+    )
+    assert child.parent_objective_id == parent.objective_id
+    assert await service.repository.count_children(
+        "tenant-a", "user-a", parent.objective_id
+    ) == 1
+    with pytest.raises(ConflictError, match="授权上限"):
+        await service.create(
+            "tenant-a", "user-a", brief(), parent_objective_id=parent.objective_id
+        )
+
+
+@pytest.mark.asyncio
+async def test_specialist_trial_run_requires_complete_config_and_reports_scheduling(
+    database: DatabaseFixture,
+) -> None:
+    from harness.assistant.models import SpecialistStatus
+
+    service = make_service(database)
+    service._agui = cast(Any, _StubAgui())  # pyright: ignore[reportPrivateUsage]
+    outcome = await service.delegate_to_specialist(
+        "tenant-a",
+        "user-a",
+        name="trial-duty",
+        description="试运行职责",
+        agent_name="audit-agent",
+        agent_version="1.0.0",
+        task="做一次检查",
+        mode=cast(Any, "autonomous"),
+        message_id="delegate-specialist:run-trial:trial-duty",
+    )
+    specialist = await service.repository.get_specialist(
+        "tenant-a", "user-a", str(outcome["specialist_id"])
+    )
+    # 缺项：拒绝试运行
+    with pytest.raises(ConflictError, match="配置缺项"):
+        await service.trial_specialist(
+            "tenant-a", "user-a", specialist.specialist_id, expected_revision=specialist.revision
+        )
+    configured = await service.configure_specialist(
+        "tenant-a",
+        "user-a",
+        specialist.specialist_id,
+        config={"schedule_minutes": 60, "notify_channel": "inbox"},
+        expected_revision=specialist.revision,
+    )
+    assert configured.status is SpecialistStatus.READY
+    trial = await service.trial_specialist(
+        "tenant-a",
+        "user-a",
+        specialist.specialist_id,
+        expected_revision=configured.revision,
+    )
+    assert trial["status"] == "pending"
+    assert "试运行" in str(trial["scheduled"])
+    # 试用后仍是 ready：试运行不冒充"已启用持续运行"
+    after = await service.repository.get_specialist(
+        "tenant-a", "user-a", specialist.specialist_id
+    )
+    assert after.status is SpecialistStatus.READY

@@ -66,6 +66,7 @@ class FakeGateway:
         idempotency_key: str | None,
         managed_thread_id: str | None = None,
         mode: str | None = None,
+        parent_objective_id: str | None = None,
     ) -> Objective:
         for objective_id, key in self.idempotency_keys.items():
             if key is not None and key == idempotency_key:
@@ -78,6 +79,7 @@ class FakeGateway:
             userId=user_id,
             status=ObjectiveStatus.ACTIVE,
             managedThreadId=managed_thread_id,
+            parentObjectiveId=parent_objective_id,
             mode=cast("Any", mode or "autonomous"),
             createdAt=NOW,
             updatedAt=NOW,

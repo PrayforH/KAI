@@ -73,6 +73,8 @@ class ObjectiveBudget(StudioModel):
     skip_unchanged: bool = Field(default=False, alias="skipUnchanged")
     # 共享可见桌面单执行者：声明需要桌面的职责按 FIFO 排队，等待时不空耗模型。
     requires_desktop: bool = Field(default=False, alias="requiresDesktop")
+    # 新建任务授权范围：协调职责最多可派生多少个新任务；None 表示无权新建。
+    max_new_tasks: int | None = Field(default=None, alias="maxNewTasks", ge=0, le=100)
     # 计量上限：只在平台能给出真实用量时生效；无计量时诚实报告不可用。
     max_tokens: int | None = Field(default=None, alias="maxTokens", ge=1)
     max_cost_usd: float | None = Field(default=None, alias="maxCostUsd", gt=0)
@@ -127,6 +129,10 @@ class Objective(ObjectiveBrief):
     managed_thread_id: str | None = Field(default=None, alias="managedThreadId", max_length=128)
     # 由专职子助理承接的职责：定时能力属于职责，不属于头像或名称。
     specialist_id: str | None = Field(default=None, alias="specialistId", max_length=128)
+    # 协调职责派生的子任务：用于按授权范围计数，不构成隐式子职责树。
+    parent_objective_id: str | None = Field(
+        default=None, alias="parentObjectiveId", max_length=128
+    )
     mode: DelegationMode = DelegationMode.AUTONOMOUS
     next_check_at: AwareDatetime | None = Field(default=None, alias="nextCheckAt")
     created_at: AwareDatetime = Field(alias="createdAt")

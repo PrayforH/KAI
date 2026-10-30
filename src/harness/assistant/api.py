@@ -242,6 +242,73 @@ async def save_specialist_credential(
     )
 
 
+class ManagedBindingRequest(StudioModel):
+    thread_id: str = Field(alias="threadId", min_length=1, max_length=128)
+    depends_on_objective_id: str | None = Field(
+        default=None, alias="dependsOnObjectiveId", max_length=128
+    )
+
+
+@router.get("/objectives/{objective_id}/managed")
+async def managed_overview(objective_id: str, identity: Reader, assistant: Service):
+    """项目托管面板：纳管绑定 + 每个任务的进展与检查点（只读投影）。"""
+    objective = await assistant.repository.get(
+        identity.tenant_id, identity.user_id, objective_id
+    )
+    bindings = await assistant.repository.managed_bindings(
+        identity.tenant_id, identity.user_id, objective_id=objective_id
+    )
+    overview = await assistant.managed_overview(
+        identity.tenant_id, identity.user_id, objective_id
+    )
+    by_thread = {str(item["thread_id"]): item for item in overview}
+    return {
+        "objectiveId": objective.objective_id,
+        "revision": objective.revision,
+        "budget": objective.budget.model_dump(by_alias=True) if objective.budget else None,
+        "managed": [
+            {
+                "threadId": task.thread_id,
+                "role": task.role.value,
+                "projectId": task.project_id,
+                "dependsOnObjectiveId": task.depends_on_objective_id,
+                "progress": by_thread.get(task.thread_id),
+            }
+            for task in bindings
+        ],
+        "overview": overview,
+        "aggregate": assistant.render_managed_overview(overview),
+    }
+
+
+@router.post("/objectives/{objective_id}/managed", status_code=201)
+async def bind_managed_thread(
+    objective_id: str, body: ManagedBindingRequest, identity: Writer, assistant: Service
+):
+    """把一个既有线程纳入职责的纳管集合；依赖成环由服务端拒绝。"""
+    await assistant.bind_thread(
+        identity.tenant_id, identity.user_id, objective_id, body.thread_id
+    )
+    return {"objectiveId": objective_id, "threadId": body.thread_id, "bound": True}
+
+
+class SpecialistTrialRequest(StudioModel):
+    expected_revision: int = Field(alias="expectedRevision", ge=1)
+
+
+@router.post("/specialists/{specialist_id}/trial", status_code=201)
+async def trial_specialist(
+    specialist_id: str, body: SpecialistTrialRequest, identity: Writer, assistant: Service
+):
+    """首次试运行：配置缺项时拒绝；成功只返回真实执行，不宣称持续运行已启用。"""
+    return await assistant.trial_specialist(
+        identity.tenant_id,
+        identity.user_id,
+        specialist_id,
+        expected_revision=body.expected_revision,
+    )
+
+
 @router.get("/handovers")
 async def list_handovers(
     identity: Reader,

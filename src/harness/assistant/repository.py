@@ -136,6 +136,7 @@ class PostgresAssistantRepository:
                         tenant_id=objective.tenant_id,
                         user_id=objective.user_id,
                         idempotency_key=idempotency_key,
+                        parent_objective_id=objective.parent_objective_id,
                         created_at=objective.created_at,
                     )
                     _store(row, objective)
@@ -631,6 +632,19 @@ class PostgresAssistantRepository:
                 ),
                 None,
             )
+
+    async def count_children(self, tenant_id: str, user_id: str, objective_id: str) -> int:
+        async with self._context() as session:
+            total = await session.scalar(
+                select(func.count())
+                .select_from(ObjectiveRow)
+                .where(
+                    ObjectiveRow.tenant_id == tenant_id,
+                    ObjectiveRow.user_id == user_id,
+                    ObjectiveRow.parent_objective_id == objective_id,
+                )
+            )
+            return int(total or 0)
 
     async def managed_bindings(
         self,
