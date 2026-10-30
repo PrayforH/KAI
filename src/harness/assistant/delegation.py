@@ -11,8 +11,8 @@ executions run in their own threads and must not be able to delegate further
 """
 
 import hashlib
-from datetime import UTC, datetime
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from typing import Any, Protocol, cast
 
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD

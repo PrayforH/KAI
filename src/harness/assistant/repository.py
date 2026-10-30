@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1101,6 +1101,89 @@ class PostgresAssistantRepository:
                     created_at=now,
                 )
             )
+
+    async def desktop_occupancy(
+        self, *, tenant_id: str, user_id: str, now: datetime
+    ) -> dict[str, object]:
+        """共享桌面的只读占用/排队投影（不改变任何执行状态）。
+
+        holder＝当前持有人（含职责标题）；waiting＝需要桌面且仍在排队的
+        pending 执行（按创建序），带中文等待原因与排队位置，供 API/UI 读。
+        """
+        async with self._context() as session:
+            holder_row = await session.scalar(
+                select(DesktopTurnRow).where(
+                    DesktopTurnRow.tenant_id == tenant_id,
+                    DesktopTurnRow.user_id == user_id,
+                    DesktopTurnRow.released_at.is_(None),
+                    DesktopTurnRow.expires_at > now,
+                )
+            )
+            holder: dict[str, object] | None = None
+            holder_execution_id: str | None = None
+            if holder_row is not None:
+                holder_execution_id = holder_row.execution_id
+                objective_row = await session.scalar(
+                    select(ObjectiveRow).where(
+                        ObjectiveRow.objective_id == holder_row.objective_id,
+                        ObjectiveRow.tenant_id == tenant_id,
+                        ObjectiveRow.user_id == user_id,
+                    )
+                )
+                title = (
+                    str(objective_row.payload.get("title", ""))
+                    if objective_row is not None
+                    else ""
+                )
+                holder = {
+                    "objective_id": holder_row.objective_id,
+                    "execution_id": holder_row.execution_id,
+                    "objective_title": title,
+                    "acquired_at": holder_row.acquired_at.isoformat(),
+                    "expires_at": holder_row.expires_at.isoformat(),
+                }
+            rows = await session.execute(
+                select(ObjectiveExecutionRow, ObjectiveRow)
+                .join(
+                    ObjectiveRow,
+                    and_(
+                        ObjectiveRow.objective_id
+                        == ObjectiveExecutionRow.objective_id,
+                        ObjectiveRow.tenant_id == ObjectiveExecutionRow.tenant_id,
+                        ObjectiveRow.user_id == ObjectiveExecutionRow.user_id,
+                    ),
+                )
+                .where(
+                    ObjectiveExecutionRow.tenant_id == tenant_id,
+                    ObjectiveExecutionRow.user_id == user_id,
+                    ObjectiveExecutionRow.status == ObjectiveExecutionStatus.PENDING.value,
+                )
+                .order_by(ObjectiveExecutionRow.created_at)
+            )
+            waiting: list[dict[str, object]] = []
+            for execution_row, objective_row in rows:
+                budget = objective_row.payload.get("budget") or {}
+                if budget.get("requiresDesktop") is not True:
+                    continue
+                if (
+                    holder_execution_id is not None
+                    and execution_row.execution_id == holder_execution_id
+                ):
+                    continue
+                waiting.append(
+                    {
+                        "objective_id": execution_row.objective_id,
+                        "execution_id": execution_row.execution_id,
+                        "objective_title": str(objective_row.payload.get("title", "")),
+                        "position": len(waiting) + 1,
+                        "wait_reason": (
+                            "单执行者占用中（另一项职责正在使用共享桌面）"
+                            if holder_row is not None
+                            else "等待桌面就绪"
+                        ),
+                    }
+                )
+            return {"holder": holder, "waiting": waiting}
 
     async def acquire_desktop_turn(
         self,

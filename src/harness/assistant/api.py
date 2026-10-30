@@ -426,6 +426,14 @@ async def trial_specialist(
     )
 
 
+@router.get("/desktop/occupancy")
+async def desktop_occupancy(
+    identity: Reader, assistant: Service
+) -> dict[str, object]:
+    """共享桌面占用/排队的只读投影：谁在占用、等待者位置与原因（中文可读）。"""
+    return await assistant.desktop_occupancy(identity.tenant_id, identity.user_id)
+
+
 @router.get("/handovers")
 async def list_handovers(
     identity: Reader,

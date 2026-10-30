@@ -1409,3 +1409,74 @@ async def test_unviewed_specialist_routine_is_skipped_then_recovers(
         "tenant-a", "user-a", duty.objective_id
     )
     assert len(resumed) == 2
+
+
+@pytest.mark.asyncio
+async def test_desktop_occupancy_is_observable_and_waiting_reasons_are_readable(
+    database: DatabaseFixture,
+) -> None:
+    """只读投影：占用者可见；等待者带排队位置与「单执行者占用中」中文原因。"""
+    from datetime import timedelta
+
+    service = make_service(database)
+    # 占用者：objective-one（带标题）
+    holder = await service.repository.acquire_desktop_turn(
+        tenant_id="tenant-a",
+        user_id="user-a",
+        objective_id="objective-one",
+        execution_id="execution-one",
+        now=NOW,
+    )
+    assert holder is not None
+    # 两条 pending 执行：一条属于桌面职责（应出现在 waiting），一条不涉及桌面（不出现）
+    brief_desktop = brief(
+        **{"title": "每天截图检查", "budget": {"requiresDesktop": True, "maxRunsPerDay": 10}}
+    )
+    duty_desktop = await service.create("tenant-a", "user-a", brief_desktop)
+    brief_plain = brief(**{"title": "普通汇总", "budget": {"maxRunsPerDay": 10}})
+    duty_plain = await service.create("tenant-a", "user-a", brief_plain)
+    # 两条职责都带 60 分钟 schedule：到期调度入队 pending 执行（排队投影的来源）。
+    # service.create 用真实时钟写 next_check_at，这里也对齐真实时钟。
+    from datetime import UTC as _UTC
+
+    await service.repository.schedule_due(
+        datetime.now(_UTC) + timedelta(minutes=61), unviewed_pause_hours=None
+    )
+    occupancy = await service.desktop_occupancy(
+        "tenant-a", "user-a", now=NOW + timedelta(seconds=60)
+    )
+
+    holder_info = occupancy["holder"]
+    assert holder_info is not None
+    assert holder_info["objective_id"] == "objective-one"
+    assert holder_info["execution_id"] == "execution-one"
+
+    waiting = occupancy["waiting"]
+    assert all(item["objective_id"] != "objective-one" for item in waiting)
+    desktop_waiters = [
+        item for item in waiting if item["objective_id"] == duty_desktop.objective_id
+    ]
+    assert desktop_waiters, "desktop-bound pending execution must be visible in the queue"
+    first = desktop_waiters[0]
+    assert first["position"] == 1
+    assert first["wait_reason"] == "单执行者占用中（另一项职责正在使用共享桌面）"
+    plain_waiters = [item for item in waiting if item["objective_id"] == duty_plain.objective_id]
+    assert not plain_waiters, "non-desktop executions must not appear in the desktop queue"
+
+    # 占用释放后：无 holder，等待原因回到「等待桌面就绪」。
+    await service.repository.release_desktop_turn(
+        tenant_id="tenant-a",
+        user_id="user-a",
+        execution_id="execution-one",
+        now=NOW + timedelta(seconds=30),
+    )
+    released = await service.desktop_occupancy(
+        "tenant-a", "user-a", now=NOW + timedelta(seconds=60)
+    )
+    assert released["holder"] is None
+    desktop_waiters_after = [
+        item
+        for item in released["waiting"]
+        if item["objective_id"] == duty_desktop.objective_id
+    ]
+    assert desktop_waiters_after[0]["wait_reason"] == "等待桌面就绪"

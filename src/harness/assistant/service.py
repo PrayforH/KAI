@@ -283,7 +283,14 @@ class AssistantService:
             and binding.project_id
             and binding.project_id != objective.project_id
         ):
-            raise ConflictError("跨项目纳管需要用户明确授权该项目")
+            # 带上双方项目线索，避免静默失败式的模糊拒绝。
+            raise ConflictError(
+                "跨项目纳管被拒绝：职责属于项目"
+                f"「{await self._project_label(tenant_id, user_id, objective.project_id)}」，"
+                f"而线程属于项目"
+                f"「{await self._project_label(tenant_id, user_id, binding.project_id)}」；"
+                "需要用户明确授权该项目后才能纳管"
+            )
         await self.repository.bind_managed(
             ManagedTask(
                 managedId=f"managed_{uuid4().hex}",
@@ -735,6 +742,24 @@ class AssistantService:
             expected_revision=expected_revision,
             profile=profile,
             now=datetime.now(UTC),
+        )
+
+    async def _project_label(self, tenant_id: str, user_id: str, project_id: str) -> str:
+        """项目名（拿不到时回退 id）：错误文案要能对上用户看到的项目。"""
+        try:
+            project = await self._projects.get(
+                tenant_id=tenant_id, user_id=user_id, project_id=project_id
+            )
+            return getattr(project, "name", None) or project_id
+        except Exception:  # noqa: BLE001 - 展示信息失败不改变拒绝本身
+            return project_id
+
+    async def desktop_occupancy(
+        self, tenant_id: str, user_id: str, *, now: datetime | None = None
+    ) -> dict[str, object]:
+        """共享桌面占用/排队的只读投影（API 可直接返回）。"""
+        return await self.repository.desktop_occupancy(
+            tenant_id=tenant_id, user_id=user_id, now=now or datetime.now(UTC)
         )
 
     async def touch_specialist_viewed(
