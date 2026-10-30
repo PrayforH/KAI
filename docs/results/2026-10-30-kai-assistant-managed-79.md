@@ -488,3 +488,34 @@ harness-memory 工具经 `MemoryBankService.scoped_identity`）共用，与 comp
 （当前无执行占用；真占用需两条桌面职责同时跑，单测已覆盖）；匿名 401 ✓。
 
 **边界**：不做仲裁增强（FIFO 抢占/优先级）、不改 lease 回收、不做 UI（进展卡旁一行留次日）。
+
+
+### P2-1（api r18 / web r31）：检查点 tokens/cost/耗时进托管面板
+
+**后端投影**（复用既有 checkpoint 管道，零计量改动）
+- `managed_overview` 的每个任务项新增 `run_id` 与 `duration_seconds`
+  （终态 run：updated_at − created_at；进行中为 null）。
+- `GET /objectives/{id}/managed` 把该 objective 最近检查点按 run_id 投影成
+  `metrics = {tokens, costUsd, unknownUsage}`：`unknown_usage=true` 或 tokens 缺失时
+  tokens=null + unknownUsage=true（UI 显式「未计量」，不显示假 0）。
+
+**前端**（托管面板，每个纳管任务一行中文摘要）
+- 有计量：`tokens 1,234 · cost $0.02 · 耗时 45 秒`；
+  无 cost 字段则只显示 tokens 与耗时；
+- 未计量：`tokens 未计量 · 耗时 45 秒`。
+
+**测命令与结果**
+- `npx vitest run tests/managed-metrics.spec.tsx` → 3 passed（有计量渲染/未计量不显示假 0/后端投影）
+- `pytest tests/unit/assistant -q` → 94 passed；`pytest tests/integration/storage/test_delegation_real_gateway.py -q` → 31 passed
+  （managed_overview 的 stub run 补了 run_id/created_at/updated_at）
+- 全套 web 1383 passed / 1 既有失败；tsc、ruff clean
+
+**79 冒烟**
+- API：`GET /objectives/objective_5796310d…/managed`（有绑定的 coordinator）→
+  overview[0]：`run_id=run_e737a2e4…`、`duration_seconds=13`、`metrics=null`
+  （该 run 无检查点 → UI 只显示耗时）。
+- 79 现网检查点核对：`assistant_checkpoints` 最近 5 条全部 `tokens=NULL, unknown_usage=t`
+  （网关未回传用量）→ UI 将如实显示「tokens 未计量」，正是本切片要求的诚实呈现。
+- UI 全页冒烟：托管面板已确认可达（截图 136），但带绑定且带 run 的职责
+  「为您提供帮助服务」不在列表第一页（展开显示 40 条之后），未截到计量行本体；
+  渲染逻辑由 vitest 覆盖，已知诚实行为=「tokens 未计量 · 耗时 N 秒」。
