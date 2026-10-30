@@ -351,3 +351,25 @@ API 确认 `config.appearance={"color":"#ff2d95","avatar":"star"}`、revision 4�
 
 测试：`pytest tests/unit/assistant/`（91 过，含 appearance 携带/校验 4 条）；
 `vitest run tests/bot-edit-dialog.spec.tsx`（3 过）；全套 web 1379 过 / 1 既有失败（account-settings，与本轮无关）。
+
+
+### P0-3（api r11）：僵尸 sandbox lease 自愈（对账回收，替代手工改库）
+
+**触发条件**：`acquire` 抛出「session already holds a live sandbox lease」时，Worker 走一次对账：
+`SandboxLeaseService.reconcile_dead_run_lease` 仅当
+① 该 lease 仍为 `active` 且未过期、② 绑定 Run 可查且状态 ∈ terminal
+（cancelled/succeeded/failed/timed_out/rejected）时，才把它标为 `released`（epoch CAS 防并发），
+发 `sandbox.lease.reconciled` 事件（released_lease_id/run_id/owner），然后重试 acquire 一次。
+其余情况一律不动：Run 在跑、lease 已 released/reclaimed、跨会话、Run 查询失败（不猜测归属）。
+幂等：回收后再对账返回 None；TTL 过期仍走既有 supersede 路径，不经此逻辑。
+
+**测命令与结果**
+- `pytest tests/unit/sandbox/test_lease.py tests/unit/worker/test_orchestrator.py tests/unit/worker/test_sandbox_lease_renewal.py -q` → 78 passed
+  - 终态 Run 的 lease → released，可幂等重放，同会话可再取（epoch +1）
+  - RUNNING 的 lease 不回收、跨会话不回收、Run 查询抛错不回收
+  - orchestrator 级：僵尸租约自愈（新 Run 成功 + reconciled 事件）；RUNNING 租约照常阻断（Run FAILED，无 reconciled 事件，原 lease 仍 active）
+- `ruff check` 相关文件 → clean
+- 已知边界：全树 `pytest tests/unit` 的 collect 失败是仓库既有的同名测试文件问题（test_lifecycle/test_memory_tools/test_service 等在多目录重名，均早于本分支），未在本轮处理。
+
+**风险说明**：只回收「绑定 Run 已终态」的租约；epoch fencing 保证即使误判，原 owner 恢复后也会察觉失去所有权。
+回收事件落在 run 事件流，审计可查。未引入后台清扫任务、未改 TTL 语义、未动委派绑定策略。
