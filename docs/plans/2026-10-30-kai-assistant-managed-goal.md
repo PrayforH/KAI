@@ -8,7 +8,8 @@
   在分支 `auto/kai-dot-20261028` 上 HEAD=2488cf3c41ded6d470becbba379dada74c4a99e4（`docs: record develop merge deployment and 79 acceptance`）。
 - 本轮隔离工作树（本轮所有改动都在这里，不动 `/Users/xiaokai/Documents/agent studio` 的其他工作）：
   **`/Users/xiaokai/.codex/worktrees/kai-assistant-managed/agent studio`**，分支 **`auto/kai-assistant-managed-20261030`**，基于 2488cf3c。
-- 模型：GLM-5.3-Flash（推理高），不擅自切换。
+- 模型：**2026-10-30 恢复授权后改为 DeepSeek deepseek-flash（推理高）**（原 GLM-5.3-Flash 额度耗尽）；
+  补充合同 `deepseek-resume-brief.md` 优先于原合同的旧模型/旧截止，用户未设新截止。
 - 预算核对：本原生 Goal 环境报告「Token budget: none / Tokens remaining: unbounded」，不支持设置 300,000,000 token 的数值预算
   （也不能改内部数据库或购买额度）。合同 3 亿为授权上限期望；实际按真实可用额度推进有效工作，不凑用量。差别如实记录于此。
 - 数据保护：保留 79 全部绑定、聊天、文件、配置、本人 VM 根盘与浏览器；不动 174。08:00（北京时间）后不启动高风险大迁移，
@@ -122,3 +123,21 @@ ruff 全过；pyright 剖面与基线一致（2449/1160/234）。
 ## 验证记录
 
 （每阶段实际运行过的测试、构建、部署在此追加，含命令与结果摘要。）
+
+
+## 第二轮（DeepSeek 恢复后）实际完成情况
+
+| 项 | 内容 | 状态 |
+| --- | --- | --- |
+| R1 | 中文职责名查重：slug 附加名称短哈希，同名复用、异名各建（真实中文名集成测试） | 已实现+已测试 |
+| R2 | 成果汇总：managed_overview/render + coordinator 提示注入（只读、读不到不猜） | 已实现+已测试+已部署 |
+| R3 | 子助理领域记忆：MemoryBankGateway scope + specialist_memory_scope（specialist:{slug}） | 已实现+已测试(单测)；79 未做真实记忆写入验收 |
+| R4 | 计量：检查点记 tokens/cost/unknown_usage（从配额账本读真实用量）；预算 maxTokens/maxCostUsd；未计量时拒派并说明 | 已实现+已测试+已部署（79 实测拒绝文案） |
+| R5 | 事件驱动：skipUnchanged + 进展指纹，定时无变化不唤起模型 | 已实现+已测试 |
+| R6 | Computer 单执行者：assistant_desktop_turns（部分唯一索引、幂等、TTL 回收、释放交接） | 已实现+已测试 |
+| R7 | 新建任务授权范围：parentObjectiveId + maxNewTasks + 观察者"仅新建"工具 | 已实现+已测试+已部署 |
+| R8 | 渠道引用：飞书 parent_id/root_id、微信 refer → 内部 user-<run_id>；解析不到不猜 | 已实现+已测试(单测)；真实渠道收发待本人操作 |
+| R9 | 项目托管面板 + 预算/授权表单 + 子助理试运行/挂职责 + 结果进展条 | 已实现+已部署+真实浏览器验收 |
+| R10 | 79 部署：迁移 0055→0063，r4 镜像（api/worker/control/feishu/weixin/web），备份先行、在途 Run=0 | 已部署 |
+| R11 | 真实页面验收：引用条/取消保草稿/刷新与跨浏览器恢复/点击定位、托管面板、子助理配置→试运行→启用、预算落库与门禁、成果下载字节一致 | 已验证 |
+| R12 | 飞书/微信入站与引用真实收发 | **待本人操作**（无客户端输入能力） |
