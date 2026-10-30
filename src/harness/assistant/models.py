@@ -69,6 +69,11 @@ class ObjectiveBudget(StudioModel):
 
     max_runs_per_day: int | None = Field(default=None, alias="maxRunsPerDay", ge=1, le=10_000)
     max_total_runs: int | None = Field(default=None, alias="maxTotalRuns", ge=1, le=100_000)
+    # 无变化不唤起模型：按纳管任务的进展指纹比较，相同则跳过本次检查。
+    skip_unchanged: bool = Field(default=False, alias="skipUnchanged")
+    # 计量上限：只在平台能给出真实用量时生效；无计量时诚实报告不可用。
+    max_tokens: int | None = Field(default=None, alias="maxTokens", ge=1)
+    max_cost_usd: float | None = Field(default=None, alias="maxCostUsd", gt=0)
 
 
 class ObjectiveSchedule(StudioModel):
@@ -223,6 +228,10 @@ class ObjectiveCheckpoint(StudioModel):
     revision: int = Field(ge=1)
     status: ObjectiveExecutionStatus
     summary: str = ""
+    # 真实计量：unknown_usage=True 表示平台未提供可靠用量，不能当 0 处理。
+    tokens: int | None = None
+    cost_usd: float | None = Field(default=None, alias="costUsd")
+    unknown_usage: bool = Field(default=False, alias="unknownUsage")
     created_at: AwareDatetime = Field(alias="createdAt")
 
 

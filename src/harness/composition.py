@@ -1885,6 +1885,7 @@ def build_production_container(
         agui=agui,
         runs=run_service,
         events=raw_event_repository,
+        quotas=enforced_quotas,
     )
     assistant.set_cipher(mcp_credential_service.cipher)
     feishu_settings = FeishuSettings()

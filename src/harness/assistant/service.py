@@ -55,10 +55,13 @@ class AssistantService:
         agui: AguiRunService,
         runs: RunService,
         events: EventRepository,
+        quotas: Any = None,
     ) -> None:
         self.repository = repository
         self._agents, self._auth, self._projects = agents, auth, projects
         self._agui, self._runs, self._events = agui, runs, events
+        # 计量：只有配置了配额服务才可能拿到真实用量；None 时如实标记未知。
+        self._quotas = quotas
 
     def with_repository(self, repository: PostgresAssistantRepository) -> AssistantService:
         return AssistantService(
@@ -69,6 +72,7 @@ class AssistantService:
             agui=self._agui,
             runs=self._runs,
             events=self._events,
+            quotas=self._quotas,
         )
 
     async def validate(self, tenant_id: str, user_id: str, brief: ObjectiveBrief) -> None:
@@ -145,6 +149,52 @@ class AssistantService:
                 )
             )
         return objective
+
+    async def progress_fingerprint(
+        self, tenant_id: str, user_id: str, objective_id: str
+    ) -> str | None:
+        """纳管任务的进展指纹：标题/状态/最近更新/运行数。
+
+        无纳管任务时返回 None——单线程职责没有可比对象，按变化驱动无从判断。
+        """
+        overview = await self.managed_overview(tenant_id, user_id, objective_id)
+        if not overview:
+            return None
+        parts: list[str] = []
+        for item in overview:
+            summary = item.get("summary")
+            parts.append(
+                f"{item.get('thread_id')}:{item.get('status')}:"
+                f"{(summary if isinstance(summary, str) else '')[:80]}"
+            )
+        signature = "|".join(parts)
+        return hashlib.sha256(signature.encode("utf-8")).hexdigest()
+
+    async def _skip_unchanged_check(
+        self, objective: Objective, execution: ObjectiveExecution
+    ) -> bool:
+        """定时检查前的变化判定：与上一个检查点比较，无变化就不唤起模型。
+
+        只有定时触发（schedule:）且预算开启 skipUnchanged 时适用；用户手动
+        触发与 delegate/manage 触发的首次执行不受影响。
+        """
+        budget = objective.budget
+        if budget is None or not budget.skip_unchanged:
+            return False
+        if not execution.trigger_key.startswith("schedule:"):
+            return False
+        fingerprint = await self.progress_fingerprint(
+            execution.tenant_id, execution.user_id, execution.objective_id
+        )
+        if fingerprint is None:
+            return False
+        checkpoints = await self.repository.checkpoints(
+            execution.tenant_id, execution.user_id, execution.objective_id, limit=1
+        )
+        if not checkpoints:
+            return False
+        previous = checkpoints[0].summary
+        return f"未变化指纹 {fingerprint[:16]}" in previous
 
     async def managed_overview(
         self, tenant_id: str, user_id: str, objective_id: str, *, limit: int = 10
@@ -354,7 +404,18 @@ class AssistantService:
             try:
                 async with asyncio.timeout(45):
                     updated = await self._reconcile(execution)
-                await self.repository.save_execution(updated, token, datetime.now(UTC))
+                usage_tokens, usage_cost = (
+                    await self._usage_for(updated, updated.run_id)
+                    if updated.finished_at is not None
+                    else (None, None)
+                )
+                await self.repository.save_execution(
+                    updated,
+                    token,
+                    datetime.now(UTC),
+                    usage_tokens=usage_tokens,
+                    usage_cost=usage_cost,
+                )
             except (NotFoundError, PermissionDeniedError) as error:
                 # Revocation never starts another run; an existing run is cancelled too.
                 recovered = await self._recover(execution)
@@ -376,6 +437,37 @@ class AssistantService:
                 # Durable intent plus the run idempotency key allows retry after crashes,
                 # including a crash between successful submission and linking the run.
                 logger.exception("assistant execution retry: %s", execution.execution_id)
+
+    async def _usage_for(self, execution: ObjectiveExecution, run_id: str | None) -> tuple[
+        int | None, float | None
+    ]:
+        """一次执行的真实用量：token 与费用（费用来自 micro-USD 账本）。
+
+        配额服务未配置或账本没有该运行的记录时返回 (None, None)——调用方据此
+        标记 unknown_usage，绝不把"没测到"当成 0。
+        """
+        if self._quotas is None or not run_id:
+            return None, None
+        try:
+            ledger = await self._quotas.repository.list_ledger(execution.tenant_id)
+        except Exception:
+            logger.exception("quota ledger read failed for %s", run_id)
+            return None, None
+        tokens = 0
+        micro_cost = 0
+        seen = False
+        for entry in ledger:
+            if entry.subject_id != run_id or entry.amount is None:
+                continue
+            if entry.resource.value == "model_tokens":
+                tokens += int(entry.amount)
+                seen = True
+            elif entry.resource.value == "model_cost_micro_usd":
+                micro_cost += int(entry.amount)
+                seen = True
+        if not seen:
+            return None, None
+        return tokens, micro_cost / 1_000_000
 
     async def _recover(self, execution: ObjectiveExecution) -> Run | None:
         if execution.run_id:
@@ -432,6 +524,20 @@ class AssistantService:
                     )
                     if any(not item.status.is_terminal for item in session_runs):
                         return execution
+                if await self._skip_unchanged_check(objective, execution):
+                    fingerprint = await self.progress_fingerprint(
+                        execution.tenant_id, execution.user_id, execution.objective_id
+                    )
+                    return execution.model_copy(
+                        update={
+                            "status": ObjectiveExecutionStatus.SUCCEEDED,
+                            "finished_at": now,
+                            "summary": (
+                                "本次定时检查未发现变化，未唤起模型。"
+                                f"未变化指纹 {hash_suffix(fingerprint)}"
+                            ),
+                        }
+                    )
                 criteria = execution.brief.completion_criteria or "由用户判断事项是否完成"
                 managed_section = ""
                 try:
@@ -715,3 +821,7 @@ def _specialist_missing_config(config: dict[str, object]) -> list[str]:
         for key in SPECIALIST_REQUIRED_CONFIG
         if not isinstance(config.get(key), (str, int)) or config.get(key) == ""
     ]
+
+
+def hash_suffix(fingerprint: str | None) -> str:
+    return (fingerprint or "")[:16]

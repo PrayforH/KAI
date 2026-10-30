@@ -850,3 +850,192 @@ async def test_managed_overview_projects_each_thread_and_renders_summary(
     assert "纳管任务进展" in rendered
     assert "主任务" in rendered and "配套任务" in rendered
     assert "已完成配套交付" in rendered and "正在整理主任务证据" in rendered
+
+
+@pytest.mark.asyncio
+async def test_measured_usage_lands_on_checkpoints_and_gates_token_budget(
+    database: DatabaseFixture,
+) -> None:
+
+    service = make_service(database)
+    objective = await service.create(
+        "tenant-a",
+        "user-a",
+        ObjectiveBrief.model_validate(
+            {
+                "title": "计量职责",
+                "instructions": "按 token 预算推进",
+                "agentName": "audit-agent",
+                "agentVersion": "1.0.0",
+                "budget": {"maxTokens": 1_000},
+            }
+        ),
+    )
+    execution = await service.repository.enqueue(
+        "tenant-a", "user-a", objective.objective_id, trigger_key="u1", now=NOW
+    )
+    claim = await service.repository.claim(NOW)
+    assert claim is not None
+    finished = execution.model_copy(
+        update={"status": ObjectiveExecutionStatus.SUCCEEDED, "finished_at": NOW}
+    )
+    # 真实计量：token 与 micro-USD 费用都记到检查点
+    assert await service.repository.save_execution(
+        finished, claim[1], NOW, usage_tokens=800, usage_cost=0.25
+    )
+    checkpoints = await service.repository.checkpoints(
+        "tenant-a", "user-a", objective.objective_id
+    )
+    assert checkpoints[0].tokens == 800
+    assert checkpoints[0].cost_usd == pytest.approx(0.25)
+    assert checkpoints[0].unknown_usage is False
+
+    # 第二次执行把总量推到 1600 > 1000：拒派并说明是 token 上限
+    second = await service.repository.enqueue(
+        "tenant-a", "user-a", objective.objective_id, trigger_key="u2", now=NOW
+    )
+    claim = await service.repository.claim(NOW)
+    assert claim is not None
+    await service.repository.save_execution(
+        second.model_copy(
+            update={"status": ObjectiveExecutionStatus.SUCCEEDED, "finished_at": NOW}
+        ),
+        claim[1],
+        NOW,
+        usage_tokens=800,
+    )
+    with pytest.raises(ConflictError, match="token 上限"):
+        await service.repository.enqueue(
+            "tenant-a", "user-a", objective.objective_id, trigger_key="u3", now=NOW
+        )
+
+
+@pytest.mark.asyncio
+async def test_unmetered_execution_is_reported_not_treated_as_zero(
+    database: DatabaseFixture,
+) -> None:
+    service = make_service(database)
+    objective = await service.create(
+        "tenant-a",
+        "user-a",
+        ObjectiveBrief.model_validate(
+            {
+                "title": "无计量职责",
+                "instructions": "计量不可用时必须如实报告",
+                "agentName": "audit-agent",
+                "agentVersion": "1.0.0",
+                "budget": {"maxTokens": 100},
+            }
+        ),
+    )
+    execution = await service.repository.enqueue(
+        "tenant-a", "user-a", objective.objective_id, trigger_key="n1", now=NOW
+    )
+    claim = await service.repository.claim(NOW)
+    assert claim is not None
+    await service.repository.save_execution(
+        execution.model_copy(
+            update={"status": ObjectiveExecutionStatus.SUCCEEDED, "finished_at": NOW}
+        ),
+        claim[1],
+        NOW,
+    )
+    checkpoint = (
+        await service.repository.checkpoints("tenant-a", "user-a", objective.objective_id)
+    )[0]
+    assert checkpoint.unknown_usage is True and checkpoint.tokens is None
+    # 有未计量历史时不能声称仍在 token 额度内
+    with pytest.raises(ConflictError, match="无法核实"):
+        await service.repository.enqueue(
+            "tenant-a", "user-a", objective.objective_id, trigger_key="n2", now=NOW
+        )
+
+
+@pytest.mark.asyncio
+async def test_unchanged_schedule_skips_the_model_call(database: DatabaseFixture) -> None:
+    """定时检查在纳管任务无变化时跳过，不创建 Run。"""
+    from types import SimpleNamespace as _Ns
+
+    from harness.core.models import RunStatus
+
+    service = make_service(database)
+    agui = _StubAgui()
+    runs = _StubRuns()
+    service._agui = cast(Any, agui)  # pyright: ignore[reportPrivateUsage]
+    service._runs = cast(Any, runs)  # pyright: ignore[reportPrivateUsage]
+    created_runs: list[str] = []
+
+    async def create_run(**kwargs: Any) -> Any:
+        created_runs.append("created")
+        raise AssertionError("model must not be invoked when nothing changed")
+
+    agui.create_run_with_result = create_run  # type: ignore[method-assign]
+
+    objective = await service.create(
+        "tenant-a",
+        "user-a",
+        ObjectiveBrief.model_validate(
+            {
+                "title": "巡检职责",
+                "instructions": "定时巡检纳管任务",
+                "agentName": "audit-agent",
+                "agentVersion": "1.0.0",
+                "budget": {"skipUnchanged": True},
+            }
+        ),
+        managed_thread_id="thread-watch",
+    )
+    registry = {
+        "thread-watch": _Ns(
+            session_id="session-for-thread-watch",
+            title="巡检对象",
+            agent_name="audit-agent",
+            agent_version="1.0.0",
+            project_id=None,
+        )
+    }
+
+    async def get_binding(**kwargs: Any) -> Any:
+        return registry[kwargs["thread_id"]]
+
+    async def get_thread_record(**kwargs: Any) -> Any:
+        return registry[kwargs["thread_id"]]
+
+    async def list_runs(*_args: Any, **_kwargs: Any) -> list[Any]:
+        return [_Ns(status=RunStatus.SUCCEEDED, input={"prompt": "已完成"})]
+
+    agui.get_binding = get_binding  # type: ignore[method-assign]
+    agui.get_thread_record = get_thread_record  # type: ignore[method-assign]
+    runs.list_for_sessions = list_runs  # type: ignore[method-assign]
+
+    fingerprint = await service.progress_fingerprint(
+        "tenant-a", "user-a", objective.objective_id
+    )
+    assert fingerprint
+    # 上一轮检查点记录了同一指纹
+    await service.repository.save_checkpoint(
+        __import__(
+            "harness.assistant.models", fromlist=["ObjectiveCheckpoint"]
+        ).ObjectiveCheckpoint(
+            checkpointId="checkpoint-prev",
+            objectiveId=objective.objective_id,
+            executionId="execution-prev",
+            tenantId="tenant-a",
+            userId="user-a",
+            revision=1,
+            status=ObjectiveExecutionStatus.SUCCEEDED,
+            summary=f"本次定时检查未发现变化，未唤起模型。未变化指纹 {fingerprint[:16]}",
+            createdAt=NOW,
+        )
+    )
+    execution = await service.repository.enqueue(
+        "tenant-a",
+        "user-a",
+        objective.objective_id,
+        trigger_key=f"schedule:{NOW}",
+        now=NOW,
+    )
+    result = await service._reconcile(execution)  # pyright: ignore[reportPrivateUsage]
+    assert created_runs == []
+    assert result.status is ObjectiveExecutionStatus.SUCCEEDED
+    assert "未唤起模型" in result.summary

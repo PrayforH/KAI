@@ -333,6 +333,37 @@ class PostgresAssistantRepository:
                 )
                 if (today or 0) >= budget.max_runs_per_day:
                     raise ConflictError("预算已用尽：达到当日运行次数上限，不再派发新执行")
+            if budget.max_tokens is not None or budget.max_cost_usd is not None:
+                used_tokens = await session.scalar(
+                    select(func.coalesce(func.sum(ObjectiveCheckpointRow.tokens), 0)).where(
+                        ObjectiveCheckpointRow.objective_id == objective.objective_id
+                    )
+                )
+                used_cost = await session.scalar(
+                    select(func.coalesce(func.sum(ObjectiveCheckpointRow.cost_usd), 0)).where(
+                        ObjectiveCheckpointRow.objective_id == objective.objective_id
+                    )
+                )
+                unknown = await session.scalar(
+                    select(func.count())
+                    .select_from(ObjectiveCheckpointRow)
+                    .where(
+                        ObjectiveCheckpointRow.objective_id == objective.objective_id,
+                        ObjectiveCheckpointRow.unknown_usage.is_(True),
+                    )
+                )
+                if budget.max_tokens is not None and int(used_tokens or 0) >= budget.max_tokens:
+                    raise ConflictError("预算已用尽：达到 token 上限，不再派发新执行")
+                if (
+                    budget.max_cost_usd is not None
+                    and float(used_cost or 0) >= budget.max_cost_usd
+                ):
+                    raise ConflictError("预算已用尽：达到费用上限，不再派发新执行")
+                if unknown and budget.max_tokens is not None:
+                    # 有历史执行没有可靠计量：不能声称仍在额度内。
+                    raise ConflictError(
+                        "token 预算无法核实：存在未计量执行，请先核对用量再派发"
+                    )
         notes = list(
             await session.scalars(
                 select(ObjectiveEventRow.content)
@@ -450,7 +481,13 @@ class PostgresAssistantRepository:
             return ObjectiveExecution.model_validate(row.payload), token
 
     async def save_execution(
-        self, execution: ObjectiveExecution, token: str, now: datetime
+        self,
+        execution: ObjectiveExecution,
+        token: str,
+        now: datetime,
+        *,
+        usage_tokens: int | None = None,
+        usage_cost: float | None = None,
     ) -> bool:
         async with self._context(write=True) as session:
             row = await session.scalar(
@@ -488,6 +525,9 @@ class PostgresAssistantRepository:
                         revision=execution.objective_revision,
                         status=execution.status.value,
                         summary=summary,
+                        tokens=usage_tokens,
+                        cost_usd=usage_cost,
+                        unknown_usage=usage_tokens is None and usage_cost is None,
                         created_at=now,
                     )
                 )
@@ -665,6 +705,9 @@ class PostgresAssistantRepository:
                     revision=row.revision,
                     status=ObjectiveExecutionStatus(row.status),
                     summary=row.summary,
+                    tokens=row.tokens,
+                    costUsd=row.cost_usd,
+                    unknownUsage=row.unknown_usage,
                     createdAt=row.created_at,
                 )
                 for row in rows
