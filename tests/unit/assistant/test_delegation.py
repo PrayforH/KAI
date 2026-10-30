@@ -547,3 +547,102 @@ async def test_specialist_status_lists_instances_and_receipts():
     result = await tools["assistant_specialist_status"]({})
     body = text_of(result)
     assert "费用监控" in body and "pending_input" in body
+
+
+@pytest.mark.asyncio
+async def test_read_only_observer_overlay_has_no_delegation_rights():
+    gateway = FakeGateway()
+    overlay_observer = assistant_delegation_overlay(
+        gateway,
+        Run(
+            run_id="run-obs",
+            session_id="session-1",
+            tenant_id="t",
+            status=RunStatus.RUNNING,
+            idempotency_key="k",
+            created_at=NOW,
+            updated_at=NOW,
+        ),
+        Session(
+            session_id="session-1",
+            tenant_id="t",
+            user_id="u",
+            agent_name="kai-personal-assistant",
+            agent_version="1",
+            created_at=NOW,
+            environment="production",
+            runtime_type="claude-agent-sdk",
+        ),
+        coordinator_thread=True,
+        read_only=True,
+    )
+    names = {tool.name for tool in overlay_observer.tools}
+    assert names == {"assistant_task_status"}
+    assert "不得创建新任务" in (overlay_observer.instructions or "")
+
+
+@pytest.mark.asyncio
+async def test_memory_gateway_scopes_to_specialist_when_set():
+    from harness.assistant.memory_tools import MemoryBankGateway
+
+    class Bank:
+        def __init__(self) -> None:
+            self.seen: list[str] = []
+
+        async def search(
+            self, tenant_id: str, user_id: str, agent_name: str, query: str
+        ) -> list[object]:
+            self.seen.append(agent_name)
+            return []
+
+    bank = Bank()
+    await MemoryBankGateway(bank).search("t", "u", "audit-agent", "q")
+    assert bank.seen == ["audit-agent"]
+    await MemoryBankGateway(bank, scope="specialist:cost-monitor").search(
+        "t", "u", "audit-agent", "q"
+    )
+    assert bank.seen[-1] == "specialist:cost-monitor"
+
+
+@pytest.mark.asyncio
+async def test_specialist_memory_scope_resolves_duty_threads():
+    from types import SimpleNamespace as _Ns
+
+    from harness.assistant.delegation import specialist_memory_scope
+
+    class Assistant:
+        class repository:  # noqa: N801
+            @staticmethod
+            async def get(tenant_id: str, user_id: str, objective_id: str):
+                if objective_id == "objective-spec":
+                    return _Ns(specialist_id="specialist-1")
+                return _Ns(specialist_id=None)
+
+            @staticmethod
+            async def get_specialist(tenant_id: str, user_id: str, specialist_id: str):
+                return _Ns(slug="cost-monitor")
+
+    class Agui:
+        async def get_thread_record_for_session(self, **kwargs: Any) -> Any:
+            thread = str(kwargs["session_id"])
+            if thread == "no-binding":
+                raise NotFoundError("none")
+            return _Ns(thread_id=thread)
+
+    session = Session(
+        session_id="assistant_objective-spec",
+        tenant_id="t",
+        user_id="u",
+        agent_name="audit-agent",
+        agent_version="1",
+        created_at=NOW,
+        environment="production",
+        runtime_type="claude-agent-sdk",
+    )
+    assert await specialist_memory_scope(Assistant(), Agui(), session) == (
+        "specialist:cost-monitor"
+    )
+    plain = session.model_copy(update={"session_id": "assistant_objective-plain"})
+    assert await specialist_memory_scope(Assistant(), Agui(), plain) is None
+    unbound = session.model_copy(update={"session_id": "no-binding"})
+    assert await specialist_memory_scope(Assistant(), Agui(), unbound) is None

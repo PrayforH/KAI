@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
 from datetime import UTC, datetime
@@ -144,6 +145,59 @@ class AssistantService:
                 )
             )
         return objective
+
+    async def managed_overview(
+        self, tenant_id: str, user_id: str, objective_id: str, *, limit: int = 10
+    ) -> list[dict[str, object]]:
+        """成果汇总的输入：每个纳管任务的标题、最近执行状态与摘要。
+
+        只读投影，不执行任何任务；读不到的线程按不可见处理，不猜。
+        """
+        overview: list[dict[str, object]] = []
+        bindings = await self.repository.managed_bindings(
+            tenant_id, user_id, objective_id=objective_id
+        )
+        for task in bindings[:limit]:
+            try:
+                binding = await self._agui.get_binding(
+                    tenant_id=tenant_id, user_id=user_id, thread_id=task.thread_id
+                )
+                record = await self._agui.get_thread_record(
+                    tenant_id=tenant_id, user_id=user_id, thread_id=task.thread_id
+                )
+                runs = await self._runs.list_for_sessions(
+                    tenant_id, [binding.session_id], limit=5
+                )
+            except (NotFoundError, PermissionDeniedError, ConflictError):
+                continue
+            latest = next(
+                (run for run in runs if not run.status.is_terminal), None
+            ) or (runs[0] if runs else None)
+            if latest is None:
+                continue
+            raw_prompt = latest.input.get("prompt")
+            prompt = raw_prompt[:200] if isinstance(raw_prompt, str) else ""
+            title: str = record.title or task.thread_id
+            overview.append(
+                {
+                    "thread_id": task.thread_id,
+                    "title": title,
+                    "status": latest.status.value,
+                    "summary": prompt,
+                    "active": not latest.status.is_terminal,
+                }
+            )
+        return overview
+
+    def render_managed_overview(self, overview: list[dict[str, object]]) -> str:
+        if not overview:
+            return ""
+        lines = ["纳管任务进展（成果汇总，只读）："]
+        for item in overview:
+            state = "进行中" if item.get("active") else str(item.get("status", ""))
+            excerpt = str(item.get("summary") or "").replace("\n", " ")[:160]
+            lines.append(f"- {item.get('title')}（{state}）：{excerpt or '暂无记录'}")
+        return "\n".join(lines)
 
     async def bind_thread(
         self, tenant_id: str, user_id: str, objective_id: str, thread_id: str
@@ -379,11 +433,24 @@ class AssistantService:
                     if any(not item.status.is_terminal for item in session_runs):
                         return execution
                 criteria = execution.brief.completion_criteria or "由用户判断事项是否完成"
+                managed_section = ""
+                try:
+                    managed_section = self.render_managed_overview(
+                        await self.managed_overview(
+                            execution.tenant_id,
+                            execution.user_id,
+                            execution.objective_id,
+                        )
+                    )
+                except Exception:
+                    logger.exception("managed overview failed; continuing without it")
                 prompt = (
                     f"持续事项：{execution.brief.title}\n\n{execution.brief.instructions}"
                     f"\n\n完成标准：{criteria}"
                     f"\n\n用户后续补充：\n{execution.context or '暂无'}"
-                    "\n\n请完成本次检查，报告进展、结果和需要用户决定的问题。一次执行结束不代表持续事项结束。"
+                    + (f"\n\n{managed_section}" if managed_section else "")
+                    + "\n\n请完成本次检查，报告进展、结果和需要用户决定的问题。"
+                    "一次执行结束不代表持续事项结束。"
                 )
                 creation = await self._agui.create_run_with_result(
                     tenant_id=execution.tenant_id,
@@ -630,8 +697,16 @@ class AssistantService:
 
 
 def _specialist_slug(name: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
-    return (slug or "specialist")[:64]
+    """职责名称 → 查重键。
+
+    中文名称剥掉非 ASCII 后会变成空串，不同中文职责不能因此互相"查重"：
+    统一在规整结果上追加原始名称的短哈希——同名（忽略大小写与首尾空白）
+    得到同一 slug，不同名称（含全部中文）得到不同 slug。
+    """
+    key = name.strip().lower()
+    normalized = re.sub(r"[^a-z0-9]+", "-", key).strip("-")
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:10]
+    return f"{(normalized or 'zhs')[:52]}-{digest}"
 
 
 def _specialist_missing_config(config: dict[str, object]) -> list[str]:

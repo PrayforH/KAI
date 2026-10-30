@@ -153,15 +153,23 @@ def assistant_memory_overlay(
 
 
 class MemoryBankGateway:
-    """Adapts the memory bank into the narrow gateway; search hits stay dicts."""
+    """Adapts the memory bank into the narrow gateway; search hits stay dicts.
 
-    def __init__(self, bank: Any) -> None:
+    ``scope`` overrides the memory namespace: a specialist's duty thread scopes
+    its domain memory to the specialist instance instead of the underlying
+    agent, so two duties of the same agent never share domain memory.
+    """
+
+    def __init__(self, bank: Any, *, scope: str | None = None) -> None:
         self._bank = bank
+        self._scope = scope
 
     async def search(
         self, tenant_id: str, user_id: str, agent_name: str, query: str
     ) -> list[dict[str, Any]]:
-        hits = await self._bank.search(tenant_id, user_id, agent_name, query)
+        hits = await self._bank.search(
+            tenant_id, user_id, self._scope or agent_name, query
+        )
         return [
             {
                 "entry_id": hit.entry.entry_id,

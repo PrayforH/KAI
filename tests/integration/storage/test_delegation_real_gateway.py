@@ -756,3 +756,97 @@ async def test_specialist_credential_stores_ciphertext_and_reference_only(
             secret="y",
             expected_revision=updated.revision,
         )
+
+
+@pytest.mark.asyncio
+async def test_chinese_duty_names_dedupe_by_name_not_into_one_bucket(
+    database: DatabaseFixture,
+) -> None:
+    """中文名不能在 slug 规整后互相混桶：同名复用、异名各建。"""
+    first, created_first = await service_create_specialist(database, "费用监控")
+    assert created_first
+    same, created_again = await service_create_specialist(database, "费用监控")
+    assert not created_again and same.specialist_id == first.specialist_id
+    other, created_other = await service_create_specialist(database, "成本监控")
+    assert created_other and other.specialist_id != first.specialist_id
+
+
+async def service_create_specialist(database: DatabaseFixture, name: str) -> tuple[Any, bool]:
+    service = make_service(database)
+    return await service.create_specialist(
+        "tenant-a",
+        "user-a",
+        name=name,
+        description="中文职责",
+        agent_name="audit-agent",
+        agent_version="1.0.0",
+    )
+
+
+@pytest.mark.asyncio
+async def test_managed_overview_projects_each_thread_and_renders_summary(
+    database: DatabaseFixture,
+) -> None:
+    from harness.core.models import RunStatus
+
+    service = make_service(database)
+    agui = _StubAgui()
+    runs = _StubRuns()
+    service._agui = cast(Any, agui)  # pyright: ignore[reportPrivateUsage]
+    service._runs = cast(Any, runs)  # pyright: ignore[reportPrivateUsage]
+    coordinator = await service.create(
+        "tenant-a", "user-a", brief(), managed_thread_id="thread-main"
+    )
+    await service.bind_thread("tenant-a", "user-a", coordinator.objective_id, "thread-extra")
+
+    def binding_with(thread_id: str, title: str) -> Any:
+        return SimpleNamespace(
+            session_id=f"session-for-{thread_id}",
+            agent_name="audit-agent",
+            agent_version="1.0.0",
+            project_id=None,
+            title=title,
+        )
+
+    registry = {
+        "thread-main": binding_with("thread-main", "主任务"),
+        "thread-extra": binding_with("thread-extra", "配套任务"),
+    }
+
+    def _binding_result(thread_id: str) -> Any:
+        return registry[thread_id]
+
+    async def get_binding(**kwargs: Any) -> Any:
+        return _binding_result(kwargs["thread_id"])
+
+    agui.get_binding = get_binding  # type: ignore[method-assign]
+
+    async def get_thread_record(**kwargs: Any) -> Any:
+        return _binding_result(kwargs["thread_id"])
+
+    agui.get_thread_record = get_thread_record  # type: ignore[method-assign]
+
+    async def runs_for(_tenant: str, session_ids: list[str], *, limit: int) -> list[Any]:
+        if session_ids == ["session-for-thread-extra"]:
+            return [
+                SimpleNamespace(
+                    status=RunStatus.SUCCEEDED,
+                    input={"prompt": "已完成配套交付"},
+                )
+            ]
+        return [
+            SimpleNamespace(
+                status=RunStatus.RUNNING,
+                input={"prompt": "正在整理主任务证据"},
+            )
+        ]
+
+    runs.list_for_sessions = runs_for  # type: ignore[method-assign]
+    overview = await service.managed_overview(
+        "tenant-a", "user-a", coordinator.objective_id
+    )
+    assert len(overview) == 2
+    rendered = service.render_managed_overview(overview)
+    assert "纳管任务进展" in rendered
+    assert "主任务" in rendered and "配套任务" in rendered
+    assert "已完成配套交付" in rendered and "正在整理主任务证据" in rendered

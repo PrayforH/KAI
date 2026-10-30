@@ -798,6 +798,39 @@ async def objective_observer_session(assistant: Any, agui: Any, session: Session
     return bool(bindings)
 
 
+async def specialist_memory_scope(assistant: Any, agui: Any, session: Session) -> str | None:
+    """子助理职责线程的领域记忆作用域：specialist:{slug}；非职责线程返回 None。"""
+
+    if not session.agent_name:
+        return None
+    try:
+        record = await agui.get_thread_record_for_session(
+            tenant_id=session.tenant_id,
+            user_id=session.user_id,
+            session_id=session.session_id,
+        )
+    except NotFoundError:
+        return None
+    thread_id = record.thread_id
+    if not thread_id.startswith("assistant_"):
+        return None
+    try:
+        objective = await assistant.repository.get(
+            session.tenant_id, session.user_id, thread_id.removeprefix("assistant_")
+        )
+    except (NotFoundError, PermissionDeniedError):
+        return None
+    if not objective.specialist_id:
+        return None
+    try:
+        specialist = await assistant.repository.get_specialist(
+            session.tenant_id, session.user_id, objective.specialist_id
+        )
+    except (NotFoundError, PermissionDeniedError):
+        return None
+    return f"specialist:{specialist.slug}"
+
+
 async def coordinator_session(agui: Any, session: Session) -> bool:
     """Whether this session runs the personal assistant coordination thread.
 

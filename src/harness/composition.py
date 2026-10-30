@@ -34,6 +34,7 @@ from harness.assistant.delegation import (
     assistant_delegation_overlay,
     coordinator_session,
     objective_observer_session,
+    specialist_memory_scope,
 )
 from harness.assistant.file_delivery import ChannelFiles
 from harness.assistant.memory_tools import MemoryBankGateway, assistant_memory_overlay
@@ -1630,11 +1631,16 @@ def build_production_container(
                     coordinator_thread=True,
                     read_only=observer,
                 )
-        memory_overlay = (
-            assistant_memory_overlay(MemoryBankGateway(container.memory_bank), run, session)
-            if container.memory_bank is not None and session.agent_name
-            else PlatformToolOverlay()
-        )
+        memory_overlay = PlatformToolOverlay()
+        if container.memory_bank is not None and session.agent_name:
+            memory_scope = (
+                await specialist_memory_scope(container.assistant, container.agui, session)
+                if container.assistant is not None
+                else None
+            )
+            memory_overlay = assistant_memory_overlay(
+                MemoryBankGateway(container.memory_bank, scope=memory_scope), run, session
+            )
         merged = (
             overlay.tools
             + computer_overlay.tools
