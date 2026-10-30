@@ -826,20 +826,24 @@ async def test_managed_overview_projects_each_thread_and_renders_summary(
 
     agui.get_thread_record = get_thread_record  # type: ignore[method-assign]
 
+    from datetime import UTC as _UTC, datetime as _dt
+
+    stamp = _dt.now(_UTC)
+
+    def run_stub(status, prompt, run_id):
+        # managed_overview 现在投影 run_id 与耗时：stub 需要 created/updated。
+        return SimpleNamespace(
+            status=status,
+            input={"prompt": prompt},
+            run_id=run_id,
+            created_at=stamp,
+            updated_at=stamp,
+        )
+
     async def runs_for(_tenant: str, session_ids: list[str], *, limit: int) -> list[Any]:
         if session_ids == ["session-for-thread-extra"]:
-            return [
-                SimpleNamespace(
-                    status=RunStatus.SUCCEEDED,
-                    input={"prompt": "已完成配套交付"},
-                )
-            ]
-        return [
-            SimpleNamespace(
-                status=RunStatus.RUNNING,
-                input={"prompt": "正在整理主任务证据"},
-            )
-        ]
+            return [run_stub(RunStatus.SUCCEEDED, "已完成配套交付", "run-extra-1")]
+        return [run_stub(RunStatus.RUNNING, "正在整理主任务证据", "run-main-1")]
 
     runs.list_for_sessions = runs_for  # type: ignore[method-assign]
     overview = await service.managed_overview(
@@ -1001,8 +1005,19 @@ async def test_unchanged_schedule_skips_the_model_call(database: DatabaseFixture
     async def get_thread_record(**kwargs: Any) -> Any:
         return registry[kwargs["thread_id"]]
 
+    from datetime import UTC as _UTC2, datetime as _dt2
+
     async def list_runs(*_args: Any, **_kwargs: Any) -> list[Any]:
-        return [_Ns(status=RunStatus.SUCCEEDED, input={"prompt": "已完成"})]
+        stamp = _dt2.now(_UTC2)
+        return [
+            _Ns(
+                status=RunStatus.SUCCEEDED,
+                input={"prompt": "已完成"},
+                run_id="run-watch-1",
+                created_at=stamp,
+                updated_at=stamp,
+            )
+        ]
 
     agui.get_binding = get_binding  # type: ignore[method-assign]
     agui.get_thread_record = get_thread_record  # type: ignore[method-assign]
