@@ -334,3 +334,20 @@ sandbox lease (owner=run-fence:1, run=run_dc0735…)`——是我滚 api/worker 
 **顺带**：「+」图标对齐项目区（26px plus 图标）；`window.__kaiLive` 只读诊断出口保留。
 **已知边界**：等待期（0→5.7s，排队/模型/压缩）没有正文可流——由脸+短语行表达进展
 （如「正在生成可恢复的上下文摘要」）；上游网关是爆发式吐字（~850 字/秒），非匀速。
+
+
+### P0-2（api r10 / web r27）：编辑 Bot 弹窗可改颜色/形状
+
+- 编辑弹窗复用新建的 12 色 × 6 形选择器（同一份 `BOT_COLORS/BOT_SHAPES`），预览头像实时联动，
+  预选值读自 `config.appearance`
+- 持久化走既有 `POST /specialists/{id}/profile`：`SpecialistProfileRequest` 增加 appearance，
+  `update_specialist` 的呈现分支把它并入 config（与 title 同路），revision 照常递增
+- rail 头像与头部强调色经 `GET /specialists/{id}` 正常读回
+
+**79 冒烟（真实 bot 行业快报监控）**：打开「…」→ 12 色/6 形可选 → 改 #ff2d95 + star → 保存
+→ 头部强调色 `#0d9381 → #ff2d95`；刷新后 rail 头像 `rgb(255,45,149)`；
+API 确认 `config.appearance={"color":"#ff2d95","avatar":"star"}`、revision 4→5。
+冒烟后已恢复原外观（#0d9381 + blob），revision 6。
+
+测试：`pytest tests/unit/assistant/`（91 过，含 appearance 携带/校验 4 条）；
+`vitest run tests/bot-edit-dialog.spec.tsx`（3 过）；全套 web 1379 过 / 1 既有失败（account-settings，与本轮无关）。
