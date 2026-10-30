@@ -112,6 +112,12 @@
 | 子助理：中文职责查重、配置→待启用、试运行、启用 | 通过（试运行真实执行并产出检查点） |
 | 预算/授权表单落库 | 通过（maxRunsPerDay=2、maxTokens=1000、maxNewTasks=1、skipUnchanged、requiresDesktop） |
 | 计量门禁 | 通过：79 未启用配额计量 → 检查点 `unknown_usage=true`；再次派发被拒「token 预算无法核实：存在未计量执行」 |
+| 成果取件 | 通过：结果卡链接直接下载 6 字节 `probe-DELTA031451.txt`，与带会话直取字节一致；`?preview=1` 返回 200 + `inline` disposition；匿名 401；刷新后再取字节相同 |
+| 子助理试运行真实性 | 通过：`objective_run_d7a5…` 真实执行并产出检查点（summary 是真实快报文本） |
+| 渠道在线状态 | 飞书 `receiverOnline=true / awaiting_event`（已交付文件 7），微信 `online / connected / loginStatus=confirmed`（sent 3） |
+
+数据保全（当前实测）：runs 869、agui 线程绑定 221、通道已发送文件 10、飞书绑定 1、微信连接 1、
+职责 3、子助理 1、检查点 3；Viewer 仍为 `20261029-v12-clipboard`，VM/根盘/浏览器未重建。
 
 ### 本轮真实页面发现并修复的缺陷
 
