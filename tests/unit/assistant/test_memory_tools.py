@@ -137,11 +137,10 @@ async def test_search_without_hits_is_explicit():
 @pytest.mark.asyncio
 async def test_scoped_identity_swaps_agent_scope_for_duty_threads():
     """读侧（projection / harness-memory 工具）与写侧同判：职责线程读 specialist:{slug}。"""
-    from types import SimpleNamespace as _Ns
 
     from harness.core.models import ExecutionIdentity
-    from harness.memory_bank.service import MemoryBankService
     from harness.memory_bank.repositories import InMemoryMemoryBankRepository
+    from harness.memory_bank.service import MemoryBankService
 
     bank_repo = InMemoryMemoryBankRepository()
     bank_repo.session_scopes["assistant_objective-1"] = "specialist:cost-monitor"
