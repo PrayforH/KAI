@@ -38,3 +38,9 @@ it("seeds the picker from the stored appearance", () => {
   expect(source).toContain("appearance?.color");
   expect(source).toContain("appearance?.avatar");
 });
+
+it("marks routines as paused when the specialist reports an unviewed pause", () => {
+  expect(source).toContain('reason === "unviewed"');
+  expect(source).toContain("因无人查看已暂停，打开本会话后恢复");
+  expect(source).toContain('data-paused={paused ? "true" : undefined}');
+});
