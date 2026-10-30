@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { assistantRequest, type Specialist } from "../lib/assistant-client";
+import { CreateBotDialog } from "./create-bot-dialog";
 import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
 
 // 取自客户端调色板（sand-fill-*-bubble-user）：每个 bot 一个稳定强调色，
@@ -17,6 +18,12 @@ export const BOT_ACCENTS = [
   "#0d9381", // cyan
   "#86592e", // brown
 ];
+
+/** 新建时选的颜色优先，老 bot 仍按 id 取稳定强调色。 */
+export function specialistAppearance(item: Specialist): { color: string; avatar: string } {
+  const raw = (item.config as { appearance?: { color?: string; avatar?: string } } | undefined)?.appearance;
+  return { color: raw?.color ?? botAccent(item.specialistId), avatar: raw?.avatar ?? "blob" };
+}
 
 export function botAccent(key: string): string {
   let hash = 0;
@@ -51,6 +58,7 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
   }, []);
   const [specialists, setSpecialists] = useState<Specialist[]>([]);
   const [expanded, setExpanded] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   function openBot(event: React.MouseEvent, specialistId: string | null) {
     // 同一路由只改查询参数时页面不会重挂载，旧线程会盖住新 bot：
@@ -89,9 +97,15 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
     <section className="bot-rail" aria-label="机器人">
       <div className="bot-rail-head">
         <span>机器人</span>
-        <Link className="bot-rail-add" href="/studio/assistant" aria-label="管理专职子助理">
+        <button
+          type="button"
+          className="bot-rail-add"
+          aria-label="新建 Bot"
+          title="新建 Bot"
+          onClick={() => setCreating(true)}
+        >
           +
-        </Link>
+        </button>
       </div>
       <ul className="bot-rail-list">
         <li>
@@ -117,7 +131,7 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
               href={`/assistant?bot=${encodeURIComponent(item.specialistId)}`}
               onClick={(event) => openBot(event, item.specialistId)}
             >
-              <BotAvatar name={item.name} tone={toneOf(item.specialistId)} />
+              <BotAvatar name={item.name} tone={specialistAppearance(item).color} />
               <span className="bot-rail-label">
                 <strong>{item.name}</strong>
                 <small>{item.description || item.agentName}</small>
@@ -136,7 +150,7 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
               href={`/assistant?bot=${encodeURIComponent(item.specialistId)}`}
               onClick={(event) => openBot(event, item.specialistId)}
             >
-              <BotAvatar name={item.name} tone={toneOf(item.specialistId)} />
+              <BotAvatar name={item.name} tone={specialistAppearance(item).color} />
               <span className="bot-rail-label">
                 <strong>{item.name}</strong>
                 <small>{item.description || item.agentName}</small>
@@ -145,6 +159,14 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
           </li>
         ))}
       </ul>
+      {creating && (
+        <CreateBotDialog
+          onClose={() => setCreating(false)}
+          onCreated={(specialistId) => {
+            window.location.assign(`/assistant?bot=${encodeURIComponent(specialistId)}`);
+          }}
+        />
+      )}
       {pending.length > collapsedLimit && (
         <button
           type="button"

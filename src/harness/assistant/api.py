@@ -171,13 +171,22 @@ async def list_specialists(identity: Reader, assistant: Service) -> list[Special
     return await assistant.repository.list_specialists(identity.tenant_id, identity.user_id)
 
 
+class SpecialistAppearance(StudioModel):
+    """Bot 的外观选择（对齐客户端的新建 Bot 弹窗）：只影响呈现。"""
+
+    color: str = Field(default="#126fd4", pattern=r"^#[0-9a-fA-F]{6}$")
+    avatar: str = Field(default="blob", pattern=r"^[a-z0-9-]{1,24}$")
+
+
 class SpecialistCreateRequest(StudioModel):
     """创建请求只接受职责与能力来源；租户与用户由身份推导，绝不接受客户端伪造。"""
 
     name: str = Field(min_length=1, max_length=80)
     description: str = Field(default="", max_length=2_000)
-    agent_name: str = Field(alias="agentName", pattern=r"^[a-z][a-z0-9-]{0,127}$")
-    agent_version: str = Field(alias="agentVersion", min_length=1, max_length=128)
+    # 新建不强制绑定智能体：缺省时沿用已有 Bot 的智能体或本人第一份已发布版本。
+    agent_name: str | None = Field(default=None, alias="agentName", pattern=r"^[a-z][a-z0-9-]{0,127}$")
+    agent_version: str | None = Field(default=None, alias="agentVersion", min_length=1, max_length=128)
+    appearance: SpecialistAppearance | None = None
 
 
 @router.post("/specialists", status_code=201)
@@ -192,6 +201,7 @@ async def create_specialist(
         description=body.description,
         agent_name=body.agent_name,
         agent_version=body.agent_version,
+        appearance=body.appearance.model_dump() if body.appearance else None,
     )
     return created
 
@@ -238,6 +248,30 @@ async def get_specialist(specialist_id: str, identity: Reader, assistant: Servic
         "agentName": specialist.agent_name,
         "agentVersion": specialist.agent_version,
     }
+
+
+class SpecialistProfileRequest(StudioModel):
+    """编辑 Bot：名称/标题/描述，纯呈现信息。"""
+
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    title: str | None = Field(default=None, max_length=80)
+    description: str | None = Field(default=None, max_length=2_000)
+    expected_revision: int = Field(alias="expectedRevision", ge=1)
+
+
+@router.post("/specialists/{specialist_id}/profile")
+async def update_specialist_profile(
+    specialist_id: str, body: SpecialistProfileRequest, identity: Writer, assistant: Service
+):
+    return await assistant.update_specialist_profile(
+        identity.tenant_id,
+        identity.user_id,
+        specialist_id,
+        name=body.name,
+        title=body.title,
+        description=body.description,
+        expected_revision=body.expected_revision,
+    )
 
 
 @router.post("/specialists/{specialist_id}/config")

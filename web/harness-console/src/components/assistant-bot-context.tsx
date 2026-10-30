@@ -10,6 +10,7 @@ export type AssistantBot = {
   status: string;
   threadId: string | null;
   objectiveId: string | null;
+  appearance?: { color?: string; avatar?: string };
 };
 
 const AssistantBotContext = createContext<AssistantBot | null>(null);

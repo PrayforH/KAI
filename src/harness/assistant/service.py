@@ -642,6 +642,17 @@ class AssistantService:
     # 持久专职子助理（8.9–8.11）：复用已发布能力模板，不引入第二套发布系统。
     # ------------------------------------------------------------------
 
+    async def _default_agent(self, tenant_id: str, user_id: str) -> tuple[str, str]:
+        """给"还没挑智能体"的新 Bot 一个可执行的默认值，不做隐性发布。"""
+        for specialist in await self.repository.list_specialists(tenant_id, user_id):
+            if specialist.agent_name and specialist.agent_version:
+                return specialist.agent_name, specialist.agent_version
+        published = await self._agents.list_for_user(tenant_id, user_id)
+        for version in published:
+            if version.name and version.version:
+                return version.name, version.version
+        raise ConflictError("还没有可用的执行智能体，请先发布一个")
+
     async def create_specialist(
         self,
         tenant_id: str,
@@ -649,9 +660,14 @@ class AssistantService:
         *,
         name: str,
         description: str,
-        agent_name: str,
-        agent_version: str,
+        agent_name: str | None = None,
+        agent_version: str | None = None,
+        appearance: dict[str, str] | None = None,
     ) -> tuple[Specialist, bool]:
+        # 新建 Bot 不强制用户挑执行智能体：先沿用本人已有 Bot 用过的那个，
+        # 再退到本人已发布的第一份；真正跑哪份在执行时仍然可见。
+        if not (agent_name and agent_version):
+            agent_name, agent_version = await self._default_agent(tenant_id, user_id)
         await self._agents.get_published(tenant_id, user_id, agent_name, agent_version)
         now = datetime.now(UTC)
         specialist = Specialist(
@@ -664,11 +680,45 @@ class AssistantService:
             agentName=agent_name,
             agentVersion=agent_version,
             status=SpecialistStatus.NEEDS_INPUT,
+            # 外观只影响呈现，不参与运行判定；存 config 便于跨设备一致。
+            config={"appearance": dict(appearance)} if appearance else {},
             createdAt=now,
             updatedAt=now,
         )
         stored = await self.repository.create_specialist(specialist)
         return stored, stored.specialist_id == specialist.specialist_id
+
+    async def update_specialist_profile(
+        self,
+        tenant_id: str,
+        user_id: str,
+        specialist_id: str,
+        *,
+        name: str | None,
+        title: str | None,
+        description: str | None,
+        expected_revision: int,
+    ) -> Specialist:
+        """改名/标题/描述：只动呈现，不触发配置状态重算。"""
+        if name is not None and not name.strip():
+            raise ConflictError("名称不能为空")
+        profile: dict[str, object] = {}
+        if name is not None:
+            profile["name"] = name.strip()[:80]
+        if description is not None:
+            profile["description"] = description[:2_000]
+        if title is not None:
+            profile["title"] = title.strip()[:80]
+        if not profile:
+            raise ConflictError("没有要保存的修改")
+        return await self.repository.update_specialist(
+            tenant_id,
+            user_id,
+            specialist_id,
+            expected_revision=expected_revision,
+            profile=profile,
+            now=datetime.now(UTC),
+        )
 
     async def configure_specialist(
         self,

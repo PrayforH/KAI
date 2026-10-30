@@ -1791,7 +1791,8 @@ function HarnessUserMessage() {
             </div>
           ) : (
             <>
-              <SentUserContent key={message.id} text={sensitive ? displayText : undefined} />
+              {/* 操作栏与气泡同一行：按钮贴在气泡左侧，而不是按整行定位跑到窗格边缘 */}
+              <div className="harness-user-answer-row">
               <ActionBarPrimitive.Root
                 className="harness-user-action-bar"
                 autohide="never"
@@ -1814,6 +1815,8 @@ function HarnessUserMessage() {
                   </button>
                 ) : null}
               </ActionBarPrimitive.Root>
+              <SentUserContent key={message.id} text={sensitive ? displayText : undefined} />
+              </div>
             </>
           )}
         </MessagePrimitive.If>

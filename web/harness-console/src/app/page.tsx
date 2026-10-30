@@ -14,6 +14,7 @@ import {
   type ReactNode,
 } from "react";
 import { AgentThread } from "../components/agent-thread";
+import { BotEditDialog } from "../components/bot-edit-dialog";
 import { AuthProvider, useAuth } from "../components/auth-provider";
 import { AssistantChannelStatus } from "../components/assistant-channel-status";
 import { AssistantProgressStrip } from "../components/assistant-progress-strip";
@@ -237,6 +238,8 @@ function AuthenticatedHome() {
     } catch { /* optional view preference */ }
   };
   const [botParam, setBotParam] = useState<string | null>(null);
+  const [botEditOpen, setBotEditOpen] = useState(false);
+  const [botRevision, setBotRevision] = useState(0);
   useEffect(() => {
     if (!assistantEntry) { setBotParam(null); return; }
     const read = () => setBotParam(new URLSearchParams(window.location.search).get("bot"));
@@ -261,7 +264,13 @@ function AuthenticatedHome() {
     if (!botId) { setBot(null); return; }
     let active = true;
     void assistantRequest<{
-      specialist: { specialistId: string; name: string; description: string; status: string };
+      specialist: {
+        specialistId: string;
+        name: string;
+        description: string;
+        status: string;
+        config?: { appearance?: { color?: string; avatar?: string } };
+      };
       threadId: string | null;
       primaryObjectiveId: string | null;
     }>(`specialists/${encodeURIComponent(botId)}`)
@@ -274,13 +283,14 @@ function AuthenticatedHome() {
           status: data.specialist.status,
           threadId: data.threadId,
           objectiveId: data.primaryObjectiveId,
+          appearance: data.specialist.config?.appearance,
         });
         // 子助理没有替身会话：直接进入承接职责的原线程，结果就在这条对话里。
         if (data.threadId) setThreadId(data.threadId);
       })
       .catch(() => { if (active) setBot(null); });
     return () => { active = false; };
-  }, [assistantEntry, user.user_id, botParam]);
+  }, [assistantEntry, user.user_id, botParam, botRevision]);
 
   const [taskAgents, setTaskAgents] = useState<TaskAgent[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<TaskAgent | null>(null);
@@ -851,8 +861,22 @@ function AuthenticatedHome() {
               </Link>}
               {assistantView ? <div className="task-context-bar">
                 <strong className="task-context-title">{bot ? bot.name : "我的助理"}</strong>
-                {bot ? <span className="task-context-bot-hint">{bot.description || "专职子助理"}</span>
-                  : <AssistantChannelStatus />}
+                {bot ? (
+                  <>
+                    <span className="task-context-bot-hint">{bot.description || "专职子助理"}</span>
+                    <button
+                      type="button"
+                      className="task-context-bot-more"
+                      aria-label="编辑这个 Bot"
+                      title="编辑这个 Bot"
+                      onClick={() => setBotEditOpen(true)}
+                    >
+                      …
+                    </button>
+                  </>
+                ) : (
+                  <AssistantChannelStatus />
+                )}
               </div> : <TaskContextBar
                 taskTitle={currentTaskTitle}
                 onForked={switchTask}
@@ -900,7 +924,7 @@ function AuthenticatedHome() {
           <section
             className="chat-stage"
             data-surface={assistantView ? "assistant" : "task"}
-            style={{ ["--kai-bot-accent" as string]: bot ? botAccent(bot.specialistId) : BOT_ACCENTS[0] }}
+            style={{ ["--kai-bot-accent" as string]: bot ? (bot.appearance?.color ?? botAccent(bot.specialistId)) : BOT_ACCENTS[0] }}
             aria-label={personalAssistant ? "我的助理对话" : "Agent 任务对话"}
           >
             {stageView === "trace" ? (
@@ -917,9 +941,37 @@ function AuthenticatedHome() {
             <div className="chat-surface">
               <AssistantSurfaceProvider value={assistantView}>
               <AssistantBotProvider bot={bot}>
+              {bot && botEditOpen && (
+                <BotEditDialog
+                  specialistId={bot.specialistId}
+                  onClose={() => setBotEditOpen(false)}
+                  onSaved={() => {
+                    setBotEditOpen(false);
+                    setBotRevision((current) => current + 1);
+                  }}
+                />
+              )}
               {personalAssistant && <AssistantProgressStrip />}
               {versionSwitchError && <p role="alert">{versionSwitchError}</p>}
-              {threadId && selectedAgent ? (
+              {botParam && !bot?.threadId ? (
+                <div className="bot-empty-state">
+                  <p className="bot-empty-title">{bot ? `${bot.name} 还没有职责` : "正在打开这个 Bot…"}</p>
+                  {bot && (
+                    <>
+                      <p className="bot-empty-hint">
+                        去主助理那儿给它派一件事，它就会有一条自己的会话；结果也会回到那条会话里。
+                      </p>
+                      <button
+                        type="button"
+                        className="bot-empty-action"
+                        onClick={() => window.location.assign("/assistant")}
+                      >
+                        找主助理派活
+                      </button>
+                    </>
+                  )}
+                </div>
+              ) : threadId && selectedAgent ? (
                 <AssistantRuntimeShell
                   key={`${threadId}:${runtimeAgentKey(selectedAgent)}`}
                   threadId={threadId}

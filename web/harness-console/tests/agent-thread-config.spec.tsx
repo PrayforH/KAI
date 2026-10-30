@@ -181,13 +181,17 @@ it("keeps assistant output avatar-free so activity rows cannot overlap it", () =
   expect(agentThreadSource).not.toContain("assistantAvatar=");
 });
 
-it("places copy before edit below the user message content", () => {
-  const content = agentThreadSource.indexOf("<SentUserContent ");
-  const actions = agentThreadSource.indexOf("<ActionBarPrimitive.Root", content);
+it("places copy before edit beside the user message content", () => {
+  // 操作栏与气泡同一行、排在前面的位置（贴气泡左侧）；任务面仍按原位置渲染。
+  const row = agentThreadSource.indexOf('className="harness-user-answer-row"');
+  const actions = agentThreadSource.indexOf("<ActionBarPrimitive.Root", row);
+  const content = agentThreadSource.indexOf("<SentUserContent ", row);
   const copy = agentThreadSource.indexOf("<MessageCopyButton", actions);
   const edit = agentThreadSource.indexOf('aria-label="编辑消息"', actions);
-  expect(content).toBeGreaterThan(-1);
-  expect(actions).toBeGreaterThan(content);
+  expect(row).toBeGreaterThan(-1);
+  expect(actions).toBeGreaterThan(row);
+  expect(content).toBeGreaterThan(actions);
+  expect(copy).toBeGreaterThan(actions);
   expect(copy).toBeGreaterThan(actions);
   expect(edit).toBeGreaterThan(copy);
   expect(agentThreadSource).toContain("onClick={beginEdit}");

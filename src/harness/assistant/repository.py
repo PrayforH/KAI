@@ -863,11 +863,10 @@ class PostgresAssistantRepository:
         expected_revision: int,
         config: dict[str, object] | None = None,
         status: SpecialistStatus | None = None,
+        profile: dict[str, object] | None = None,
         now: datetime,
     ) -> Specialist:
-        if config is None and status is None:
-            raise ValueError("exactly one specialist change is required")
-        if config is not None and status is not None:
+        if sum(item is not None for item in (config, status, profile)) != 1:
             raise ValueError("exactly one specialist change is required")
         async with self._context(write=True) as session:
             row = await session.scalar(
@@ -891,6 +890,16 @@ class PostgresAssistantRepository:
                 changes["config"] = merged
             if status is not None:
                 changes["status"] = status.value
+            if profile is not None:
+                # 标题属于呈现信息，跟描述一起落 config；名称是身份字段，单独改。
+                for key in ("name", "description"):
+                    if profile.get(key) is not None:
+                        changes[key] = profile[key]
+                title = profile.get("title")
+                if title is not None:
+                    merged = dict(current.config)
+                    merged["title"] = title
+                    changes["config"] = merged
             updated = Specialist.model_validate(current.model_dump() | changes)
             row.status = updated.status.value
             row.revision = updated.revision
