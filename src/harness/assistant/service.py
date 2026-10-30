@@ -743,6 +743,29 @@ class AssistantService:
             now=datetime.now(UTC),
         )
 
+    async def attach_duty(
+        self,
+        tenant_id: str,
+        user_id: str,
+        specialist_id: str,
+        *,
+        objective_id: str,
+        expected_revision: int,
+    ) -> Specialist:
+        """把一项既有职责挂到子助理名下（职责与子助理正交，可更换承接者）。"""
+        specialist = await self.repository.get_specialist(
+            tenant_id, user_id, specialist_id
+        )
+        if specialist.revision != expected_revision:
+            raise ConflictError("子助理已更新，请刷新后重试")
+        objective = await self.repository.get(tenant_id, user_id, objective_id)
+        if objective.specialist_id and objective.specialist_id != specialist_id:
+            raise ConflictError("该职责已由其他子助理承接")
+        await self.repository.set_duty_specialist(
+            tenant_id, user_id, objective_id, specialist_id, now=datetime.now(UTC)
+        )
+        return await self.repository.get_specialist(tenant_id, user_id, specialist_id)
+
     async def trial_specialist(
         self,
         tenant_id: str,

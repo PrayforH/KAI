@@ -633,6 +633,32 @@ class PostgresAssistantRepository:
                 None,
             )
 
+    async def set_duty_specialist(
+        self,
+        tenant_id: str,
+        user_id: str,
+        objective_id: str,
+        specialist_id: str,
+        *,
+        now: datetime,
+    ) -> Objective:
+        async with self._context(write=True) as session:
+            row = await self._owned(
+                session, tenant_id, user_id, objective_id, lock=True
+            )
+            current = _objective(row)
+            updated = Objective.model_validate(
+                current.model_dump()
+                | {
+                    "specialist_id": specialist_id,
+                    "revision": current.revision + 1,
+                    "updated_at": now,
+                }
+            )
+            _store(row, updated)
+            _event(session, updated, "specialist_attached", specialist_id, now)
+        return updated
+
     async def count_children(self, tenant_id: str, user_id: str, objective_id: str) -> int:
         async with self._context() as session:
             total = await session.scalar(

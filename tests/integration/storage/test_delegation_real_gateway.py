@@ -1219,3 +1219,56 @@ async def test_specialist_without_a_duty_cannot_be_activated(database: DatabaseF
             status=SpecialistStatus.ACTIVE,
             expected_revision=configured.revision,
         )
+
+
+@pytest.mark.asyncio
+async def test_attach_existing_duty_to_a_specialist_and_trial_it(
+    database: DatabaseFixture,
+) -> None:
+    """既有职责可挂到子助理；绑定后首次试运行才被允许并真实排入执行。"""
+    from harness.assistant.models import SpecialistStatus
+
+    service = make_service(database)
+    service._agui = cast(Any, _StubAgui())  # pyright: ignore[reportPrivateUsage]
+    duty = await service.create("tenant-a", "user-a", brief())
+    specialist, _ = await service.create_specialist(
+        "tenant-a",
+        "user-a",
+        name="attach-duty",
+        description="承接既有职责",
+        agent_name="audit-agent",
+        agent_version="1.0.0",
+    )
+    configured = await service.configure_specialist(
+        "tenant-a",
+        "user-a",
+        specialist.specialist_id,
+        config={"schedule_minutes": 1440, "notify_channel": "inbox"},
+        expected_revision=specialist.revision,
+    )
+    attached = await service.attach_duty(
+        "tenant-a",
+        "user-a",
+        specialist.specialist_id,
+        objective_id=duty.objective_id,
+        expected_revision=configured.revision,
+    )
+    bound = await service.repository.get("tenant-a", "user-a", duty.objective_id)
+    assert bound.specialist_id == attached.specialist_id
+    # 已挂职责 → 允许启用
+    enabled = await service.set_specialist_status(
+        "tenant-a",
+        "user-a",
+        specialist.specialist_id,
+        status=SpecialistStatus.ACTIVE,
+        expected_revision=attached.revision,
+    )
+    assert enabled.status is SpecialistStatus.ACTIVE
+    trial = await service.trial_specialist(
+        "tenant-a",
+        "user-a",
+        specialist.specialist_id,
+        expected_revision=enabled.revision,
+    )
+    assert trial["objectiveId"] == duty.objective_id
+    assert trial["status"] == "pending"

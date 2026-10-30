@@ -307,6 +307,25 @@ class SpecialistTrialRequest(StudioModel):
     expected_revision: int = Field(alias="expectedRevision", ge=1)
 
 
+class SpecialistDutyRequest(StudioModel):
+    objective_id: str = Field(alias="objectiveId", min_length=1, max_length=128)
+    expected_revision: int = Field(alias="expectedRevision", ge=1)
+
+
+@router.post("/specialists/{specialist_id}/duties", status_code=201)
+async def attach_specialist_duty(
+    specialist_id: str, body: SpecialistDutyRequest, identity: Writer, assistant: Service
+) -> Specialist:
+    """把既有职责挂到子助理；职责本身与承接者正交。"""
+    return await assistant.attach_duty(
+        identity.tenant_id,
+        identity.user_id,
+        specialist_id,
+        objective_id=body.objective_id,
+        expected_revision=body.expected_revision,
+    )
+
+
 @router.post("/specialists/{specialist_id}/trial", status_code=201)
 async def trial_specialist(
     specialist_id: str, body: SpecialistTrialRequest, identity: Writer, assistant: Service
