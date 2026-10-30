@@ -3296,37 +3296,150 @@ body.codex-theme-v1 :is(button, a).card-icon-action { min-height: 28px; text-dec
 .studio-unified[data-project-home] > .studio-unified-content { overflow: hidden; }
 
 
-/* 8.5 结果优先：主助理页的后台任务进展条（卡片是引用，可追溯原任务）。 */
+/* 8.5 结果优先 + 布局：进展条改为悬浮浮标（不占文档流），
+   同时修正高度链，让对话区内部滚动、输入框始终留在视口底部。 */
 
+body.codex-theme-v1:has(.console-shell) .chat-stage {
+  min-height: 0;
+  overflow: hidden;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-surface {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-surface > .assistant-runtime-shell,
+body.codex-theme-v1:has(.console-shell) .chat-surface > .harness-thread-frame {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .assistant-runtime-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .assistant-runtime-shell > * {
+  min-height: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-thread-frame {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .aui-thread-root {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .aui-thread-root .aui-thread-viewport {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* 悬浮浮标：绝对定位在对话区顶部，展开时才占高度（最多 45% 且内部滚动）。 */
 body.codex-theme-v1:has(.console-shell) .assistant-progress-strip {
-  margin: 0 auto 8px;
-  max-width: min(760px, 94%);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 12px;
-  background: #1b1b1b;
+  position: absolute;
+  z-index: 6;
+  top: 8px;
+  right: 12px;
+  left: auto;
+  width: max-content;
+  max-width: min(560px, calc(100% - 24px));
+  max-height: 45%;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(24, 24, 24, 0.92);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(8px);
+  padding: 4px 8px;
+  transition: border-radius 140ms ease, padding 140ms ease;
+}
+
+body.codex-theme-v1:has(.console-shell) .assistant-progress-strip[data-expanded="true"] {
+  border-radius: 14px;
   padding: 8px 10px;
+  width: min(620px, calc(100% - 24px));
+}
+
+body.codex-theme-v1:has(.console-shell) .assistant-progress-hide {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin-left: 2px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #8a8a8a;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+body.codex-theme-v1:has(.console-shell) .assistant-progress-hide:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #efefef;
 }
 
 body.codex-theme-v1:has(.console-shell) .assistant-progress-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  color: #9a9a9a;
-  font-size: 12px;
-  margin-bottom: 6px;
 }
 
-body.codex-theme-v1:has(.console-shell) .assistant-progress-head button {
+body.codex-theme-v1:has(.console-shell) .assistant-progress-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
   border: 0;
   background: transparent;
-  color: #8a8a8a;
+  color: #cfcfcf;
   font-size: 12px;
+  line-height: 1.6;
+  padding: 2px 4px;
   cursor: pointer;
+  text-align: left;
+}
+
+body.codex-theme-v1:has(.console-shell) .assistant-progress-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #7cc48a;
+}
+
+body.codex-theme-v1:has(.console-shell) .assistant-progress-dot[data-tone="attention"] {
+  background: #ff8a6a;
+}
+
+body.codex-theme-v1:has(.console-shell) .assistant-progress-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.codex-theme-v1:has(.console-shell) .assistant-progress-chevron {
+  flex: 0 0 auto;
+  color: #8a8a8a;
 }
 
 body.codex-theme-v1:has(.console-shell) .assistant-progress-strip ul {
   list-style: none;
-  margin: 0;
+  margin: 6px 0 0;
   padding: 0;
   display: grid;
   gap: 6px;
@@ -3385,4 +3498,234 @@ body.codex-theme-v1:has(.console-shell) .assistant-progress-strip li > button {
   color: #7a7a7a;
   font-size: 13px;
   cursor: pointer;
+}
+
+/* ── 助理页＝对话应用（参考 Grok 的聊天形态，仅作用于 data-surface="assistant"） ──
+   目标：读起来像在和人聊天，而不是在看任务控制台。
+   - 助手消息：左侧圆角气泡，浅表面色，无卡片边框；
+   - 用户消息：右侧强调色气泡；
+   - 运行状态/耗时/转交：居中的细状态行，不抢注意力。 */
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .aui-thread-viewport {
+  padding-top: 12px;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-assistant-message {
+  padding: 6px 0 2px;
+  margin: 10px 0;
+}
+
+/* AG-UI 的内容槽位在本仓库是空壳（真实回答在 .assistant-answer），
+   不能给它画气泡，否则每轮多出一个 28px 空胶囊。 */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-assistant-message > .aui-assistant-message-content:not(:has(.aui-md)) {
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-assistant-message > .assistant-answer {
+  box-sizing: border-box;
+  max-width: min(720px, 92%);
+  padding: 14px 18px;
+  border-radius: 20px 20px 20px 6px;
+  background: #222222;
+  color: #e9e9e9;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .aui-user-message-content,
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-user-message .aui-user-message-content {
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 20px 20px 6px 20px;
+  background: #2c3441;
+  color: #f2f5f9;
+  box-shadow: none;
+}
+
+/* 用户消息整体靠右 */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-user-message {
+  align-items: flex-end;
+  margin: 14px 0 6px;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-user-message > .aui-user-message-content {
+  max-width: min(620px, 86%);
+}
+
+/* 状态行（已完成·耗时）居中、极小号、去掉方框感 */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .execution-ribbon {
+  justify-content: center;
+  width: 100%;
+  margin: 4px auto 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #7d7d7d;
+  font-size: 12px;
+  text-align: center;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .execution-ribbon > * {
+  border: 0;
+  background: transparent;
+}
+
+/* 消息操作栏贴近气泡、弱化 */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .assistant-message-controls {
+  max-width: min(720px, 92%);
+  margin-top: 2px;
+  opacity: 0.75;
+}
+
+/* 助手正文行距与段落间距更像聊天 */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .aui-md {
+  font-size: 14.5px;
+  line-height: 1.75;
+  color: #e6e6e6;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .aui-md p {
+  margin-bottom: 10px;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .aui-md h1,
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .aui-md h2,
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .aui-md h3 {
+  color: #f5f5f5;
+}
+
+/* 输入框：更大的圆角、更轻的边框，像聊天输入条 */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-composer-shell .aui-composer-root {
+  border-radius: 22px;
+  background: #1d1d1d;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-composer-shell .aui-composer-input {
+  border-radius: 22px 22px 0 0;
+}
+
+/* ── 左栏「机器人」区（助理页）：头像列表 + 置顶/未分配分组 ── */
+body.codex-theme-v1:has(.console-shell) .bot-rail {
+  margin: 6px 8px 10px;
+  padding: 8px 6px 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px 6px;
+  color: var(--codex-ink-soft, #b9b9b9);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-add {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  color: #9a9a9a;
+  text-decoration: none;
+  font-size: 15px;
+  line-height: 1;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-add:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #efefef;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-group {
+  padding: 8px 6px 3px;
+  color: #7d7d7d;
+  font-size: 11px;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 8px;
+  border-radius: 10px;
+  color: var(--codex-ink, #f2f2f2);
+  text-decoration: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-item[data-active="true"] {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-avatar {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 9px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-label {
+  display: grid;
+  min-width: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-label strong {
+  font-size: 13px;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-label small {
+  color: #8a8a8a;
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-more {
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #8a8a8a;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-more:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e6e6e6;
+}
+
+/* 选中子助理时标题栏的副标题（职责一句话） */
+body.codex-theme-v1:has(.console-shell) .task-context-bot-hint {
+  margin-left: 8px;
+  color: #8a8a8a;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

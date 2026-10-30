@@ -56,6 +56,7 @@ import { ConversationInput } from "./conversation-input";
 import { groupWorkspaceFiles } from "../lib/workspace-file-groups";
 import { setPendingReply } from "../lib/reply-references";
 import { loadComposerReplyDraft, persistComposerReplyDraft } from "../lib/task-composer-draft";
+import { useAssistantBot } from "./assistant-bot-context";
 import {
   ComposerReplyProvider,
   MessageReplyButton,
@@ -324,6 +325,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const aui = useAui();
   const replyScope = useComposerReply();
   const sendReply = useContext(ReplySendContext);
+  const botScope = useAssistantBot();
   const { routes, overrideRouteId } = useTaskModel();
   const threadRunning = useAuiState((state) => state.thread.isRunning);
   const threadLoading = useAuiState((state) => state.thread.isLoading);
@@ -887,11 +889,15 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
           onComposingChange={(value) => { composingRef.current = value; }}
           className="aui-composer-input"
           aria-label="消息输入"
-          placeholder={replyAwareComposerPlaceholder(
-            replyScope?.threadId,
-            busy,
-            conversationScope?.composerPlaceholder,
-          )}
+          placeholder={
+            botScope
+              ? `给 ${botScope.name} 发消息`
+              : replyAwareComposerPlaceholder(
+                  replyScope?.threadId,
+                  busy,
+                  conversationScope?.composerPlaceholder,
+                )
+          }
           rows={Math.min(8, Math.max(2, composerText.split("\n").length))}
           aria-controls={options.length ? "composer-suggestions" : undefined}
           aria-activedescendant={options.length ? `composer-option-${suggestionIndex}` : undefined}

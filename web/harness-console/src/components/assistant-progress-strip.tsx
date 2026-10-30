@@ -19,7 +19,9 @@ const KIND_LABEL: Record<string, { label: string; tone: "done" | "working" | "at
 export function AssistantProgressStrip() {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
+  // 默认收成一行浮标，不挤占对话高度；需要时再展开（对齐 bot 的悬浮交互）。
   const [expanded, setExpanded] = useState(false);
+  const [hidden, setHidden] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -39,19 +41,44 @@ export function AssistantProgressStrip() {
   }, [load]);
 
   const visible = notices.filter((item) => !dismissed.has(item.itemId));
-  if (!visible.length) return null;
+  if (!visible.length || hidden) return null;
+  const attention = visible.filter((item) => KIND_LABEL[item.kind]?.tone === "attention").length;
+  const summary = [
+    visible.length ? `${visible.length} 项进展` : "",
+    attention ? `${attention} 项需要你处理` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const shown = expanded ? visible : visible.slice(0, 3);
 
   return (
-    <aside className="assistant-progress-strip" aria-label="后台任务进展">
+    <aside
+      className="assistant-progress-strip"
+      data-expanded={expanded ? "true" : "false"}
+      aria-label="后台任务进展"
+    >
       <div className="assistant-progress-head">
-        <span>后台任务进展</span>
-        {visible.length > 3 && (
-          <button type="button" onClick={() => setExpanded((value) => !value)}>
-            {expanded ? "收起" : `展开全部 ${visible.length} 项`}
-          </button>
-        )}
+        <button
+          type="button"
+          className="assistant-progress-toggle"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          <span className="assistant-progress-dot" data-tone={attention ? "attention" : "done"} />
+          <span className="assistant-progress-summary">后台任务进展 · {summary}</span>
+          <span className="assistant-progress-chevron" aria-hidden="true">{expanded ? "收起" : "展开"}</span>
+        </button>
+        <button
+          type="button"
+          className="assistant-progress-hide"
+          aria-label="收起后台任务进展浮标"
+          title="收起"
+          onClick={() => setHidden(true)}
+        >
+          ×
+        </button>
       </div>
+      {expanded && (
       <ul>
         {shown.map((item) => {
           const tone = KIND_LABEL[item.kind]?.tone ?? "working";
@@ -80,6 +107,7 @@ export function AssistantProgressStrip() {
           );
         })}
       </ul>
+      )}
     </aside>
   );
 }

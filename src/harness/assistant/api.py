@@ -197,10 +197,47 @@ async def create_specialist(
 
 
 @router.get("/specialists/{specialist_id}")
-async def get_specialist(specialist_id: str, identity: Reader, assistant: Service) -> Specialist:
-    return await assistant.repository.get_specialist(
+async def get_specialist(specialist_id: str, identity: Reader, assistant: Service):
+    """子助理详情 + 它的会话入口。
+
+    子助理的对话就是承接职责的原线程：结果直接回到这条会话里，
+    不需要为"聊天"再造一条替身线程。
+    """
+    specialist = await assistant.repository.get_specialist(
         identity.tenant_id, identity.user_id, specialist_id
     )
+    duties = [
+        item
+        for item in await assistant.repository.list(identity.tenant_id, identity.user_id)
+        if item.specialist_id == specialist_id
+    ]
+    thread_id = None
+    if duties:
+        primary = duties[0]
+        bindings = await assistant.repository.managed_bindings(
+            identity.tenant_id, identity.user_id, objective_id=primary.objective_id
+        )
+        thread_id = (
+            bindings[0].thread_id
+            if bindings
+            else f"assistant_{primary.objective_id}"
+        )
+    return {
+        "specialist": specialist,
+        "threadId": thread_id,
+        "primaryObjectiveId": duties[0].objective_id if duties else None,
+        "duties": [
+            {
+                "objectiveId": item.objective_id,
+                "title": item.title,
+                "status": item.status.value,
+                "schedule": item.schedule.model_dump(by_alias=True) if item.schedule else None,
+            }
+            for item in duties
+        ],
+        "agentName": specialist.agent_name,
+        "agentVersion": specialist.agent_version,
+    }
 
 
 @router.post("/specialists/{specialist_id}/config")

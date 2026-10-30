@@ -17,6 +17,8 @@ import { AgentThread } from "../components/agent-thread";
 import { AuthProvider, useAuth } from "../components/auth-provider";
 import { AssistantChannelStatus } from "../components/assistant-channel-status";
 import { AssistantProgressStrip } from "../components/assistant-progress-strip";
+import { assistantRequest } from "../lib/assistant-client";
+import { AssistantBotProvider, type AssistantBot } from "../components/assistant-bot-context";
 import { AssistantComputerLink } from "../components/assistant-computer-link";
 import { AssistantComputerPane } from "../components/assistant-computer-pane";
 import { AssistantRuntimeShell } from "../components/assistant-runtime-shell";
@@ -210,7 +212,10 @@ function AuthenticatedHome() {
   }, []);
   const [showInternalAgents] = useInternalAgentsPreference();
   const [threadId, setThreadId] = useState("");
+  const [bot, setBot] = useState<AssistantBot | null>(null);
   const personalAssistant = assistantEntry && threadId === PERSONAL_ASSISTANT_THREAD;
+  // 助理入口一律用对话形态；选中机器人时标题与输入框跟着它变。
+  const assistantView = assistantEntry;
   const [computerOpen, setComputerOpen] = useState(false);
   useEffect(() => {
     try {
@@ -227,6 +232,46 @@ function AuthenticatedHome() {
       if (url.searchParams.has("computer")) { url.searchParams.delete("computer"); window.history.replaceState(null, "", url.href); }
     } catch { /* optional view preference */ }
   };
+  const [botParam, setBotParam] = useState<string | null>(null);
+  useEffect(() => {
+    if (!assistantEntry) { setBotParam(null); return; }
+    const read = () => setBotParam(new URLSearchParams(window.location.search).get("bot"));
+    read();
+    window.addEventListener("popstate", read);
+    window.addEventListener("kai:bot-navigate", read as EventListener);
+    return () => {
+      window.removeEventListener("popstate", read);
+      window.removeEventListener("kai:bot-navigate", read as EventListener);
+    };
+  }, [assistantEntry]);
+
+  useEffect(() => {
+    if (!assistantEntry) return;
+    const botId = botParam;
+    if (!botId) { setBot(null); return; }
+    let active = true;
+    void assistantRequest<{
+      specialist: { specialistId: string; name: string; description: string; status: string };
+      threadId: string | null;
+      primaryObjectiveId: string | null;
+    }>(`specialists/${encodeURIComponent(botId)}`)
+      .then((data) => {
+        if (!active) return;
+        setBot({
+          specialistId: data.specialist.specialistId,
+          name: data.specialist.name,
+          description: data.specialist.description,
+          status: data.specialist.status,
+          threadId: data.threadId,
+          objectiveId: data.primaryObjectiveId,
+        });
+        // 子助理没有替身会话：直接进入承接职责的原线程，结果就在这条对话里。
+        if (data.threadId) setThreadId(data.threadId);
+      })
+      .catch(() => { if (active) setBot(null); });
+    return () => { active = false; };
+  }, [assistantEntry, user.user_id, botParam]);
+
   const [taskAgents, setTaskAgents] = useState<TaskAgent[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<TaskAgent | null>(null);
   const [systemAssistant, setSystemAssistant] = useState<TaskAgent | null>(null);
@@ -747,7 +792,7 @@ function AuthenticatedHome() {
           />
         )}
         <TaskSidebar
-          activeNav={personalAssistant ? "assistant" : "tasks"}
+          activeNav={assistantView ? "assistant" : "tasks"}
           currentThreadId={threadId}
           collapsed={!taskSidebarOpen}
           overlayOpen={compactTaskSidebar && taskSidebarOpen}
@@ -785,9 +830,10 @@ function AuthenticatedHome() {
                 <span className="task-project-label">{projects.find((project) => project.projectId === activeProjectId)?.name ?? "返回项目"}</span>
                 <span className="task-project-separator" aria-hidden="true">/</span>
               </Link>}
-              {personalAssistant ? <div className="task-context-bar">
-                <strong className="task-context-title">我的助理</strong>
-                <AssistantChannelStatus />
+              {assistantView ? <div className="task-context-bar">
+                <strong className="task-context-title">{bot ? bot.name : "我的助理"}</strong>
+                {bot ? <span className="task-context-bot-hint">{bot.description || "专职子助理"}</span>
+                  : <AssistantChannelStatus />}
               </div> : <TaskContextBar
                 taskTitle={currentTaskTitle}
                 onForked={switchTask}
@@ -832,7 +878,11 @@ function AuthenticatedHome() {
             />
           </header>
           <AssistantComputerPane open={personalAssistant && computerOpen} onClose={() => showComputer(false)}>
-          <section className="chat-stage" aria-label={personalAssistant ? "我的助理对话" : "Agent 任务对话"}>
+          <section
+            className="chat-stage"
+            data-surface={assistantView ? "assistant" : "task"}
+            aria-label={personalAssistant ? "我的助理对话" : "Agent 任务对话"}
+          >
             {stageView === "trace" ? (
               <RunTraceConsole
                 threadId={threadId}
@@ -845,6 +895,7 @@ function AuthenticatedHome() {
               />
             ) : (
             <div className="chat-surface">
+              <AssistantBotProvider bot={bot}>
               {personalAssistant && <AssistantProgressStrip />}
               {versionSwitchError && <p role="alert">{versionSwitchError}</p>}
               {threadId && selectedAgent ? (
@@ -900,6 +951,7 @@ function AuthenticatedHome() {
                   )}
                 </div>
               )}
+              </AssistantBotProvider>
             </div>
             )}
           </section>

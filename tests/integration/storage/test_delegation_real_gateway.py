@@ -1272,3 +1272,33 @@ async def test_attach_existing_duty_to_a_specialist_and_trial_it(
     )
     assert trial["objectiveId"] == duty.objective_id
     assert trial["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_specialist_conversation_is_the_duty_thread(database: DatabaseFixture) -> None:
+    """子助理没有替身会话：它的对话就是承接职责的原线程。"""
+    service = make_service(database)
+    service._agui = cast(Any, _StubAgui())  # pyright: ignore[reportPrivateUsage]
+    duty = await service.create("tenant-a", "user-a", brief(), managed_thread_id="thread-duty")
+    specialist, _ = await service.create_specialist(
+        "tenant-a",
+        "user-a",
+        name="chat-duty",
+        description="承接职责的子助理",
+        agent_name="audit-agent",
+        agent_version="1.0.0",
+    )
+    await service.attach_duty(
+        "tenant-a",
+        "user-a",
+        specialist.specialist_id,
+        objective_id=duty.objective_id,
+        expected_revision=specialist.revision,
+    )
+    bindings = await service.repository.managed_bindings(
+        "tenant-a", "user-a", objective_id=duty.objective_id
+    )
+    # 面板解析会话时用的就是这条原线程，不是新开的 assistant_<objective>
+    assert bindings and bindings[0].thread_id == "thread-duty"
+    bound = await service.repository.get("tenant-a", "user-a", duty.objective_id)
+    assert bound.specialist_id == specialist.specialist_id

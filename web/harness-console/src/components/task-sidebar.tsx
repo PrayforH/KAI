@@ -14,6 +14,7 @@ import { AccountMenu } from "./account-menu";
 import { useAuth } from "./auth-provider";
 import { ProductBrandMark, ProductWordmark, PRODUCT_NAME } from "./product-brand";
 import { WorkspaceNavigation, type WorkspaceId } from "./workspace-navigation";
+import { BotRail } from "./bot-rail";
 import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
 import { useRunViewModel } from "../lib/activity-store";
 import { approvalStore } from "../lib/approval-store";
@@ -567,6 +568,7 @@ export function TaskSidebar({
               visible={["assistant", "knowledge", "agents", "automation", "skills"]}
             />
           </div>
+          {activeNav === "assistant" && <BotRail currentThreadId={currentThreadId} />}
           <div className="task-list-toolbar task-project-toolbar">
             <div className="task-list-heading">
               <button type="button" className="task-section-toggle"

@@ -1,0 +1,143 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import { assistantRequest, type Specialist } from "../lib/assistant-client";
+import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
+
+const AVATAR_TONES = ["#ff6b5b", "#f0a92f", "#3aa76d", "#4b8bf5", "#a468f0", "#e2599b"];
+
+function toneOf(key: string): string {
+  let hash = 0;
+  for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) % 997;
+  return AVATAR_TONES[hash % AVATAR_TONES.length]!;
+}
+
+function BotAvatar({ name, tone }: { name: string; tone: string }) {
+  return (
+    <span className="bot-rail-avatar" style={{ background: tone }} aria-hidden="true">
+      {name.trim().slice(0, 1) || "K"}
+    </span>
+  );
+}
+
+/**
+ * 左侧「机器人」区：主助理置顶，专职子助理按最近更新排序。
+ * 点击进入该助理的会话或职责面板——对话优先，配置其次。
+ */
+export function BotRail({ currentThreadId }: { currentThreadId: string }) {
+  // 当前选中的机器人来自地址（?bot=），线程 id 不能用来判断。
+  const [activeBot, setActiveBot] = useState<string | null>(null);
+  useEffect(() => {
+    const read = () => setActiveBot(new URLSearchParams(window.location.search).get("bot"));
+    read();
+    window.addEventListener("popstate", read);
+    return () => window.removeEventListener("popstate", read);
+  }, []);
+  const [specialists, setSpecialists] = useState<Specialist[]>([]);
+  const [expanded, setExpanded] = useState(false);
+
+  function openBot(event: React.MouseEvent, specialistId: string | null) {
+    // 同一路由只改查询参数时页面不会重挂载，旧线程会盖住新 bot：
+    // 直接整页导航，和从地址栏打开走同一条路径。
+    event.preventDefault();
+    window.location.assign(
+      specialistId ? `/assistant?bot=${encodeURIComponent(specialistId)}` : "/assistant",
+    );
+  }
+
+  const load = useCallback(async () => {
+    try {
+      const list = await assistantRequest<Specialist[]>("specialists");
+      setSpecialists(list.filter((item) => item.status !== "archived"));
+    } catch {
+      // 机器人列表是导航增强；读不到时保留主助理入口即可。
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    const timer = setInterval(() => {
+      if (!document.hidden) void load();
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [load]);
+
+  const pinned = specialists.filter((item) => item.status === "active");
+  const others = specialists.filter((item) => item.status !== "active");
+  const collapsedLimit = 3;
+  const visibleOthers = expanded ? others : others.slice(0, collapsedLimit);
+  const isAssistant = !activeBot && currentThreadId === PERSONAL_ASSISTANT_THREAD;
+
+  return (
+    <section className="bot-rail" aria-label="机器人">
+      <div className="bot-rail-head">
+        <span>机器人</span>
+        <Link className="bot-rail-add" href="/studio/assistant" aria-label="管理专职子助理">
+          +
+        </Link>
+      </div>
+      <ul className="bot-rail-list">
+        <li>
+          <Link
+            className="bot-rail-item"
+            data-active={isAssistant ? "true" : undefined}
+            href="/assistant"
+            onClick={(event) => openBot(event, null)}
+          >
+            <BotAvatar name="K" tone="#7c5cff" />
+            <span className="bot-rail-label">
+              <strong>主助理</strong>
+              <small>统一接活、跟进与交付</small>
+            </span>
+          </Link>
+        </li>
+        {pinned.length > 0 && <li className="bot-rail-group">已置顶</li>}
+        {pinned.map((item) => (
+          <li key={item.specialistId}>
+            <Link
+              className="bot-rail-item"
+              data-active={activeBot === item.specialistId ? "true" : undefined}
+              href={`/assistant?bot=${encodeURIComponent(item.specialistId)}`}
+              onClick={(event) => openBot(event, item.specialistId)}
+            >
+              <BotAvatar name={item.name} tone={toneOf(item.specialistId)} />
+              <span className="bot-rail-label">
+                <strong>{item.name}</strong>
+                <small>{item.description || item.agentName}</small>
+              </span>
+            </Link>
+          </li>
+        ))}
+        {others.length > 0 && (
+          <li className="bot-rail-group">{pinned.length ? "未分配" : "专职子助理"}</li>
+        )}
+        {visibleOthers.map((item) => (
+          <li key={item.specialistId}>
+            <Link
+              className="bot-rail-item"
+              data-active={activeBot === item.specialistId ? "true" : undefined}
+              href={`/assistant?bot=${encodeURIComponent(item.specialistId)}`}
+              onClick={(event) => openBot(event, item.specialistId)}
+            >
+              <BotAvatar name={item.name} tone={toneOf(item.specialistId)} />
+              <span className="bot-rail-label">
+                <strong>{item.name}</strong>
+                <small>{item.description || item.agentName}</small>
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+      {others.length > collapsedLimit && (
+        <button
+          type="button"
+          className="bot-rail-more"
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? "收起" : "展开"}
+        </button>
+      )}
+    </section>
+  );
+}
