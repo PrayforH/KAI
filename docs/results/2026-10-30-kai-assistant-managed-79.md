@@ -464,3 +464,27 @@ harness-memory 工具经 `MemoryBankService.scoped_identity`）共用，与 comp
 - `pytest tests/unit/assistant/test_delegation.py -q` → 24 passed（ui.handover 发出 / emit 缺省兼容）
 - `npx vitest run tests/handover-row.spec.tsx` → 3 passed（中文文案/链接目标/按 bot 去重/非置顶约束）
 - 全套 web 1383 passed / 1 既有失败（account-settings）；tsc、ruff clean
+
+
+### P1-4（api r17）：Computer 多任务排队只读投影
+
+**语义**：共享桌面单执行者（assistant_desktop_turns）不变；本切片只加**只读可观察性**——
+- `GET /api/studio/assistant/desktop/occupancy`（登录态，匿名 401）：
+  `holder`＝当前占用（objective_id/execution_id/职责标题/acquired/expires），
+  `waiting`＝需要桌面且 pending 的执行按创建序排列，带 `position` 与中文
+  `wait_reason`（占用中＝「单执行者占用中（另一项职责正在使用共享桌面）」；
+  无占用＝「等待桌面就绪」）。纯读，不改执行状态、不引入并发。
+- 跨项目纳管拒绝文案带线索：`bind_thread` 现在返回
+  「跨项目纳管被拒绝：职责属于项目「<名>」，而线程属于项目「<名>」；需要用户明确授权该项目后才能纳管」
+  （项目名经 ProjectService，回退 id），不再是模糊的「需要用户明确授权」。
+
+**测命令与结果**
+- `pytest tests/integration/storage/test_delegation_real_gateway.py -q` → 31 passed
+  （新增 occupancy 用例：holder 可见、桌面职责出现在 waiting 且 position=1、
+  非桌面执行不出现、释放后原因翻转为「等待桌面就绪」）
+- `pytest tests/unit/assistant -q` → 94 passed；ruff clean
+
+**79 冒烟**：`GET /api/studio/assistant/desktop/occupancy` → `{"holder": null, "waiting": []}`
+（当前无执行占用；真占用需两条桌面职责同时跑，单测已覆盖）；匿名 401 ✓。
+
+**边界**：不做仲裁增强（FIFO 抢占/优先级）、不改 lease 回收、不做 UI（进展卡旁一行留次日）。
