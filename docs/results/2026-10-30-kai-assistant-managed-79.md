@@ -299,3 +299,38 @@ sandbox lease (owner=run-fence:1, run=run_dc0735…)`——是我滚 api/worker 
 复测：派活成功，回执「待补充：schedule_minutes、notify_channel；缺项不启动」，正是设计行为。
 
 **「+」图标**：机器人分区改用与项目区相同的 plus 图标（rail 26×26 = project 26×26，同悬停样式）。
+
+
+### 第六轮（web r21–r26）：照客户端源码补齐「机器人动画活动行」与流式正文
+
+用户指出客户端的两个关键体验：①处理过程/状态是通过机器人动画（脸 + 状态短语）实现的；
+②对话像聊天软件一样流畅。直接逆向了 `/Applications/Grok Bot.app` 的 app.asar（renderer 697 文件）：
+
+**客户端实现事实**（源码证据，非猜测）
+- 脸 = `GrokBotMark`：canvas 角色（resolution 192、seed 派生形状），`state`（idle/working/…）、
+  `maxFrameRate` 60/30（reduced-motion 降档）、`spin/bounce/nod` 三种 poke（0.9/0.62/0.5s）、
+  **瞳孔随鼠标**（`attachMarkHoverGaze`，指针位置 ×0.5）、眼色走 `--grok-bot-eye` CSS 变量
+- 状态短语 = `activityPhraseDraw`（按词渐进显现）+ `statusReveal`；活动行占对话流一行
+
+**web 等价实现**（r21 起）
+- `GrokFace`：blob+双眼 SVG；idle 4.2s 慢眨眼 / working 浮动+瞳孔随鼠标（±1.4px，rAF 节流）/
+  done bounce / failed nod；颜色取 `--kai-bot-accent`
+- `ActivityPhrase`：按词 90ms 渐现，已显现词稳定 DOM、更新续播；SSR/历史一次性给全短语
+- `TurnActivity`/pre-response 行在助理面换 `GrokActivityRow`（任务面保留原样）
+
+**流式真相（逐层实测）**
+1. 服务端：SSE 逐块（curl，120 字回答 = 9 个 TEXT_MESSAGE_CONTENT，逐块到达）
+2. 代理：harness-proxy 对 SSE 直通透传（只压 GET+JSON）
+3. 浏览器：页内手动 fetch 同端点 17 增量在 1.04s 内逐块到达 —— 传输全通
+4. 前端回调：r24 临时日志证实 `onTextMessageContentEvent` 逐条触发
+5. **真空帧根因**：assistant-ui 的 in-flight 助手消息在 state 里存在但 DOM 不渲染，
+   正式气泡要等 run 结束才挂载 → 正文一次性蹦出（用户说的"不流畅"）
+6. 修法：`LiveStreamingBubble`——live store（rAF+120ms watchdog 批量）visible 且 streaming 时
+   画同款气泡；每 150ms 检查 DOM 正式气泡是否已覆盖同等文本，覆盖才让位
+
+**端到端时间线（79 实测，120 探针）**：5.9s store 48 = liveBubble 48（逐字长出）；
+7.5s 正式气泡挂载 328（无缝接管）；8.2s complete 气泡让位。无真空帧、无双份。
+
+**顺带**：「+」图标对齐项目区（26px plus 图标）；`window.__kaiLive` 只读诊断出口保留。
+**已知边界**：等待期（0→5.7s，排队/模型/压缩）没有正文可流——由脸+短语行表达进展
+（如「正在生成可恢复的上下文摘要」）；上游网关是爆发式吐字（~850 字/秒），非匀速。
