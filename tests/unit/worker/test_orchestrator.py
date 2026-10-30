@@ -2271,6 +2271,89 @@ async def test_sandbox_event_reports_a_met_floor_for_a_clean_session(
 
 
 @pytest.mark.asyncio
+async def test_a_zombie_lease_from_a_terminal_run_self_heals(tmp_path: Path) -> None:
+    """run 已终态 + lease 仍 live：新 Run 不再秒失败，回收并留观测事件。"""
+
+    leases = SandboxLeaseService(
+        InMemorySandboxLeaseRepository(),
+        clock=lambda: NOW,
+        id_generator=ids(),
+    )
+    orchestrator, _, runs, event_repository = await arrange(tmp_path, sandbox_leases=leases)
+    # 前一个 Run 已取消，但其租约没释放（Worker 崩溃/重启留下的僵尸）。
+    await runs.add(
+        Run(
+            run_id="run-0",
+            session_id="session-1",
+            tenant_id="tenant-a",
+            status=RunStatus.CANCELLED,
+            idempotency_key="idem-0",
+            created_at=NOW,
+            updated_at=NOW,
+            input={"prompt": "earlier"},
+        )
+    )
+    await leases.acquire(
+        tenant_id="tenant-a",
+        session_id="session-1",
+        run_id="run-0",
+        owner="run-fence:0",
+        provider="local",
+        sandbox_id="sandbox-stale",
+    )
+
+    result = await orchestrator.execute("tenant-a", "run-1")
+
+    assert result.status is RunStatus.SUCCEEDED
+    events = await event_repository.list_after("tenant-a", "run-1", 0)
+    reconciled = next(e for e in events if e.type == "sandbox.lease.reconciled")
+    assert reconciled.payload["released_run_id"] == "run-0"
+    stored = await leases.for_run("tenant-a", "run-0")
+    assert stored is not None and stored.state.value == "released"
+
+
+@pytest.mark.asyncio
+async def test_a_live_run_lease_still_blocks_the_session(tmp_path: Path) -> None:
+    """终态外的 live lease 不得被回收：新 Run 照常失败，原租约保持 active。"""
+
+    leases = SandboxLeaseService(
+        InMemorySandboxLeaseRepository(),
+        clock=lambda: NOW,
+        id_generator=ids(),
+    )
+    orchestrator, _, runs, event_repository = await arrange(tmp_path, sandbox_leases=leases)
+    await runs.add(
+        Run(
+            run_id="run-0",
+            session_id="session-1",
+            tenant_id="tenant-a",
+            status=RunStatus.RUNNING,
+            idempotency_key="idem-0",
+            created_at=NOW,
+            updated_at=NOW,
+            input={"prompt": "earlier"},
+        )
+    )
+    await leases.acquire(
+        tenant_id="tenant-a",
+        session_id="session-1",
+        run_id="run-0",
+        owner="run-fence:0",
+        provider="local",
+        sandbox_id="sandbox-stale",
+    )
+
+    result = await orchestrator.execute("tenant-a", "run-1")
+
+    assert result.status is RunStatus.FAILED
+    assert "live sandbox lease" in (result.error_code or "") or result.error_code
+    events = await event_repository.list_after("tenant-a", "run-1", 0)
+    assert not any(e.type == "sandbox.lease.reconciled" for e in events)
+    stored = await leases.for_run("tenant-a", "run-0")
+    assert stored is not None and stored.state.value == "active"
+
+
+@pytest.mark.asyncio
 async def test_run_acquires_reports_and_releases_a_sandbox_lease(tmp_path: Path) -> None:
     """Ownership is durable for the Run and released once its sandbox is gone."""
 

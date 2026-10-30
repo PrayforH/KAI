@@ -98,7 +98,7 @@ from harness.sandbox.base import (
     sandbox_enforcement_rank,
     trust_enforcement_floor,
 )
-from harness.sandbox.lease import SandboxLease, SandboxLeaseService
+from harness.sandbox.lease import SandboxLease, SandboxLeaseError, SandboxLeaseService
 
 RuntimeAssetStager = Callable[[str, str, str, str, Path, bool], Awaitable[tuple[str, ...]]]
 ProjectSkillResolver = Callable[[tuple[str, ...], AgentRuntimeType], tuple[SkillSnapshot, ...]]
@@ -713,6 +713,68 @@ class RunOrchestrator:
             return False
         return True
 
+    async def _acquire_lease_reconciling_dead_runs(
+        self,
+        *,
+        run: Run,
+        provider: str,
+        sandbox_id: str,
+    ) -> SandboxLease:
+        """Acquire the session lease, self-healing a zombie from a dead Run.
+
+        A Worker crash (or a deploy restart) can leave a live lease whose bound
+        Run already ended; every later Run of the Session then fails with
+        "already holds a live sandbox lease". On that exact error, ask the lease
+        service to reconcile: it releases the blocking lease only when this
+        Run-bound lookup confirms the blocking Run is terminal, records a
+        `sandbox.lease.reconciled` event for observability, and retries once.
+        A lease whose Run is still active (or unverifiable) is never touched.
+        """
+        assert self._sandbox_leases is not None
+        arguments = {
+            "tenant_id": run.tenant_id,
+            "session_id": run.session_id,
+            "run_id": run.run_id,
+            "owner": f"run-fence:{run.fencing_token}",
+            "provider": provider,
+            "sandbox_id": sandbox_id,
+        }
+        try:
+            return await self._sandbox_leases.acquire(**arguments)
+        except SandboxLeaseError:
+            tenant_id = run.tenant_id
+
+            async def lease_run_is_terminal(blocked_run_id: str) -> bool:
+                return await self._lease_run_is_terminal(tenant_id, blocked_run_id)
+
+            released = await self._sandbox_leases.reconcile_dead_run_lease(
+                run.tenant_id,
+                run.session_id,
+                run_is_terminal=lease_run_is_terminal,
+            )
+            if released is None:
+                raise
+            await self._events.append(
+                tenant_id=run.tenant_id,
+                run_id=run.run_id,
+                session_id=run.session_id,
+                event_type="sandbox.lease.reconciled",
+                payload={
+                    "released_lease_id": released.lease_id,
+                    "released_run_id": released.run_id,
+                    "released_owner": released.owner,
+                },
+            )
+            return await self._sandbox_leases.acquire(**arguments)
+
+    async def _lease_run_is_terminal(self, tenant_id: str, run_id: str) -> bool:
+        """Lease-layer lookup: only a verifiably terminal Run may be reconciled."""
+        try:
+            blocked = await self._runs.get(tenant_id, run_id)
+        except Exception:  # noqa: BLE001 - unverifiable ownership must not be touched
+            return False
+        return blocked.status in RunStatus.terminal_statuses()
+
     async def _await_cancellable(
         self,
         tenant_id: str,
@@ -1288,11 +1350,8 @@ class RunOrchestrator:
                 # Durable ownership: the lease outlives this process, so a Worker
                 # that dies mid-Run leaves a record a reaper can reclaim and an
                 # operator can audit.
-                lease = await self._sandbox_leases.acquire(
-                    tenant_id=tenant_id,
-                    session_id=run.session_id,
-                    run_id=run_id,
-                    owner=f"run-fence:{run.fencing_token}",
+                lease = await self._acquire_lease_reconciling_dead_runs(
+                    run=run,
                     provider=handle.provider,
                     sandbox_id=handle.sandbox_id,
                 )
