@@ -40,3 +40,18 @@ export async function assistantRequest<T>(path: string, method = "GET", body?: u
   }
   return response.status === 204 ? undefined as T : response.json();
 }
+
+export type ManagedProgress = {
+  thread_id: string; title: string; status: string; summary: string; active: boolean;
+};
+export type ManagedPanel = {
+  objectiveId: string;
+  revision: number;
+  budget: Record<string, unknown> | null;
+  managed: Array<{
+    threadId: string; role: "execute" | "observe"; projectId: string | null;
+    dependsOnObjectiveId: string | null; progress: ManagedProgress | null;
+  }>;
+  overview: ManagedProgress[];
+  aggregate: string;
+};

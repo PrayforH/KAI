@@ -37,3 +37,19 @@
 .error { color: var(--codex-danger, #bd4141); }
 .message { background: var(--codex-surface-subtle, #f6f7f8); padding: 12px 16px; border-radius: 8px; font-size: 13px; }
 @media (max-width: 900px) { .workspace { grid-template-columns: 1fr; } .detail { padding-left: 0; border-left: 0; border-top: 1px solid var(--codex-line, #dddfe3); } .header { align-items: flex-start; flex-direction: column; } .columns { grid-template-columns: 1fr; gap: 0; } }
+
+
+/* 项目托管：成果汇总是只读投影，保留等宽形状便于核对。 */
+.aggregate {
+  margin: 8px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted, #9a9a9a);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

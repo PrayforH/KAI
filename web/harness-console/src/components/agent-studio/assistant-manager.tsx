@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { assistantRequest, type Objective, type Execution, type Notice, type Specialist, type Handover } from "../../lib/assistant-client";
+import { assistantRequest, type Objective, type Execution, type Notice, type Specialist, type Handover, type ManagedPanel } from "../../lib/assistant-client";
 import styles from "./assistant-manager.module.css";
 
 type Agent = { name: string; version: string; display_name: string; owner_user_id?: string; space_id?: string };
@@ -13,6 +13,17 @@ const specialistLabel = { draft: "待配置", needs_input: "待补充配置", va
   ready: "待启用", active: "运行中", paused: "已暂停", blocked: "受阻", archived: "已归档" };
 const handoverLabel = { sent: "已发送", received: "已接收", applied: "已安排执行",
   executing: "执行中", pending_input: "待补充", failed: "失败" };
+const describeBudget = (budget: Record<string, unknown>) => {
+  const labels: [string, string][] = [
+    ["maxRunsPerDay", "每日运行"], ["maxTotalRuns", "总运行"], ["maxTokens", "token"],
+    ["maxCostUsd", "费用上限"], ["maxNewTasks", "可新建任务"], ["skipUnchanged", "无变化跳过"],
+    ["requiresDesktop", "需要共享桌面"],
+  ];
+  const parts = labels
+    .filter(([key]) => budget[key] !== undefined && budget[key] !== null && budget[key] !== false)
+    .map(([key, label]) => `${label} ${String(budget[key])}`);
+  return parts.length ? parts.join(" · ") : "未设置上限";
+};
 const date = (value: string) => new Date(value).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
 export function AssistantManager() {
@@ -22,7 +33,9 @@ export function AssistantManager() {
   const [executions, setExecutions] = useState<Execution[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [tab, setTab] = useState<"objectives" | "inbox" | "specialists">("objectives");
+  const [tab, setTab] = useState<"objectives" | "inbox" | "specialists" | "managed">("objectives");
+  const [panel, setPanel] = useState<ManagedPanel | null>(null);
+  const [bindThread, setBindThread] = useState("");
   const [specialists, setSpecialists] = useState<Specialist[]>([]);
   const [handovers, setHandovers] = useState<Handover[]>([]);
   const [selectedSpecialist, setSelectedSpecialist] = useState("");
@@ -38,6 +51,14 @@ export function AssistantManager() {
     if (target) setSelected(target);
   }, []);
   const selectedItem = items.find(item => item.objectiveId === selected);
+  useEffect(() => {
+    if (tab !== "managed" || !selected) { setPanel(null); return; }
+    let active = true;
+    void assistantRequest<ManagedPanel>(`objectives/${selected}/managed`)
+      .then((data) => { if (active) setPanel(data); })
+      .catch(() => { if (active) setPanel(null); });
+    return () => { active = false; };
+  }, [selected, tab]);
   const selectedSpecialistItem = specialists.find(item => item.specialistId === selectedSpecialist);
   const load = useCallback(async () => {
     const [next, notices] = await Promise.all([
@@ -107,7 +128,7 @@ export function AssistantManager() {
     <header className={styles.header}><div><h1>持续事项</h1><p>把需要持续跟进的工作交给 KAI，随时查看进展、补充要求。</p></div>
       <button className={styles.primary} onClick={() => { setEditing(null); setCreating(true); setTab("objectives"); }}>新建持续事项</button></header>
     <nav className={styles.tabs} aria-label="助理视图">
-      {([['objectives', '持续事项'], ['inbox', `待看结果${inbox.some(n => !n.readAt) ? ` · ${inbox.filter(n => !n.readAt).length}` : ''}`], ['specialists', '专职子助理']] as const).map(([id, label]) =>
+      {([['objectives', '持续事项'], ['inbox', `待看结果${inbox.some(n => !n.readAt) ? ` · ${inbox.filter(n => !n.readAt).length}` : ''}`], ['specialists', '专职子助理'], ['managed', '项目托管']] as const).map(([id, label]) =>
         <button key={id} aria-pressed={tab === id} onClick={() => setTab(id)}>{label}</button>)}
     </nav>
     {error && <p role="alert" className={styles.error}>{error} <button onClick={() => void perform(async () => {})}>刷新</button></p>}
@@ -118,6 +139,38 @@ export function AssistantManager() {
         {item.threadId && <Link href={`/?thread=${encodeURIComponent(item.threadId)}`}>打开原任务 →</Link>}
         {!item.readAt && <button disabled={busy} onClick={() => void perform(async () => { await assistantRequest(`inbox/${item.itemId}/read`, "POST"); })}>标为已读</button>}</div></article>)}
     </div>}
+    {tab === "managed" && <div className={styles.workspace}><div className={styles.list}>
+      {!items.length && <div className={styles.empty}><h2>还没有可托管的职责</h2><p>先在「持续事项」里创建职责，或在对话里让 KAI 接手一个项目。</p></div>}
+      {items.map(item => <button className={styles.item} data-selected={selected === item.objectiveId} key={item.objectiveId} onClick={() => setSelected(item.objectiveId)}>
+        <span className={styles.row}><strong>{item.title}</strong><span className={styles.badge}>{statusLabel[item.status]}</span></span>
+        <span className={styles.excerpt}>{item.instructions}</span>
+      </button>)}
+    </div><div className={styles.detail}>{selectedItem ? <>
+      <div className={styles.row}><h2>{selectedItem.title}</h2><span className={styles.badge}>{statusLabel[selectedItem.status]}</span></div>
+      <p className={styles.muted}>职责 {selectedItem.objectiveId} · revision {selectedItem.revision}</p>
+      {panel?.budget && <p className={styles.muted}>预算与授权：{describeBudget(panel.budget)}</p>}
+      <h3>纳管任务（{panel?.managed.length ?? 0}）</h3>
+      {!panel?.managed.length && <p className={styles.muted}>尚未纳管任务。可在下方按线程 ID 加入，或在对话里点名任务由 KAI 接管。</p>}
+      {panel?.managed.map(task => <article className={styles.execution} key={task.threadId}>
+        <div className={styles.row}>
+          <strong>{task.progress?.title || task.threadId}</strong>
+          <span className={styles.badge}>{task.role === "execute" ? "执行托管" : "只读关注"}</span>
+        </div>
+        <p className={styles.muted}>
+          {task.progress ? `${task.progress.active ? "进行中" : task.progress.status}：${task.progress.summary || "暂无记录"}` : "读不到该线程的最近运行"}
+          {task.dependsOnObjectiveId ? ` · 依赖 ${task.dependsOnObjectiveId}` : ""}
+        </p>
+        <Link href={`/?thread=${encodeURIComponent(task.threadId)}`}>打开原任务 →</Link>
+      </article>)}
+      {panel?.aggregate && <pre className={styles.aggregate}>{panel.aggregate}</pre>}
+      <form onSubmit={event => { event.preventDefault();
+        void perform(async () => {
+          await assistantRequest(`objectives/${selectedItem.objectiveId}/managed`, "POST", { threadId: bindThread.trim() });
+          setBindThread(""); setMessage("已纳入该职责的关注范围（只读跟进）。");
+        });
+      }}><label>纳管一个既有任务（线程 ID）<input value={bindThread} onChange={e => setBindThread(e.target.value)} required maxLength={128} placeholder="例如 kai-personal-assistant-v1 之外的线程 ID" /></label>
+      <button disabled={busy || !bindThread.trim()}>纳管</button></form>
+    </> : <p className={styles.empty}>选择一个职责，查看它的纳管任务、成果汇总与预算授权。</p>}</div></div>}
     {tab === "specialists" && <div className={styles.workspace}><div className={styles.list}>
       {!specialists.length && <div className={styles.empty}><h2>还没有专职子助理</h2><p>在对话里说“帮我长期关注某账号花费”，KAI 会按职责创建专职子助理并给出转交回执；缺配置时不会启动。</p></div>}
       {specialists.map(item => <button className={styles.item} data-selected={selectedSpecialist === item.specialistId} key={item.specialistId} onClick={() => setSelectedSpecialist(item.specialistId)}>
@@ -146,6 +199,15 @@ export function AssistantManager() {
       }}><label>检查频率<select name="schedule" defaultValue={Number(selectedSpecialistItem.config.schedule_minutes ?? 0)}><option value="0">（不修改）</option><option value="60">每小时</option><option value="360">每 6 小时</option><option value="1440">每 24 小时</option></select></label>
       <label>通知渠道<select name="notify" defaultValue={String(selectedSpecialistItem.config.notify_channel ?? "")}><option value="">（不修改）</option><option value="inbox">站内收件</option></select></label>
       <button disabled={busy}>保存配置</button></form>
+      {selectedSpecialistItem.status === "ready" && <div className={styles.actions}>
+        <button disabled={busy} onClick={() => void perform(async () => {
+          const trial = await assistantRequest<{ executionId: string; scheduled: string }>(
+            `specialists/${selectedSpecialistItem.specialistId}/trial`, "POST",
+            { expectedRevision: selectedSpecialistItem.revision },
+          );
+          setMessage(`${trial.scheduled}（执行 ${trial.executionId}）`);
+        })}>首次试运行</button>
+      </div>}
       <h3>转交记录</h3>
       {!handovers.filter(h => h.specialistId === selectedSpecialistItem.specialistId).length && <p className={styles.muted}>尚无转交记录。</p>}
       {handovers.filter(h => h.specialistId === selectedSpecialistItem.specialistId).map(h => <article className={styles.execution} key={h.handoverId}>
