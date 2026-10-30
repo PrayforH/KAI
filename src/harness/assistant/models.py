@@ -71,6 +71,8 @@ class ObjectiveBudget(StudioModel):
     max_total_runs: int | None = Field(default=None, alias="maxTotalRuns", ge=1, le=100_000)
     # 无变化不唤起模型：按纳管任务的进展指纹比较，相同则跳过本次检查。
     skip_unchanged: bool = Field(default=False, alias="skipUnchanged")
+    # 共享可见桌面单执行者：声明需要桌面的职责按 FIFO 排队，等待时不空耗模型。
+    requires_desktop: bool = Field(default=False, alias="requiresDesktop")
     # 计量上限：只在平台能给出真实用量时生效；无计量时诚实报告不可用。
     max_tokens: int | None = Field(default=None, alias="maxTokens", ge=1)
     max_cost_usd: float | None = Field(default=None, alias="maxCostUsd", gt=0)
@@ -233,6 +235,19 @@ class ObjectiveCheckpoint(StudioModel):
     cost_usd: float | None = Field(default=None, alias="costUsd")
     unknown_usage: bool = Field(default=False, alias="unknownUsage")
     created_at: AwareDatetime = Field(alias="createdAt")
+
+
+class DesktopTurn(StudioModel):
+    """共享桌面的一次执行权：同一用户同一时刻只有一个执行者。"""
+
+    desktop_turn_id: str = Field(alias="desktopTurnId")
+    tenant_id: str = Field(alias="tenantId")
+    user_id: str = Field(alias="userId")
+    objective_id: str = Field(alias="objectiveId")
+    execution_id: str = Field(alias="executionId")
+    acquired_at: AwareDatetime = Field(alias="acquiredAt")
+    expires_at: AwareDatetime = Field(alias="expiresAt")
+    released_at: AwareDatetime | None = Field(default=None, alias="releasedAt")
 
 
 class SpecialistStatus(StrEnum):

@@ -1039,3 +1039,61 @@ async def test_unchanged_schedule_skips_the_model_call(database: DatabaseFixture
     assert created_runs == []
     assert result.status is ObjectiveExecutionStatus.SUCCEEDED
     assert "未唤起模型" in result.summary
+
+
+@pytest.mark.asyncio
+async def test_shared_desktop_is_single_executor_with_queueing(
+    database: DatabaseFixture,
+) -> None:
+    """共享桌面：一项职责持有时另一项排队等待（不创建 Run），释放后可接手。"""
+    from datetime import timedelta
+
+    service = make_service(database)
+    first = await service.repository.acquire_desktop_turn(
+        tenant_id="tenant-a",
+        user_id="user-a",
+        objective_id="objective-one",
+        execution_id="execution-one",
+        now=NOW,
+    )
+    assert first is not None and first.objective_id == "objective-one"
+    blocked = await service.repository.acquire_desktop_turn(
+        tenant_id="tenant-a",
+        user_id="user-a",
+        objective_id="objective-two",
+        execution_id="execution-two",
+        now=NOW + timedelta(seconds=10),
+    )
+    assert blocked is None
+    # 同一执行重复领取是幂等的（不重复排队、不自我死锁）
+    again = await service.repository.acquire_desktop_turn(
+        tenant_id="tenant-a",
+        user_id="user-a",
+        objective_id="objective-one",
+        execution_id="execution-one",
+        now=NOW + timedelta(seconds=20),
+    )
+    assert again is not None and again.desktop_turn_id == first.desktop_turn_id
+    await service.repository.release_desktop_turn(
+        tenant_id="tenant-a",
+        user_id="user-a",
+        execution_id="execution-one",
+        now=NOW + timedelta(seconds=30),
+    )
+    second = await service.repository.acquire_desktop_turn(
+        tenant_id="tenant-a",
+        user_id="user-a",
+        objective_id="objective-two",
+        execution_id="execution-two",
+        now=NOW + timedelta(seconds=40),
+    )
+    assert second is not None and second.objective_id == "objective-two"
+    # 超过 TTL 的持有会被回收，不会永久堵住桌面
+    stale = await service.repository.acquire_desktop_turn(
+        tenant_id="tenant-a",
+        user_id="user-a",
+        objective_id="objective-three",
+        execution_id="execution-three",
+        now=NOW + timedelta(seconds=40 + 901),
+    )
+    assert stale is not None and stale.objective_id == "objective-three"

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from harness.assistant.lifecycle import next_check, transition
 from harness.assistant.models import (
     AssistantInboxItem,
+    DesktopTurn,
     HandoverStatus,
     ManagedTask,
     Objective,
@@ -31,6 +32,7 @@ from harness.assistant.models import (
 )
 from harness.assistant.storage import (
     AssistantInboxRow,
+    DesktopTurnRow,
     ManagedTaskRow,
     ObjectiveCheckpointRow,
     ObjectiveEventRow,
@@ -950,4 +952,106 @@ class PostgresAssistantRepository:
                     ciphertext=ciphertext,
                     created_at=now,
                 )
+            )
+
+    async def acquire_desktop_turn(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        objective_id: str,
+        execution_id: str,
+        now: datetime,
+        ttl_seconds: int = 900,
+    ) -> DesktopTurn | None:
+        """获取共享桌面的一次执行权；已有他人持有则返回 None（排队等待）。
+
+        过期的持有先释放，避免崩溃残留永久堵住桌面。同一用户同一时刻只有
+        一个执行者，这个约束由部分唯一索引在数据库层兜底。
+        """
+        async with self._context(write=True) as session:
+            active = await session.scalar(
+                select(DesktopTurnRow)
+                .where(
+                    DesktopTurnRow.tenant_id == tenant_id,
+                    DesktopTurnRow.user_id == user_id,
+                    DesktopTurnRow.released_at.is_(None),
+                )
+                .with_for_update()
+            )
+            if active is not None:
+                if active.execution_id == execution_id:
+                    # 同一执行重复领取（重建时）直接复用，不重复排队。
+                    return DesktopTurn(
+                        desktopTurnId=active.desktop_turn_id,
+                        objectiveId=active.objective_id,
+                        tenantId=active.tenant_id,
+                        userId=active.user_id,
+                        executionId=active.execution_id,
+                        acquiredAt=active.acquired_at,
+                        expiresAt=active.expires_at,
+                        releasedAt=active.released_at,
+                    )
+                if active.expires_at > now:
+                    return None
+                active.released_at = now
+            turn = DesktopTurn(
+                desktopTurnId=f"desktop_turn_{uuid4().hex}",
+                objectiveId=objective_id,
+                tenantId=tenant_id,
+                userId=user_id,
+                executionId=execution_id,
+                acquiredAt=now,
+                expiresAt=now + timedelta(seconds=ttl_seconds),
+            )
+            session.add(
+                DesktopTurnRow(
+                    desktop_turn_id=turn.desktop_turn_id,
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    objective_id=objective_id,
+                    execution_id=execution_id,
+                    acquired_at=now,
+                    expires_at=turn.expires_at,
+                )
+            )
+        return turn
+
+    async def release_desktop_turn(
+        self, *, tenant_id: str, user_id: str, execution_id: str, now: datetime
+    ) -> None:
+        async with self._context(write=True) as session:
+            row = await session.scalar(
+                select(DesktopTurnRow).where(
+                    DesktopTurnRow.tenant_id == tenant_id,
+                    DesktopTurnRow.user_id == user_id,
+                    DesktopTurnRow.execution_id == execution_id,
+                    DesktopTurnRow.released_at.is_(None),
+                )
+            )
+            if row is not None:
+                row.released_at = now
+
+    async def active_desktop_turn(
+        self, tenant_id: str, user_id: str
+    ) -> DesktopTurn | None:
+        async with self._context() as session:
+            row = await session.scalar(
+                select(DesktopTurnRow).where(
+                    DesktopTurnRow.tenant_id == tenant_id,
+                    DesktopTurnRow.user_id == user_id,
+                    DesktopTurnRow.released_at.is_(None),
+                )
+            )
+            if row is None:
+                return None
+            return DesktopTurn(
+                desktopTurnId=row.desktop_turn_id,
+                objectiveId=row.objective_id,
+                tenantId=row.tenant_id,
+                userId=row.user_id,
+                executionId=row.execution_id,
+                acquiredAt=row.acquired_at,
+                expiresAt=row.expires_at,
+                releasedAt=row.released_at,
             )

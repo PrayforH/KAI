@@ -511,6 +511,20 @@ class AssistantService:
         else:
             await self.validate(execution.tenant_id, execution.user_id, execution.brief)
             if run is None:
+                budget = objective.budget
+                if budget is not None and budget.requires_desktop:
+                    turn = await self.repository.acquire_desktop_turn(
+                        tenant_id=execution.tenant_id,
+                        user_id=execution.user_id,
+                        objective_id=execution.objective_id,
+                        execution_id=execution.execution_id,
+                        now=now,
+                    )
+                    if turn is None:
+                        # 等待电脑可用：不开运行、不空耗模型，下一个租约周期再看。
+                        return execution.model_copy(
+                            update={"summary": "等待电脑可用（另一项职责正在使用共享桌面）"}
+                        )
                 if objective.managed_thread_id == execution.thread_id:
                     # 托管派发与用户直聊共用原线程：存在未终结运行时不并发启动，
                     # 执行保持 pending，由下一个租约周期接续。
@@ -577,6 +591,15 @@ class AssistantService:
                 )
                 run = creation.run
         assert run is not None
+        if run.status.is_terminal:
+            budget = objective.budget
+            if budget is not None and budget.requires_desktop:
+                await self.repository.release_desktop_turn(
+                    tenant_id=execution.tenant_id,
+                    user_id=execution.user_id,
+                    execution_id=execution.execution_id,
+                    now=now,
+                )
         changes: dict[str, object] = {
             "run_id": run.run_id,
             "status": ObjectiveExecutionStatus.RUNNING,

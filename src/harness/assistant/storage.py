@@ -200,3 +200,28 @@ class SpecialistCredentialRow(Base):
     reference: Mapped[str] = mapped_column(String(128))
     ciphertext: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class DesktopTurnRow(Base):
+    """共享桌面执行权；释放前其它职责只能排队。"""
+
+    __tablename__ = "assistant_desktop_turns"
+    __table_args__ = (
+        Index(
+            "uq_assistant_desktop_active",
+            "tenant_id",
+            "user_id",
+            unique=True,
+            postgresql_where=text("released_at IS NULL"),
+        ),
+        Index("ix_assistant_desktop_turns_objective", "objective_id", "acquired_at"),
+    )
+
+    desktop_turn_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(128))
+    user_id: Mapped[str] = mapped_column(String(128))
+    objective_id: Mapped[str] = mapped_column(String(128))
+    execution_id: Mapped[str] = mapped_column(String(128))
+    acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
