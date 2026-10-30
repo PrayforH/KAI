@@ -1329,7 +1329,10 @@ class ClaudeSdkRuntime:
             )
             if self._memory_bank is not None and context.identity is not None:
                 execution_context.enter_context(
-                    memory_execution_context(self._memory_bank, context.identity)
+                    memory_execution_context(
+                        self._memory_bank,
+                        await self._memory_bank.scoped_identity(context.identity),
+                    )
                 )
             run_knowledge_bindings = knowledge_bindings_for_run(
                 context.run.input, context.session.knowledge_snapshot_bindings

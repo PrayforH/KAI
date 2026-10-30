@@ -39,6 +39,8 @@ class UserMemoryService:
         # Unscoped legacy text has no reliable business-project provenance.
         memory = await self.get(identity) if identity.business_project_id is None else None
         if self._memory_bank is not None:
+            # 职责线程读 specialist:{slug}，而不是底层 agent 的记忆。
+            identity = await self._memory_bank.scoped_identity(identity)
             # Old whole-text memory becomes explicit import proposals once. Stable
             # IDs also prevent a rejected/deleted import being resurrected next run.
             if memory is not None and identity.resolved_agent_owner_user_id == identity.user_id:

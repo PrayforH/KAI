@@ -533,6 +533,20 @@ class MemoryBankService:
             raise NotFoundError("memory entry is not available in this Agent scope")
         return entry
 
+    async def scoped_identity(self, identity: ExecutionIdentity) -> ExecutionIdentity:
+        """职责线程 → 用 specialist:{slug} 作为 memory scope 的 identity。
+
+        读侧（projection、harness-memory MCP 工具）统一走这里，与写侧
+        （提取入队）同判：session_id = assistant_<objective_id> 且绑定了
+        specialist 才换算；其余原样返回。
+        """
+        scope = await self.repository.resolve_session_scope(
+            identity.tenant_id, identity.session_id
+        )
+        if scope is None:
+            return identity
+        return identity.model_copy(update={"agent_name": scope})
+
     async def projection(
         self,
         identity: ExecutionIdentity,

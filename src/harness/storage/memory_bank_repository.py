@@ -33,6 +33,38 @@ class PostgresMemoryBankRepository:
     def __init__(self, sessions: SessionFactory) -> None:
         self._sessions = sessions
 
+    async def resolve_session_scope(self, tenant_id: str, session_id: str) -> str | None:
+        """Duty thread → specialist:{slug}；其余（含查不到）返回 None。
+
+        与 composition 的 specialist_memory_scope 同一判定，供读侧
+        （projection、harness-memory MCP 工具）与写侧（提取）共用，
+        保证"子助理对话的记忆读写都落在 specialist:{slug}"。
+        """
+        if not session_id.startswith("assistant_"):
+            return None
+        from harness.assistant.storage import ObjectiveRow, SpecialistRow
+
+        objective_id = session_id.removeprefix("assistant_")
+        async with self._sessions() as db:
+            objective_row = await db.scalar(
+                select(ObjectiveRow).where(
+                    ObjectiveRow.objective_id == objective_id,
+                    ObjectiveRow.tenant_id == tenant_id,
+                )
+            )
+            if objective_row is None:
+                return None
+            specialist_id = objective_row.payload.get("specialistId")
+            if not specialist_id:
+                return None
+            specialist_row = await db.scalar(
+                select(SpecialistRow).where(
+                    SpecialistRow.specialist_id == specialist_id,
+                    SpecialistRow.tenant_id == tenant_id,
+                )
+            )
+        return f"specialist:{specialist_row.slug}" if specialist_row else None
+
     async def add_entry(self, entry: MemoryEntry) -> None:
         async with self._sessions() as db:
             await self._lock_scope(db, entry)

@@ -18,6 +18,9 @@ from harness.memory_bank.models import (
 
 
 class MemoryBankRepository(Protocol):
+    async def resolve_session_scope(self, tenant_id: str, session_id: str) -> str | None:
+        return self.session_scopes.get(session_id)
+
     async def add_entry(self, entry: MemoryEntry) -> None: ...
 
     async def get_entry(self, tenant_id: str, user_id: str, entry_id: str) -> MemoryEntry: ...
@@ -94,10 +97,15 @@ def dedup_key(entry: MemoryEntry) -> str | None:
 class InMemoryMemoryBankRepository:
     def __init__(self) -> None:
         self._entries: dict[tuple[str, str, str], MemoryEntry] = {}
+        # session_id → specialist:{slug}；测试用，默认无职责线程。
+        self.session_scopes: dict[str, str] = {}
         self._consents: dict[tuple[str, str, str], MemoryConsent] = {}
         self._retentions: dict[tuple[str, str, str], MemoryRetention] = {}
         self._lock = asyncio.Lock()
         self._vectors: dict[tuple[str, str, str], tuple[int, str, tuple[float, ...]]] = {}
+
+    async def resolve_session_scope(self, tenant_id: str, session_id: str) -> str | None:
+        return self.session_scopes.get(session_id)
 
     async def add_entry(self, entry: MemoryEntry) -> None:
         key = (entry.tenant_id, entry.user_id, entry.entry_id)

@@ -132,3 +132,31 @@ async def test_search_without_hits_is_explicit():
     tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
     result = await tools["assistant_memory_search"]({"query": "不存在的主题"})
     assert "没有匹配" in text_of(result)
+
+
+@pytest.mark.asyncio
+async def test_scoped_identity_swaps_agent_scope_for_duty_threads():
+    """读侧（projection / harness-memory 工具）与写侧同判：职责线程读 specialist:{slug}。"""
+    from types import SimpleNamespace as _Ns
+
+    from harness.core.models import ExecutionIdentity
+    from harness.memory_bank.service import MemoryBankService
+    from harness.memory_bank.repositories import InMemoryMemoryBankRepository
+
+    bank_repo = InMemoryMemoryBankRepository()
+    bank_repo.session_scopes["assistant_objective-1"] = "specialist:cost-monitor"
+    service = MemoryBankService(bank_repo, clock=lambda: NOW)
+    identity = ExecutionIdentity(
+        tenant_id="t",
+        user_id="u",
+        project_id="kai-personal-assistant",
+        session_id="assistant_objective-1",
+        run_id="run-1",
+        agent_name="kai-personal-assistant",
+        agent_version="1",
+    )
+    scoped = await service.scoped_identity(identity)
+    assert scoped.agent_name == "specialist:cost-monitor"
+    # 非职责线程原样返回（主助理与普通任务不受影响）。
+    plain = identity.model_copy(update={"session_id": "session-plain", "run_id": "run-2"})
+    assert (await service.scoped_identity(plain)).agent_name == "kai-personal-assistant"
