@@ -3528,10 +3528,11 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .h
    助手气泡 6% 前景填充、用户气泡为每个 bot 的强调色。 */
 body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-assistant-message > .assistant-answer {
   box-sizing: border-box;
+  width: fit-content;
   max-width: min(640px, 92%);
   padding: 12px 16px;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--codex-ink, #ededed);
 }
 
@@ -3543,6 +3544,17 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .h
   background: var(--kai-bot-accent, #126fd4);
   color: #fff;
   box-shadow: none;
+}
+
+/* 历史消息的正文在原生文本槽里（.assistant-answer 只承载当前/最新回答）：
+   给有内容的槽位同样画气泡，避免老消息是一片不带底色的裸文本。 */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-assistant-message:not(:has(.assistant-answer)) > .aui-assistant-message-content:has(.aui-md) {
+  box-sizing: border-box;
+  width: fit-content;
+  max-width: min(640px, 92%);
+  padding: 10px 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 /* 用户消息整体靠右 */
@@ -3573,11 +3585,122 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .e
   background: transparent;
 }
 
-/* 消息操作栏贴近气泡、弱化 */
+/* 聊天里不出现「已完成 · 耗时」这类运行状态行与完成时间戳 */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .execution-ribbon.phase-completed {
+  display: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .execution-ribbon .execution-duration {
+  display: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .turn-completion {
+  display: none;
+}
+
+/* 对话索引刻度（右侧细虚线）在聊天形态里是噪音，先隐藏 */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .conversation-index {
+  display: none;
+}
+
+/* 左栏滚动条隐藏（滚轮/触控板仍可滚），整体更像聊天应用 */
+body.codex-theme-v1:has(.console-shell):has(.chat-stage[data-surface="assistant"]) .task-list-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+body.codex-theme-v1:has(.console-shell):has(.chat-stage[data-surface="assistant"]) .task-list-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* 消息操作栏：只留「复制 / 回复」，收到气泡外侧，悬停才出现，卡片更紧凑 */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-assistant-message {
+  position: relative;
+}
+
 body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .assistant-message-controls {
-  max-width: min(720px, 92%);
+  position: absolute;
+  right: 2px;
+  bottom: 4px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-assistant-message:hover .assistant-message-controls,
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-assistant-message:focus-within .assistant-message-controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .assistant-feedback-actions {
+  min-height: 22px;
+  gap: 2px;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .assistant-message-copy {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  padding: 4px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: #7d7d7d;
+  background: rgba(29, 29, 29, 0.92);
+  cursor: pointer;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .assistant-message-copy:hover {
+  color: #ededed;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 用户消息的操作栏放到气泡左侧的空白里，同样是 24px 紧凑图标 */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-user-message {
+  position: relative;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-user-action-bar {
+  top: 50%;
+  right: calc(100% + 6px);
+  transform: translateY(-50%);
+  min-height: 22px;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-user-action-bar .user-message-action,
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-user-action-bar button {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  padding: 4px;
+  border-radius: 6px;
+  color: #7d7d7d;
+}
+
+/* 更紧凑：气泡内边距与消息间距收一档，一轮里不再隔出 35px 的空档 */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-assistant-message {
+  padding: 2px 0 0;
+  margin: 8px 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-assistant-message > .assistant-answer {
+  padding: 10px 14px;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-user-message {
+  margin: 10px 0 4px;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-user-message + .harness-assistant-message,
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-user-message + .pre-response-activity {
+  padding-top: 2px;
   margin-top: 2px;
-  opacity: 0.75;
 }
 
 /* 助手正文行距与段落间距更像聊天 */
@@ -3607,7 +3730,7 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .h
   border-radius: 22px 22px 0 0;
 }
 
-/* ── 左栏「机器人」区（助理页）：头像列表 + 置顶/未分配分组 ── */
+/* ── 左栏「机器人」区（助理页）：头像列表 + 在岗/待启用分组 ── */
 body.codex-theme-v1:has(.console-shell) .bot-rail {
   margin: 2px 8px 10px;
   padding: 2px 6px 6px;

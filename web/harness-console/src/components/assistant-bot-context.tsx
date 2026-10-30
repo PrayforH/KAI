@@ -27,3 +27,22 @@ export function AssistantBotProvider({
 export function useAssistantBot() {
   return useContext(AssistantBotContext);
 }
+
+const AssistantSurfaceContext = createContext(false);
+
+/** 是否处在"聊天形态"的助理面（任务页为 false，保留其完整工具条）。 */
+export function AssistantSurfaceProvider({
+  value,
+  children,
+}: {
+  value: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <AssistantSurfaceContext.Provider value={value}>{children}</AssistantSurfaceContext.Provider>
+  );
+}
+
+export function useAssistantSurface() {
+  return useContext(AssistantSurfaceContext);
+}

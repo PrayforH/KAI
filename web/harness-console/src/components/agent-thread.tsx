@@ -56,7 +56,7 @@ import { ConversationInput } from "./conversation-input";
 import { groupWorkspaceFiles } from "../lib/workspace-file-groups";
 import { setPendingReply } from "../lib/reply-references";
 import { loadComposerReplyDraft, persistComposerReplyDraft } from "../lib/task-composer-draft";
-import { useAssistantBot } from "./assistant-bot-context";
+import { useAssistantBot, useAssistantSurface } from "./assistant-bot-context";
 import {
   ComposerReplyProvider,
   MessageReplyButton,
@@ -326,6 +326,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const replyScope = useComposerReply();
   const sendReply = useContext(ReplySendContext);
   const botScope = useAssistantBot();
+  const assistantSurface = useAssistantSurface();
   const { routes, overrideRouteId } = useTaskModel();
   const threadRunning = useAuiState((state) => state.thread.isRunning);
   const threadLoading = useAuiState((state) => state.thread.isLoading);
@@ -937,7 +938,8 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
             </svg>
           </Composer.AddAttachment>
 
-          {!conversationScope?.compactComposer && <>{conversationScope ? <button type="button" className="aui-composer-attach" aria-label="配置智能体知识库" title="配置智能体知识库" onClick={conversationScope.onConfigureKnowledge}>@</button> : <TaskKnowledgeControl disabled={runLocked || showStop || videoGenerating} />}
+          {!conversationScope?.compactComposer && !assistantSurface && <>
+          {conversationScope ? <button type="button" className="aui-composer-attach" aria-label="配置智能体知识库" title="配置智能体知识库" onClick={conversationScope.onConfigureKnowledge}>@</button> : <TaskKnowledgeControl disabled={runLocked || showStop || videoGenerating} />}
           <TaskAgentSwitcher
             agents={agentSelection.agents}
             selected={agentSelection.selected}
@@ -1475,6 +1477,7 @@ export function responseTextForTurn(messageId: string, nativeText: string, direc
 
 export function HarnessAssistantMessage() {
   const redact = useConversationRedactor();
+  const assistantSurface = useAssistantSurface();
   const personalAssistant = usePersonalAssistantEntry();
   const conversationScope = useConversationScope();
   const live = useLiveResponse();
@@ -1630,8 +1633,12 @@ export function HarnessAssistantMessage() {
               text={copyText}
             />
             <MessageReplyButton className="assistant-message-copy" label="回复这条回答" />
-            <MessageFeedbackButtons runId={feedbackRun} />
-            <TurnCompletion />
+            {!assistantSurface && (
+              <>
+                <MessageFeedbackButtons runId={feedbackRun} />
+                <TurnCompletion />
+              </>
+            )}
           </AssistantActionBar.Root>
         </div>
         </>
@@ -1692,6 +1699,7 @@ function useMessageEditor() {
 
 function HarnessUserMessage() {
   const redact = useConversationRedactor();
+  const assistantSurface = useAssistantSurface();
   const message = useAuiState((state) => state.message);
   const isLastMessage = useAuiState((state) => state.message.isLast);
   const threadRunning = useAuiState((state) => state.thread.isRunning);
@@ -1789,7 +1797,7 @@ function HarnessUserMessage() {
                   text={displayText}
                 />
                 <MessageReplyButton label="回复消息" />
-                {isLatestUserMessage && !threadRunning && !sensitive ? (
+                {!assistantSurface && isLatestUserMessage && !threadRunning && !sensitive ? (
                   <button
                     className="user-message-action"
                     type="button"

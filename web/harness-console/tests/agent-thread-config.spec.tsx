@@ -217,7 +217,10 @@ it("only edits the latest user turn and allows unchanged text to start a new run
   expect(agentThreadSource).toContain('className="user-message-editor"');
   expect(agentThreadSource).toContain("MessageEditorContext.Provider");
   expect(agentThreadSource).toContain("isLatestUserMessage");
-  expect(agentThreadSource).toContain("{isLatestUserMessage && !threadRunning && !sensitive ? (");
+  // 编辑入口在任务页保留；助理面这条侧边栏只留复制与回复。
+  expect(agentThreadSource).toContain(
+    "{!assistantSurface && isLatestUserMessage && !threadRunning && !sensitive ? (",
+  );
   expect(agentThreadSource).toContain("setEditor({ messageId: message.id, draft: displayText })");
   expect(agentThreadSource).toContain("sourceId: message.id");
   expect(agentThreadSource).toContain("startRun: true");
@@ -350,4 +353,29 @@ it("attaches a resumed run to the latest optimistic assistant turn", () => {
 
 it("does not assign a newer run to an older durable assistant", () => {
   expect(turnOwnsRun("assistant-run_1", "run_2", true, "run_2")).toBe(false);
+});
+
+it("drops the knowledge-@ and agent switcher from the assistant chat composer", () => {
+  // 任务页保留完整工具条（知识库 @ + 「通用助手」切换器）；
+  // 助理面是聊天形态，这两个控件都多余，只能挂在 !assistantSurface 分支里。
+  expect(agentThreadSource.match(/<TaskAgentSwitcher/g)).toHaveLength(1);
+  const guard = agentThreadSource.indexOf("!conversationScope?.compactComposer && !assistantSurface");
+  expect(guard).toBeGreaterThan(-1);
+  expect(agentThreadSource.indexOf("<TaskAgentSwitcher")).toBeGreaterThan(guard);
+  expect(agentThreadSource.indexOf('title="配置智能体知识库"')).toBeGreaterThan(guard);
+  expect(agentThreadSource).toContain(
+    "const assistantSurface = useAssistantSurface();",
+  );
+});
+
+it("keeps only copy and reply in the assistant chat message actions", () => {
+  const controls = agentThreadSource.indexOf('className="assistant-message-controls"');
+  const feedback = agentThreadSource.indexOf("<MessageFeedbackButtons");
+  const completion = agentThreadSource.indexOf("<TurnCompletion />");
+  expect(controls).toBeGreaterThan(-1);
+  // 点赞、差评、分支复制都挂在 !assistantSurface 下：聊天里不出现。
+  expect(agentThreadSource.indexOf("{!assistantSurface && (", controls)).toBeGreaterThan(controls);
+  expect(feedback).toBeGreaterThan(controls);
+  expect(completion).toBeGreaterThan(feedback);
+  expect(agentThreadSource).toContain('<MessageReplyButton className="assistant-message-copy"');
 });

@@ -19,7 +19,11 @@ import { AssistantChannelStatus } from "../components/assistant-channel-status";
 import { AssistantProgressStrip } from "../components/assistant-progress-strip";
 import { HandoverStrip } from "../components/handover-strip";
 import { assistantRequest } from "../lib/assistant-client";
-import { AssistantBotProvider, type AssistantBot } from "../components/assistant-bot-context";
+import {
+  AssistantBotProvider,
+  AssistantSurfaceProvider,
+  type AssistantBot,
+} from "../components/assistant-bot-context";
 import { BOT_ACCENTS, botAccent } from "../components/bot-rail";
 import { AssistantComputerLink } from "../components/assistant-computer-link";
 import { AssistantComputerPane } from "../components/assistant-computer-pane";
@@ -898,6 +902,7 @@ function AuthenticatedHome() {
               />
             ) : (
             <div className="chat-surface">
+              <AssistantSurfaceProvider value={assistantView}>
               <AssistantBotProvider bot={bot}>
               {personalAssistant && <AssistantProgressStrip />}
               {personalAssistant && <HandoverStrip />}
@@ -956,6 +961,7 @@ function AuthenticatedHome() {
                 </div>
               )}
               </AssistantBotProvider>
+              </AssistantSurfaceProvider>
             </div>
             )}
           </section>

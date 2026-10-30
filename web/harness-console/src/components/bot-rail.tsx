@@ -78,10 +78,11 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
     return () => clearInterval(timer);
   }, [load]);
 
-  const pinned = specialists.filter((item) => item.status === "active");
-  const others = specialists.filter((item) => item.status !== "active");
+  // 按真实状态分组：已启用＝在岗承担职责；其余（新建/试运行/待启用）还没接活。
+  const active = specialists.filter((item) => item.status === "active");
+  const pending = specialists.filter((item) => item.status !== "active");
   const collapsedLimit = 3;
-  const visibleOthers = expanded ? others : others.slice(0, collapsedLimit);
+  const visiblePending = expanded ? pending : pending.slice(0, collapsedLimit);
   const isAssistant = !activeBot && currentThreadId === PERSONAL_ASSISTANT_THREAD;
 
   return (
@@ -107,8 +108,8 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
             </span>
           </Link>
         </li>
-        {pinned.length > 0 && <li className="bot-rail-group">已置顶</li>}
-        {pinned.map((item) => (
+        {active.length > 0 && <li className="bot-rail-group">在岗</li>}
+        {active.map((item) => (
           <li key={item.specialistId}>
             <Link
               className="bot-rail-item"
@@ -124,10 +125,10 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
             </Link>
           </li>
         ))}
-        {others.length > 0 && (
-          <li className="bot-rail-group">{pinned.length ? "未分配" : "专职子助理"}</li>
+        {pending.length > 0 && (
+          <li className="bot-rail-group">{active.length ? "待启用" : "专职子助理"}</li>
         )}
-        {visibleOthers.map((item) => (
+        {visiblePending.map((item) => (
           <li key={item.specialistId}>
             <Link
               className="bot-rail-item"
@@ -144,7 +145,7 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
           </li>
         ))}
       </ul>
-      {others.length > collapsedLimit && (
+      {pending.length > collapsedLimit && (
         <button
           type="button"
           className="bot-rail-more"

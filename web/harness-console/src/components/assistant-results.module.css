@@ -1,4 +1,4 @@
-.results { margin: 14px 0; width: 100%; min-width: 0; }
+.results { margin: 14px 0; width: fit-content; max-width: min(420px, 100%); min-width: 0; }
 .files { display: grid; gap: 8px; }
 .file { display: flex; align-items: center; min-width: 0; border: 1px solid var(--border, #8884); border-radius: 12px; overflow: hidden; background: var(--card, transparent); }
 .open { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; padding: 12px; color: inherit; background: none; border: 0; text-align: left; cursor: pointer; }
