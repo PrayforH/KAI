@@ -373,3 +373,31 @@ API 确认 `config.appearance={"color":"#ff2d95","avatar":"star"}`、revision 4�
 
 **风险说明**：只回收「绑定 Run 已终态」的租约；epoch fencing 保证即使误判，原 owner 恢复后也会察觉失去所有权。
 回收事件落在 run 事件流，审计可查。未引入后台清扫任务、未改 TTL 语义、未动委派绑定策略。
+
+
+### P1-1（api r12 / web r28）：无人查看则暂停例行程序（最小后端闸门）
+
+**语义**（对齐 Grok「例行任务无人查看就自动暂停，避免浪费用量」）：
+- 调度入口 `schedule_due`（worker `assistant_maintenance` → `AssistantService.process_once`，2s 轮询）
+  对**绑定了专职 Bot** 的到期职责做闸门：`now - specialist.lastViewedAt > 阈值` → 本次不入队，
+  在 Bot 上写 `routinePausedReason = {reason: "unviewed", hours_since_view, at}`（API/UI 可读），
+  **照常推进 next_check_at**——打开会话后的下一个周期自然恢复。
+- `lastViewedAt` 在 Bot 创建时初始化（首次例行不被拦）；存量 Bot 的 None 视为从未查看（会被拦，
+  打开一次即恢复）。打开 Bot 会话 = `GET /specialists/{id}`（bot 页面加载即调）→ touch，
+  刷新 lastViewedAt 并清除暂停标记；**不递增 revision**（查看是高频读态，不与配置 CAS 竞争）。
+- 查看后的下一次调度顺手清残留标记（双侧自愈）。预算闸门（maxRunsPerDay/TotalRuns）路径未动。
+
+**默认阈值**：24 小时；env `HARNESS_ASSISTANT_UNVIEWED_PAUSE_HOURS`（小时，≥1）可调。
+
+**测命令与结果**
+- `pytest tests/unit/assistant tests/unit/sandbox/test_lease.py -q` → 103 passed
+- `pytest tests/integration/storage/test_delegation_real_gateway.py::test_unviewed_specialist_routine_is_skipped_then_recovers -q` → passed
+  （真实 Postgres 夹具：fresh → 入队；25h 未查看 → 跳过 + `reason=unviewed` 且执行数不变；
+  touch → 下一次到期放行 + 标记清除）
+- 全套 web 1380 passed / 1 既有失败（account-settings）；`tsc` clean；ruff clean
+
+**UI（最小）**：Bot「…」编辑弹窗的例行程序列表显示「已暂停 · 因无人查看已暂停，打开本会话后恢复」
+（琥珀色状态字）；rail 不另加角标。查看后弹窗重开即恢复原状态字。
+
+**边界**：仅作用于绑定 Bot 的职责；普通定时任务不受此闸门（仍是预算/终止期闸门）。
+跳过的周期不补跑（与"避免浪费"一致）；skip 记录在 Bot 上可读，不在 run 流里（没有 run 发生）。
