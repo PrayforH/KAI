@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 from sqlalchemy import and_, select, update
 from sqlalchemy.dialects.postgresql import insert
 
-from harness.assistant.storage import ObjectiveRow, SpecialistRow
 from harness.core.errors import ConflictError
 from harness.core.models import Run, Session
 from harness.memory_bank.extraction import MemoryExtractor
@@ -67,7 +65,9 @@ class MemoryProcessingController:
                 )
                 # 读取与写入必须同 scope：职责线程的自动提取也落在
                 # specialist:{slug}，否则 specialist 会话读不到自己写下的记忆。
-                scope = await self._session_memory_scope(db, run.tenant_id, session)
+                scope = await self._bank.repository.resolve_session_scope(
+                    run.tenant_id, session.session_id
+                )
                 await db.execute(
                     insert(j)
                     .values(
@@ -88,41 +88,6 @@ class MemoryProcessingController:
                 count += 1
             await db.commit()
         return count
-
-    @staticmethod
-    async def _session_memory_scope(
-        db: Any,
-        tenant_id: str,
-        session: Session,
-    ) -> str | None:
-        """职责线程 → specialist:{slug}；其余线程返回 None（沿用 agent scope）。
-
-        与 composition 的 specialist_memory_scope 同一判定：session_id 前缀
-        assistant_<objective_id>，objective 绑定了 specialist 才成立。
-        """
-        if not session.agent_name or not session.session_id.startswith("assistant_"):
-            return None
-        objective_id = session.session_id.removeprefix("assistant_")
-        objective_row = await db.scalar(
-            select(ObjectiveRow).where(
-                ObjectiveRow.objective_id == objective_id,
-                ObjectiveRow.tenant_id == tenant_id,
-            )
-        )
-        if objective_row is None:
-            return None
-        specialist_id = objective_row.payload.get("specialistId")
-        if not specialist_id:
-            return None
-        specialist_row = await db.scalar(
-            select(SpecialistRow).where(
-                SpecialistRow.specialist_id == specialist_id,
-                SpecialistRow.tenant_id == tenant_id,
-            )
-        )
-        if specialist_row is None:
-            return None
-        return f"specialist:{specialist_row.slug}"
 
     async def process_once(self) -> int:
         await self.enqueue_completed()

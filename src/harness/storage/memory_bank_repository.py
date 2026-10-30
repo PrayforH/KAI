@@ -40,12 +40,25 @@ class PostgresMemoryBankRepository:
         （projection、harness-memory MCP 工具）与写侧（提取）共用，
         保证"子助理对话的记忆读写都落在 specialist:{slug}"。
         """
-        if not session_id.startswith("assistant_"):
-            return None
         from harness.assistant.storage import ObjectiveRow, SpecialistRow
 
-        objective_id = session_id.removeprefix("assistant_")
         async with self._sessions() as db:
+            if session_id.startswith("assistant_"):
+                objective_id = session_id.removeprefix("assistant_")
+            else:
+                # 生产会话 id 是 session_*；职责线程要从线程绑定反查 thread_id。
+                from harness.storage.models import AguiThreadBindingRow
+
+                binding_row = await db.scalar(
+                    select(AguiThreadBindingRow.thread_id).where(
+                        AguiThreadBindingRow.session_id == session_id,
+                        AguiThreadBindingRow.tenant_id == tenant_id,
+                    )
+                )
+                thread_id = str(binding_row) if binding_row is not None else ""
+                if not thread_id.startswith("assistant_"):
+                    return None
+                objective_id = thread_id.removeprefix("assistant_")
             objective_row = await db.scalar(
                 select(ObjectiveRow).where(
                     ObjectiveRow.objective_id == objective_id,

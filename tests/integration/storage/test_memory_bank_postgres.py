@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 import pytest_asyncio
 
+import harness.assistant.storage  # noqa: F401  (register assistant tables in Base.metadata)
 from harness.core.errors import NotFoundError
 from harness.core.models import ExecutionIdentity
 from harness.memory_bank.models import MemoryEntry, MemoryStatus
@@ -385,10 +386,12 @@ async def test_extraction_on_a_duty_thread_scopes_to_the_specialist(
         }
     )
     duty_id = "objective-scope-1"
+    # 生产同形：run 的 session_id 是 session_*，职责线程靠绑定行反查。
+    duty_session = f"session_scope_{duty_id}"
     run = Run(
         tenant_id="tenant-a",
         run_id="run-scope-1",
-        session_id=f"assistant_{duty_id}",
+        session_id=duty_session,
         status=RunStatus.SUCCEEDED,
         idempotency_key="scope-test",
         created_at=NOW,
@@ -397,7 +400,7 @@ async def test_extraction_on_a_duty_thread_scopes_to_the_specialist(
     )
     session = Session(
         tenant_id="tenant-a",
-        session_id=f"assistant_{duty_id}",
+        session_id=duty_session,
         user_id="user-a",
         agent_name="archive-assistant-agent",
         agent_version="0.1.1",
@@ -448,6 +451,17 @@ async def test_extraction_on_a_duty_thread_scopes_to_the_specialist(
                 fencing_token=0,
                 updated_at=NOW,
                 payload=run.model_dump(mode="json"),
+            )
+        )
+        from harness.storage.models import AguiThreadBindingRow
+
+        db.add(
+            AguiThreadBindingRow(
+                tenant_id="tenant-a",
+                user_id="user-a",
+                thread_id=f"assistant_{duty_id}",
+                session_id=duty_session,
+                payload={},
             )
         )
         db.add(
