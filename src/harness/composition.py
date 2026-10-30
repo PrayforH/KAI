@@ -1894,6 +1894,7 @@ def build_production_container(
         runs=run_service,
         events=raw_event_repository,
         quotas=enforced_quotas,
+        unviewed_pause_hours=settings.assistant_unviewed_pause_hours,
     )
     assistant.set_cipher(mcp_credential_service.cipher)
     feishu_settings = FeishuSettings()

@@ -284,6 +284,12 @@ class Specialist(StudioModel):
     revision: int = Field(default=1, ge=1)
     # 结构化运行配置：调度、阈值、通知等；凭据只存引用（credential_ref）。
     config: dict[str, object] = Field(default_factory=dict)
+    # 例行程序闸门（对齐"无人查看就暂停"）：最近一次打开该 Bot 会话的时间；
+    # None 表示本功能上线前的存量 Bot，视为从未查看。运行态字段，不参与 config CAS。
+    last_viewed_at: AwareDatetime | None = Field(default=None, alias="lastViewedAt")
+    routine_paused_reason: dict[str, object] | None = Field(
+        default=None, alias="routinePausedReason"
+    )
     created_at: AwareDatetime = Field(alias="createdAt")
     updated_at: AwareDatetime = Field(alias="updatedAt")
 

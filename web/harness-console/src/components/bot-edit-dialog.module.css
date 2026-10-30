@@ -170,3 +170,5 @@
 .shapeButton svg { width: 26px; height: 26px; }
 
 .shapeButton[data-selected="true"] { border-color: #2563eb; }
+
+.routineState[data-paused="true"] { color: #e8a33d; }

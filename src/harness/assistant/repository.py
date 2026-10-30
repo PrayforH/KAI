@@ -426,7 +426,13 @@ class PostgresAssistantRepository:
             )
             return [ObjectiveExecution.model_validate(row.payload) for row in rows]
 
-    async def schedule_due(self, now: datetime, *, limit: int = 20) -> None:
+    async def schedule_due(
+        self,
+        now: datetime,
+        *,
+        limit: int = 20,
+        unviewed_pause_hours: int | None = None,
+    ) -> None:
         async with self._context(write=True) as session:
             rows = await session.scalars(
                 select(ObjectiveRow)
@@ -440,6 +446,14 @@ class PostgresAssistantRepository:
             )
             for row in rows:
                 current = _objective(row)
+                gate = await self._routine_gate(
+                    session, current, now=now, pause_hours=unviewed_pause_hours
+                )
+                if gate is not None:
+                    # 无人查看：跳过本次执行，但照常推进下一次检查点，
+                    # 让"打开会话"后的下一个周期自然恢复。
+                    _store(row, gate)
+                    continue
                 try:
                     await self._enqueue(
                         session,
@@ -458,6 +472,87 @@ class PostgresAssistantRepository:
                     }
                 )
                 _store(row, updated)
+
+    async def _routine_gate(
+        self,
+        session: AsyncSession,
+        objective: Objective,
+        *,
+        now: datetime,
+        pause_hours: int | None,
+    ) -> Objective | None:
+        """无人查看则跳过本次例行执行；返回推进后的 Objective，None 表示放行。
+
+        只作用于绑定了专职 Bot 的职责：以该 Bot 的 last_viewed_at 为准，
+        超过阈值（None 视为从未查看）则跳过并在 Bot 上写入可观察的
+        routine_paused_reason；查看（touch）会清掉该标记。
+        """
+        if objective.specialist_id is None or not pause_hours or pause_hours <= 0:
+            return None
+        specialist_row = await session.scalar(
+            select(SpecialistRow).where(
+                SpecialistRow.tenant_id == objective.tenant_id,
+                SpecialistRow.user_id == objective.user_id,
+                SpecialistRow.specialist_id == objective.specialist_id,
+            )
+        )
+        if specialist_row is None:
+            return None
+        specialist = Specialist.model_validate(specialist_row.payload)
+        viewed_at = specialist.last_viewed_at
+        stale_seconds = (
+            (now - viewed_at).total_seconds() if viewed_at is not None else None
+        )
+        if stale_seconds is not None and stale_seconds < pause_hours * 3600:
+            if specialist.routine_paused_reason is not None:
+                # 查看过就放行：顺手清掉历史暂停标记（自愈）。
+                specialist_row.payload = specialist.model_copy(
+                    update={"routine_paused_reason": None, "updated_at": now}
+                ).model_dump(mode="json", by_alias=True)
+            return None
+        hours = (
+            round(stale_seconds / 3600, 1) if stale_seconds is not None else None
+        )
+        reason = {
+            "reason": "unviewed",
+            "hours_since_view": hours,
+            "at": now.isoformat(),
+        }
+        specialist_row.payload = specialist.model_copy(
+            update={"routine_paused_reason": reason, "updated_at": now}
+        ).model_dump(mode="json", by_alias=True)
+        return objective.model_copy(
+            update={
+                "next_check_at": next_check(
+                    objective.schedule, after=now, ends_at=objective.ends_at
+                )
+            }
+        )
+
+    async def touch_specialist_viewed(
+        self, tenant_id: str, user_id: str, specialist_id: str, *, now: datetime
+    ) -> bool:
+        """打开 Bot 会话即刷新 last_viewed_at 并清除暂停标记；不递增 revision。
+
+        查看是高频读态操作，revision 只属于配置 CAS（并发编辑保护）。
+        """
+        async with self._context(write=True) as session:
+            row = await session.scalar(
+                select(SpecialistRow).where(
+                    SpecialistRow.tenant_id == tenant_id,
+                    SpecialistRow.user_id == user_id,
+                    SpecialistRow.specialist_id == specialist_id,
+                )
+            )
+            if row is None:
+                return False
+            current = Specialist.model_validate(row.payload)
+            updated = current.model_copy(
+                update={"last_viewed_at": now, "routine_paused_reason": None, "updated_at": now}
+            )
+            row.payload = updated.model_dump(mode="json", by_alias=True)
+            row.updated_at = now
+        return True
 
     async def claim(self, now: datetime) -> tuple[ObjectiveExecution, str] | None:
         async with self._context(write=True) as session:

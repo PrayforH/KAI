@@ -1302,3 +1302,110 @@ async def test_specialist_conversation_is_the_duty_thread(database: DatabaseFixt
     assert bindings and bindings[0].thread_id == "thread-duty"
     bound = await service.repository.get("tenant-a", "user-a", duty.objective_id)
     assert bound.specialist_id == specialist.specialist_id
+
+
+@pytest.mark.asyncio
+async def test_unviewed_specialist_routine_is_skipped_then_recovers(
+    database: DatabaseFixture,
+) -> None:
+    """无人查看超阈值的例行程序：跳过一次调度并留下可读的暂停标记；查看后恢复。"""
+    from sqlalchemy import select
+
+    from harness.assistant.storage import SpecialistRow
+
+    service = make_service(database)
+    duty = await service.create("tenant-a", "user-a", brief())
+    specialist, _ = await service.create_specialist(
+        "tenant-a",
+        "user-a",
+        name="pause-duty",
+        description="例行闸门验收",
+        agent_name="audit-agent",
+        agent_version="1.0.0",
+    )
+    await service.attach_duty(
+        "tenant-a",
+        "user-a",
+        specialist.specialist_id,
+        objective_id=duty.objective_id,
+        expected_revision=specialist.revision,
+    )
+
+    # 创建即视为查看；下一次检查点由服务用真实时钟写入，各次调度都对齐它。
+    fresh = await service.repository.get_specialist(
+        "tenant-a", "user-a", specialist.specialist_id
+    )
+    assert fresh.last_viewed_at is not None
+    first = await service.repository.get("tenant-a", "user-a", duty.objective_id)
+    assert first.next_check_at is not None
+    first_due = first.next_check_at + timedelta(seconds=1)
+    await service.repository.schedule_due(first_due, unviewed_pause_hours=24)
+    enqueued = await service.repository.executions(
+        "tenant-a", "user-a", duty.objective_id
+    )
+    assert len(enqueued) == 1, "freshly viewed bot must still be scheduled"
+    # 同一职责同一时刻只允许一个在途执行：把首条收尾（直改行，避免 token 校验），后续调度才能入队。
+    async with database[1].begin() as session:  # type: ignore[operator]
+        from sqlalchemy import select
+
+        from harness.assistant.storage import ObjectiveExecutionRow
+
+        exec_row = await session.scalar(
+            select(ObjectiveExecutionRow).where(
+                ObjectiveExecutionRow.objective_id == duty.objective_id
+            )
+        )
+        assert exec_row is not None
+        payload = dict(exec_row.payload)
+        payload["status"] = "succeeded"
+        payload["finishedAt"] = NOW.isoformat()
+        exec_row.payload = payload
+        exec_row.status = "succeeded"
+    clean = await service.repository.get_specialist(
+        "tenant-a", "user-a", specialist.specialist_id
+    )
+    assert clean.routine_paused_reason is None
+
+    # 把 last_viewed_at 拨回 25 小时前，模拟"此后无人打开"；下一次到期即被闸门拦下。
+    second = await service.repository.get("tenant-a", "user-a", duty.objective_id)
+    assert second.next_check_at is not None
+    second_due = second.next_check_at + timedelta(seconds=1)
+    async with database[1].begin() as session:  # type: ignore[operator]
+        row = await session.scalar(
+            select(SpecialistRow).where(
+                SpecialistRow.specialist_id == specialist.specialist_id
+            )
+        )
+        assert row is not None
+        payload = dict(row.payload)
+        payload["lastViewedAt"] = (second_due - timedelta(hours=25)).isoformat()
+        row.payload = payload
+
+    await service.repository.schedule_due(second_due, unviewed_pause_hours=24)
+    paused = await service.repository.get_specialist(
+        "tenant-a", "user-a", specialist.specialist_id
+    )
+    assert paused.routine_paused_reason is not None
+    assert paused.routine_paused_reason["reason"] == "unviewed"
+    assert paused.routine_paused_reason["hours_since_view"] >= 24
+    skipped = await service.repository.executions(
+        "tenant-a", "user-a", duty.objective_id
+    )
+    assert len(skipped) == 1, "the unviewed interval must not enqueue an execution"
+
+    # 打开会话（touch）→ 恢复：下一次到期放行，暂停标记清除。
+    await service.touch_specialist_viewed(
+        "tenant-a", "user-a", specialist.specialist_id
+    )
+    recovered = await service.repository.get_specialist(
+        "tenant-a", "user-a", specialist.specialist_id
+    )
+    assert recovered.routine_paused_reason is None
+    third = await service.repository.get("tenant-a", "user-a", duty.objective_id)
+    assert third.next_check_at is not None
+    third_due = third.next_check_at + timedelta(seconds=1)
+    await service.repository.schedule_due(third_due, unviewed_pause_hours=24)
+    resumed = await service.repository.executions(
+        "tenant-a", "user-a", duty.objective_id
+    )
+    assert len(resumed) == 2

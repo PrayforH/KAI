@@ -236,6 +236,16 @@ async def get_specialist(specialist_id: str, identity: Reader, assistant: Servic
             if bindings
             else f"assistant_{primary.objective_id}"
         )
+    # 打开该 Bot 的页面即一次"查看"：例行程序闸门据此恢复。
+    try:
+        await assistant.touch_specialist_viewed(
+            identity.tenant_id, identity.user_id, specialist_id
+        )
+    except Exception:  # noqa: BLE001 - 查看标记失败不阻塞详情读取
+        pass
+    specialist = await assistant.repository.get_specialist(
+        identity.tenant_id, identity.user_id, specialist_id
+    )
     return {
         "specialist": specialist,
         "threadId": thread_id,

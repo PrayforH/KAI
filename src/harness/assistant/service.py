@@ -56,12 +56,15 @@ class AssistantService:
         runs: RunService,
         events: EventRepository,
         quotas: Any = None,
+        unviewed_pause_hours: int = 24,
     ) -> None:
         self.repository = repository
         self._agents, self._auth, self._projects = agents, auth, projects
         self._agui, self._runs, self._events = agui, runs, events
         # 计量：只有配置了配额服务才可能拿到真实用量；None 时如实标记未知。
         self._quotas = quotas
+        # 例行程序闸门：距上次打开 Bot 会话超过该小时数则跳过调度（可观察暂停）。
+        self._unviewed_pause_hours = unviewed_pause_hours
 
     def with_repository(self, repository: PostgresAssistantRepository) -> AssistantService:
         return AssistantService(
@@ -73,6 +76,7 @@ class AssistantService:
             runs=self._runs,
             events=self._events,
             quotas=self._quotas,
+            unviewed_pause_hours=self._unviewed_pause_hours,
         )
 
     async def validate(self, tenant_id: str, user_id: str, brief: ObjectiveBrief) -> None:
@@ -412,7 +416,9 @@ class AssistantService:
         }
 
     async def process_once(self) -> None:
-        await self.repository.schedule_due(datetime.now(UTC))
+        await self.repository.schedule_due(
+            datetime.now(UTC), unviewed_pause_hours=self._unviewed_pause_hours
+        )
         for _ in range(10):
             claimed = await self.repository.claim(datetime.now(UTC))
             if claimed is None:
@@ -688,6 +694,8 @@ class AssistantService:
             status=SpecialistStatus.NEEDS_INPUT,
             # 外观只影响呈现，不参与运行判定；存 config 便于跨设备一致。
             config={"appearance": dict(appearance)} if appearance else {},
+            # 新建即视为"正在查看"：首次例行执行不被闸门拦下。
+            lastViewedAt=now,
             createdAt=now,
             updatedAt=now,
         )
@@ -727,6 +735,14 @@ class AssistantService:
             expected_revision=expected_revision,
             profile=profile,
             now=datetime.now(UTC),
+        )
+
+    async def touch_specialist_viewed(
+        self, tenant_id: str, user_id: str, specialist_id: str
+    ) -> bool:
+        """打开 Bot 会话：刷新 last_viewed_at，例行程序闸门恢复。"""
+        return await self.repository.touch_specialist_viewed(
+            tenant_id, user_id, specialist_id, now=datetime.now(UTC)
         )
 
     async def configure_specialist(

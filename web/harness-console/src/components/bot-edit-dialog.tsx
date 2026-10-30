@@ -44,6 +44,9 @@ export function BotEditDialog({
   onSaved: () => void;
 }) {
   const [detail, setDetail] = useState<Detail | null>(null);
+  const paused =
+    (detail?.specialist.config as { routinePausedReason?: { reason?: string } } | undefined)
+      ?.routinePausedReason?.reason === "unviewed";
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -168,10 +171,17 @@ export function BotEditDialog({
                 <span className={styles.routineIcon} aria-hidden="true">◷</span>
                 <span className={styles.routineCopy}>
                   <strong>{duty.title}</strong>
-                  <small>{scheduleCopy(duty)}</small>
+                  <small>
+                    {scheduleCopy(duty)}
+                    {paused ? " · 因无人查看已暂停，打开本会话后恢复" : ""}
+                  </small>
                 </span>
-                <span className={styles.routineState} data-active={duty.status === "active" ? "true" : undefined}>
-                  {STATUS_TEXT[duty.status] ?? duty.status}
+                <span
+                  className={styles.routineState}
+                  data-active={!paused && duty.status === "active" ? "true" : undefined}
+                  data-paused={paused ? "true" : undefined}
+                >
+                  {paused ? "已暂停" : STATUS_TEXT[duty.status] ?? duty.status}
                 </span>
               </div>
             ))
