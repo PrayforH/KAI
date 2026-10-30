@@ -37,6 +37,7 @@ it("retains a visible error instead of claiming a stale action succeeded", async
   await act(async () => host.querySelector<HTMLButtonElement>("button[data-selected]")!.click());
   fetcher.mockImplementation(async (url: string) => url.endsWith("/actions") ? new Response(null, { status: 409 }) : Response.json([]));
   await click("停止事项");
-  expect(host.querySelector('[role="alert"]')?.textContent).toContain("事项已更新或已有执行");
+  // 409 现在展示服务端给的冲突语义；没有具体信息时用通用冲突文案。
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("操作冲突");
   expect(host.querySelector('[role="status"]')).toBeNull();
 });

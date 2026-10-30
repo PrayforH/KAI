@@ -13,6 +13,30 @@ const specialistLabel = { draft: "待配置", needs_input: "待补充配置", va
   ready: "待启用", active: "运行中", paused: "已暂停", blocked: "受阻", archived: "已归档" };
 const handoverLabel = { sent: "已发送", received: "已接收", applied: "已安排执行",
   executing: "执行中", pending_input: "待补充", failed: "失败" };
+// 运行中的子助理如果承接的职责都没有定时，实际只能手动执行：如实标注。
+const specialistState = (specialist: Specialist, objectives: Objective[]) => {
+  const base = specialistLabel[specialist.status];
+  if (specialist.status !== "active") return base;
+  const duties = objectives.filter((item) => item.specialistId === specialist.specialistId);
+  const scheduled = duties.some((item) => Boolean(item.schedule));
+  return scheduled ? base : "已启用（职责未设定时）";
+};
+const budgetFromForm = (form: FormData): Record<string, unknown> | null => {
+  const number = (key: string) => {
+    const raw = String(form.get(key) ?? "").trim();
+    if (!raw) return undefined;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : undefined;
+  };
+  const budget: Record<string, unknown> = {};
+  for (const key of ["maxRunsPerDay", "maxTotalRuns", "maxTokens", "maxNewTasks"]) {
+    const value = number(key);
+    if (value !== undefined) budget[key] = value;
+  }
+  if (form.get("skipUnchanged")) budget.skipUnchanged = true;
+  if (form.get("requiresDesktop")) budget.requiresDesktop = true;
+  return Object.keys(budget).length ? budget : null;
+};
 const describeBudget = (budget: Record<string, unknown>) => {
   const labels: [string, string][] = [
     ["maxRunsPerDay", "每日运行"], ["maxTotalRuns", "总运行"], ["maxTokens", "token"],
@@ -114,6 +138,7 @@ export function AssistantManager() {
         notificationMode: form.get("notification"),
         completionCriteria: form.get("criteria"),
         schedule: interval ? { intervalMinutes: interval, timezone: "Asia/Shanghai" } : null,
+        budget: budgetFromForm(form),
       });
       setSelected(item.objectiveId); setCreating(false); setMessage(editing ? "事项要求已更新，将用于下一次执行。" : "事项已创建，可以立即执行或等待下次检查。"); setEditing(null);
     });
@@ -177,11 +202,11 @@ export function AssistantManager() {
     {tab === "specialists" && <div className={styles.workspace}><div className={styles.list}>
       {!specialists.length && <div className={styles.empty}><h2>还没有专职子助理</h2><p>在对话里说“帮我长期关注某账号花费”，KAI 会按职责创建专职子助理并给出转交回执；缺配置时不会启动。</p></div>}
       {specialists.map(item => <button className={styles.item} data-selected={selectedSpecialist === item.specialistId} key={item.specialistId} onClick={() => setSelectedSpecialist(item.specialistId)}>
-        <span className={styles.row}><strong>{item.name}</strong><span className={styles.badge}>{specialistLabel[item.status]}</span></span>
+        <span className={styles.row}><strong>{item.name}</strong><span className={styles.badge}>{specialistState(item, items)}</span></span>
         <span className={styles.excerpt}>{item.description || item.agentName}</span>
         <small>{handovers.find(h => h.specialistId === item.specialistId) ? `最近转交：${handoverLabel[handovers.find(h => h.specialistId === item.specialistId)!.status]}` : "尚无转交"}</small></button>)}
     </div><div className={styles.detail}>{selectedSpecialistItem ? <>
-      <div className={styles.row}><h2>{selectedSpecialistItem.name}</h2><span className={styles.badge}>{specialistLabel[selectedSpecialistItem.status]}</span></div>
+      <div className={styles.row}><h2>{selectedSpecialistItem.name}</h2><span className={styles.badge}>{specialistState(selectedSpecialistItem, items)}</span></div>
       <p className={styles.instructions}>{selectedSpecialistItem.description || "（未填写职责说明）"}</p>
       <p className={styles.muted}>执行智能体：{selectedSpecialistItem.agentName} · {selectedSpecialistItem.agentVersion}</p>
       <div className={styles.actions}>
@@ -202,7 +227,22 @@ export function AssistantManager() {
       }}><label>检查频率<select name="schedule" defaultValue={Number(selectedSpecialistItem.config.schedule_minutes ?? 0)}><option value="0">（不修改）</option><option value="60">每小时</option><option value="360">每 6 小时</option><option value="1440">每 24 小时</option></select></label>
       <label>通知渠道<select name="notify" defaultValue={String(selectedSpecialistItem.config.notify_channel ?? "")}><option value="">（不修改）</option><option value="inbox">站内收件</option></select></label>
       <button disabled={busy}>保存配置</button></form>
-      {selectedSpecialistItem.status === "ready" && <div className={styles.actions}>
+      <form onSubmit={event => { event.preventDefault(); const form = event.currentTarget;
+        const objectiveId = String(new FormData(form).get("duty") || "");
+        if (!objectiveId || !selectedSpecialistItem) return;
+        void perform(async () => {
+          await assistantRequest(`specialists/${selectedSpecialistItem.specialistId}/duties`, "POST",
+            { objectiveId, expectedRevision: selectedSpecialistItem.revision });
+          form.reset();
+          setMessage("已把该职责挂到子助理；之后可试运行并启用持续运行。");
+        });
+      }}><label>把一项既有职责挂到这个子助理<select name="duty" defaultValue="" required>
+        <option value="">选择职责…</option>
+        {items.filter(item => !item.specialistId).map(item => (
+          <option key={item.objectiveId} value={item.objectiveId}>{item.title}</option>
+        ))}
+      </select></label><button disabled={busy}>挂载职责</button></form>
+      {["ready", "active"].includes(selectedSpecialistItem.status) && <div className={styles.actions}>
         <button disabled={busy} onClick={() => void perform(async () => {
           const trial = await assistantRequest<{ executionId: string; scheduled: string }>(
             `specialists/${selectedSpecialistItem.specialistId}/trial`, "POST",
@@ -228,6 +268,20 @@ export function AssistantManager() {
       <label>完成标准<input defaultValue={editing?.completionCriteria} name="criteria" maxLength={2000} placeholder="例如：所有整改项已提交证据并确认通过" /></label>
       <label>停止检查时间（可选）<input name="ends" type="datetime-local" defaultValue={editing?.endsAt ? new Date(new Date(editing.endsAt).getTime() - new Date(editing.endsAt).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ""} /></label>
       <label>飞书通知偏好<select name="notification" defaultValue={editing?.notificationMode ?? "important"}><option value="important">重要变化</option><option value="all_results">每次执行结果</option><option value="none">不推送</option></select></label>
+      <fieldset className={styles.budgetFieldset}>
+        <legend>预算与授权范围（可选）</legend>
+        <div className={styles.columns}>
+          <label>每日运行上限<input name="maxRunsPerDay" type="number" min={1} max={10000} defaultValue={editing ? String(editing.budget?.maxRunsPerDay ?? "") : ""} placeholder="不限" /></label>
+          <label>总运行上限<input name="maxTotalRuns" type="number" min={1} max={100000} defaultValue={editing ? String(editing.budget?.maxTotalRuns ?? "") : ""} placeholder="不限" /></label>
+        </div>
+        <div className={styles.columns}>
+          <label>token 上限<input name="maxTokens" type="number" min={1} defaultValue={editing ? String(editing.budget?.maxTokens ?? "") : ""} placeholder="需平台计量可用" /></label>
+          <label>可新建任务数<input name="maxNewTasks" type="number" min={0} max={100} defaultValue={editing ? String(editing.budget?.maxNewTasks ?? "") : ""} placeholder="留空＝无权新建" /></label>
+        </div>
+        <label className={styles.checkbox}><input name="skipUnchanged" type="checkbox" defaultChecked={Boolean(editing?.budget?.skipUnchanged)} />无变化时跳过定时检查（不唤起模型）</label>
+        <label className={styles.checkbox}><input name="requiresDesktop" type="checkbox" defaultChecked={Boolean(editing?.budget?.requiresDesktop)} />需要共享桌面（按 FIFO 单执行者排队）</label>
+        <p className={styles.muted}>token 上限仅在平台能给出真实用量时生效；没有计量的历史执行会阻止继续派发，而不是当作 0。</p>
+      </fieldset>
       <p>飞书连接完成后通知偏好才会生效，所有结果仍保留在站内。</p>
       <p>执行使用所选智能体的权限与项目资料。补充要求会在下一次执行时生效。</p><div className={styles.actions}><button type="button" onClick={() => setCreating(false)} disabled={busy}>取消</button><button className={styles.primary} disabled={busy || (!editing && !agents.length)}>{editing ? "保存修改" : "创建事项"}</button></div>
     </form> : <div className={styles.workspace}><div className={styles.list}>

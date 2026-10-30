@@ -5,6 +5,8 @@ export type Objective = {
   notificationMode: "important" | "all_results" | "none";
   revision: number; schedule: { intervalMinutes: number; timezone: string } | null;
   nextCheckAt: string | null; completionCriteria: string; endsAt: string | null;
+  specialistId?: string | null; managedThreadId?: string | null; mode?: "autonomous" | "follow_only";
+  budget?: Record<string, unknown> | null; parentObjectiveId?: string | null;
 };
 export type Execution = { executionId: string; threadId: string; runId: string | null;
   status: "pending" | "running" | "succeeded" | "failed" | "cancelled";
