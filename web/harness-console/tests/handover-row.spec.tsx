@@ -21,6 +21,9 @@ describe("handover inline rows", () => {
     expect(html).toContain("已发送给");
     expect(html).toContain("「行业快报监控」");
     expect(html).toContain('href="/assistant?bot=specialist-1"');
+    // 行为断言走源码（SSR 不渲染 onClick）。
+    const rowSource = readFileSync(join(process.cwd(), "src/components/handover-row.tsx"), "utf8");
+    expect(rowSource).toContain("window.location.assign");
     handoverStore.subscribe(() => {})(); // noop to appease linter on import side effect
   });
 

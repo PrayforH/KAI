@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import Link from "next/link";
 import { handoverStore, useHandoverNotices } from "../lib/handover-store";
 import { statusLead } from "../lib/handover-store";
 
@@ -24,10 +23,17 @@ export function HandoverInlineRows() {
     <div className="handover-inline" aria-label="转交状态">
       {notices.map((notice) => (
         <p className="handover-inline-line" key={notice.specialistId}>
-          <Link href={`/assistant?bot=${encodeURIComponent(notice.specialistId)}`}>
+          {/* 与 bot-rail 同判：软导航不重挂载页面，旧线程会盖住新 bot。 */}
+          <a
+            href={`/assistant?bot=${encodeURIComponent(notice.specialistId)}`}
+            onClick={(event) => {
+              event.preventDefault();
+              window.location.assign(`/assistant?bot=${encodeURIComponent(notice.specialistId)}`);
+            }}
+          >
             {statusLead(notice.status)}
             <span className="handover-inline-target">「{notice.specialistName}」</span>
-          </Link>
+          </a>
         </p>
       ))}
     </div>
