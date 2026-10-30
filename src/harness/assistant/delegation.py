@@ -12,6 +12,7 @@ executions run in their own threads and must not be able to delegate further
 
 import hashlib
 from datetime import UTC, datetime
+from collections.abc import Awaitable, Callable
 from typing import Any, Protocol, cast
 
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
@@ -136,6 +137,7 @@ def assistant_delegation_overlay(
     coordinator_thread: bool,
     read_only: bool = False,
     parent_objective_id: str | None = None,
+    emit: "Callable[[dict[str, Any]], Awaitable[None]] | None" = None,
 ) -> PlatformToolOverlay:
     if not coordinator_thread:
         # Background objective executions and unrelated agents never delegate;
@@ -375,6 +377,20 @@ def assistant_delegation_overlay(
         except (ConflictError, NotFoundError, PermissionDeniedError, ValueError) as error:
             return _text(f"转交未完成：{error}")
         status = str(outcome["status"])
+        if emit is not None:
+            # 主对话流内的轻量状态行：事件驱动，前端免轮询。
+            try:
+                await emit(
+                    {
+                        "handover_id": outcome["handover_id"],
+                        "specialist_id": outcome["specialist_id"],
+                        "specialist_name": name,
+                        "status": status,
+                        "objective_id": outcome.get("objective_id"),
+                    }
+                )
+            except Exception:  # noqa: BLE001 - 状态行是增强信息，失败不影响转交
+                pass
         lines = [f"转交回执[{status}]：handover={outcome['handover_id']}"]
         lines.append(
             f"子助理：{outcome['specialist_id']}"

@@ -338,6 +338,13 @@ export class HarnessHttpAgent extends HttpAgent {
         }
         return subscriber?.onToolCallStartEvent?.(params);
       },
+      onCustomEvent: async (params) => {
+        if (options?.signal?.aborted) return;
+        if (params.event.name === "ui.handover" && typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("kai:handover", { detail: params.event.value }));
+        }
+        return subscriber?.onCustomEvent?.(params);
+      },
       onRunFinishedEvent: async (params) => {
         if (options?.signal?.aborted) return;
         liveResponseStore.completeRun(runtimeThreadId);

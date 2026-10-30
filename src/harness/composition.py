@@ -1625,6 +1625,17 @@ def build_production_container(
                 )
             )
             if coordinator or observer:
+                run_tenant, run_id = run.tenant_id, run.run_id
+
+                async def emit_handover(payload: dict[str, object]) -> None:
+                    await events.append(
+                        tenant_id=run_tenant,
+                        run_id=run_id,
+                        session_id=run.session_id,
+                        event_type="ui.handover",
+                        payload=payload,
+                    )
+
                 delegation_overlay = assistant_delegation_overlay(
                     AssistantDelegationGateway(container.assistant),
                     run,
@@ -1638,6 +1649,7 @@ def build_production_container(
                         if observer
                         else None
                     ),
+                    emit=emit_handover,
                 )
         memory_overlay = PlatformToolOverlay()
         if container.memory_bank is not None and session.agent_name:

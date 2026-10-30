@@ -4088,3 +4088,32 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .l
   animation: kai-caret 0.9s ease-in-out infinite;
   vertical-align: -2px;
 }
+
+/* ── 主对话流内的转交状态行：居中、细字、随消息滚动（非置顶条） ── */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-inline {
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+  margin: 6px auto 2px;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-inline-line {
+  margin: 0;
+  font-size: 12px;
+  line-height: 20px;
+  color: #7d7d7d;
+  text-align: center;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-inline-line a {
+  color: #7d7d7d;
+  text-decoration: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-inline-line a:hover {
+  color: #b8b8b8;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-inline-target {
+  color: #a8a8a8;
+}
