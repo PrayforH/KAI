@@ -350,3 +350,150 @@ async def test_extraction_correction_enrichment_obeys_lease(
     assert (
         await bank.repository.get_entry("tenant-a", "user-a", old.entry_id)
     ).status is MemoryStatus.SUPERSEDED
+
+
+@pytest.mark.asyncio
+async def test_extraction_on_a_duty_thread_scopes_to_the_specialist(
+    memory_database: SessionFactory,
+) -> None:
+    """职责线程的自动提取写入 specialist:{slug}，而非底层 agent 名（读写同 scope）。"""
+    import json
+
+    import httpx
+    from pydantic import SecretStr
+    from sqlalchemy import select
+
+    from harness.assistant.models import ObjectiveBrief, Specialist, SpecialistStatus
+    from harness.assistant.storage import ObjectiveRow, SpecialistRow
+    from harness.core.models import Run, RunStatus, Session
+    from harness.memory_bank.extraction import MemoryExtractor
+    from harness.memory_bank.processing import MemoryProcessingController
+    from harness.storage.models import MemoryExtractionJobRow, RunRow, SessionRow
+
+    specialist = Specialist.model_validate(
+        {
+            "specialistId": "specialist-scope-1",
+            "tenantId": "tenant-a",
+            "userId": "user-a",
+            "name": "行业快报监控",
+            "slug": "zhs-scope-test",
+            "agentName": "archive-assistant-agent",
+            "agentVersion": "0.1.1",
+            "status": SpecialistStatus.ACTIVE.value,
+            "createdAt": NOW.isoformat(),
+            "updatedAt": NOW.isoformat(),
+        }
+    )
+    duty_id = "objective-scope-1"
+    run = Run(
+        tenant_id="tenant-a",
+        run_id="run-scope-1",
+        session_id=f"assistant_{duty_id}",
+        status=RunStatus.SUCCEEDED,
+        idempotency_key="scope-test",
+        created_at=NOW,
+        updated_at=NOW,
+        input={"prompt": "以后每天上午汇总快报"},
+    )
+    session = Session(
+        tenant_id="tenant-a",
+        session_id=f"assistant_{duty_id}",
+        user_id="user-a",
+        agent_name="archive-assistant-agent",
+        agent_version="0.1.1",
+        created_at=NOW,
+    )
+    objective_brief = ObjectiveBrief.model_validate(
+        {
+            "title": "快报职责",
+            "instructions": "汇总",
+            "agentName": "archive-assistant-agent",
+            "agentVersion": "0.1.1",
+        }
+    )
+    objective = {
+        "objectiveId": duty_id,
+        "tenantId": "tenant-a",
+        "userId": "user-a",
+        "status": "active",
+        "revision": 1,
+        "title": "快报职责",
+        "instructions": "汇总",
+        "agentName": "archive-assistant-agent",
+        "agentVersion": "0.1.1",
+        "specialistId": specialist.specialist_id,
+        "mode": "autonomous",
+        "budget": None,
+        "schedule": None,
+        "brief": objective_brief.model_dump(mode="json", by_alias=True),
+        "createdAt": NOW.isoformat(),
+        "updatedAt": NOW.isoformat(),
+    }
+    async with memory_database() as db:
+        db.add(
+            SessionRow(
+                tenant_id=session.tenant_id,
+                session_id=session.session_id,
+                user_id=session.user_id,
+                payload=session.model_dump(mode="json"),
+            )
+        )
+        db.add(
+            RunRow(
+                tenant_id=run.tenant_id,
+                run_id=run.run_id,
+                session_id=run.session_id,
+                idempotency_key="scope-test",
+                status="succeeded",
+                fencing_token=0,
+                updated_at=NOW,
+                payload=run.model_dump(mode="json"),
+            )
+        )
+        db.add(
+            ObjectiveRow(
+                objective_id=duty_id,
+                tenant_id="tenant-a",
+                user_id="user-a",
+                status="active",
+                revision=1,
+                created_at=NOW,
+                updated_at=NOW,
+                payload=objective,
+            )
+        )
+        db.add(
+            SpecialistRow(
+                specialist_id=specialist.specialist_id,
+                tenant_id="tenant-a",
+                user_id="user-a",
+                slug=specialist.slug,
+                status=specialist.status.value,
+                revision=1,
+                created_at=NOW,
+                updated_at=NOW,
+                payload=specialist.model_dump(mode="json", by_alias=True),
+            )
+        )
+        await db.commit()
+
+    calls: list[dict[str, Any]] = []
+
+    async def handler(request):
+        calls.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": json.dumps({"candidates": []})}}]},
+        )
+
+    extractor = MemoryExtractor(
+        "http://test/v1", SecretStr("test"), "chat", transport=httpx.MockTransport(handler)
+    )
+    bank = MemoryBankService(PostgresMemoryBankRepository(memory_database))
+    controller = MemoryProcessingController(memory_database, bank, extractor, since=NOW)
+    assert await controller.process_once() == 1
+    async with memory_database() as db:
+        job = await db.scalar(select(MemoryExtractionJobRow))
+        assert job is not None
+        # 写侧 scope 与读侧（MemoryBankGateway scope=specialist:{slug}）一致。
+        assert job.agent_name == "specialist:zhs-scope-test"
