@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { assistantRequest, type Specialist } from "../lib/assistant-client";
 import { CreateBotDialog } from "./create-bot-dialog";
+import { SidebarIcon } from "./sidebar-icon";
 import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
 
 // 取自客户端调色板（sand-fill-*-bubble-user）：每个 bot 一个稳定强调色，
@@ -104,7 +105,7 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
           title="新建 Bot"
           onClick={() => setCreating(true)}
         >
-          +
+          <SidebarIcon name="plus" />
         </button>
       </div>
       <ul className="bot-rail-list">

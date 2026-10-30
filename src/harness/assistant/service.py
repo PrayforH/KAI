@@ -664,6 +664,12 @@ class AssistantService:
         agent_version: str | None = None,
         appearance: dict[str, str] | None = None,
     ) -> tuple[Specialist, bool]:
+        # 名字（slug）是去重键：已有 Bot 直接复用它已验证的绑定，
+        # 不再重查注册表——调用方给的版本可能是幻觉，旧绑定永远可用。
+        slug = _specialist_slug(name)
+        for item in await self.repository.list_specialists(tenant_id, user_id):
+            if item.slug == slug:
+                return item, False
         # 新建 Bot 不强制用户挑执行智能体：先沿用本人已有 Bot 用过的那个，
         # 再退到本人已发布的第一份；真正跑哪份在执行时仍然可见。
         if not (agent_name and agent_version):
@@ -884,6 +890,9 @@ class AssistantService:
             agent_name=agent_name,
             agent_version=agent_version,
         )
+        # 职责的执行绑定永远来自 Bot 自己的记录（新建时已解析并校验），
+        # 调用方传来的版本只做提示，不进执行。
+        agent_name, agent_version = specialist.agent_name, specialist.agent_version
         missing = _specialist_missing_config(specialist.config)
         handover = await self.repository.record_handover(
             SpecialistHandover(

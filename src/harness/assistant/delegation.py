@@ -359,15 +359,15 @@ def assistant_delegation_overlay(
         if mode not in ("autonomous", "follow_only"):
             return _text("mode 必须是 autonomous 或 follow_only。")
         try:
+            # 执行智能体不归模型挑：复用已有 Bot 用它自己的绑定；
+            # 新建走服务端默认解析（已有 Bot 的智能体 → 本人第一份已发布）。
             outcome = await gateway.delegate_to_specialist(
                 tenant_id,
                 user_id,
                 name=name,
                 description=str(arguments.get("description", "")).strip(),
-                agent_name=str(arguments.get("agent_name", "")).strip()
-                or session.agent_name,
-                agent_version=str(arguments.get("agent_version", "")).strip()
-                or session.agent_version,
+                agent_name=None,
+                agent_version=None,
                 task=task,
                 mode=mode,
                 message_id=f"delegate-specialist:{run.run_id}:{name}",
@@ -635,8 +635,6 @@ def assistant_delegation_overlay(
                         "description": {"type": "string", "maxLength": 2000},
                         "task": {"type": "string", "maxLength": 20000},
                         "mode": {"type": "string", "enum": ["autonomous", "follow_only"]},
-                        "agent_name": {"type": "string"},
-                        "agent_version": {"type": "string"},
                     },
                     "required": ["name", "task"],
                 },

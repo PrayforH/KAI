@@ -1,5 +1,7 @@
 """新建 Bot 的外观：只影响呈现，随创建请求落进 config，且校验取值。"""
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -33,7 +35,8 @@ def test_create_request_carries_appearance_without_identity_fields() -> None:
 
 def test_create_accepts_no_agent_binding() -> None:
     """新建 Bot 不强制选执行智能体：请求里可以没有 agentName。"""
-    body = SpecialistCreateRequest.model_validate({"name": "演示 Bot", "appearance": {"color": "#ff2d95", "avatar": "star"}})
+    body = SpecialistCreateRequest.model_validate({"name": "演示 Bot",
+    "appearance": {"color": "#ff2d95", "avatar": "star"}})
     dumped = body.model_dump(by_alias=True)
     assert dumped["agentName"] is None and dumped["agentVersion"] is None
 
@@ -42,8 +45,21 @@ def test_profile_request_only_touches_presentation_fields() -> None:
     from harness.assistant.api import SpecialistProfileRequest
 
     body = SpecialistProfileRequest.model_validate(
-        {"name": "Codex 额度重置监控", "title": "研究、营销、管理", "description": "盯重置信号", "expectedRevision": 3}
+        {
+            "name": "Codex 额度重置监控",
+            "title": "研究、营销、管理",
+            "description": "盯重置信号",
+            "expectedRevision": 3,
+        }
     )
     dumped = body.model_dump(by_alias=True)
     assert dumped["expectedRevision"] == 3
     assert set(dumped) == {"name", "title", "description", "expectedRevision"}
+
+
+def test_delegate_tool_schema_hides_agent_fields() -> None:
+    """派活工具不再向模型暴露 agent_name/agent_version：执行绑定是平台决定。"""
+    delegation = Path(__file__).resolve().parents[3] / "src/harness/assistant/delegation.py"
+    source = delegation.read_text()
+    assert '"agent_name": {"type": "string"}' not in source
+    assert "agent_name=None" in source
