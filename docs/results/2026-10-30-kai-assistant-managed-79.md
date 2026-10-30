@@ -279,3 +279,23 @@
 - 两个验证用的演示 bot 已 `archived`（`/specialists` 里不再出现在岗）
 
 **未做**：客户端弹窗顶部的头像点选（改颜色/形状）目前只在新建时可选，编辑弹窗里还没有再改外观的入口。
+
+
+### 第五轮（api r9 / web r20）：派活报错根因修复 + 「+」图标对齐
+
+**报错**：`Delegation failed: "agent version not found: 行业快报监控@1.1.1+platform.99dfe677"`，随后整轮「处理失败」。
+
+**根因（两个叠加）**：
+1. 派活工具 schema 暴露 `agent_name/agent_version`，模型把 bot 名当智能体名并幻觉出版本号；
+   处理器还兜底用 `session.agent_version`，都不是 Bot 自己的绑定。
+2. `create_specialist` 在**复用**路径上也先 `get_published` 校验调用方给的版本，注册表里当然没有。
+
+**修法**：工具 schema 删掉这两个字段、处理器固定传 None；服务先按 slug 找已有 Bot（用其既有绑定），
+新建才做默认解析 + 校验；职责 brief 一律取 Bot 记录的绑定。
+
+**第二个失败**：修完后实测仍整轮失败 → worker 日志 `SandboxLeaseError: session already holds a live
+sandbox lease (owner=run-fence:1, run=run_dc0735…)`——是我滚 api/worker 打断了在跑的 Run，
+取消后租约没释放（已知僵尸租约模式）。**只回收那一条租约**（state→released），其余数据未动。
+复测：派活成功，回执「待补充：schedule_minutes、notify_channel；缺项不启动」，正是设计行为。
+
+**「+」图标**：机器人分区改用与项目区相同的 plus 图标（rail 26×26 = project 26×26，同悬停样式）。
