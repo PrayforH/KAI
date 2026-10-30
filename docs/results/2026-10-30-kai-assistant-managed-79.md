@@ -438,3 +438,29 @@ harness-memory 工具经 `MemoryBankService.scoped_identity`）共用，与 comp
   提取 job.agent_name == specialist:{slug}）
 - `pytest tests/integration/storage/test_delegation_real_gateway.py -q` → 30 passed（预算/委派闸门未破坏）
 - ruff 全绿。已知边界：全树 collect 的同名文件问题依旧（前文已记）。
+
+
+### P1-3（api r16 / web r29→r30）：转交状态在主对话流内的轻量可视化
+
+**形态**（对齐 Grok「已发送给 X」）：转交发生后，主对话最后一条助手回答内部出现**居中细状态行**
+「已发送给「行业快报监控」」/「待补充 ·「天气提醒」」——随消息流滚动（`position: static`，
+非 sticky/置顶条），点击整行进入该 bot 的会话。
+
+**数据流（事件驱动，免轮询）**：
+1. 派活工具成功即发 `ui.handover` RunEvent（overlay 增加 `emit` 回调；composition 经 events 仓库
+   append；emit 失败不影响转交本身）→ AG-UI CUSTOM 事件。
+2. `HarnessHttpAgent.onCustomEvent` 转发为窗口事件 `kai:handover` → `handover-store` 按 bot 去重
+   （最新状态优先，最多 3 条）。
+3. 页面加载时一次性 `GET /assistant/handovers` 投影（刷新后仍在）；之后零轮询。
+4. 行渲染在 `personalAssistant && isLast` 的助手消息内（旧置顶条 HandoverStrip 不回归）。
+
+**79 冒烟**（真实对话派活「休息提醒」）
+- 状态行：`[待补充 ·「休息提醒」, 待补充 ·「天气提醒」]`，`insideLastMessage: true`、
+  `position: static`、href=`/assistant?bot=specialist_4667…` ✓
+- 点击进入 bot 会话：URL `?bot=specialist_26cb…`、头部「天气提醒」、占位「给 天气提醒 发消息」、
+  rail 高亮 ✓（曾因软导航不重挂载失效，改为 `location.assign` 整页导航——与 bot-rail 同判）
+
+**测命令与结果**
+- `pytest tests/unit/assistant/test_delegation.py -q` → 24 passed（ui.handover 发出 / emit 缺省兼容）
+- `npx vitest run tests/handover-row.spec.tsx` → 3 passed（中文文案/链接目标/按 bot 去重/非置顶约束）
+- 全套 web 1383 passed / 1 既有失败（account-settings）；tsc、ruff clean
