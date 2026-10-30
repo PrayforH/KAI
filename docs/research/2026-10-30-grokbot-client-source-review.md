@@ -1,0 +1,56 @@
+# 本机 Grok Bot 客户端源码调查（用于对话形态对齐）
+
+调查对象：`/Applications/Grok Bot.app`，`CFBundleIdentifier = com.anysphere.sand`，版本 **0.78.1**，
+Electron 打包（`Contents/Resources/app.asar`，52MB，899 个条目）。只读解包到 `/tmp/grokbot-asar/extract`，
+未运行其中的任何代码。渲染层主 CSS `dist/renderer/assets/index-*.css`（766KB），主 bundle
+`index.eager-app-*.js`（4.5MB），中文文案在 `dist/electron-main/locales/zh-CN/messages.cjs`。
+
+## 1. 设计令牌（可直接对齐）
+
+| 令牌 | 值 | 用途 |
+| --- | --- | --- |
+| `--conversation-bubble-max-width` | `min(640px, calc(100% - 0px))` | 气泡最大宽度 |
+| `--conversation-font-size` / `line-height` | `14px` / `22px` | 正文 |
+| `--sand-fill-bubble-agent` | `#1c1c1c0f`（6% 前景） | 助手气泡填充 |
+| `--sand-fill-bubble-user` | `#1c1c1c` | 用户气泡（中性） |
+| `--sand-fill-accent-bubble-user` | `#126fd4` | 用户气泡强调色（主色） |
+| 每 bot 配色 | blue `#126fd4` / purple `#7442d1` / magenta `#c82779` / green `#0d9655` / orange `#d2550a` / red `#c82532` / cyan `#0d9381` / brown `#86592e` / yellow `#c2730b` | 头像与用户气泡同色 |
+| 圆角刻度 | 4 / 6 / 8 / 12 / 14 / 16 / 18 / 9999 | `--cursor-radius-*` |
+
+结论：**样式可以完全对齐**，因为气泡只有"填充色 + 圆角 + 最大宽 + 14/22 字号"这几项。
+
+## 2. 每个 bot 一台"电脑"与授权模型
+
+中文字符串里反复出现：`Grok Bot 的电脑`、`在 Grok Bot 的电脑上运行命令`、
+`正在等待你在 Grok Bot 的电脑上登录`、`交还电脑后 Bot 未能恢复运行`。
+权限是**按能力逐项询问**的（与我们的"用户授权 ∩ 职责范围 ∩ 模板 ∩ 连接权限"交集同构）：
+
+- 允许 X 运行命令吗 / 在你的电脑上运行命令吗
+- 允许 X 使用已连接的应用吗 / 访问你的私人文件吗
+- 允许 X 运行后台任务吗 / 保存例行任务吗 / 分享 Bot 吗
+- 允许 X 使用云端智能体吗 / 通过 <server> 发送吗 / 从 <server> 删除内容吗
+
+还有一条值得借鉴的安全默认：`这个 Bot 的例行任务在无人查看结果时仍持续运行，因此已暂停以避免浪费用量`
+——无人查看即暂停例行任务，避免空烧。我们目前只有预算闸门，没有"长期无人查看就暂停"。
+
+## 3. 主对话如何让别的 bot 干活
+
+截图里的居中细状态（`已发送消息给 X`、`3 条消息往来：X`）就是跨 bot 派活的可视化：
+主 bot 把消息/任务转给某个 bot（该 bot 有自己的电脑与会话），转交本身在**主对话里以状态行出现**，
+点开进入该 bot 的会话或面板。计划（`例行任务`）属于 bot 而非主对话。
+
+我们的对应实现：`assistant_delegate_to_specialist` + `assistant_handovers`（sent/received/applied/
+pending_input/failed），本轮补了主对话里的转交状态行（`.handover-strip`，居中细状态）。
+
+## 4. 本仓库已采纳 / 未采纳
+
+采纳：
+- 气泡令牌（宽度 640、14/22、6% 填充、18px 圆角）；
+- 每 bot 一个强调色（头像与用户气泡同色，主助理固定蓝 `#126fd4`）；
+- bot 的会话即承接职责的原线程（无替身会话），结果直接落在对话流；
+- 主对话转交状态行。
+
+未采纳（记录原因）：
+- 右侧"详情/资料库/电脑"面板：用户确认属客户端特性，web 暂不做；
+- 团队/分享 Bot、频道消息、云端智能体等：不在第 8 章范围；
+- "无人查看就暂停例行任务"：建议列为下一步（需要"最后查看时间"数据）。

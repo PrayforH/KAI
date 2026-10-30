@@ -3523,22 +3523,25 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .h
   background: transparent;
 }
 
+/* 令牌取自客户端（app.asar 的 index CSS）：
+   --conversation-bubble-max-width: min(640px,100%)、文本 14px/22px、
+   助手气泡 6% 前景填充、用户气泡为每个 bot 的强调色。 */
 body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-assistant-message > .assistant-answer {
   box-sizing: border-box;
-  max-width: min(720px, 92%);
-  padding: 14px 18px;
-  border-radius: 20px 20px 20px 6px;
-  background: #222222;
-  color: #e9e9e9;
+  max-width: min(640px, 92%);
+  padding: 12px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--codex-ink, #ededed);
 }
 
 body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .aui-user-message-content,
 body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-user-message .aui-user-message-content {
-  padding: 12px 16px;
+  padding: 10px 14px;
   border: 0;
-  border-radius: 20px 20px 6px 20px;
-  background: #2c3441;
-  color: #f2f5f9;
+  border-radius: 18px;
+  background: var(--kai-bot-accent, #126fd4);
+  color: #fff;
   box-shadow: none;
 }
 
@@ -3549,7 +3552,7 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .h
 }
 
 body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-user-message > .aui-user-message-content {
-  max-width: min(620px, 86%);
+  max-width: min(640px, 86%);
 }
 
 /* 状态行（已完成·耗时）居中、极小号、去掉方框感 */
@@ -3579,9 +3582,9 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .a
 
 /* 助手正文行距与段落间距更像聊天 */
 body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .aui-md {
-  font-size: 14.5px;
-  line-height: 1.75;
-  color: #e6e6e6;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--codex-ink, #e6e6e6);
 }
 
 body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .aui-md p {
@@ -3606,9 +3609,8 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .h
 
 /* ── 左栏「机器人」区（助理页）：头像列表 + 置顶/未分配分组 ── */
 body.codex-theme-v1:has(.console-shell) .bot-rail {
-  margin: 6px 8px 10px;
-  padding: 8px 6px 6px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  margin: 2px 8px 10px;
+  padding: 2px 6px 6px;
 }
 
 body.codex-theme-v1:has(.console-shell) .bot-rail-head {
@@ -3728,4 +3730,40 @@ body.codex-theme-v1:has(.console-shell) .task-context-bot-hint {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+
+/* 转交状态行：对齐客户端「已发送消息给 X」的居中细状态（主对话里）。 */
+body.codex-theme-v1:has(.console-shell) .handover-strip {
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+  padding: 4px 0 0;
+  pointer-events: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .handover-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 2px 10px;
+  border-radius: 999px;
+  color: #8a8a8a;
+  font-size: 12px;
+  pointer-events: auto;
+}
+
+body.codex-theme-v1:has(.console-shell) .handover-target {
+  color: #cfcfcf;
+}
+
+body.codex-theme-v1:has(.console-shell) .handover-link {
+  color: #9ec1ff;
+  font-size: 12px;
+  text-decoration: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .handover-link:hover {
+  text-decoration: underline;
 }

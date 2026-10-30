@@ -5,12 +5,27 @@ import { useCallback, useEffect, useState } from "react";
 import { assistantRequest, type Specialist } from "../lib/assistant-client";
 import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
 
-const AVATAR_TONES = ["#ff6b5b", "#f0a92f", "#3aa76d", "#4b8bf5", "#a468f0", "#e2599b"];
+// 取自客户端调色板（sand-fill-*-bubble-user）：每个 bot 一个稳定强调色，
+// 头像、选中态与该 bot 会话里的用户气泡共用同一色。
+export const BOT_ACCENTS = [
+  "#126fd4", // blue（主助理默认）
+  "#7442d1", // purple
+  "#c82779", // magenta
+  "#0d9655", // green
+  "#d2550a", // orange
+  "#c82532", // red
+  "#0d9381", // cyan
+  "#86592e", // brown
+];
 
-function toneOf(key: string): string {
+export function botAccent(key: string): string {
   let hash = 0;
   for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) % 997;
-  return AVATAR_TONES[hash % AVATAR_TONES.length]!;
+  return BOT_ACCENTS[hash % BOT_ACCENTS.length]!;
+}
+
+function toneOf(key: string): string {
+  return botAccent(key);
 }
 
 function BotAvatar({ name, tone }: { name: string; tone: string }) {
@@ -85,7 +100,7 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
             href="/assistant"
             onClick={(event) => openBot(event, null)}
           >
-            <BotAvatar name="K" tone="#7c5cff" />
+            <BotAvatar name="K" tone={BOT_ACCENTS[0]!} />
             <span className="bot-rail-label">
               <strong>主助理</strong>
               <small>统一接活、跟进与交付</small>

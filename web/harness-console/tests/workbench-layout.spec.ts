@@ -235,7 +235,9 @@ describe("full-page agent workbench", () => {
   it("keeps agents and skills in the simplified task sidebar", () => {
     expect(taskSidebar).not.toContain("WorkspaceModeSwitcher");
     expect(studioSidebar).not.toContain("WorkspaceModeSwitcher");
-    expect(taskSidebar).toContain('visible={["assistant", "knowledge", "agents", "automation", "skills"]}');
+    // 主助理入口已迁到「机器人」分区，导航只保留其余工作区。
+    expect(taskSidebar).toContain('visible={["knowledge", "agents", "automation", "skills"]}');
+    expect(taskSidebar).toContain("<BotRail");
     expect(taskSidebar).not.toContain('capabilities');
     expect(taskSidebar).not.toContain('visible={["agents", "files"]}');
     expect(studioSidebar).toContain('visible={["tasks", "agents"]}');

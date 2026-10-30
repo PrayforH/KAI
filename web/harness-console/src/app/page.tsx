@@ -17,8 +17,10 @@ import { AgentThread } from "../components/agent-thread";
 import { AuthProvider, useAuth } from "../components/auth-provider";
 import { AssistantChannelStatus } from "../components/assistant-channel-status";
 import { AssistantProgressStrip } from "../components/assistant-progress-strip";
+import { HandoverStrip } from "../components/handover-strip";
 import { assistantRequest } from "../lib/assistant-client";
 import { AssistantBotProvider, type AssistantBot } from "../components/assistant-bot-context";
+import { BOT_ACCENTS, botAccent } from "../components/bot-rail";
 import { AssistantComputerLink } from "../components/assistant-computer-link";
 import { AssistantComputerPane } from "../components/assistant-computer-pane";
 import { AssistantRuntimeShell } from "../components/assistant-runtime-shell";
@@ -881,6 +883,7 @@ function AuthenticatedHome() {
           <section
             className="chat-stage"
             data-surface={assistantView ? "assistant" : "task"}
+            style={{ ["--kai-bot-accent" as string]: bot ? botAccent(bot.specialistId) : BOT_ACCENTS[0] }}
             aria-label={personalAssistant ? "我的助理对话" : "Agent 任务对话"}
           >
             {stageView === "trace" ? (
@@ -897,6 +900,7 @@ function AuthenticatedHome() {
             <div className="chat-surface">
               <AssistantBotProvider bot={bot}>
               {personalAssistant && <AssistantProgressStrip />}
+              {personalAssistant && <HandoverStrip />}
               {versionSwitchError && <p role="alert">{versionSwitchError}</p>}
               {threadId && selectedAgent ? (
                 <AssistantRuntimeShell

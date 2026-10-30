@@ -19,11 +19,13 @@ describe("workspace navigation ordering", () => {
     expect(navigation).not.toContain("visible.includes(workspace.id)");
   });
 
-  it("puts 我的助理 first while preserving the remaining workspace order", () => {
-    // 自动化 sits directly above the 技能 zone in the sidebar.
+  it("keeps the workspace order while the assistant entry lives in the 机器人 rail", () => {
+    // 主助理已由左栏「机器人」分区承接，导航里不再重复一个「我的助理」。
+    expect(taskSidebar).not.toContain('visible={["assistant"');
     expect(taskSidebar).toContain(
-      'visible={["assistant", "knowledge", "agents", "automation", "skills"]}',
+      'visible={["knowledge", "agents", "automation", "skills"]}',
     );
+    expect(taskSidebar).toContain("<BotRail");
     // 新建任务 stays its own primary action above the workspace navigation.
     expect(taskSidebar).toContain("task-sidebar-create");
     expect(taskSidebar.indexOf("task-sidebar-create")).toBeLessThan(

@@ -565,7 +565,7 @@ export function TaskSidebar({
           <div className="task-sidebar-mode">
             <WorkspaceNavigation
               active={activeNav}
-              visible={["assistant", "knowledge", "agents", "automation", "skills"]}
+              visible={["knowledge", "agents", "automation", "skills"]}
             />
           </div>
           {activeNav === "assistant" && <BotRail currentThreadId={currentThreadId} />}
