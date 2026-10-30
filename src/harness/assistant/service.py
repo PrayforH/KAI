@@ -726,6 +726,14 @@ class AssistantService:
                 raise ConflictError(f"配置缺项，不能启用：{'、'.join(missing)}")
             if current.status is not SpecialistStatus.READY:
                 raise ConflictError("只有 ready 状态可以启用持续运行")
+            bound = [
+                item
+                for item in await self.repository.list(tenant_id, user_id)
+                if item.specialist_id == current.specialist_id
+            ]
+            if not bound:
+                # 没有职责就没有调度对象：启用只会显示"运行中"却什么都不会跑。
+                raise ConflictError("该子助理还没有绑定职责，先转交一项职责再启用")
         return await self.repository.update_specialist(
             tenant_id,
             user_id,

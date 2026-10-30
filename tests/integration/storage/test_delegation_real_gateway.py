@@ -1187,3 +1187,35 @@ async def test_specialist_trial_run_requires_complete_config_and_reports_schedul
         "tenant-a", "user-a", specialist.specialist_id
     )
     assert after.status is SpecialistStatus.READY
+
+
+@pytest.mark.asyncio
+async def test_specialist_without_a_duty_cannot_be_activated(database: DatabaseFixture) -> None:
+    """没有职责就没有调度对象：启用必须拒绝，并说明缺的是职责。"""
+    from harness.assistant.models import SpecialistStatus
+
+    service = make_service(database)
+    specialist, _ = await service.create_specialist(
+        "tenant-a",
+        "user-a",
+        name="duty-less",
+        description="尚未转交职责",
+        agent_name="audit-agent",
+        agent_version="1.0.0",
+    )
+    configured = await service.configure_specialist(
+        "tenant-a",
+        "user-a",
+        specialist.specialist_id,
+        config={"schedule_minutes": 60, "notify_channel": "inbox"},
+        expected_revision=specialist.revision,
+    )
+    assert configured.status is SpecialistStatus.READY
+    with pytest.raises(ConflictError, match="先转交一项职责"):
+        await service.set_specialist_status(
+            "tenant-a",
+            "user-a",
+            specialist.specialist_id,
+            status=SpecialistStatus.ACTIVE,
+            expected_revision=configured.revision,
+        )
