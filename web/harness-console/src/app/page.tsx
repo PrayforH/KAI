@@ -17,7 +17,6 @@ import { AgentThread } from "../components/agent-thread";
 import { AuthProvider, useAuth } from "../components/auth-provider";
 import { AssistantChannelStatus } from "../components/assistant-channel-status";
 import { AssistantProgressStrip } from "../components/assistant-progress-strip";
-import { HandoverStrip } from "../components/handover-strip";
 import { assistantRequest } from "../lib/assistant-client";
 import {
   AssistantBotProvider,
@@ -905,7 +904,6 @@ function AuthenticatedHome() {
               <AssistantSurfaceProvider value={assistantView}>
               <AssistantBotProvider bot={bot}>
               {personalAssistant && <AssistantProgressStrip />}
-              {personalAssistant && <HandoverStrip />}
               {versionSwitchError && <p role="alert">{versionSwitchError}</p>}
               {threadId && selectedAgent ? (
                 <AssistantRuntimeShell

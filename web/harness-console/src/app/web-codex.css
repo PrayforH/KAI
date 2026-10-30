@@ -3500,11 +3500,6 @@ body.codex-theme-v1:has(.console-shell) .assistant-progress-strip li > button {
   cursor: pointer;
 }
 
-/* ── 助理页＝对话应用（参考 Grok 的聊天形态，仅作用于 data-surface="assistant"） ──
-   目标：读起来像在和人聊天，而不是在看任务控制台。
-   - 助手消息：左侧圆角气泡，浅表面色，无卡片边框；
-   - 用户消息：右侧强调色气泡；
-   - 运行状态/耗时/转交：居中的细状态行，不抢注意力。 */
 
 body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .aui-thread-viewport {
   padding-top: 12px;
@@ -3526,7 +3521,7 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .h
 /* 令牌取自客户端（app.asar 的 index CSS）：
    --conversation-bubble-max-width: min(640px,100%)、文本 14px/22px、
    助手气泡 6% 前景填充、用户气泡为每个 bot 的强调色。 */
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-assistant-message > .assistant-answer {
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-assistant-message .assistant-answer {
   box-sizing: border-box;
   width: fit-content;
   max-width: min(640px, 92%);
@@ -3619,11 +3614,23 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .h
   position: relative;
 }
 
+/* 操作栏与气泡同一行、底部对齐：贴着气泡右下角出现 */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .assistant-answer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .assistant-answer-row > .assistant-answer {
+  min-width: 0;
+}
+
 body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .assistant-message-controls {
-  position: absolute;
-  right: 2px;
-  bottom: 4px;
-  margin: 0;
+  position: static;
+  flex: 0 0 auto;
+  margin: 0 0 4px;
   opacity: 0;
   pointer-events: none;
   transition: opacity 140ms ease;
@@ -3856,37 +3863,7 @@ body.codex-theme-v1:has(.console-shell) .task-context-bot-hint {
 }
 
 
-/* 转交状态行：对齐客户端「已发送消息给 X」的居中细状态（主对话里）。 */
-body.codex-theme-v1:has(.console-shell) .handover-strip {
-  display: grid;
-  gap: 2px;
-  justify-items: center;
-  padding: 4px 0 0;
-  pointer-events: none;
-}
 
-body.codex-theme-v1:has(.console-shell) .handover-line {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  padding: 2px 10px;
-  border-radius: 999px;
-  color: #8a8a8a;
-  font-size: 12px;
-  pointer-events: auto;
-}
 
-body.codex-theme-v1:has(.console-shell) .handover-target {
-  color: #cfcfcf;
-}
 
-body.codex-theme-v1:has(.console-shell) .handover-link {
-  color: #9ec1ff;
-  font-size: 12px;
-  text-decoration: none;
-}
 
-body.codex-theme-v1:has(.console-shell) .handover-link:hover {
-  text-decoration: underline;
-}

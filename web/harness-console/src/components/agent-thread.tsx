@@ -1580,7 +1580,31 @@ export function HarnessAssistantMessage() {
           },
         }}
       />
+      {/* 回答与操作栏同一行：按钮贴在气泡右下角，而不是飘到面板边缘 */}
+      <div className="assistant-answer-row">
       <AssistantResponse key={messageId} text={copyText} streaming={directStream ? live.status === "streaming" && !live.textComplete : messageStatus?.type === "running"} />
+      {!hasVideoGeneration ? (
+      <div className="assistant-message-controls">
+          <AssistantActionBar.Root
+            className="assistant-feedback-actions"
+            hideWhenRunning
+          >
+            <MessageCopyButton
+              className="assistant-message-copy"
+              label="复制回答"
+              text={copyText}
+            />
+            <MessageReplyButton className="assistant-message-copy" label="回复这条回答" />
+            {!assistantSurface && (
+              <>
+                <MessageFeedbackButtons runId={feedbackRun} />
+                <TurnCompletion />
+              </>
+            )}
+          </AssistantActionBar.Root>
+        </div>
+      ) : null}
+      </div>
       <div className="followup-input-anchor" data-followup-for={messageId} />
       {!hasVideoGeneration && <TerminalResponseNotice activity={terminalActivity}
         hasResponse={Boolean(copyText.trim()) || turnPresentations.length > 0 || turnArtifacts.length > 0} />}
@@ -1621,25 +1645,6 @@ export function HarnessAssistantMessage() {
         <>
         <div className="artifact-summary-line">
           {personalAssistant || conversationScope?.compactComposer ? <AssistantResults artifacts={turnArtifacts} /> : <ArtifactSummaryRow artifacts={turnArtifacts} />}
-        </div>
-        <div className="assistant-message-controls">
-          <AssistantActionBar.Root
-            className="assistant-feedback-actions"
-            hideWhenRunning
-          >
-            <MessageCopyButton
-              className="assistant-message-copy"
-              label="复制回答"
-              text={copyText}
-            />
-            <MessageReplyButton className="assistant-message-copy" label="回复这条回答" />
-            {!assistantSurface && (
-              <>
-                <MessageFeedbackButtons runId={feedbackRun} />
-                <TurnCompletion />
-              </>
-            )}
-          </AssistantActionBar.Root>
         </div>
         </>
       ) : null}
