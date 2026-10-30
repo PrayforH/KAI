@@ -3696,7 +3696,7 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .h
   margin: 8px 0;
 }
 
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-assistant-message > .assistant-answer {
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-assistant-message .assistant-answer {
   padding: 10px 14px;
 }
 

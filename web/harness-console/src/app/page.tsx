@@ -220,7 +220,6 @@ function AuthenticatedHome() {
   const [bot, setBot] = useState<AssistantBot | null>(null);
   const personalAssistant = assistantEntry && threadId === PERSONAL_ASSISTANT_THREAD;
   // 助理入口一律用对话形态；选中机器人时标题与输入框跟着它变。
-  const assistantView = assistantEntry;
   const [computerOpen, setComputerOpen] = useState(false);
   useEffect(() => {
     try {
@@ -249,6 +248,12 @@ function AuthenticatedHome() {
       window.removeEventListener("kai:bot-navigate", read as EventListener);
     };
   }, [assistantEntry]);
+
+  // 只有「主助理线程 / 某个 bot 的会话」才是助理面。
+  // 在助理路由下点侧栏的普通任务时，线程会被换成任务线程，但路由仍是 /assistant；
+  // 这时必须切回任务面，否则旧任务会被套上助理头部与聊天气泡。
+  const assistantView = assistantEntry &&
+    (!threadId || threadId === PERSONAL_ASSISTANT_THREAD || botParam !== null);
 
   useEffect(() => {
     if (!assistantEntry) return;
@@ -738,7 +743,16 @@ function AuthenticatedHome() {
     setActiveSkillLaunch(null);
     markThreadPersisted(storage, task.thread_id);
     setLocalThreadId(null);
-    setThreadId(selectThread(storage, task.thread_id));
+    const resolvedThreadId = selectThread(storage, task.thread_id);
+    setThreadId(resolvedThreadId);
+    // 从助理路由切到普通任务时把地址也换成任务地址，避免地址栏与视图说法不一。
+    if (assistantEntry && window.location.pathname !== "/") {
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `/?thread=${encodeURIComponent(resolvedThreadId)}`,
+      );
+    }
     closeCompactTaskSidebar();
   }
 
