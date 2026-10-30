@@ -208,7 +208,12 @@ class FakeGateway:
         return updated
 
 
-def overlay(gateway: FakeGateway, *, coordinator_thread: bool = True) -> Any:
+def overlay(
+    gateway: FakeGateway,
+    *,
+    coordinator_thread: bool = True,
+    emit: Any = None,
+) -> Any:
     run = Run(
         run_id="run-1",
         session_id="session-1",
@@ -229,7 +234,11 @@ def overlay(gateway: FakeGateway, *, coordinator_thread: bool = True) -> Any:
         runtime_type="claude-agent-sdk",
     )
     return assistant_delegation_overlay(
-        gateway, run, session, coordinator_thread=coordinator_thread
+        gateway,
+        run,
+        session,
+        coordinator_thread=coordinator_thread,
+        emit=emit,
     )
 
 
@@ -648,3 +657,38 @@ async def test_specialist_memory_scope_resolves_duty_threads():
     assert await specialist_memory_scope(Assistant(), Agui(), plain) is None
     unbound = session.model_copy(update={"session_id": "no-binding"})
     assert await specialist_memory_scope(Assistant(), Agui(), unbound) is None
+
+
+@pytest.mark.asyncio
+async def test_delegate_emits_ui_handover_event_for_the_main_thread():
+    """转交成功即发 ui.handover 事件：主对话流内轻量状态行的数据源（免轮询）。"""
+    captured: list[dict[str, object]] = []
+
+    async def emit(payload: dict[str, object]) -> None:
+        captured.append(payload)
+
+    tools = {
+        tool.name: tool.handler
+        for tool in overlay(FakeGateway(), coordinator_thread=True, emit=emit).tools
+    }
+    result = await tools["assistant_delegate_to_specialist"](
+        {"name": "行业快报监控", "task": "每天上午汇总", "mode": "autonomous"}
+    )
+
+    assert "转交回执" in text_of(result)
+    assert captured and captured[0]["specialist_name"] == "行业快报监控"
+    assert captured[0]["status"] == "pending_input"
+    assert captured[0]["specialist_id"] == "specialist-1"
+
+
+@pytest.mark.asyncio
+async def test_delegate_without_emit_still_succeeds():
+    """emit 缺省（旧调用方）不影响转交本身。"""
+    tools = {
+        tool.name: tool.handler
+        for tool in overlay(FakeGateway(), coordinator_thread=True).tools
+    }
+    result = await tools["assistant_delegate_to_specialist"](
+        {"name": "行业快报监控", "task": "每天上午汇总", "mode": "autonomous"}
+    )
+    assert "转交回执" in text_of(result)
