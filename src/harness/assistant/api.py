@@ -360,6 +360,29 @@ async def managed_overview(objective_id: str, identity: Reader, assistant: Servi
         identity.tenant_id, identity.user_id, objective_id
     )
     by_thread = {str(item["thread_id"]): item for item in overview}
+    # 检查点计量投影：run_id → 最新检查点的 tokens/cost/unknown_usage。
+    checkpoints = await assistant.repository.checkpoints(
+        identity.tenant_id, identity.user_id, objective_id, limit=50
+    )
+    metrics_by_run: dict[str, dict[str, object]] = {}
+    for checkpoint in checkpoints:
+        if checkpoint.run_id is None or checkpoint.run_id in metrics_by_run:
+            continue
+        if checkpoint.unknown_usage or checkpoint.tokens is None:
+            metrics_by_run[checkpoint.run_id] = {
+                "tokens": None,
+                "costUsd": checkpoint.cost_usd,
+                "unknownUsage": True,
+            }
+        else:
+            metrics_by_run[checkpoint.run_id] = {
+                "tokens": checkpoint.tokens,
+                "costUsd": checkpoint.cost_usd,
+                "unknownUsage": False,
+            }
+    for item in overview:
+        run_id = item.get("run_id")
+        item["metrics"] = metrics_by_run.get(str(run_id)) if run_id else None
     return {
         "objectiveId": objective.objective_id,
         "revision": objective.revision,

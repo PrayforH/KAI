@@ -249,6 +249,11 @@ class AssistantService:
             raw_prompt = latest.input.get("prompt")
             prompt = raw_prompt[:200] if isinstance(raw_prompt, str) else ""
             title: str = record.title or task.thread_id
+            duration_seconds = None
+            if latest.status.is_terminal:
+                duration_seconds = max(
+                    0, round((latest.updated_at - latest.created_at).total_seconds())
+                )
             overview.append(
                 {
                     "thread_id": task.thread_id,
@@ -256,6 +261,8 @@ class AssistantService:
                     "status": latest.status.value,
                     "summary": prompt,
                     "active": not latest.status.is_terminal,
+                    "run_id": latest.run_id,
+                    "duration_seconds": duration_seconds,
                 }
             )
         return overview

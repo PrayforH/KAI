@@ -186,6 +186,21 @@ export function AssistantManager() {
           {task.progress ? `${task.progress.active ? "进行中" : task.progress.status}：${task.progress.summary || "暂无记录"}` : "读不到该线程的最近运行"}
           {task.dependsOnObjectiveId ? ` · 依赖 ${task.dependsOnObjectiveId}` : ""}
         </p>
+        {task.progress?.metrics || task.progress?.duration_seconds != null ? (
+          <p className={styles.muted}>
+            {[
+              task.progress.metrics
+                ? task.progress.metrics.unknownUsage || task.progress.metrics.tokens == null
+                  ? "tokens 未计量"
+                  : `tokens ${task.progress.metrics.tokens.toLocaleString("zh-CN")}`
+                : null,
+              task.progress.metrics?.costUsd != null ? `cost $${task.progress.metrics.costUsd}` : null,
+              task.progress.duration_seconds != null
+                ? `耗时 ${Math.max(1, Math.round(task.progress.duration_seconds))} 秒`
+                : null,
+            ].filter(Boolean).join(" · ")}
+          </p>
+        ) : null}
         <Link href={`/?thread=${encodeURIComponent(task.threadId)}`}>打开原任务 →</Link>
       </article>)}
       {panel?.aggregate && <pre className={styles.aggregate}>{panel.aggregate}</pre>}
