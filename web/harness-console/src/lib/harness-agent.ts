@@ -301,6 +301,7 @@ export class HarnessHttpAgent extends HttpAgent {
       ...subscriber,
       onRunStartedEvent: async (params) => {
         if (options?.signal?.aborted) return;
+        console.log("[kai-debug] run started", params.event.runId, "thread", runtimeThreadId);
         liveResponseStore.startRun(params.event.runId, runtimeThreadId);
         runStreamStore.startRun(params.event.runId, runtimeThreadId);
         return subscriber?.onRunStartedEvent?.(params);
@@ -312,6 +313,7 @@ export class HarnessHttpAgent extends HttpAgent {
       },
       onTextMessageContentEvent: async (params) => {
         if (options?.signal?.aborted) return;
+        console.log("[kai-debug] text delta", params.event.messageId, params.event.delta?.length);
         liveResponseStore.append(
           params.event.messageId,
           params.event.delta,

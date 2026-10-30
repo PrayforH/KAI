@@ -299,3 +299,8 @@ export function useLiveResponse(): LiveResponseSnapshot {
   );
   return scope ? scope.live : globalSnapshot;
 }
+
+// 诊断出口：线上排障用（读 snapshot 不改状态）；确认流式管线后可移除。
+if (typeof window !== "undefined") {
+  (window as unknown as Record<string, unknown>).__kaiLive = liveResponseStore;
+}

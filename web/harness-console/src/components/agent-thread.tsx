@@ -57,6 +57,7 @@ import { groupWorkspaceFiles } from "../lib/workspace-file-groups";
 import { setPendingReply } from "../lib/reply-references";
 import { loadComposerReplyDraft, persistComposerReplyDraft } from "../lib/task-composer-draft";
 import { useAssistantBot, useAssistantSurface } from "./assistant-bot-context";
+import { GrokActivityRow, type GrokFaceState } from "./grok-activity";
 import {
   ComposerReplyProvider,
   MessageReplyButton,
@@ -1345,6 +1346,24 @@ function TurnActivity({
     (!durableActivity && !turnOwnsRun(messageId, displayed.run_id, isLast, runView?.runId))
   ) return null;
 
+  const activitySurface = useAssistantSurface();
+  if (activitySurface) {
+    // 聊天形态：活动＝脸 + 渐现短语，一行，占位与客户端一致。
+    const items = [...displayed.items].reverse();
+    const latest = items.find((item) => item.summary && !item.event_type.startsWith("run."));
+    const faceState: GrokFaceState =
+      displayed.status === "failed" ? "failed"
+      : ["completed", "succeeded"].includes(displayed.status) ? "done"
+      : "working";
+    return (
+      <div
+        className={`latest-activity ${displayed.status}`}
+        data-activity-source={isLast ? "current-run" : "captured-turn"}
+      >
+        <GrokActivityRow phrase={latest?.summary ?? ""} state={faceState} />
+      </div>
+    );
+  }
   return (
     <div
       className={`latest-activity ${displayed.status}`}
@@ -1673,6 +1692,47 @@ function TurnCompletion() {
     branchScope={isLast && !conversationScope && !threadRunning && !selectComposerDisabled(observed) ? draftScope : null} />;
 }
 
+/**
+ * 流式期 live 气泡：正式回答的消息元素挂载之前（上下文摘要/长前置阶段），
+ * 由 live store（rAF 批量）直接把正文长在一个气泡里——聊天软件的流式观感；
+ * 助手消息一旦出现（isLast 变成 assistant）就自动让位，避免双份。
+ */
+function LiveStreamingBubble() {
+  const live = useLiveResponse();
+  // 让位以 DOM 实况为准：页面上出现覆盖同等文本的正式气泡才算接管完成。
+  // state 里 in-flight 消息挂载早于正文渲染，按 state 判断会让正文出现真空帧。
+  const [handedOff, setHandedOff] = useState(false);
+  const runId = live.runId;
+  useEffect(() => {
+    setHandedOff(false);
+  }, [runId]);
+  useEffect(() => {
+    if (!live.visible || !live.text.trim()) return;
+    const timer = window.setInterval(() => {
+      const answers = document.querySelectorAll(".harness-assistant-message .assistant-answer");
+      const last = answers[answers.length - 1];
+      if (last && (last.textContent ?? "").length >= live.text.trim().length) {
+        setHandedOff(true);
+      }
+    }, 150);
+    return () => window.clearInterval(timer);
+  }, [live.visible, live.text]);
+  if (handedOff) return null;
+  if (!live.visible || live.status !== "streaming" || !live.text.trim()) return null;
+  return (
+    <div className="assistant-answer live-streaming-bubble" data-streaming="true" aria-live="polite">
+      {live.text}
+    </div>
+  );
+}
+
+/** 活动行的短语：取最新一条带摘要的活动（原始活动与视图模型都适用）。 */
+function latestActivityPhrase(activity: { items: ReadonlyArray<{ event_type: string; summary?: string | null }> }): string {
+  const items = [...activity.items].reverse();
+  const latest = items.find((item) => item.summary && !item.event_type.startsWith("run."));
+  return latest?.summary ?? "";
+}
+
 function EditMessageIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -1826,9 +1886,17 @@ function HarnessUserMessage() {
           className={`latest-activity pre-response-activity ${preResponseActivity.status}`}
           data-activity-source="pre-response"
         >
-          <ActivitySummary activity={preResponseActivity} />
+          {assistantSurface ? (
+            <GrokActivityRow
+              phrase={latestActivityPhrase(preResponseActivity)}
+              state={preResponseActivity.status === "failed" ? "failed" : "working"}
+            />
+          ) : (
+            <ActivitySummary activity={preResponseActivity} />
+          )}
         </div>
       ) : null}
+      {assistantSurface ? <LiveStreamingBubble /> : null}
     </>
   );
 }

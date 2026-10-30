@@ -3955,3 +3955,136 @@ body.codex-theme-v1:has(.console-shell) .task-context-bot-more:hover {
   background: rgba(255, 255, 255, 0.08);
   color: #ededed;
 }
+
+/* ── 活动行：脸 + 渐现短语（对齐客户端 GrokBotMark + activityPhraseDraw） ── */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .grok-activity-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  max-width: min(640px, 92%);
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .grok-face {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .grok-face svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .grok-face-body {
+  fill: var(--kai-bot-accent, #126fd4);
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .grok-face-eye {
+  fill: rgba(255, 255, 255, 0.92);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* idle / 完成 / 失败：慢眨眼（客户端的 blink 周期感） */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .grok-face-eye[data-blink="true"] {
+  animation: kai-blink 4.2s infinite;
+}
+
+@keyframes kai-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.12); }
+}
+
+/* working：轻微浮动 + 呼吸感（比照 bounce 的 0.62s 一档，但压低幅度） */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .grok-face[data-state="working"] svg {
+  animation: kai-bob 1.4s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+
+@keyframes kai-bob {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-2px) scale(1.03, 0.97); }
+}
+
+/* done：一次弹跳定格（spin/bounce/nod 家族里的 bounce 语义） */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .grok-face[data-state="done"] svg {
+  animation: kai-pop 0.62s ease-out 1;
+  transform-origin: center bottom;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .grok-face[data-state="failed"] svg {
+  animation: kai-nod 0.5s ease-out 1;
+  transform-origin: center bottom;
+}
+
+@keyframes kai-pop {
+  0% { transform: translateY(0) scale(1); }
+  40% { transform: translateY(-4px) scale(1.06, 0.94); }
+  75% { transform: translateY(1px) scale(0.97, 1.03); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+@keyframes kai-nod {
+  0% { transform: rotate(0deg); }
+  35% { transform: rotate(-7deg); }
+  70% { transform: rotate(4deg); }
+  100% { transform: rotate(0deg); }
+}
+
+/* 短语：已显现的词稳定，新词 fade-up（statusReveal 的 web 等价物） */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .grok-phrase {
+  color: var(--codex-muted, #9a9a9a);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .grok-phrase-word[data-new="true"] {
+  display: inline-block;
+  animation: kai-phrase-in 180ms ease-out;
+}
+
+@keyframes kai-phrase-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .grok-phrase-caret {
+  display: inline-block;
+  width: 6px;
+  height: 14px;
+  margin-left: 3px;
+  border-radius: 2px;
+  background: var(--kai-bot-accent, #126fd4);
+  animation: kai-caret 0.9s ease-in-out infinite;
+  vertical-align: -2px;
+}
+
+@keyframes kai-caret {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 0.9; }
+}
+
+/* 流式期 live 气泡：与正式回答气泡同款，逐字长出 */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .live-streaming-bubble {
+  width: fit-content;
+  max-width: min(640px, 92%);
+  padding: 10px 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .live-streaming-bubble::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 14px;
+  margin-left: 3px;
+  border-radius: 2px;
+  background: var(--kai-bot-accent, #126fd4);
+  animation: kai-caret 0.9s ease-in-out infinite;
+  vertical-align: -2px;
+}
