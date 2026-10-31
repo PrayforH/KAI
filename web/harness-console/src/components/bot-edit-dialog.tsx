@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { assistantRequest, type Specialist } from "../lib/assistant-client";
 import { BOT_COLORS, BOT_SHAPES } from "./create-bot-dialog";
+import { SpecialistCredentials } from "./specialist-credentials";
 import styles from "./bot-edit-dialog.module.css";
 
 type Duty = {
@@ -188,6 +189,13 @@ export function BotEditDialog({
             <p className={styles.routineEmpty}>还没有例行程序：去主助理那儿给它派一件事。</p>
           )}
         </section>
+        {detail && (
+          <SpecialistCredentials
+            specialistId={specialistId}
+            specialist={detail.specialist}
+            onUpdated={(updated) => setDetail({ ...detail, specialist: updated })}
+          />
+        )}
         {error && <p className={styles.error} role="alert">{error}</p>}
         <button type="button" className={styles.primary} disabled={busy || !detail} onClick={() => void save()}>
           {busy ? "保存中…" : "保存"}

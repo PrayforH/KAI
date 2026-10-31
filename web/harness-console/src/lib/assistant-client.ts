@@ -35,6 +35,25 @@ export type Handover = { handoverId: string; specialistId: string; objectiveId: 
   messageId: string; summary: string;
   status: "sent" | "received" | "applied" | "executing" | "pending_input" | "failed";
   createdAt: string; updatedAt: string };
+/**
+ * 专用凭据入口：密文入库，config 只写 credential_ref:<名称>，永不回读明文。
+ * 返回更新后的 Specialist（revision 已递增，后续 profile 保存要用新 revision）。
+ */
+export async function saveSpecialistCredential(
+  specialistId: string,
+  input: { name: string; secret: string; expectedRevision: number },
+): Promise<Specialist> {
+  return assistantRequest<Specialist>(
+    `specialists/${encodeURIComponent(specialistId)}/credentials`,
+    "POST",
+    {
+      name: input.name,
+      secret: input.secret,
+      expectedRevision: input.expectedRevision,
+    },
+  );
+}
+
 export async function assistantRequest<T>(path: string, method = "GET", body?: unknown, key?: string): Promise<T> {
   const response = await fetch(`/api/studio/assistant/${path}`, {
     method, headers: { "Content-Type": "application/json", ...(key ? { "Idempotency-Key": key } : {}) },

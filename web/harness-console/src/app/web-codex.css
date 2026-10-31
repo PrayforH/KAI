@@ -4328,6 +4328,17 @@ body.codex-theme-v1:has(.console-shell) .specialist-setup-error {
   font-size: 12px;
 }
 
+body.codex-theme-v1:has(.console-shell) .specialist-setup-credentials {
+  display: grid;
+  gap: 8px;
+}
+
+body.codex-theme-v1:has(.console-shell) .specialist-setup-credentials > summary {
+  color: #8a8a8a;
+  font-size: 12px;
+  cursor: pointer;
+}
+
 body.codex-theme-v1:has(.console-shell) .specialist-setup-submit {
   justify-self: start;
   padding: 8px 18px;

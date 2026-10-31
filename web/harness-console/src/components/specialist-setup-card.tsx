@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { assistantRequest, type Specialist } from "../lib/assistant-client";
+import { SpecialistCredentials } from "./specialist-credentials";
 
 const FREQUENCIES = [
   { minutes: 60, label: "每小时" },
@@ -176,6 +177,15 @@ export function SpecialistSetupCard({
       >
         {busy ? "正在保存…" : "保存并启用"}
       </button>
+      <details className="specialist-setup-credentials">
+        <summary>可选：为这个 Bot 添加凭据</summary>
+        <SpecialistCredentials
+          specialistId={specialistId}
+          specialist={detail.specialist}
+          onUpdated={() => void load()}
+          compact
+        />
+      </details>
     </div>
   );
 }
