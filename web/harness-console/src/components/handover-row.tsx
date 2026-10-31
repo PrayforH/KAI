@@ -5,7 +5,9 @@ import { handoverStore, useHandoverNotices } from "../lib/handover-store";
 import { statusLead } from "../lib/handover-store";
 import { assistantRequest, type Specialist } from "../lib/assistant-client";
 import { pendingThreadAsk, submitThreadAnswer, type ThreadAsk } from "../lib/thread-answer";
+import { ApprovalCard, type ApprovalDetails } from "./approval-card";
 import { ConversationInputCard } from "./conversation-input-card";
+import { loadTaskSummary } from "../lib/project-space";
 import { SpecialistCredentials, pendingCredentialNames } from "./specialist-credentials";
 import { SpecialistSetupCard } from "./specialist-setup-card";
 
@@ -20,6 +22,66 @@ export function shouldShowHandoverRows(
   hasBot: boolean,
 ): boolean {
   return personalAssistant && assistantSurface && !hasBot;
+}
+
+/**
+ * 子线程处于 waiting_approval 时，把 ApprovalCard 投影到主会话：
+ * 发现走既有 thread summary 的 pending_approval，decide 走既有
+ * PUT /api/harness/approvals/{id}；成功后本地收起。
+ */
+function HandoverApprovalCard({
+  specialistId,
+  specialistName,
+}: {
+  specialistId: string;
+  specialistName: string;
+}) {
+  const [approval, setApproval] = useState<(ApprovalDetails & { status: string }) | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const detail = await assistantRequest<{ threadId: string | null }>(
+          `specialists/${encodeURIComponent(specialistId)}`,
+        );
+        if (!alive || !detail.threadId) return;
+        const summary = await loadTaskSummary(detail.threadId);
+        if (!alive || !summary?.pending_approval) return;
+        if (summary.pending_approval.status !== "pending") return;
+        setApproval(summary.pending_approval);
+      } catch {
+        // 审批投影是增强信息：读不到静默，任务面仍有入口。
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [specialistId]);
+
+  if (!approval) return null;
+  return (
+    <div className="handover-approval-card">
+      <p className="handover-approval-title">「{specialistName}」等待你审批</p>
+      <ApprovalCard
+        key={approval.approval_id}
+        details={approval}
+        complete={false}
+        onDecision={async (decision) => {
+          const response = await fetch(
+            `/api/harness/approvals/${encodeURIComponent(approval.approval_id)}`,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ decision }),
+            },
+          );
+          if (!response.ok) throw new Error((await response.text()) || "审批失败");
+          setApproval(null);
+        }}
+      />
+    </div>
+  );
 }
 
 /**
@@ -178,6 +240,10 @@ export function HandoverInlineRows() {
               <span className="handover-inline-target">「{notice.specialistName}」</span>
             </a>
           </p>
+          <HandoverApprovalCard
+            specialistId={notice.specialistId}
+            specialistName={notice.specialistName}
+          />
           {notice.status !== "failed" && (
             <HandoverAskCard
               specialistId={notice.specialistId}
