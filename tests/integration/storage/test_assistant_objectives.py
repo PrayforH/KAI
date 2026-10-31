@@ -248,6 +248,7 @@ async def test_terminal_notice_carries_checkpoint_metering(database: DatabaseFix
 
     notices = {notice.execution_id: notice for notice in await repo.inbox("tenant-a", "user-a")}
     measured = notices[finished.execution_id]
+    assert measured.run_id is None  # 没有 Run 的结算不伪造 runId
     assert measured.metrics is not None
     assert measured.metrics.tokens == 1234
     assert measured.metrics.cost_usd == 0.02
@@ -260,6 +261,33 @@ async def test_terminal_notice_carries_checkpoint_metering(database: DatabaseFix
     assert unknown.metrics.cost_usd is None
     assert unknown.metrics.unknown_usage is True
     assert unknown.duration_seconds == 100
+
+
+@pytest.mark.asyncio
+async def test_failed_notice_projects_run_and_execution_for_replay(
+    database: DatabaseFixture,
+) -> None:
+    """失败 notice 带 runId/executionId，前端才能深链到失败检查点；无 run 时不伪造。"""
+    repo = PostgresAssistantRepository(database[1])
+    await repo.create(objective())
+
+    await repo.enqueue("tenant-a", "user-a", "objective-a", trigger_key="replay", now=NOW)
+    claim = await repo.claim(NOW)
+    assert claim is not None
+    finished = claim[0].model_copy(
+        update={
+            "status": ObjectiveExecutionStatus.FAILED,
+            "run_id": "run-replay-1",
+            "finished_at": NOW + timedelta(seconds=30),
+            "summary": "沙箱启动失败，未执行任何步骤",
+        }
+    )
+    assert await repo.save_execution(finished, claim[1], NOW + timedelta(seconds=30))
+    notice = (await repo.inbox("tenant-a", "user-a"))[0]
+    assert notice.run_id == "run-replay-1"
+    assert notice.execution_id == finished.execution_id
+    assert notice.thread_id == finished.thread_id
+    assert notice.kind == "failed"
 
 
 @pytest.mark.asyncio

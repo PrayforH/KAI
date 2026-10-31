@@ -211,6 +211,9 @@ class AssistantInboxItem(StudioModel):
     title: str
     content: str
     thread_id: str | None = Field(default=None, alias="threadId")
+    # 失败回放：终态 notice 带上本次执行的 Run，前端可深链到失败检查点；
+    # 旧行没有该字段，仍按 None 读取（只回原线程）。
+    run_id: str | None = Field(default=None, alias="runId")
     # 结算结果可见：终态 notice 带同次 checkpoint 的 tokens/cost 与执行耗时；
     # 旧行没有这些字段，仍按 None 读取（不渲染计量行）。
     metrics: AssistantInboxMetrics | None = None

@@ -8,10 +8,37 @@ import { CheckpointMeteringLine } from "./checkpoint-metering";
 const KIND_LABEL: Record<string, { label: string; tone: "done" | "working" | "attention" }> = {
   succeeded: { label: "已交付", tone: "done" },
   failed: { label: "需要你处理", tone: "attention" },
+  timed_out: { label: "需要你处理", tone: "attention" },
+  rejected: { label: "需要你处理", tone: "attention" },
   cancelled: { label: "已停止", tone: "attention" },
   pending: { label: "正在推进", tone: "working" },
   running: { label: "正在推进", tone: "working" },
 };
+
+const FAILURE_KINDS = new Set(["failed", "timed_out", "rejected"]);
+
+/**
+ * 进展条目要打开哪里：失败 → 原线程的失败回放（trace=1，有则带 run 与
+ * `checkpoint_<executionId>`，与写库口径一致）；其余 → 仅原线程。
+ * 旧 notice 没有 runId/executionId 时不伪造参数，失败仍可进轨迹页。
+ */
+export function progressNoticeLink(
+  notice: Pick<Notice, "kind" | "threadId" | "runId" | "executionId">,
+): { href: string; label: string; mode: "failure" | "thread" } | null {
+  if (!notice.threadId) return null;
+  const failure = FAILURE_KINDS.has(notice.kind);
+  const params = new URLSearchParams({ thread: notice.threadId });
+  if (failure) {
+    params.set("trace", "1");
+    if (notice.runId) params.set("run", notice.runId);
+    if (notice.executionId) params.set("checkpoint", `checkpoint_${notice.executionId}`);
+  }
+  return {
+    href: `/?${params.toString()}`,
+    label: failure ? "打开失败回放 →" : "打开原任务 →",
+    mode: failure ? "failure" : "thread",
+  };
+}
 
 /**
  * 8.5 结果优先：主助理页只突出「需要你处理、正在推进、已交付」。
@@ -83,6 +110,7 @@ export function AssistantProgressStrip() {
       <ul>
         {shown.map((item) => {
           const tone = KIND_LABEL[item.kind]?.tone ?? "working";
+          const link = progressNoticeLink(item);
           return (
             <li key={item.itemId} data-tone={tone}>
               <span className="assistant-progress-kind">{KIND_LABEL[item.kind]?.label ?? item.kind}</span>
@@ -93,13 +121,14 @@ export function AssistantProgressStrip() {
                 durationSeconds={item.durationSeconds}
                 className="assistant-progress-metrics"
               />
-              {item.threadId && (
+              {link && (
                 <Link
                   className="assistant-progress-link"
-                  href={`/?thread=${encodeURIComponent(item.threadId)}`}
+                  data-replay={link.mode}
+                  href={link.href}
                   onClick={() => setDismissed((current) => new Set(current).add(item.itemId))}
                 >
-                  打开原任务 →
+                  {link.label}
                 </Link>
               )}
               <button

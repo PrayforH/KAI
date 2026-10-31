@@ -643,6 +643,7 @@ class PostgresAssistantRepository:
                     title=objective.title,
                     content=summary,
                     threadId=execution.thread_id,
+                    runId=execution.run_id,
                     # 与同次 checkpoint 同口径：两条都为空才算未计量。
                     metrics=AssistantInboxMetrics(
                         tokens=usage_tokens,
