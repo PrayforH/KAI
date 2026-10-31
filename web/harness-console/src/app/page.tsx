@@ -27,6 +27,7 @@ import {
 } from "../components/assistant-bot-context";
 import { AssistantHeaderAvatar, BOT_ACCENTS, botAccent } from "../components/bot-rail";
 import { AssistantComputerLink } from "../components/assistant-computer-link";
+import { DesktopOccupancyChip } from "../components/desktop-occupancy-chip";
 import { AssistantComputerPane } from "../components/assistant-computer-pane";
 import { AssistantRuntimeShell } from "../components/assistant-runtime-shell";
 import { ProductivityCommandCenter } from "../components/productivity-command-center";
@@ -935,7 +936,12 @@ function AuthenticatedHome() {
               />}
             </div>
             <HeaderUtilities
-              computerControl={personalAssistant ? <AssistantComputerLink open={computerOpen} onToggle={() => showComputer(!computerOpen)} /> : undefined}
+              computerControl={personalAssistant ? (
+                <>
+                  <DesktopOccupancyChip />
+                  <AssistantComputerLink open={computerOpen} onToggle={() => showComputer(!computerOpen)} />
+                </>
+              ) : undefined}
               taskRailOpen={taskRailOpen}
               onToggleTaskRail={() => {
                 showComputer(false);

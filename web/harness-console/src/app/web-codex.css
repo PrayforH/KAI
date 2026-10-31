@@ -1451,6 +1451,41 @@ body.codex-theme-v1:has(.console-shell) .console-header {
   color: #8c8c8c;
 }
 
+/* 顶栏电脑入口旁的只读占用 chip（P1-4 occupancy 投影）；空闲时不渲染。 */
+body.codex-theme-v1:has(.console-shell) .desktop-occupancy-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: min(26vw, 240px);
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #a8a8a8;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.codex-theme-v1:has(.console-shell) .desktop-occupancy-chip::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.8;
+}
+
+body.codex-theme-v1:has(.console-shell) .desktop-occupancy-chip[data-occupancy="held"]::before {
+  background: #d2a83a;
+}
+
+body.codex-theme-v1:has(.console-shell) .desktop-occupancy-chip[data-occupancy="queued"]::before {
+  background: #8c8c8c;
+}
+
 .header-icon-button {
   width: 32px;
   height: 32px;
