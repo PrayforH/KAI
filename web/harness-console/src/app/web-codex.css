@@ -4224,6 +4224,18 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .h
   margin: 6px auto 2px;
 }
 
+/* 每个转交条目可以带一张内联补齐卡（pending_input）；行文字仍居中。 */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-inline-item {
+  width: 100%;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-inline-item .specialist-setup-card {
+  margin: 6px auto 2px;
+}
+
 body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-inline-line {
   margin: 0;
   font-size: 12px;

@@ -76,6 +76,12 @@ export const handoverStore = {
       seeded = false;
     }
   },
+  /** 主会话内联补齐配置成功后：本地把该行从「待补充」改为「已安排」。 */
+  markConfigured(specialistId: string) {
+    const current = entries.find((item) => item.specialistId === specialistId);
+    if (!current) return;
+    upsert({ ...current, status: "applied", at: Date.now() });
+  },
   subscribe(listener: () => void) {
     listeners.add(listener);
     return () => listeners.delete(listener);

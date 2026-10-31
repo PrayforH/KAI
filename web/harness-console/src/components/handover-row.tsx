@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { handoverStore, useHandoverNotices } from "../lib/handover-store";
 import { statusLead } from "../lib/handover-store";
+import { SpecialistSetupCard } from "./specialist-setup-card";
 
 /**
  * 转交回执属于主助理会话，而不是当前打开的任何任务线程。
@@ -35,19 +36,36 @@ export function HandoverInlineRows() {
   return (
     <div className="handover-inline" aria-label="转交状态">
       {notices.map((notice) => (
-        <p className="handover-inline-line" key={notice.specialistId}>
-          {/* 与 bot-rail 同判：软导航不重挂载页面，旧线程会盖住新 bot。 */}
-          <a
-            href={`/assistant?bot=${encodeURIComponent(notice.specialistId)}`}
-            onClick={(event) => {
-              event.preventDefault();
-              window.location.assign(`/assistant?bot=${encodeURIComponent(notice.specialistId)}`);
-            }}
-          >
-            {statusLead(notice.status)}
-            <span className="handover-inline-target">「{notice.specialistName}」</span>
-          </a>
-        </p>
+        <div className="handover-inline-item" key={notice.specialistId}>
+          <p className="handover-inline-line">
+            {/* 与 bot-rail 同判：软导航不重挂载页面，旧线程会盖住新 bot。 */}
+            <a
+              href={`/assistant?bot=${encodeURIComponent(notice.specialistId)}`}
+              onClick={(event) => {
+                event.preventDefault();
+                window.location.assign(`/assistant?bot=${encodeURIComponent(notice.specialistId)}`);
+              }}
+            >
+              {statusLead(notice.status)}
+              <span className="handover-inline-target">「{notice.specialistName}」</span>
+            </a>
+          </p>
+          {notice.status === "pending_input" && (
+            // 缺配置时不必跳进 ?bot=：同一张 SpecialistSetupCard 直接在主会话里补。
+            <SpecialistSetupCard
+              specialistId={notice.specialistId}
+              onReady={() => {
+                handoverStore.markConfigured(notice.specialistId);
+                // rail 也立刻重拉，把该 bot 从「待启用」移到「在岗」。
+                window.dispatchEvent(
+                  new CustomEvent("kai:specialists-changed", {
+                    detail: { specialistId: notice.specialistId, reason: "configured" },
+                  }),
+                );
+              }}
+            />
+          )}
+        </div>
       ))}
     </div>
   );
