@@ -753,3 +753,39 @@ ctx `web-src-r39`，`grok-activity.tsx` sha256 `8d72d54a…` 与本地一致；
 截图 `/tmp/kai79-accept/154-r39-assistant.png`。
 
 **未验证**：仍未有真实进行中回合的视觉（需发起真实 run）；取舍与截断由真实数据回放 + 单测钉住。
+
+## 中文结论语逐字渐现（2026-10-31，web r40，marker kai-phrase-cjk-reveal）
+
+缺口：`ActivityPhrase` 用 `text.split(/\s+/)` 按空白分词，中文结论语没有空格，
+整句一次出现，对不齐本机 Grok 的字级/词级渐现。
+
+- 新增 `phraseUnits(text)`：CJK 为主（>50%）或「无空白但含 CJK」→ 按字素
+  （复用 `splitGraphemes`，`Intl.Segmenter` 优先）；纯英文（含单个单词）→ 仍按词
+  （词与间隔各自为一个单位）。单个英文单词不会在句子变长时被切成字母（模式稳定）。
+- 渐现从「共享前缀」续播：文本换成另一句结论时从头画第一个字，而不是沿用旧进度
+  整句贴出；挂载/历史文本仍一次性给全（`drawn = units.length`），SSR 不截断。
+- 未动：10 字展示口径（`trimConclusion`）、终态隐藏、工具过程降权、终答不进活动行。
+
+**测试**
+
+```
+cd web/harness-console
+npx tsc --noEmit                                          # clean
+npx vitest run tests/assistant-phrase-reveal.spec.tsx     # 8 passed（新增）
+npx vitest run tests/grok-activity.spec.tsx               # 3 passed（SSR 断言改为去标签比对文本）
+npx vitest run tests/assistant-activity-steps.spec.tsx tests/assistant-activity-terminal.spec.tsx \
+  tests/assistant-dup-channels.spec.tsx tests/assistant-duplicate.spec.tsx  # 34 passed
+npx vitest run                                            # 1459 passed / 1 skipped / 1 既有失败
+```
+
+新增断言：`phraseUnits` 对「继续盯梢本轮：」给出 7 个字素、对英文按词、单个英文词不拆；
+`ActivityPhrase` 从「继续」续到「继续盯梢本轮：」时每 90ms 多一个字；
+换成无关中文结论时从空串起逐字出现；英文每步一个 token；`trimConclusion` 仍 ≤10 字。
+
+**79 部署**：web `kai/assistant-web:20261030-managed-r40` 已滚（Up healthy，`/assistant` = 200）；
+ctx `web-src-r40`，`grok-activity.tsx` sha256 `e8264f2c…` 与本地一致；
+组件 chunk 由 r39 的 `33rro6nqhidne.js` 变为 `426p7dn1ljfv4.js`。
+只读探针：`activityRows=0 / stepLists=0 / phraseSpans=0 / stepCssRules=4 / answers=13`
+（历史终态不出现）。截图 `/tmp/kai79-accept/155-r40-assistant.png`。
+
+**未验证**：真实进行中回合的逐字动画（需发起真实 run）；单位选择与计时由 jsdom 假时钟单测钉住。
