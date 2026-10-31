@@ -1356,3 +1356,55 @@ ctx `web-src-r54`，5 个文件逐文件 sha256 与本地一致；「已配置 �
 **如何在 /assistant 给某个 Bot 加凭据**：打开该 Bot 会话 → 顶栏「…」→ 最下方「凭据」→
 填「凭据名称」（如 `api_key`）与「凭据内容」→「保存凭据」；保存后该行显示「已配置 · api_key」，
 之后可在描述/任务里引用该名称，系统只存 `credential_ref:api_key`。
+
+## 主会话内联「必填凭据」卡（2026-11-01，web r55，marker kai-main-session-credential-card）
+
+缺口：r54 的凭据只在编辑弹窗/补配置卡的可选折叠里；没有一等触发，用户无法在**主 /assistant
+消息流**里因为「缺凭据」被提示并就地完成认证。
+
+- **触发约定（前端推导，不改后端）**：`specialist.config.required_credentials: string[]`
+  是可选名称列表（`configure_specialist` 本来就合并任意 config）。前端计算
+  `pendingCredentialNames = required_credentials − credential_ref:*`；非空才强制展示凭据卡。
+  `SPECIALIST_REQUIRED_CONFIG`、委派状态机、enqueue/lease/budget/desktop 均未改；也没有新增
+  HandoverStatus 枚举。
+- `HandoverInlineRows` 每条转交行挂 `HandoverRequiredCredentials`：GET specialist 详情 →
+  有未满足项时在行下渲染 `.handover-credential-card`（复用 `SpecialistCredentials`，新增
+  `requiredNames` 模式：显示「必填凭据 / 待补凭据：a、b」，名称改为仅可在声明项中选择）。
+  提交仍走 `POST specialists/{id}/credentials`（name/secret/expectedRevision），成功后用返回的
+  Specialist 更新本地待填列表——全部满足即整卡收起；并派发 `kai:specialists-changed` 让 rail 重拉。
+  与 `pending_input` 的 SetupCard 可叠加（schedule/notify 语义未改）。
+- 密文只存在输入框与请求体，不进 DOM 文本/日志/docs/commit。
+
+**测试**
+
+```
+cd web/harness-console
+npx tsc --noEmit                                                       # clean
+npx vitest run tests/main-session-credential-card.spec.tsx             # 3 passed（新增）
+npx vitest run tests/main-session-pending-input-card.spec.tsx tests/handover-row.spec.tsx \
+  tests/specialist-credentials.spec.tsx tests/specialist-setup-card.spec.tsx \
+  tests/specialist-setup-card.flow.spec.tsx                            # 18 passed
+npx vitest run                                                         # 1508 passed / 1 skipped / 1 既有失败
+```
+
+DOM 断言：`required_credentials:["vendor_api"]` + 无 ref → 主会话行（非 pending_input）出现必填卡、
+待补名称、select 值 vendor_api、secret 为 password；提交调用 body
+`{name:"vendor_api", secret, expectedRevision:3}`，成功后「已配置」、卡收起、DOM 不含密文、
+URL 仍 `/assistant`；已有 `credential_ref:vendor_api` → 无卡无「待补凭据」；
+pending_input + 必填凭据 → SetupCard 与凭据卡叠加。既有失败仍是 account-settings（无关）。
+
+**79 部署与只读验收**：web `kai/assistant-web:20261030-managed-r55` 已滚（healthy，`/assistant` = 200）；
+ctx `web-src-r55`，`specialist-credentials.tsx` sha256 `da18ab35…`、`handover-row.tsx` `6a97f229…`、
+`web-codex.css` `65b00926…` 与本地一致；「待补凭据」/`handover-credential-card` 出现在
+`382mjgm65_dtz.js` / `3-wxnx6qh0nk.css`（r54 无）。api 未动，仍 r23；
+compose 备份 `compose.private.before-r55.json`。
+
+- 真实页面：现网没有 `required_credentials` → 必填卡 0 个、无「待补凭据」（正确阴性），两条转交行仍是「已安排」。
+- 注入式（**浏览器侧拦截 API，不写服务端**）：`required_credentials:["vendor_api"]` + 无 ref →
+  实机出现「必填凭据 / 待补凭据：vendor_api」与 select/secret/保存；提交请求
+  `POST …/credentials` body `{name:"vendor_api", secret:(redacted), expectedRevision:3}`；
+  成功后卡收起、无「待补凭据」、URL 仍 `/assistant`、密文不在 DOM；rail 收到刷新事件。
+  截图 `/tmp/kai79-accept/178-r55-required-cred.png`。
+
+未验证：真实 Bot 声明 `required_credentials` 并在主会话完成认证（现网没有该配置，需改真实 bot config）；
+触发推导、提交与收起由 DOM 用例 + 注入式实机验收覆盖。**触发态 = `required_credentials` 前端推导**。
