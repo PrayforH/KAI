@@ -3902,6 +3902,26 @@ body.codex-theme-v1:has(.console-shell) .bot-rail-more:hover {
   color: #e6e6e6;
 }
 
+/* 顶栏身份标记：与 rail 的色+形对齐；主助理仍是「K」。 */
+body.codex-theme-v1:has(.console-shell) .task-context-bot-avatar {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-right: 2px;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-context-bot-avatar .bot-rail-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-context-bot-avatar .bot-rail-avatar svg {
+  width: 18px;
+  height: 18px;
+}
+
 /* 选中子助理时标题栏的副标题（职责一句话） */
 body.codex-theme-v1:has(.console-shell) .task-context-bot-hint {
   margin-left: 8px;

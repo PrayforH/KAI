@@ -78,6 +78,26 @@ export function BotRailAvatar({
 }
 
 /**
+ * 助理面顶栏的身份标记：与 rail 同源——子助理用保存的色+形（未知/缺失回退 blob），
+ * 主助理固定「K」字母，不会被子助理外形污染。
+ */
+export function AssistantHeaderAvatar({
+  bot,
+}: {
+  bot: { specialistId: string; appearance?: { color?: string; avatar?: string } } | null;
+}) {
+  return (
+    <span className="task-context-bot-avatar">
+      <BotRailAvatar
+        tone={bot ? (bot.appearance?.color ?? botAccent(bot.specialistId)) : BOT_ACCENTS[0]!}
+        shape={bot ? bot.appearance?.avatar : undefined}
+        letter={bot ? undefined : "K"}
+      />
+    </span>
+  );
+}
+
+/**
  * 左侧「机器人」区：主助理置顶，专职子助理按最近更新排序。
  * 点击进入该助理的会话或职责面板——对话优先，配置其次。
  */

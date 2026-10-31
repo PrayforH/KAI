@@ -25,7 +25,7 @@ import {
   AssistantSurfaceProvider,
   type AssistantBot,
 } from "../components/assistant-bot-context";
-import { BOT_ACCENTS, botAccent } from "../components/bot-rail";
+import { AssistantHeaderAvatar, BOT_ACCENTS, botAccent } from "../components/bot-rail";
 import { AssistantComputerLink } from "../components/assistant-computer-link";
 import { AssistantComputerPane } from "../components/assistant-computer-pane";
 import { AssistantRuntimeShell } from "../components/assistant-runtime-shell";
@@ -882,6 +882,8 @@ function AuthenticatedHome() {
                 <span className="task-project-separator" aria-hidden="true">/</span>
               </Link>}
               {assistantView ? <div className="task-context-bar">
+                {/* 顶栏身份标记与 rail 同源：子助理用保存的色+形，主助理固定 K。 */}
+                <AssistantHeaderAvatar bot={bot} />
                 <strong className="task-context-title">{bot ? bot.name : "我的助理"}</strong>
                 {bot ? (
                   <>
