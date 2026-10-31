@@ -716,3 +716,40 @@ npx vitest run                                            # 1446 passed / 1 skip
 （历史终态不出现，样式已加载，短语里没有工具名）。截图 `/tmp/kai79-accept/153-r38-assistant.png`。
 
 **未验证**：真实进行中回合的视觉（需发起真实 run 并抓工具间隙）；取舍逻辑已用上述真实数据回放 + 单测钉住。
+
+## 验收回修：结论语收紧到 10 字（2026-10-31，web r39，marker kai-mid-conclusion-10chars）
+
+上一切片 FAIL 点：`DISPLAY_CONCLUSION_CHARS = 120`，与「对齐本机 Grok Bot，约 10 个汉字以内」不符。
+
+- **口径**：改为 `DISPLAY_CONCLUSION_CHARS = 10`，按显示宽度计——汉字/全角 1、ASCII 半角 0.5
+  （即汉字 ≤10 字、英文约 20 字符）；按字素切分（`Intl.Segmenter`，无则退码点），
+  emoji/组合字符不会被切半。
+- **截断策略**：10 字预算内优先停在从句边界（「收到快捷操作：」「继续盯梢本轮：」），
+  否则硬截为 9 字 + 省略号（如「我先盘点工作区里的…」）；**不再允许长段落当活动短语**。
+  活动行 `GrokActivityRow` 自身再走一次该口径兜底，调用方塞长文本也不会铺满一行。
+- 结论语优先、工具过程降权、终态隐藏（0ee6fffd）与防重复（dce054a7）均未回退。
+
+**测试**
+
+```
+cd web/harness-console
+npx tsc --noEmit                                          # clean
+npx vitest run tests/assistant-activity-steps.spec.tsx    # 19 passed
+npx vitest run tests/assistant-activity-terminal.spec.tsx tests/assistant-dup-channels.spec.tsx   tests/assistant-duplicate.spec.tsx                      # 15 passed
+npx vitest run                                            # 1451 passed / 1 skipped / 1 既有失败
+```
+
+断言改为 ≤10 宽：`收到快捷操作：`、`参数已确认：`、`返回 12 行 · 340…`；
+新增「无边界时 9 字 + …」「英文 ≤20 字符」「长段落行内也不会超 10 宽」。
+
+**真实数据回放（只读）**：历史 `harness_run_activity` 投影按新口径取样——
+「继续盯梢本轮：」「材料读完了。」「起身走动两分钟，」「工作区没有待归档的…」，
+步骤行为「我先盘点工作区里的…」等；无工具名、无长段落。
+
+**79 部署**：web `kai/assistant-web:20261030-managed-r39` 已滚（healthy，health/200）；
+ctx `web-src-r39`，`grok-activity.tsx` sha256 `8d72d54a…` 与本地一致；
+组件 chunk 由 r38 的 `2hdutik2uwl-7.js` 变为 `33rro6nqhidne.js`。
+只读探针：`activityRows=0 / stepLists=0 / stepCssRules=4 / answers=12`（历史终态不出现）。
+截图 `/tmp/kai79-accept/154-r39-assistant.png`。
+
+**未验证**：仍未有真实进行中回合的视觉（需发起真实 run）；取舍与截断由真实数据回放 + 单测钉住。
