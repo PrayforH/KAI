@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { handoverStore, useHandoverNotices } from "../lib/handover-store";
 import { statusLead } from "../lib/handover-store";
+import { assistantRequest, type Specialist } from "../lib/assistant-client";
+import { SpecialistCredentials, pendingCredentialNames } from "./specialist-credentials";
 import { SpecialistSetupCard } from "./specialist-setup-card";
 
 /**
@@ -16,6 +18,52 @@ export function shouldShowHandoverRows(
   hasBot: boolean,
 ): boolean {
   return personalAssistant && assistantSurface && !hasBot;
+}
+
+/**
+ * 必填凭据的一等触发：读 specialist.config.required_credentials，
+ * 只要有未满足的 credential_ref:<name>，就在主会话该行下展开内联凭据卡。
+ * 全部满足后卡自动收起（不常驻），无需跳 ?bot=。
+ */
+function HandoverRequiredCredentials({ specialistId }: { specialistId: string }) {
+  const [specialist, setSpecialist] = useState<Specialist | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void assistantRequest<{ specialist: Specialist }>(
+      `specialists/${encodeURIComponent(specialistId)}`,
+    )
+      .then((data) => {
+        if (alive) setSpecialist(data.specialist);
+      })
+      .catch(() => {
+        // 凭据卡是增强信息：读不到就保持静默，不打断转交行。
+      });
+    return () => {
+      alive = false;
+    };
+  }, [specialistId]);
+
+  if (!specialist) return null;
+  const pending = pendingCredentialNames(specialist);
+  if (!pending.length) return null;
+  return (
+    <div className="handover-credential-card">
+      <SpecialistCredentials
+        specialistId={specialistId}
+        specialist={specialist}
+        requiredNames={pending}
+        onUpdated={(next) => {
+          setSpecialist(next);
+          window.dispatchEvent(
+            new CustomEvent("kai:specialists-changed", {
+              detail: { specialistId, reason: "credential" },
+            }),
+          );
+        }}
+      />
+    </div>
+  );
 }
 
 /**
@@ -61,6 +109,7 @@ export function HandoverInlineRows() {
               <span className="handover-inline-target">「{notice.specialistName}」</span>
             </a>
           </p>
+          <HandoverRequiredCredentials specialistId={notice.specialistId} />
           {notice.status === "pending_input" && (
             // 缺配置时不必跳进 ?bot=：同一张 SpecialistSetupCard 直接在主会话里补。
             <SpecialistSetupCard
