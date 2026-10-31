@@ -58,6 +58,7 @@ import { setPendingReply } from "../lib/reply-references";
 import { loadComposerReplyDraft, persistComposerReplyDraft } from "../lib/task-composer-draft";
 import { useAssistantBot, useAssistantSurface } from "./assistant-bot-context";
 import {
+  ChatActivitySteps,
   GrokActivityRow,
   progressPhrase,
   shouldShowChatActivityRow,
@@ -1374,6 +1375,7 @@ function TurnActivity({
         data-activity-source={isLast ? "current-run" : "captured-turn"}
       >
         <GrokActivityRow phrase={phrase} state={faceState} />
+        <ChatActivitySteps activity={displayed} phrase={phrase} />
       </div>
     );
   }
@@ -1918,10 +1920,16 @@ function HarnessUserMessage() {
         >
           {assistantSurface ? (
             shouldShowChatActivityRow(preResponseActivity.status, preResponseActivity) ? (
-              <GrokActivityRow
-                phrase={progressPhrase(preResponseActivity)}
-                state={preResponseActivity.status === "failed" ? "failed" : "working"}
-              />
+              <>
+                <GrokActivityRow
+                  phrase={progressPhrase(preResponseActivity)}
+                  state={preResponseActivity.status === "failed" ? "failed" : "working"}
+                />
+                <ChatActivitySteps
+                  activity={preResponseActivity}
+                  phrase={progressPhrase(preResponseActivity)}
+                />
+              </>
             ) : null
           ) : (
             <ActivitySummary activity={preResponseActivity} />

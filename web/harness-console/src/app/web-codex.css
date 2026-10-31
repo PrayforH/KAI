@@ -4080,6 +4080,39 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .g
   50% { opacity: 0.9; }
 }
 
+/* 过程摘录：活动行下方的一行一条小列表（最近 ≤5 条工具/运行步骤）。
+   只在进行中渲染；左侧缩进对齐短语文本（脸 22px + gap 10px）。 */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .chat-activity-steps {
+  display: grid;
+  gap: 2px;
+  margin: 2px 0 0 32px;
+  padding: 0;
+  max-width: min(640px, calc(92% - 32px));
+  list-style: none;
+  color: var(--codex-muted, #8a8a8a);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .chat-activity-steps li {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .chat-activity-steps li::before {
+  content: "·";
+  flex: 0 0 auto;
+  opacity: 0.6;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .chat-activity-steps li[data-tone="failed"] {
+  color: #d98b8b;
+}
+
 /* 流式期 live 气泡：与正式回答气泡同款，逐字长出 */
 body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .live-streaming-bubble {
   width: fit-content;
