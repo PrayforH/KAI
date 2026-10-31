@@ -1037,3 +1037,41 @@ compose 备份 `compose.private.before-r46.json`。
 未验证：真实「超过 24h 无人查看 → 调度写入 routinePausedReason → 列表出徽章 → 打开会话后消失」
 的完整链路（需要把某 Bot 的 lastViewedAt 拨回 24h 再等一次调度，会写真实数据）；该链路后半段
 （viewed 清标记）已有 r41 的 API 验收，列表渲染由上述 DOM + 注入验收覆盖。
+
+## 打开会话后 rail 暂停标立即消失（2026-11-01，web r47，marker kai-rail-refresh-after-viewed）
+
+缺口：r46 的「已暂停 · 无人查看」只在 BotRail 的 30s 轮询里刷新；page.tsx 的 viewed POST
+成功后没有通知 rail，用户打开刚暂停的 Bot 后徽章可能继续挂最多 ~30s，与「打开本会话后恢复」不符。
+
+- `page.tsx`：viewed POST 的 `.then` 里派发 `CustomEvent("kai:specialists-changed", {detail:{specialistId, reason:"viewed"}})`
+  ——只在成功时派发；失败仍静默，旧列表保留、30s 轮询兜底。
+- `bot-rail.tsx`：监听该事件 → `void load()`；卸载时移除监听。30s 轮询保留。
+- 未改 viewed API 语义、`schedule_due` 闸门、徽章文案与外形；GET 详情/编辑弹窗仍不算查看。
+
+**测试**
+
+```
+cd web/harness-console
+npx tsc --noEmit                                                    # clean
+npx vitest run tests/bot-rail-refresh-after-viewed.spec.tsx         # 3 passed（新增）
+npx vitest run tests/bot-rail-paused-badge.spec.tsx   tests/bot-rail-avatar.spec.tsx                                    # 9 passed
+npx vitest run                                                      # 1489 passed / 1 skipped / 1 既有失败
+```
+
+DOM 断言：初次列表含 unviewed 暂停 → 行上 `data-paused="true"`；派发事件后 mock 第二次返回无
+`routinePausedReason` → 该行不再 `data-paused`、无「已暂停」、恢复原描述；卸载后派发事件不再触发请求。
+另有静态守卫：页面的事件名必须与 rail 一致，且派发挂在 viewed 的 `.then` 上（`.catch` 静默仍在）。
+既有失败仍是 account-settings（无关）。
+
+**79 部署与只读验收**：web `kai/assistant-web:20261030-managed-r47` 已滚（healthy，`/assistant` = 200）；
+ctx `web-src-r47`，`page.tsx` sha256 `0277a809…`、`bot-rail.tsx` `abd7599e…` 与本地一致；
+`kai:specialists-changed` 出现在 `1ud9-0psjfh3i.js` / `1wcqcqzyml0p1.js` / `411zsf0gxm70d.js`（r46 无）。
+api 未动，仍 r20；compose 备份 `compose.private.before-r47.json`。
+
+端到端（**浏览器侧拦截 specialists 列表为 fixture，viewed 打真实 API**，不写业务数据）：
+打开 `/assistant?bot=specialist_466780791f3c4f218b66019818346459`，首个列表带 unviewed 暂停
+→ rail 出现徽章；t=716ms viewed POST（真实 200）→ t≈745ms 触发第二次列表请求（无暂停）
+→ 徽章在 t≈1.56s 消失、恢复原描述。共 2 次 specialists 列表请求，远早于 30s 轮询。
+截图 `/tmp/kai79-accept/164-r47-paused-before.png`、`165-r47-paused-after.png`。
+真实数据当前没有暂停中的 Bot，所以未做「真实 24h 无人查看」链路；本轮验证的是 viewed→刷新→徽章消失
+这段新增行为，暂停本身的产生仍由 r41 的后端验收覆盖。
