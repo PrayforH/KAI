@@ -839,3 +839,39 @@ npx vitest run                                                           # 1463 
   `lastViewedAt` 由 `12:57:34Z` 变为 `14:58:01Z`。截图 `/tmp/kai79-accept/156-r41-bot-open.png`。
 - 未验证：真实"无人查看 → 暂停"文案的浏览器视觉（需要把某 bot 的 lastViewedAt 拨回 24h 后跑一次调度，
   会改真实数据）；该分支由集成测 + jsdom 弹窗用例钉住。
+
+## 侧栏 bot 头像改用已保存的「色 + 形」（2026-10-31，web r42，marker kai-rail-shape-avatar）
+
+缺口：rail 的 `BotAvatar` 只接 `color`，`avatar` 被丢弃 → 打开助理面看到的是名字首字头像，
+与新建/编辑里保存的 `config.appearance={color,avatar}` 不一致。
+
+- 新增 `botShape()` + `BotRailAvatar`（bot-rail.tsx）：子助理渲染
+  `<svg viewBox="0 0 64 64"><path d={BOT_SHAPES path} fill={color} /></svg>`，
+  容器仍是 `.bot-rail-avatar`（26px，svg 20px，背景透明）；`specialistAppearance(item).avatar` 接上。
+  缺失/未知 id → 回退 blob（与新建设置默认一致），不再回退字母。
+- 主助理保留固定「K」字母入口（`data-avatar="letter"`），不会套用某个子助理的外形。
+- 在岗/待启用两段共用同一组件；未改创建/编辑 API、强调色变量、`openBot` 整页导航与分组文案；
+  `BOT_SHAPES` 直接从 create-bot-dialog 复用，没有第二份 path。
+
+**测试**
+
+```
+cd web/harness-console
+npx tsc --noEmit                                                # clean
+npx vitest run tests/bot-rail-avatar.spec.tsx                   # 5 passed（新增）
+npx vitest run tests/bot-rail-groups.spec.tsx   tests/bot-edit-dialog.spec.tsx tests/bot-edit-dialog-paused.spec.tsx  # 10 passed
+npx vitest run                                                  # 1468 passed / 1 skipped / 1 既有失败
+```
+
+行为断言（jsdom 真渲染，不是源码字符串）：`star` 渲染出 BOT_SHAPES 的 star path 且头像无文本；
+无 appearance / 未知 id → blob path；BotRail 同时渲染在岗 `star` 与待启用 `drop` 两个外形，
+主助理是 `data-avatar="letter"` 的「K」且没有 `path`；既有失败仍是 account-settings（无关）。
+
+**79 部署与只读验收**：web `kai/assistant-web:20261030-managed-r42` 已滚（healthy，`/assistant` = 200）；
+ctx `web-src-r42`，`bot-rail.tsx` sha256 `85b12b9b…`、`web-codex.css` `35744332…` 与本地一致；
+组件 chunk 含 `data-avatar`（r41 无）。页面探针：主助理 `letter/K`，三个 bot 均为
+`shape/blob`、头像无文字、svg 20×20；fill 分别 `#0d9655 / #0d9381 / #86592e`
+（行业快报监控与 DB `appearance.color` 一致）。截图 `/tmp/kai79-accept/157-r42-rail-avatars.png`。
+
+未验证：非 blob 外形（star/drop）在 79 的视觉——现网真实数据只有 blob（两个 star 的 bot 已 archived），
+该分支由上面的 DOM 用例覆盖。api 未动，仍 r20。
