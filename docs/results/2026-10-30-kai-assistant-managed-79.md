@@ -1309,3 +1309,50 @@ compose 备份 `compose.private.before-r52.json` / `before-r53.json`。
 
 未验证：真实「未配置的 pending_input Bot 在主会话里点完成」——现网 pending 转交都指向已 active 的 Bot，
 造一条新的需要真实委派（会写用户数据）；流程由 DOM 用例 + 注入式实机验收覆盖。
+
+## 子助理凭据 UI（2026-11-01，web r54，marker kai-specialist-credential-ui）
+
+缺口：后端早已有 `POST /specialists/{id}/credentials`（密文入库、config 只写
+`credential_ref:<名称>`、无明文回读），但助理面前端没有调用点——编辑 Bot 与补配置流程都没有
+「填密钥」入口。
+
+- `assistant-client` 新增薄封装 `saveSpecialistCredential()`（走既有 `assistantRequest`，
+  失败原样展示服务端文案，如「凭据存储未配置」「凭据名称需在 1–64 字之间」）。
+- 新增 `SpecialistCredentials` 组件：列出 `config` 里 `credential_ref:*` 的**名称**
+  （「已配置 · api_key」），输入名称 + `SecretInput`（密码型、可临时显示）→「保存凭据」；
+  成功清空输入、显示「已保存「api_key」」并立即出现在已配置列表（父组件刷新前也不丢）；
+  **从不渲染 credential reference 或密文**。
+- 接入 `bot-edit-dialog` 的「凭据」区（主要入口）；`SpecialistSetupCard` 底部加折叠行
+  「可选：为这个 Bot 添加凭据」复用同一组件（主会话内联补配置时也能顺手认证）。
+- 未改委派/入队/lease/预算/desktop/飞书微信；未新增端口或服务。
+
+**测试**
+
+```
+cd web/harness-console
+npx tsc --noEmit                                                     # clean
+npx vitest run tests/specialist-credentials.spec.tsx                 # 4 passed（新增）
+npx vitest run tests/bot-edit-dialog.spec.tsx tests/bot-edit-dialog-paused.spec.tsx \
+  tests/specialist-setup-card.spec.tsx tests/specialist-setup-card.flow.spec.tsx  # 15 passed
+npx vitest run                                                       # 1505 passed / 1 skipped / 1 既有失败
+```
+
+DOM 断言：已有 `credential_ref:api_key` → 显示「已配置 · api_key」且 DOM 不含 reference 值；
+保存调用 `saveSpecialistCredential(id, {name, secret, expectedRevision})`、body 含名称/内容、
+成功后出现「已配置 · api_key」+「已保存「api_key」」、两个输入框清空、密文不出现在 DOM；
+失败展示服务端文案且保留已输入内容；编辑弹窗挂载后凭据区与「保存凭据」按钮可见、secret 输入为
+`type=password`。既有失败仍是 account-settings（无关）。
+
+**79 部署与只读验收**：web `kai/assistant-web:20261030-managed-r54` 已滚（healthy，`/assistant` = 200）；
+ctx `web-src-r54`，5 个文件逐文件 sha256 与本地一致；「已配置 ·」/「保存凭据」出现在
+`1xp34jie2gcu7.js`（r53 无）。api 未动，仍 r23；compose 备份 `compose.private.before-r54.json`。
+
+- 真实 Bot 编辑弹窗（行业快报监控）：凭据区可见、空态文案、`保存凭据` 按钮、secret 输入为 password、
+  DOM 无 `specialist_credential_` 泄漏；截图 `/tmp/kai79-accept/177-r54-dialog-credentials-bottom.png`。
+- 主会话补配置卡（**浏览器侧拦截 API** 注入 needs_input 夹具）：折叠行「可选：为这个 Bot 添加凭据」
+  展开后出现名称输入与「保存凭据」；截图 `/tmp/kai79-accept/176-r54-setup-card-credentials.png`。
+- 未在真实 Bot 上提交凭据（会写入密文与 config，改用户数据）；保存链路由 mock 单测覆盖。
+
+**如何在 /assistant 给某个 Bot 加凭据**：打开该 Bot 会话 → 顶栏「…」→ 最下方「凭据」→
+填「凭据名称」（如 `api_key`）与「凭据内容」→「保存凭据」；保存后该行显示「已配置 · api_key」，
+之后可在描述/任务里引用该名称，系统只存 `credential_ref:api_key`。
