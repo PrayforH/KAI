@@ -1454,3 +1454,49 @@ compose 备份 `compose.private.before-r56.json`。
 
 未验证：真实子 bot 挂起 ask 时的跨线程 ACK（现网没有待答 ask；实际提交会启动该 bot 的真实运行）。
 **回写路径 = append 到 specialist thread（AG-UI run，body.threadId 即子线程）**。
+
+## 主会话内联审批卡（2026-11-01，web r57，marker kai-main-session-approval-card）
+
+缺口：任务/子 bot 进入 `waiting_approval` 时，`ApprovalCard` 只在当前激活线程（任务侧栏 +
+agent-thread + approvalStore）显示；主 `/assistant` 转交行只有「等待你审批，请到网页助理确认」，
+必须点进任务/`?bot=` 才能点批准。
+
+- **发现**：对每条转交行 GET `specialists/{id}` 拿 `threadId`，再用既有
+  `loadTaskSummary(threadId)`（`/api/agui/threads?thread_id=`，与任务侧栏同一投影）读
+  `pending_approval`；`status === "pending"` 才在行下渲染 `.handover-approval-card`，
+  标题「「{bot}」等待你审批」，UI **复用 `ApprovalCard`**（`formatApprovalReason` /
+  `approvalContextRows` 原样），不复制第二套审批界面、不动全局 approvalStore 的 settled 语义。
+- **decide**：点击允许/拒绝走既有 `PUT /api/harness/approvals/{approvalId}`（body
+  `{decision:"approved"|"rejected"}`，与 agent-thread 一致）；成功后本地清掉该投影卡
+  （不必等下一次刷新），全程没有 `location.assign(?bot=)`。
+- 未改委派/lease/预算/desktop、未改 ApprovalCard 视觉、未新开服务。
+
+**测试**
+
+```
+cd web/harness-console
+npx tsc --noEmit                                                   # clean
+npx vitest run tests/main-session-approval-card.spec.tsx           # 3 passed（新增）
+npx vitest run tests/main-session-ask-card.spec.tsx   tests/main-session-credential-card.spec.tsx   tests/main-session-pending-input-card.spec.tsx tests/handover-row.spec.tsx  # 13 passed
+npx vitest run                                                     # 1514 passed / 1 skipped / 1 既有失败
+```
+
+DOM 断言：summary 带 `pending_approval`（Bash + 策略原因 + command）→ 主会话出现「「行业快报监控」
+等待你审批」+「允许运行这条命令？」+ 原因/命令；点「允许一次」→ `PUT
+/api/harness/approvals/approval_1` body `{decision:"approved"}`，卡收起、URL 仍 `/`；
+点「拒绝」→ `{decision:"rejected"}`；无 `pending_approval` → 不渲染审批卡。
+既有失败仍是 account-settings（无关）。
+
+**79 部署与只读验收**：web `kai/assistant-web:20261030-managed-r57` 已滚（healthy，`/assistant` = 200）；
+ctx `web-src-r57`，`handover-row.tsx` sha256 `3670ceb5…`、`web-codex.css` `9f56e9de…` 与本地一致；
+`handover-approval-card` 出现在 `3pit_qsyasr2o.js` / `35ufqva-jsen9.css`（r56 无）。api 未动，仍 r23；
+compose 备份 `compose.private.before-r57.json`。
+
+- 真实页面：当前没有 `waiting_approval` 线程 → 0 张审批卡、无 console/page error；
+- 注入式（**浏览器侧拦截 thread summary / history / approvals PUT，均不写服务端**）：
+  实机出现「「行业快报监控」等待你审批」+ Bash/原因/命令 + 拒绝/允许一次；点允许后捕获
+  `PUT /api/harness/approvals/approval_fixture_1` body `{"decision":"approved"}`，卡收起、URL 仍 `/assistant`。
+  截图 `/tmp/kai79-accept/180-r57-approval-card.png`。
+
+未验证：真实 `waiting_approval` 线程在主会话被批准（现网没有待审批 Run；真实点批准会改变运行状态）。
+**decide 路径 = 既有 `PUT /api/harness/approvals/{approvalId}`**。
