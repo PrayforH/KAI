@@ -996,3 +996,44 @@ compose 备份 `compose.private.before-r45.json`。
 
 未验证：真实桌面占用/排队下的页面行为（需要有一次 `requiresDesktop` 的进行中执行，会写真实数据）；
 文案与状态机由上面的 DOM 用例 + 注入渲染覆盖。
+
+## 侧栏 bot 行的「无人查看已暂停」徽章（2026-11-01，web r46，marker kai-rail-paused-badge）
+
+缺口：rail 只显示名 + 描述 + 色形头像，用户必须点「…」进编辑弹窗才知道某 Bot 因无人查看
+暂停了例行任务；列表侧没有可感知的暂停态。
+
+- `bot-rail.tsx` 新增 `isUnviewedPaused(item)`（只认 `routinePausedReason.reason === "unviewed"`）：
+  在岗与待启用两段共用；行根 `.bot-rail-item` 写 `data-paused="true"`（非暂停不写）。
+- 暂停时把副标题（`small`）替换为「已暂停 · 无人查看」（不会被描述省略号截掉），
+  并用琥珀色（`#d2a83a`）区分；头像强调色、外形、分组与 `openBot` 导航均未动。
+- 主助理入口永不写 `data-paused`、不出现「已暂停」。数据只读既有 `specialists` 列表
+  （30s 轮询）；进入该 Bot 会话后既有 `viewed` 清标记，下次列表刷新徽章消失——未新增轮询或 API。
+
+**测试**
+
+```
+cd web/harness-console
+npx tsc --noEmit                                                  # clean
+npx vitest run tests/bot-rail-paused-badge.spec.tsx               # 4 passed（新增）
+npx vitest run tests/bot-rail-avatar.spec.tsx tests/bot-rail-groups.spec.tsx   tests/bot-edit-dialog-paused.spec.tsx                           # 11 passed
+npx vitest run                                                    # 1486 passed / 1 skipped / 1 既有失败
+```
+
+DOM 断言：列表含 1 条 unviewed + 1 条正常 → 仅前者 `data-paused="true"`、文案含「已暂停 · 无人查看」，
+正常行无标记/无文案；`reason` 非 unviewed → 无标记；主助理行永不带 `data-paused` 且无「已暂停」；
+在岗与待启用两段各一条暂停时都命中。既有失败仍是 account-settings（无关）。
+
+**79 部署与只读验收**：web `kai/assistant-web:20261030-managed-r46` 已滚（healthy，`/assistant` = 200）；
+ctx `web-src-r46`，`bot-rail.tsx` sha256 `4385983f…`、`web-codex.css` `31ddbde7…` 与本地一致；
+「已暂停 · 无人查看」出现在 `3anmjck4bx8p2.js` / `0u-68_3x1wmkr.js`（r45 无）。api 未动，仍 r20。
+compose 备份 `compose.private.before-r46.json`。
+
+- 真实数据当前没有任何 `routinePausedReason`：页面 rail `data-paused` 命中 **0**（正确的阴性），
+  4 行副标题均为原描述。
+- 暂停视觉用**浏览器侧拦截**（`page.route` 只改本次页面响应）注入 1 条在岗暂停 + 1 条待启用暂停：
+  实机出现 2 个 `data-paused="true"` 行，副标题「已暂停 · 无人查看」、颜色 `rgb(210,168,58)`，
+  正常行与主助理无标记；截图 `/tmp/kai79-accept/163-r46-rail-paused.png`。这是注入 fixture，不是真实暂停。
+
+未验证：真实「超过 24h 无人查看 → 调度写入 routinePausedReason → 列表出徽章 → 打开会话后消失」
+的完整链路（需要把某 Bot 的 lastViewedAt 拨回 24h 再等一次调度，会写真实数据）；该链路后半段
+（viewed 清标记）已有 r41 的 API 验收，列表渲染由上述 DOM + 注入验收覆盖。
