@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { assistantRequest, type Specialist } from "../lib/assistant-client";
 
 const FREQUENCIES = [
@@ -25,9 +25,12 @@ const SETUP_STATUSES = new Set(["draft", "needs_input", "validating", "ready", "
 export function SpecialistSetupCard({
   specialistId,
   onReady,
+  onAlreadyActive,
 }: {
   specialistId: string;
   onReady?: () => void;
+  /** 打开时该 Bot 已经是 active（例如早前在 ?bot= 里启用过）：让调用方把行态同步成已安排。 */
+  onAlreadyActive?: () => void;
 }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [frequency, setFrequency] = useState<number>(1440);
@@ -36,6 +39,9 @@ export function SpecialistSetupCard({
   // 避免把一次性的成功回执变成常驻横幅（那时首跑可能早跑完了）。
   const [justEnabled, setJustEnabled] = useState(false);
   const [error, setError] = useState("");
+  // 保存流程本身会看到 active，避免和 onReady 重复上报。
+  const savingRef = useRef(false);
+  const announcedActiveRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -55,8 +61,17 @@ export function SpecialistSetupCard({
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!detail || detail.specialist.status !== "active" || savingRef.current || announcedActiveRef.current) {
+      return;
+    }
+    announcedActiveRef.current = true;
+    onAlreadyActive?.();
+  }, [detail, onAlreadyActive]);
+
   async function saveAndEnable() {
     if (!detail || busy) return;
+    savingRef.current = true;
     setBusy(true);
     setError("");
     try {

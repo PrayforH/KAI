@@ -15,6 +15,7 @@ import { handoverStore } from "../src/lib/handover-store";
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
 const specialistId = "specialist_pending_1";
+const activeId = "specialist_already_active";
 
 const detail = {
   specialist: {
@@ -48,6 +49,12 @@ beforeEach(() => {
     }
     if (path === "specialists") return [{ specialistId, name: "休息提醒" }];
     if (path === `specialists/${specialistId}` && method === "GET") return detail;
+    if (path === `specialists/${activeId}` && method === "GET") {
+      return {
+        ...detail,
+        specialist: { ...detail.specialist, specialistId: activeId, name: "天气提醒", status: "active" },
+      };
+    }
     if (path === `specialists/${specialistId}/config`) {
       return { ...detail.specialist, status: "ready", revision: 4 };
     }
@@ -140,6 +147,28 @@ describe("pending_input handover in the main session", () => {
       // jsdom 不允许改写 location.assign：至少确认还停在当前页。
       expect(window.location.pathname).toBe("/");
     }
+  });
+
+  it("normalizes a stale pending_input row when the bot is already active", async () => {
+    await act(async () => {
+      root!.render(<HandoverInlineRows />);
+    });
+    await flush(2);
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent("kai:handover", {
+          detail: { specialist_id: activeId, specialist_name: "天气提醒", status: "pending_input" },
+        }),
+      );
+    });
+    await flush(8);
+
+    const row = [...host.querySelectorAll(".handover-inline-item")].find((node) =>
+      (node.textContent ?? "").includes("天气提醒"),
+    );
+    expect(row?.textContent).toContain("已安排");
+    expect(row?.textContent).not.toContain("待补充");
+    expect(row?.querySelector(".specialist-setup-card")).toBeNull();
   });
 
   it("leaves non-pending handovers as plain links", async () => {

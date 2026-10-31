@@ -35,7 +35,18 @@ export function HandoverInlineRows() {
   if (!notices.length) return null;
   return (
     <div className="handover-inline" aria-label="转交状态">
-      {notices.map((notice) => (
+      {notices.map((notice) => {
+        // 行态与真实配置对齐：内联保存成功、或该 Bot 早前已启用，都显示「已安排」。
+        const settled = () => {
+          handoverStore.markConfigured(notice.specialistId);
+          // rail 也立刻重拉，把该 bot 从「待启用」移到「在岗」。
+          window.dispatchEvent(
+            new CustomEvent("kai:specialists-changed", {
+              detail: { specialistId: notice.specialistId, reason: "configured" },
+            }),
+          );
+        };
+        return (
         <div className="handover-inline-item" key={notice.specialistId}>
           <p className="handover-inline-line">
             {/* 与 bot-rail 同判：软导航不重挂载页面，旧线程会盖住新 bot。 */}
@@ -54,19 +65,13 @@ export function HandoverInlineRows() {
             // 缺配置时不必跳进 ?bot=：同一张 SpecialistSetupCard 直接在主会话里补。
             <SpecialistSetupCard
               specialistId={notice.specialistId}
-              onReady={() => {
-                handoverStore.markConfigured(notice.specialistId);
-                // rail 也立刻重拉，把该 bot 从「待启用」移到「在岗」。
-                window.dispatchEvent(
-                  new CustomEvent("kai:specialists-changed", {
-                    detail: { specialistId: notice.specialistId, reason: "configured" },
-                  }),
-                );
-              }}
+              onReady={settled}
+              onAlreadyActive={settled}
             />
           )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
