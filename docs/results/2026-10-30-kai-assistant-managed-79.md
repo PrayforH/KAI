@@ -667,3 +667,52 @@ npx vitest run                                            # 1444 passed / 1 skip
   截图：`/tmp/kai79-accept/152-r37-assistant.png`。
 - 未验证：真实**进行中**回合的视觉（需要发起一次真实 run 并抓到工具阶段）；
   该行为的判定逻辑由上述单测钉住。冒烟未替用户发起 run、未点任何按钮。
+
+## 助理面中间结论语（用户纠正 r37，2026-10-31，web r38，marker kai-mid-conclusion）
+
+用户明确否决 r37 的「调用 Bash / 工具调用完成 / 14 项工具可用」过程条：要的是工具**之间**的
+业务结论语（如「收到快捷操作：目标改为 8 公里…先确认参数。」「参数已确认：…现在改目标距离为 8000 米…」）。
+
+改动（仅前端 `grok-activity.tsx`）：
+
+- **短语/摘录改为结论语**：取 `message.delta`（其次 `reasoning.summary.delta`）的 summary，
+  但只取**末次工具/runtime/context 事件之前**的条目——之后的是本轮终答，仍由回答气泡负责。
+  该边界同时挡住 dce054a7 的重复：纯文本回合没有工具 → 边界 -1 → 一条都不取。
+- **过滤工具日志/引导**：`调用 X`、`工具调用完成/失败`、`已加载 N 项…`、`N 项工具…`、
+  `运行环境…`、`正在准备运行…` 一律不当主展示；工具只剩「返回 12 行 · 340 字符」这类
+  非引导结果时，只回落**一句**，不堆工具名；没有可用文字时整行不出现。
+- **长度**：源文本 ≤160 字才收（整篇终答远超，天然挡掉），展示按句截断到 120 字；
+  步骤列表只放结论语（最近 ≤5 条，去重、排除与主短语相同的一条）。
+- 终态隐藏沿用 0ee6fffd：`completed/succeeded/failed/cancelled` 不渲染活动行，
+  步骤条一并消失，不钉进历史；未改委派/pending_input。
+
+**真实数据回放（只读，未发起 run）**：用 79 历史线程里的 6 个 `harness_run_activity` 投影
+（86 条消息中带 activity 的回合）跑同一套取舍逻辑，选出的短语都是业务结论，例如：
+
+- 「我先盘点工作区里的文件，确认这次「预算受限验收职责」检查需要核对哪些材料。」
+- 「材料读完了。这两份根本不是同类东西：一份是 21 行的知识库问答…我先做了一次快速一致性体检。」
+- 「继续盯梢本轮：确认 Day 27 帖子或 banked 重置到账确认。」
+
+同一回合里更早的结论会成为步骤条；「调用 X / 工具调用完成」未出现在任何短语或步骤中。
+
+**测试**
+
+```
+cd web/harness-console
+npx tsc --noEmit                                          # clean
+npx vitest run tests/assistant-activity-steps.spec.tsx    # 14 passed（重写）
+npx vitest run tests/assistant-activity-terminal.spec.tsx tests/assistant-dup-channels.spec.tsx   tests/assistant-duplicate.spec.tsx                      # 15 passed
+npx vitest run                                            # 1446 passed / 1 skipped / 1 既有失败
+```
+
+覆盖：最新中间结论作短语；多条结论时取最新、其余进步骤；终答（末次工具之后）永不作短语；
+工具引导不当主展示；仅工具时回落一句非引导结果或不出行；running/waiting_approval 显示、
+终态一律不显示；步骤 ≤5 去重；按句截断 ≤120。
+
+**79 部署**：web `kai/assistant-web:20261030-managed-r38` 已滚（healthy，`/assistant` 200）；
+基座 r4，ctx `web-src-r38`，`grok-activity.tsx` sha256 `4fdd7a12…` 与本地一致；
+组件 chunk 由 r37 的 `1syfg_iiuhqfg.js` 变为 `2hdutik2uwl-7.js`（含「过程摘录」与引导过滤）。
+只读探针：`activityRows=0 / stepLists=0 / stepCssRules=4 / answers=12 / toolWordsInPhrase=0`
+（历史终态不出现，样式已加载，短语里没有工具名）。截图 `/tmp/kai79-accept/153-r38-assistant.png`。
+
+**未验证**：真实进行中回合的视觉（需发起真实 run 并抓工具间隙）；取舍逻辑已用上述真实数据回放 + 单测钉住。
