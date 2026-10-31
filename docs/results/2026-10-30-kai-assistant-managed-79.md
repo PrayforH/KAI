@@ -1542,3 +1542,47 @@ compose 备份 `compose.private.before-r58.json`。
 
 未验证：真实点一次 trial（会为该 Bot 排入一条真实执行，消耗额度）；trial 的成功文案与服务端拒绝由
 DOM 用例 + 注入式实机验收覆盖。
+
+## 编辑弹窗内启用/暂停持续运行（2026-11-01，web r59，marker kai-assistant-bot-edit-enable）
+
+缺口：`/assistant` 的 Bot 编辑弹窗能改外观/凭据、看职责、点「首次试运行」，但不能启用或暂停持续运行——
+这两键只在 studio「专职子助理」页，用户试完仍要跳页面，active Bot 也无法在「…」里暂停。
+
+- `bot-edit-dialog`：`status === "ready"` 显示主按钮「启用持续运行」，`status === "active"` 显示「暂停」；
+  点击走既有 `POST specialists/{id}/status` body `{status:"active"|"paused", expectedRevision}`。
+  成功后用服务端返回的 Specialist 更新弹窗（revision CAS 同步）、显示「已启用持续运行」/「已暂停」、
+  派发 `kai:specialists-changed`（rail 刷新）；失败原样展示 Conflict 文案，按钮恢复可点。
+- 其它状态（draft / needs_input / paused / blocked…）不渲染这两键：paused→active 后端目前拒绝，
+  前端不假装可恢复；needs_input 继续走主会话 SetupCard。`routinePausedReason`（无人查看暂停）
+  仍是只读提示，没有变成可点的暂停/恢复。
+- 与「首次试运行」并存（trial ≠ 启用）；未改 trial/status 后端语义、委派/lease/enqueue/预算/desktop。
+
+**测试**
+
+```
+cd web/harness-console
+npx tsc --noEmit                                                   # clean
+npx vitest run tests/bot-edit-dialog-enable.spec.tsx               # 4 passed（新增）
+npx vitest run tests/bot-edit-dialog-trial.spec.tsx tests/bot-edit-dialog.spec.tsx \
+  tests/bot-edit-dialog-paused.spec.tsx tests/specialist-credentials.spec.tsx  # 15 passed
+npx vitest run                                                     # 1521 passed / 1 skipped / 1 既有失败
+```
+
+DOM 断言：ready → 仅「启用持续运行」，点击 POST `{status:"active", expectedRevision:3}`，出现
+「已启用持续运行」且主按钮切成「暂停」、`kai:specialists-changed` 触发；active → 仅「暂停」，
+POST `{status:"paused"}` 后出现「已暂停」；needs_input / paused → 两键都不渲染；
+服务端冲突 → alert 显示原因、按钮可重试。既有失败仍是 account-settings（无关）。
+
+**79 部署与只读验收**：web `kai/assistant-web:20261030-managed-r59` 已滚（healthy，`/assistant` = 200）；
+ctx `web-src-r59`，`bot-edit-dialog.tsx` sha256 `05648b78…`、`bot-edit-dialog.module.css` `b28a6ef8…`
+与本地一致；「启用后按检查频率持续运行」出现在 `09atj_sw8nr5j.js`（r58 无）。api 未动，仍 r23；
+compose 备份 `compose.private.before-r59.json`。
+
+- 真实 active Bot（行业快报监控）弹窗：仅「暂停」+ 说明可见（**未点击**，避免暂停真实 Bot）；
+- 注入式（浏览器侧拦截 specialists/status，**不写服务端**）：ready fixture 点启用 → POST
+  `{status:"active", expectedRevision:3}`，出现「已启用持续运行」且切换为「暂停」；active fixture 点暂停 →
+  POST `{status:"paused"}`，出现「已暂停」且两键消失；两次 URL 均不变。
+  截图 `/tmp/kai79-accept/182-r59-enable-dialog.png`。
+
+未验证：真实点启用/暂停（会改变用户 Bot 的持续运行状态）；请求体/文案/禁用条件由 DOM 用例 +
+注入式实机验收覆盖。
