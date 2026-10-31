@@ -4232,6 +4232,22 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .h
   gap: 2px;
 }
 
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-ask-card {
+  width: min(640px, 92%);
+  margin: 6px auto 2px;
+  padding: 10px 12px;
+  border: 1px solid #333;
+  border-radius: 14px;
+  background: #1b1b1b;
+  text-align: left;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-ask-title {
+  margin: 0 0 6px;
+  color: #cfcfcf;
+  font-size: 12px;
+}
+
 body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-credential-card {
   width: min(640px, 92%);
   margin: 6px auto 2px;

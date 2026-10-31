@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { handoverStore, useHandoverNotices } from "../lib/handover-store";
 import { statusLead } from "../lib/handover-store";
 import { assistantRequest, type Specialist } from "../lib/assistant-client";
+import { pendingThreadAsk, submitThreadAnswer, type ThreadAsk } from "../lib/thread-answer";
+import { ConversationInputCard } from "./conversation-input-card";
 import { SpecialistCredentials, pendingCredentialNames } from "./specialist-credentials";
 import { SpecialistSetupCard } from "./specialist-setup-card";
 
@@ -18,6 +20,73 @@ export function shouldShowHandoverRows(
   hasBot: boolean,
 ): boolean {
   return personalAssistant && assistantSurface && !hasBot;
+}
+
+/**
+ * 子 Bot 线程里的 ask（harness-input）投影到主会话：读该线程最近历史，
+ * 末条 assistant 仍是问卷就内联同一张 ConversationInputCard；
+ * 提交直接写回该 threadId（AG-UI run），不需要点进 ?bot=。
+ */
+function HandoverAskCard({
+  specialistId,
+  specialistName,
+}: {
+  specialistId: string;
+  specialistName: string;
+}) {
+  const [ask, setAsk] = useState<ThreadAsk | null>(null);
+  const [target, setTarget] = useState<{
+    threadId: string;
+    agentName: string;
+    agentVersion: string;
+  } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const detail = await assistantRequest<{
+          specialist: Specialist;
+          threadId: string | null;
+        }>(`specialists/${encodeURIComponent(specialistId)}`);
+        if (!alive || !detail.threadId) return;
+        setTarget({
+          threadId: detail.threadId,
+          agentName: detail.specialist.agentName,
+          agentVersion: detail.specialist.agentVersion,
+        });
+        const response = await fetch(
+          `/api/agui/threads/${encodeURIComponent(detail.threadId)}/history?limit=4`,
+          { cache: "no-store" },
+        );
+        if (!response.ok) return;
+        const history = (await response.json()) as { messages?: unknown };
+        if (!alive) return;
+        const messages = Array.isArray(history.messages) ? history.messages : [];
+        setAsk(pendingThreadAsk(messages as never));
+      } catch {
+        // ask 投影是增强信息：读不到就静默，不打断转交行。
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [specialistId]);
+
+  if (!ask || !target) return null;
+  return (
+    <div className="handover-ask-card">
+      <p className="handover-ask-title">「{specialistName}」正在等你回答</p>
+      <ConversationInputCard
+        input={ask.input}
+        disabled={false}
+        onSubmit={async (answer) => {
+          await submitThreadAnswer({ ...target, text: answer });
+          setAsk(null);
+        }}
+      />
+    </div>
+  );
 }
 
 /**
@@ -109,6 +178,12 @@ export function HandoverInlineRows() {
               <span className="handover-inline-target">「{notice.specialistName}」</span>
             </a>
           </p>
+          {notice.status !== "failed" && (
+            <HandoverAskCard
+              specialistId={notice.specialistId}
+              specialistName={notice.specialistName}
+            />
+          )}
           <HandoverRequiredCredentials specialistId={notice.specialistId} />
           {notice.status === "pending_input" && (
             // 缺配置时不必跳进 ?bot=：同一张 SpecialistSetupCard 直接在主会话里补。
