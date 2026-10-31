@@ -875,3 +875,40 @@ ctx `web-src-r42`，`bot-rail.tsx` sha256 `85b12b9b…`、`web-codex.css` `35744
 
 未验证：非 blob 外形（star/drop）在 79 的视觉——现网真实数据只有 blob（两个 star 的 bot 已 archived），
 该分支由上面的 DOM 用例覆盖。api 未动，仍 r20。
+
+## 顶栏身份标记与 rail 对齐（2026-10-31，web r43，marker kai-header-shape-avatar）
+
+缺口：打开 `/assistant?bot=…` 后，顶栏只有文字标题 / 描述 /「…」；色 + 形只出现在左侧列表，
+头部没有同款标记，与 rail 和本机 Grok 的身份观感不一致。
+
+- 在 `bot-rail.tsx` 提取 `AssistantHeaderAvatar`（复用 `BotRailAvatar` / `botAccent`）：
+  有 bot → `appearance.color`（缺省 `botAccent(id)`）+ `appearance.avatar`（缺/未知 → blob）；
+  无 bot → `letter="K"` + `BOT_ACCENTS[0]`（#126fd4）。两个分支都渲染同一节点，便于测试与切换。
+- `page.tsx` 的 assistantView `task-context-bar` 在标题左侧插入该节点；
+  CSS 新增 `.task-context-bot-avatar`（24px 容器 / 18px svg），描述与「…」位置未变。
+- 未改编辑弹窗、rail 分组/导航、`openBot`、强调色变量与 API。
+
+**测试**
+
+```
+cd web/harness-console
+npx tsc --noEmit                                                # clean
+npx vitest run tests/assistant-header-avatar.spec.tsx           # 4 passed（新增）
+npx vitest run tests/bot-rail-avatar.spec.tsx tests/bot-rail-groups.spec.tsx   tests/bot-edit-dialog.spec.tsx tests/bot-edit-dialog-paused.spec.tsx  # 19 passed
+npx vitest run                                                  # 1472 passed / 1 skipped / 1 既有失败
+```
+
+DOM 断言：`star` bot → 顶栏 path = star、fill = 指定色、头像无文本；无 appearance / 未知 id → blob
+（老 bot 用 `botAccent`）；`bot=null` → `data-avatar="letter"` 的「K」且无 svg，
+从子助理切回主助理外形不残留。既有失败仍是 account-settings（无关）。
+
+**79 部署与只读验收**：web `kai/assistant-web:20261030-managed-r43` 已滚（healthy，`/assistant` = 200）；
+ctx `web-src-r43`，3 个文件逐文件 sha256 与本地一致；`task-context-bot-avatar` 出现在
+`1liyegi_2vmy9.js` / `2l2j9h8-mxere.css`（r42 无）。页面探针：
+
+- 主助理：`letter / K`，24×24，标题「我的助理」；
+- 休息提醒：`shape / blob`、fill `#0d9655`、头像无文本、svg 18×18、描述与「…」仍在；
+- 行业快报监控：`shape / blob`、fill `#0d9381`（与 DB `appearance.color` 一致）。
+
+截图 `/tmp/kai79-accept/158-r43-header-main.png`、`159-r43-header-bot.png`。
+未验证：非 blob 外形在 79 顶栏的视觉（现网真实数据只有 blob；DOM 用例覆盖 star/未知）。api 未动，仍 r20。
