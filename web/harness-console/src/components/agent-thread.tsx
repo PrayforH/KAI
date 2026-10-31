@@ -57,7 +57,7 @@ import { groupWorkspaceFiles } from "../lib/workspace-file-groups";
 import { setPendingReply } from "../lib/reply-references";
 import { loadComposerReplyDraft, persistComposerReplyDraft } from "../lib/task-composer-draft";
 import { useAssistantBot, useAssistantSurface } from "./assistant-bot-context";
-import { GrokActivityRow, type GrokFaceState } from "./grok-activity";
+import { GrokActivityRow, progressPhrase, type GrokFaceState } from "./grok-activity";
 import { HandoverInlineRows, shouldShowHandoverRows } from "./handover-row";
 import {
   ComposerReplyProvider,
@@ -1354,8 +1354,9 @@ function TurnActivity({
   const activitySurface = useAssistantSurface();
   if (activitySurface) {
     // 聊天形态：活动＝脸 + 渐现短语，一行，占位与客户端一致。
-    const items = [...displayed.items].reverse();
-    const latest = items.find((item) => item.summary && !item.event_type.startsWith("run."));
+    // 短语只取真正的进展（progressPhrase 排除 message.delta 的正文）。
+    const phrase = progressPhrase(displayed);
+    if (!phrase) return null;
     const faceState: GrokFaceState =
       displayed.status === "failed" ? "failed"
       : ["completed", "succeeded"].includes(displayed.status) ? "done"
@@ -1365,7 +1366,7 @@ function TurnActivity({
         className={`latest-activity ${displayed.status}`}
         data-activity-source={isLast ? "current-run" : "captured-turn"}
       >
-        <GrokActivityRow phrase={latest?.summary ?? ""} state={faceState} />
+        <GrokActivityRow phrase={phrase} state={faceState} />
       </div>
     );
   }
@@ -1659,6 +1660,8 @@ export function HarnessAssistantMessage() {
             <IntelligentUiBlock
               key={presentation.presentation_id}
               value={presentation}
+              // 回答正文已在该 turn 的 .assistant-answer 里；text 决策不再复述。
+              suppressText={Boolean(copyText.trim())}
               onAction={runPresentationAction}
               connected={!conversationScope && Boolean(threadRuntime)}
               onSettled={refreshActionHistory}
@@ -1751,13 +1754,6 @@ function LiveStreamingBubble() {
       {live.text}
     </div>
   );
-}
-
-/** 活动行的短语：取最新一条带摘要的活动（原始活动与视图模型都适用）。 */
-function latestActivityPhrase(activity: { items: ReadonlyArray<{ event_type: string; summary?: string | null }> }): string {
-  const items = [...activity.items].reverse();
-  const latest = items.find((item) => item.summary && !item.event_type.startsWith("run."));
-  return latest?.summary ?? "";
 }
 
 function EditMessageIcon() {
@@ -1915,7 +1911,7 @@ function HarnessUserMessage() {
         >
           {assistantSurface ? (
             <GrokActivityRow
-              phrase={latestActivityPhrase(preResponseActivity)}
+              phrase={progressPhrase(preResponseActivity)}
               state={preResponseActivity.status === "failed" ? "failed" : "working"}
             />
           ) : (

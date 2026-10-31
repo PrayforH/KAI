@@ -191,17 +191,20 @@ export function IntelligentUiBlock({
   disabled = false,
   connected = false,
   onSettled,
+  suppressText = false,
 }: {
   connected?: boolean;
   onSettled?: (runId: string) => void;
   value: unknown;
   onAction?: PresentationActionHandler;
   disabled?: boolean;
+  /** 该轮已有回答正文：text 决策的 fallback 再打印一遍就是重复。 */
+  suppressText?: boolean;
 }) {
   const presentation = parsePresentation(value);
   const body = presentation ? parsePresentationBody(presentation) : null;
   if (presentation?.decision.display === "text") {
-    return <p>{presentation.fallback_text}</p>;
+    return suppressText ? null : <p>{presentation.fallback_text}</p>;
   }
   if (!presentation || !body) {
     const text = fallbackText(value);

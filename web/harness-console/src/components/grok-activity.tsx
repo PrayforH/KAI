@@ -122,10 +122,41 @@ export function GrokActivityRow({
   phrase: string;
   state: GrokFaceState;
 }) {
+  const short = phrase.length > MAX_PHRASE_CHARS
+    ? `${phrase.slice(0, MAX_PHRASE_CHARS)}…`
+    : phrase;
   return (
     <div className="grok-activity-row" data-state={state} aria-live="polite">
       <GrokFace state={state} />
-      <ActivityPhrase text={phrase} />
+      <ActivityPhrase text={short} />
     </div>
   );
+}
+
+
+/** 正文类事件（message.*）与思考类事件不进活动行：它们是回答本体，不是进展。 */
+const PROSE_EVENT_PREFIXES = ["message.", "reasoning."];
+const MAX_PHRASE_CHARS = 60;
+
+/**
+ * 活动行的短语：只取真正的进展条目（runtime/tool/guidance/compaction 等）。
+ *
+ * 后端把每条 message.delta 也记成一条 activity item，summary 就是当轮正文
+ * （src/harness/agui/activity.py:516）。照着"最新带 summary 的条目"取短语，
+ * 会把整段回答画在脸旁边，与 .assistant-answer 气泡重复——历史线程硬刷新必现。
+ */
+export function progressPhrase(
+  activity: { items: ReadonlyArray<{ event_type: string; summary?: string | null }> },
+): string {
+  const items = [...activity.items].reverse();
+  for (const item of items) {
+    const summary = (item.summary ?? "").trim();
+    if (!summary) continue;
+    const type = item.event_type ?? "";
+    if (type.startsWith("run.")) continue;
+    if (PROSE_EVENT_PREFIXES.some((prefix) => type.startsWith(prefix))) continue;
+    if (summary.length > MAX_PHRASE_CHARS) continue;
+    return summary;
+  }
+  return "";
 }
