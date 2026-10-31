@@ -1408,3 +1408,49 @@ compose 备份 `compose.private.before-r55.json`。
 
 未验证：真实 Bot 声明 `required_credentials` 并在主会话完成认证（现网没有该配置，需改真实 bot config）；
 触发推导、提交与收起由 DOM 用例 + 注入式实机验收覆盖。**触发态 = `required_credentials` 前端推导**。
+
+## 子 Bot 的 ask 投影到主会话并可作答（2026-11-01，web r56，marker kai-main-session-ask-card）
+
+缺口：子 bot 线程里的 `ConversationInputCard`（harness-input ask）不会出现在主 `/assistant`，
+用户必须先点进 `?bot=` 才能回答；与「补充/确认尽量留在主 bot 会话」不一致。
+
+- **发现**：对每条转交行，GET `specialists/{id}` 拿 `threadId` 与 `agentName/agentVersion`，
+  再 GET `/api/agui/threads/{threadId}/history?limit=4`；`pendingThreadAsk()` 从末尾扫描：
+  跳过 tool/activity，遇到 user 即判定已作答，遇到 assistant 文本能解析 harness-input 即为待答。
+  有才渲染 `.handover-ask-card`（标题「「{bot}」正在等你回答」），UI 复用 `ConversationInputCard`，
+  不复制问卷实现；无 ask 不渲染；`failed` 行不投影。
+- **回写**：`submitThreadAnswer()` 走既有 AG-UI run 入口
+  `POST /api/agui?agent_name=&agent_version=`，body 为 `RunAgentInput{threadId, runId, messages:[user 回答], ...}`；
+  **消息落在该子线程**（服务端按线程历史重建上下文），主助理线程不写；响应事件流后台读完，
+  避免中途断开取消刚创建的执行。提交成功后卡本地收起；**全程没有 `location.assign(?bot=)`**。
+- 未改委派/lease/预算/desktop、未改 ConversationInput 协议、未新开服务。
+
+**测试**
+
+```
+cd web/harness-console
+npx tsc --noEmit                                                 # clean
+npx vitest run tests/main-session-ask-card.spec.tsx              # 3 passed（新增）
+npx vitest run tests/main-session-pending-input-card.spec.tsx   tests/main-session-credential-card.spec.tsx tests/handover-row.spec.tsx   tests/conversation-input-card.spec.tsx                         # 25 passed
+npx vitest run                                                   # 1511 passed / 1 skipped / 1 既有失败
+```
+
+DOM 断言：history 末条 assistant 含合法 harness-input → 主会话出现「「休息提醒」正在等你回答」+
+问题/输入；提交后 fetch 打到 `/api/agui?agent_name=archive-assistant-agent&agent_version=0.1.1`，
+body `threadId="thread-bot-1"`、单条 user 消息含格式化回答（`请确认参数 … 8 公里`），卡收起、
+URL 仍 `/`；无 ask / 已被 user 回答 → 不渲染。既有失败仍是 account-settings（无关）。
+
+**79 部署与只读验收**：web `kai/assistant-web:20261030-managed-r56` 已滚（healthy，`/assistant` = 200）；
+ctx `web-src-r56`，`thread-answer.ts` sha256 `f4dbdf33…`、`handover-row.tsx` `22178ca5…`、
+`web-codex.css` `ef755728…` 与本地一致；「正在等你回答」/`handover-ask-card` 出现在
+`2q0xa3tch2d9u.js` / `3ii6a0c6fawx1.css`（r55 无）。api 未动，仍 r23；
+compose 备份 `compose.private.before-r56.json`。
+
+- 真实页面：当前没有待答 ask → 0 张 ask 卡、无 console/page error，转交行仍「已安排」。
+- 注入式（**浏览器侧拦截 specialists/history/AG-UI POST，均不写服务端**）：
+  实机出现「「休息提醒」正在等你回答 / 请确认参数 / 目标距离」；作答提交后捕获到
+  `POST /api/agui` body `threadId="thread-fixture-ask"`、`messages[0].content="请确认参数\n\n目标距离\n8 公里"`，
+  卡收起、URL 仍 `/assistant`。截图 `/tmp/kai79-accept/179-r56-ask-card.png`。
+
+未验证：真实子 bot 挂起 ask 时的跨线程 ACK（现网没有待答 ask；实际提交会启动该 bot 的真实运行）。
+**回写路径 = append 到 specialist thread（AG-UI run，body.threadId 即子线程）**。
