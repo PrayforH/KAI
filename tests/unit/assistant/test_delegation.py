@@ -521,6 +521,31 @@ async def test_delegate_to_specialist_reports_missing_config_without_starting():
 
 
 @pytest.mark.asyncio
+async def test_applied_delegate_receipt_matches_the_enqueued_execution():
+    """applied 的回执只描述真实入队：带执行与线程，且不再出现"待补充配置"。"""
+    gateway = FakeGateway()
+    gateway.delegate_outcome = {
+        "handover_id": "handover-1",
+        "specialist_id": "specialist-1",
+        "objective_id": "objective-9",
+        "status": "applied",
+        "missing": [],
+        "created_specialist": True,
+        "execution_id": "objective_run_abc",
+        "thread_id": "assistant_objective-9",
+    }
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    result = await tools["assistant_delegate_to_specialist"](
+        {"name": "费用监控", "task": "长期关注花费"}
+    )
+    body = text_of(result)
+    assert "applied" in body
+    assert "首次执行已入队" in body
+    assert "objective_run_abc" in body and "assistant_objective-9" in body
+    assert "待补充配置" not in body
+
+
+@pytest.mark.asyncio
 async def test_delegate_replay_reports_receipt_without_recreating():
     gateway = FakeGateway()
     gateway.delegate_outcome = {

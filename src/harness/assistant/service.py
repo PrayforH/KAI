@@ -29,6 +29,7 @@ from harness.assistant.models import (
     ObjectiveBrief,
     ObjectiveExecution,
     ObjectiveExecutionStatus,
+    ObjectiveSchedule,
     ObjectiveStatus,
     Specialist,
     SpecialistHandover,
@@ -794,13 +795,14 @@ class AssistantService:
             not isinstance(schedule, int) or not 15 <= schedule <= 525_600
         ):
             raise ConflictError("schedule_minutes 必须是 15–525600 之间的整数（分钟）")
+        now = datetime.now(UTC)
         updated = await self.repository.update_specialist(
             tenant_id,
             user_id,
             specialist_id,
             expected_revision=expected_revision,
             config=config,
-            now=datetime.now(UTC),
+            now=now,
         )
         missing = _specialist_missing_config(updated.config)
         target = SpecialistStatus.READY if not missing else SpecialistStatus.NEEDS_INPUT
@@ -813,9 +815,48 @@ class AssistantService:
                 specialist_id,
                 expected_revision=updated.revision,
                 status=target,
-                now=datetime.now(UTC),
+                now=now,
+            )
+        # 频率是职责的调度属性：保存配置必须落到绑定职责，否则 due worker
+        # 永远看不到 next_check_at，界面显示"已配置"却不会跑。
+        interval = updated.config.get("schedule_minutes")
+        if isinstance(interval, int):
+            await self._sync_duty_schedule(
+                tenant_id, user_id, specialist_id, interval_minutes=interval, now=now
             )
         return updated
+
+    async def _sync_duty_schedule(
+        self,
+        tenant_id: str,
+        user_id: str,
+        specialist_id: str,
+        *,
+        interval_minutes: int,
+        now: datetime,
+    ) -> None:
+        """把 Bot 的运行频率同步到它承接的每个职责（幂等：同频率不写库）。"""
+        schedule = ObjectiveSchedule(intervalMinutes=interval_minutes)
+        for objective in await self.repository.list(tenant_id, user_id):
+            if objective.specialist_id != specialist_id:
+                continue
+            if (
+                objective.schedule is not None
+                and objective.schedule.interval_minutes == interval_minutes
+            ):
+                continue
+            brief = ObjectiveBrief.model_validate(
+                objective.model_dump(include=set(ObjectiveBrief.model_fields))
+                | {"schedule": schedule}
+            )
+            await self.repository.update(
+                tenant_id,
+                user_id,
+                objective.objective_id,
+                expected_revision=objective.revision,
+                now=now,
+                brief=brief,
+            )
 
     async def set_specialist_status(
         self,
@@ -841,14 +882,56 @@ class AssistantService:
             if not bound:
                 # 没有职责就没有调度对象：启用只会显示"运行中"却什么都不会跑。
                 raise ConflictError("该子助理还没有绑定职责，先转交一项职责再启用")
-        return await self.repository.update_specialist(
+        now = datetime.now(UTC)
+        updated = await self.repository.update_specialist(
             tenant_id,
             user_id,
             specialist_id,
             expected_revision=expected_revision,
             status=status,
-            now=datetime.now(UTC),
+            now=now,
         )
+        if status is SpecialistStatus.ACTIVE:
+            # 转交时缺配置的职责从未入队；启用是用户明确的"开始持续运行"
+            # 信号，给还没有任何执行的职责补一次首次执行（有则原样保留）。
+            await self._start_duty_if_idle(tenant_id, user_id, specialist_id, now=now)
+        return updated
+
+    async def _start_duty_if_idle(
+        self,
+        tenant_id: str,
+        user_id: str,
+        specialist_id: str,
+        *,
+        now: datetime,
+    ) -> None:
+        """职责尚无任何执行时补一次入队；已有执行/只跟进/预算拒绝都不重复派发。"""
+        for objective in await self.repository.list(tenant_id, user_id):
+            if objective.specialist_id != specialist_id:
+                continue
+            if objective.mode != DelegationMode.AUTONOMOUS:
+                continue
+            if objective.status != ObjectiveStatus.ACTIVE:
+                continue
+            if await self.repository.executions(
+                tenant_id, user_id, objective.objective_id
+            ):
+                continue
+            try:
+                await self.repository.enqueue(
+                    tenant_id,
+                    user_id,
+                    objective.objective_id,
+                    trigger_key=f"activate:{specialist_id}:{objective.objective_id}",
+                    now=now,
+                )
+            except ConflictError as error:
+                # 预算/并发闸门拒绝时保持可观察：不伪装成已开始执行。
+                logger.warning(
+                    "specialist activation could not enqueue %s: %s",
+                    objective.objective_id,
+                    error,
+                )
 
     async def attach_duty(
         self,
@@ -1011,6 +1094,34 @@ class AssistantService:
                 "missing": missing,
                 "created_specialist": created,
             }
+        # applied 必须对应一条真实排队中的执行：只建 objective/handover 而
+        # 不入队，界面会显示"已安排"但子助理会话永远是空的。
+        try:
+            execution = await self.repository.enqueue(
+                tenant_id,
+                user_id,
+                objective.objective_id,
+                trigger_key=(
+                    f"delegate-specialist:{handover.message_id}:{objective.objective_id}"
+                ),
+                now=datetime.now(UTC),
+            )
+        except ConflictError as error:
+            # 入队被预算/并发闸门拒绝时不能假装已安排；回执保留 received。
+            logger.warning(
+                "specialist handover could not enqueue %s: %s",
+                objective.objective_id,
+                error,
+            )
+            return {
+                "handover_id": handover.handover_id,
+                "specialist_id": specialist.specialist_id,
+                "objective_id": objective.objective_id,
+                "status": HandoverStatus.RECEIVED.value,
+                "missing": [],
+                "created_specialist": created,
+                "error": str(error),
+            }
         await self.repository.update_handover(
             tenant_id,
             user_id,
@@ -1025,6 +1136,8 @@ class AssistantService:
             "status": HandoverStatus.APPLIED.value,
             "missing": [],
             "created_specialist": created,
+            "execution_id": execution.execution_id,
+            "thread_id": execution.thread_id,
         }
 
 

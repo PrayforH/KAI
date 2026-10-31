@@ -504,6 +504,12 @@ async def test_delegate_to_specialist_creates_deduped_handover_and_objective(
     )
     objectives = await service.repository.list("tenant-a", "user-a")
     assert len(objectives) == 1 and objectives[0].specialist_id == specialist.specialist_id
+    assert (
+        await service.repository.executions(
+            "tenant-a", "user-a", objectives[0].objective_id
+        )
+        == []
+    )
 
     replay = await service.delegate_to_specialist(
         "tenant-a",
@@ -518,6 +524,49 @@ async def test_delegate_to_specialist_creates_deduped_handover_and_objective(
     )
     assert replay["handover_id"] == outcome["handover_id"]
     assert await service.repository.list("tenant-a", "user-a") == objectives
+
+
+@pytest.mark.asyncio
+async def test_applied_delegate_enqueues_exactly_one_first_execution(
+    database: DatabaseFixture,
+) -> None:
+    """配置完整时 applied 必须落一条 queued execution，而不是只写回执。"""
+    service = make_service(database)
+    service._agui = cast(Any, _StubAgui())  # pyright: ignore[reportPrivateUsage]
+    specialist, _ = await service.create_specialist(
+        "tenant-a",
+        "user-a",
+        name="ready-duty",
+        description="已配置职责",
+        agent_name="audit-agent",
+        agent_version="1.0.0",
+    )
+    await service.configure_specialist(
+        "tenant-a",
+        "user-a",
+        specialist.specialist_id,
+        config={"schedule_minutes": 60, "notify_channel": "inbox"},
+        expected_revision=specialist.revision,
+    )
+    outcome = await service.delegate_to_specialist(
+        "tenant-a",
+        "user-a",
+        name="ready-duty",
+        description="已配置职责",
+        agent_name="audit-agent",
+        agent_version="1.0.0",
+        task="每天检查一次",
+        mode=cast(Any, "autonomous"),
+        message_id="delegate-specialist:run-ready:ready-duty",
+    )
+    assert outcome["status"] == "applied" and outcome["missing"] == []
+    objective_id = str(outcome["objective_id"])
+    executions = await service.repository.executions("tenant-a", "user-a", objective_id)
+    assert len(executions) == 1
+    assert executions[0].status is ObjectiveExecutionStatus.PENDING
+    assert executions[0].trigger_key.startswith("delegate-specialist:")
+    assert outcome["execution_id"] == executions[0].execution_id
+    assert outcome["thread_id"] == executions[0].thread_id
 
 
 @pytest.mark.asyncio
@@ -542,6 +591,8 @@ async def test_completed_specialist_config_enables_first_execution(
     specialist = await service.repository.get_specialist(
         "tenant-a", "user-a", str(outcome["specialist_id"])
     )
+    objectives = await service.repository.list("tenant-a", "user-a")
+    assert objectives[0].schedule is None and objectives[0].next_check_at is None
     configured = await service.configure_specialist(
         "tenant-a",
         "user-a",
@@ -550,6 +601,14 @@ async def test_completed_specialist_config_enables_first_execution(
         expected_revision=specialist.revision,
     )
     assert configured.status is SpecialistStatus.READY
+    # 频率保存后必须落到职责：due worker 依赖 schedule/next_check_at。
+    scheduled = await service.repository.get("tenant-a", "user-a", objectives[0].objective_id)
+    assert scheduled.schedule is not None
+    assert scheduled.schedule.interval_minutes == 1440
+    assert scheduled.next_check_at is not None
+    assert await service.repository.executions(
+        "tenant-a", "user-a", scheduled.objective_id
+    ) == []
     enabled = await service.set_specialist_status(
         "tenant-a",
         "user-a",
@@ -558,6 +617,13 @@ async def test_completed_specialist_config_enables_first_execution(
         expected_revision=configured.revision,
     )
     assert enabled.status is SpecialistStatus.ACTIVE
+    # 缺配置时从未入队；启用补一次首次执行，且只有一条。
+    executions = await service.repository.executions(
+        "tenant-a", "user-a", scheduled.objective_id
+    )
+    assert len(executions) == 1
+    assert executions[0].status is ObjectiveExecutionStatus.PENDING
+    assert executions[0].trigger_key.startswith("activate:")
 
 
 @pytest.mark.asyncio
@@ -1270,7 +1336,16 @@ async def test_attach_existing_duty_to_a_specialist_and_trial_it(
     )
     bound = await service.repository.get("tenant-a", "user-a", duty.objective_id)
     assert bound.specialist_id == attached.specialist_id
-    # 已挂职责 → 允许启用
+    # 已挂职责 → 允许试运行，并真实排入一条执行
+    trial = await service.trial_specialist(
+        "tenant-a",
+        "user-a",
+        specialist.specialist_id,
+        expected_revision=attached.revision,
+    )
+    assert trial["objectiveId"] == duty.objective_id
+    assert trial["status"] == "pending"
+    # 试运行已占住首次执行；启用不会再重复入队。
     enabled = await service.set_specialist_status(
         "tenant-a",
         "user-a",
@@ -1279,14 +1354,8 @@ async def test_attach_existing_duty_to_a_specialist_and_trial_it(
         expected_revision=attached.revision,
     )
     assert enabled.status is SpecialistStatus.ACTIVE
-    trial = await service.trial_specialist(
-        "tenant-a",
-        "user-a",
-        specialist.specialist_id,
-        expected_revision=enabled.revision,
-    )
-    assert trial["objectiveId"] == duty.objective_id
-    assert trial["status"] == "pending"
+    executions = await service.repository.executions("tenant-a", "user-a", duty.objective_id)
+    assert len(executions) == 1
 
 
 @pytest.mark.asyncio

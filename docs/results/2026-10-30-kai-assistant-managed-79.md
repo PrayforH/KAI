@@ -519,3 +519,35 @@ harness-memory 工具经 `MemoryBankService.scoped_identity`）共用，与 comp
 - UI 全页冒烟：托管面板已确认可达（截图 136），但带绑定且带 run 的职责
   「为您提供帮助服务」不在列表第一页（展开显示 40 条之后），未截到计量行本体；
   渲染逻辑由 vitest 覆盖，已知诚实行为=「tokens 未计量 · 耗时 N 秒」。
+
+## 修复：主助理→子助理首次执行不入队（2026-10-31）
+
+根因：`delegate_to_specialist` 在 `applied` 分支只写 objective/handover，从未
+`repository.enqueue`；`configure_specialist` 的 `schedule_minutes` 只落在
+specialist.config，不同步到 `objective.schedule/next_check_at`；启用也不补派发。
+子助理会话因此长期为空。
+
+修复（二选一取「启用补入队」，试运行仍保留为显式一次性入口）：
+- `applied` 且非 follow_only、无缺项：入队一条首次执行，trigger_key=
+  `delegate-specialist:{message_id}:{objective_id}`（重放幂等）；入队失败则回执
+  保持 `received`，不再假称已安排。
+- `configure_specialist` 保存 `schedule_minutes` 后同步所有绑定职责的
+  `objective.schedule` 与 `next_check_at`（同频率不重复写）。
+- `set_specialist_status(ACTIVE)`：对尚无任何执行且 autonomous 的绑定职责补一次
+  入队（trigger_key=`activate:{specialist_id}:{objective_id}`）；已有执行/只跟进
+  /预算拒绝都不重复派发。
+- overlay 回执改为「首次执行已入队」并带执行与线程，注明首次产出前会话可能为空。
+
+验证命令与现象：
+- `uv run pytest tests/unit/assistant/test_delegation.py -q` → 25 passed；新增
+  applied 回执含执行/线程且无「待补充配置」。
+- `HARNESS_TEST_DATABASE_URL=postgresql+asyncpg://harness:harness@127.0.0.1:35432/harness_test uv run pytest tests/integration/storage/test_delegation_real_gateway.py -q`
+  → 32 passed；新增断言：applied 恰有 1 条 `pending` 执行、缺项为 0 条；
+  configure 后 `objective.schedule.interval_minutes=1440` 且 `next_check_at` 非空；
+  启用后闲置职责补 1 条 `activate:*` 执行。
+- `uv run pytest tests/unit/assistant -q` → 95 passed。
+- `HARNESS_TEST_DATABASE_URL=... uv run pytest tests/integration/storage/test_assistant_objectives.py tests/integration/storage/test_assistant_channel_controls.py -q`
+  → 15 passed。
+- `uv run ruff check`（改动的 service/delegation/单测文件）→ All checks passed。
+- 注：`tests/integration/storage/test_delegation_real_gateway.py` 的 I001 为既有
+  局部 import 顺序问题（基线同样存在），未在本轮顺手改动。

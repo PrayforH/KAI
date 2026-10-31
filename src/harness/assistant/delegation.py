@@ -408,7 +408,21 @@ def assistant_delegation_overlay(
         if missing:
             lines.append(f"待补充配置：{'、'.join(missing)}；缺项不启动。")
         if status == "applied":
-            lines.append("首次执行已安排（排队中）。")
+            thread = outcome.get("thread_id")
+            execution = outcome.get("execution_id")
+            detail = "，".join(
+                part
+                for part in (
+                    f"执行 {execution}" if execution else "",
+                    f"线程 {thread}" if thread else "",
+                )
+                if part
+            )
+            lines.append(
+                "首次执行已入队（排队中"
+                + (f"；{detail}" if detail else "")
+                + "）；首次执行产出前，子助理会话可能暂无输出。"
+            )
         return _text("\n".join(lines))
 
     async def specialist_status(_arguments: dict[str, Any]) -> dict[str, Any]:
