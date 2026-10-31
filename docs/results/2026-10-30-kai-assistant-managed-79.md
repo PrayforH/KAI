@@ -582,3 +582,31 @@ specialist.config，不同步到 `objective.schedule/next_check_at`；启用也�
   → All checks passed。
 
 79 说明：本轮未改部署、未推送镜像；上述为工作树本地单测与类型检查证据。
+
+## 转交后「保存并启用」补齐配置（2026-10-31，web r35）
+
+`pending_input` 在助理面此前只有文字说明、没有补配置入口，用户看到「待补充」却无处可点。
+新增 `web/harness-console/src/components/specialist-setup-card.tsx`，在
+`/assistant?bot=<id>` 的子助理对话区顶部（滚动区之上、不随消息滚走，也不是右侧面板）
+给检查频率（60/360/1440）与通知渠道
+（inbox），「保存并启用」严格两步：`POST specialists/{id}/config`（带 `expectedRevision`，
+服务端落 READY 并同步职责 `next_check_at`）→ `POST specialists/{id}/status {active,
+expectedRevision: 上一步返回的 revision}`（服务端为闲置职责补一次首跑入队）。
+成功后卡片变「已启用，首次执行排队中」（只在本次点击后，重新加载时 active 整块不渲染，
+避免旧回执常驻）并触发页面重取 bot（`botRevision + 1`）；
+已 `active` 不渲染，无绑定职责提示先派活，失败原样显示服务端错误。未改委派状态机、未碰飞书/微信入站。
+
+- `npx vitest run tests/specialist-setup-card.spec.tsx` → 4 passed；
+  `tests/specialist-setup-card.flow.spec.tsx` → 3 passed（jsdom 真点击，断言 config→status
+  调用顺序、revision 传递、`schedule_minutes=60`/`notify_channel=inbox`、成功文案与 `onReady`、
+  以及 active 加载不渲染残留横幅）。
+- `npx tsc --noEmit` → 通过；`npx vitest run`（全套）→ 1415 passed / 1 既有失败
+  （`account-settings.spec.ts`，与本次无关）。
+- 后端未改，「配置齐全 → applied + 恰好 1 条 queued 执行」「启用后补首跑」由既有集成测试
+  `test_applied_delegate_enqueues_exactly_one_first_execution`、
+  `test_completed_specialist_config_enables_first_execution` 覆盖。
+- 79 冒烟（只读）：web `kai/assistant-web:20261030-managed-r35` 已滚到 79（healthy，web=200）；
+  打开 `/assistant?bot=specialist_466780791f3c4f218b66019818346459`（休息提醒）实测卡片渲染，
+  按钮为 `[每小时, 每 6 小时, 每天, 站内消息, 保存并启用]`，默认选中「每天」。
+  因会把真实 bot 置为 active 并按其频率持续运行，未替用户点击启用。
+- 详细记录：`docs/results/2026-10-31-specialist-pending-input-setup-card.md`。

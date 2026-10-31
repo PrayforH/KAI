@@ -4131,3 +4131,91 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .h
 body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-inline-target {
   color: #a8a8a8;
 }
+
+/* 转交后缺配置的补齐卡：贴会话顶部、随内容滚动（非置顶条） */
+body.codex-theme-v1:has(.console-shell) .specialist-setup-card {
+  margin: 12px auto 4px;
+  width: min(640px, 92%);
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid #333;
+  border-radius: 14px;
+  background: #1b1b1b;
+}
+
+body.codex-theme-v1:has(.console-shell) .specialist-setup-title {
+  margin: 0;
+  color: #ededed;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+body.codex-theme-v1:has(.console-shell) .specialist-setup-hint,
+body.codex-theme-v1:has(.console-shell) .specialist-setup-done {
+  margin: 0;
+  color: #9a9a9a;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+body.codex-theme-v1:has(.console-shell) .specialist-setup-done {
+  color: #35c26a;
+  font-size: 13px;
+}
+
+body.codex-theme-v1:has(.console-shell) .specialist-setup-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: #9a9a9a;
+}
+
+body.codex-theme-v1:has(.console-shell) .specialist-setup-options {
+  display: flex;
+  gap: 6px;
+}
+
+body.codex-theme-v1:has(.console-shell) .specialist-setup-options button {
+  padding: 5px 12px;
+  border: 1px solid #3a3a3a;
+  border-radius: 999px;
+  background: transparent;
+  color: #cfcfcf;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+body.codex-theme-v1:has(.console-shell) .specialist-setup-options button[data-selected="true"] {
+  border-color: #4c8dff;
+  background: rgba(76, 141, 255, 0.16);
+  color: #f2f2f2;
+}
+
+body.codex-theme-v1:has(.console-shell) .specialist-setup-options button:disabled {
+  cursor: default;
+}
+
+body.codex-theme-v1:has(.console-shell) .specialist-setup-error {
+  margin: 0;
+  color: #ff7a7a;
+  font-size: 12px;
+}
+
+body.codex-theme-v1:has(.console-shell) .specialist-setup-submit {
+  justify-self: start;
+  padding: 8px 18px;
+  border: 0;
+  border-radius: 999px;
+  background: #f5f5f5;
+  color: #111;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+body.codex-theme-v1:has(.console-shell) .specialist-setup-submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
