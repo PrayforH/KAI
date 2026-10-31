@@ -69,23 +69,41 @@ export function GrokFace({ state, size = 22 }: { state: GrokFaceState; size?: nu
 
 const PHRASE_STEP_MS = 90;
 
+const CJK_CHAR = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]/;
+
 /**
- * 客户端 activityPhraseDraw 的等价物：短语按词渐进显现，
- * 已显现的词保持稳定 DOM（只追加，不重排），文本更新时从当前进度续播。
+ * 短语的渐现单位：中文没有空格，按词切会整句一次跳出；
+ * 所以 CJK 为主（或无空白但含 CJK）时按字素逐个显现，
+ * 纯英文（含单个单词）仍按词，保持「词级」而不是被拆成字母。
+ */
+export function phraseUnits(text: string): string[] {
+  if (!text) return [];
+  const graphemes = splitGraphemes(text);
+  const cjk = graphemes.filter((unit) => CJK_CHAR.test(unit)).length;
+  const hasWhitespace = /\s/.test(text);
+  const cjkShare = cjk / Math.max(1, graphemes.length);
+  if (cjk > 0 && (cjkShare > 0.5 || !hasWhitespace)) return graphemes;
+  return text.split(/(\s+)/).filter(Boolean);
+}
+
+/**
+ * 客户端 activityPhraseDraw 的等价物：短语按单位渐进显现，
+ * 已显现的单位保持稳定 DOM（只追加，不重排），文本更新时从当前进度续播。
  */
 export function ActivityPhrase({ text }: { text: string }) {
-  const words = text ? text.split(/(\s+)/).filter(Boolean) : [];
-  const [drawn, setDrawn] = useState(words.length);
+  const units = phraseUnits(text);
+  const [drawn, setDrawn] = useState(units.length);
   const previous = useRef(text);
   useEffect(() => {
     if (text === previous.current) return;
-    const shared = sharedPrefixLength(previous.current, text);
+    const next = phraseUnits(text);
+    const shared = sharedPrefixLength(phraseUnits(previous.current), next);
     previous.current = text;
-    setDrawn((current) => (current < shared ? shared : current));
-    const total = text.split(/(\s+)/).filter(Boolean).length;
+    setDrawn(shared);
+    if (shared >= next.length) return;
     const timer = window.setInterval(() => {
       setDrawn((current) => {
-        if (current >= total) {
+        if (current >= next.length) {
           window.clearInterval(timer);
           return current;
         }
@@ -96,21 +114,19 @@ export function ActivityPhrase({ text }: { text: string }) {
   }, [text]);
   return (
     <span className="grok-phrase">
-      {words.slice(0, drawn).map((word, index) => (
-        <span className="grok-phrase-word" key={`${index}:${word}`} data-new={index === drawn - 1 ? "true" : undefined}>
-          {word}
+      {units.slice(0, drawn).map((unit, index) => (
+        <span className="grok-phrase-word" key={`${index}:${unit}`} data-new={index === drawn - 1 ? "true" : undefined}>
+          {unit}
         </span>
       ))}
-      {drawn < words.length ? <span className="grok-phrase-caret" aria-hidden="true" /> : null}
+      {drawn < units.length ? <span className="grok-phrase-caret" aria-hidden="true" /> : null}
     </span>
   );
 }
 
-function sharedPrefixLength(before: string, after: string): number {
-  const left = before.split(/(\s+)/).filter(Boolean);
-  const right = after.split(/(\s+)/).filter(Boolean);
+function sharedPrefixLength(before: readonly string[], after: readonly string[]): number {
   let count = 0;
-  while (count < left.length && count < right.length && left[count] === right[count]) count += 1;
+  while (count < before.length && count < after.length && before[count] === after[count]) count += 1;
   return count;
 }
 
