@@ -789,3 +789,53 @@ ctx `web-src-r40`，`grok-activity.tsx` sha256 `e8264f2c…` 与本地一致；
 （历史终态不出现）。截图 `/tmp/kai79-accept/155-r40-assistant.png`。
 
 **未验证**：真实进行中回合的逐字动画（需发起真实 run）；单位选择与计时由 jsdom 假时钟单测钉住。
+
+## 无人查看暂停：UI 可见 + 查看口径（2026-10-31，api r20 / web r41，marker kai-idle-pause-routines）
+
+口径（代码与前端类型已按此对齐）：
+
+1. `Specialist.lastViewedAt`（ISO）与 `routinePausedReason` 在 **Specialist 顶层**，不在 `config`。
+2. 写 `lastViewedAt`：创建 specialist = now；用户**进入该 Bot 会话**（`/assistant?bot=…` 加载线程成功）
+   时 POST `specialists/{id}/viewed` 一次（`botRevision` 刷新不重复上报）。打开「…」编辑弹窗、
+   GET 详情、list specialists 都**不写**。
+3. 阈值 `HARNESS_ASSISTANT_UNVIEWED_PAUSE_HOURS`（默认 24h，≥1）；只作用于绑定了 specialist 的职责；
+   超阈值跳过入队、写 `routinePausedReason={reason:"unviewed", hours_since_view, at}` 并推进 `next_check_at`（不补跑）。
+
+本轮修复：
+
+- `GET /specialists/{id}` 改纯读（此前读详情即 touch，暂停标记在响应里已被清掉，编辑弹窗永远看不到暂停态）。
+- 新增 `POST /specialists/{id}/viewed`：`touch_specialist_viewed` + 返回最新详情；不存在 → 404；不递增 revision。
+- 前端：`Specialist` 类型补 `lastViewedAt` / `routinePausedReason`；`bot-edit-dialog` 改读顶层
+  `specialist.routinePausedReason?.reason === "unviewed"`；`page.tsx` 在 bot 会话线程加载后按 bot 去重上报一次。
+- `docs/research/2026-10-30-grokbot-client-source-review.md` 的「建议列为下一步」改为已落地。
+
+**测试**
+
+```
+uv run pytest tests/unit/assistant/test_specialist_viewed_api.py -q      # 3 passed
+uv run pytest tests/unit/assistant -q                                    # 99 passed
+HARNESS_TEST_DATABASE_URL=postgresql+asyncpg://harness:harness@127.0.0.1:35432/harness_test \
+  uv run pytest tests/integration/storage/test_delegation_real_gateway.py -q \
+  -k "unviewed or specialist_conversation"                               # 2 passed
+uv run ruff check src/harness/assistant/api.py tests/unit/assistant/test_specialist_viewed_api.py  # clean
+cd web/harness-console
+npx tsc --noEmit                                                         # clean
+npx vitest run tests/bot-edit-dialog-paused.spec.tsx tests/bot-edit-dialog.spec.tsx  # 8 passed
+npx vitest run                                                           # 1463 passed / 1 skipped / 1 既有失败
+```
+
+新断言：GET 详情不调用 touch、暂停标记原样返回；POST viewed 刷新 `lastViewedAt`、清暂停且 revision 不变；
+不存在返回 404；弹窗用**顶层** `routinePausedReason` 显示「已暂停」「因无人查看已暂停，打开本会话后恢复」，
+无字段/仅存在 config 旧位置时不显示；助理面仅在拿到线程后上报 `/viewed` 且按 bot 去重。
+
+**79 部署与验收**
+
+- api/worker/computer-control → `kai/assistant-api:20261030-managed-r20`（新镜像；`migrate` 仍 r18，无新迁移）；
+  web → `kai/assistant-web:20261030-managed-r41`。均 healthy，`/assistant` = 200；compose 备份
+  `compose.private.before-idle-pause.json`。容器内确认路由：
+  `/v1/studio/assistant/specialists/{specialist_id}/viewed`。
+- GET 纯读实测：连续两次 GET 详情，`lastViewedAt` 保持 `2026-10-31T12:57:34.394618Z` 不变（DB 前后一致）。
+- 查看入口实测：打开 `/assistant?bot=specialist_466780791f3c4f218b66019818346459` → 恰好 1 次 POST `/viewed`，
+  `lastViewedAt` 由 `12:57:34Z` 变为 `14:58:01Z`。截图 `/tmp/kai79-accept/156-r41-bot-open.png`。
+- 未验证：真实"无人查看 → 暂停"文案的浏览器视觉（需要把某 bot 的 lastViewedAt 拨回 24h 后跑一次调度，
+  会改真实数据）；该分支由集成测 + jsdom 弹窗用例钉住。
