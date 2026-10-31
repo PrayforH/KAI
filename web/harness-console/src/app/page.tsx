@@ -299,7 +299,17 @@ function AuthenticatedHome() {
             void assistantRequest(
               `specialists/${encodeURIComponent(botId)}/viewed`,
               "POST",
-            ).catch(() => { /* 查看上报失败不影响会话 */ });
+            )
+              // 服务端已清掉 routinePausedReason：让侧栏立刻重拉列表，
+              // 不必等 30s 轮询（失败保持旧列表，轮询兜底）。
+              .then(() => {
+                window.dispatchEvent(
+                  new CustomEvent("kai:specialists-changed", {
+                    detail: { specialistId: botId, reason: "viewed" },
+                  }),
+                );
+              })
+              .catch(() => { /* 查看上报失败不影响会话 */ });
           }
         }
       })

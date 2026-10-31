@@ -139,10 +139,17 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
 
   useEffect(() => {
     void load();
+    // 打开某 Bot 会话后 viewed 会清暂停标记：页面派发该事件，这里立刻重拉，
+    // 徽章不必等下一次 30s 轮询。
+    const onChanged = () => void load();
+    window.addEventListener("kai:specialists-changed", onChanged);
     const timer = setInterval(() => {
       if (!document.hidden) void load();
     }, 30000);
-    return () => clearInterval(timer);
+    return () => {
+      window.removeEventListener("kai:specialists-changed", onChanged);
+      clearInterval(timer);
+    };
   }, [load]);
 
   // 按真实状态分组：已启用＝在岗承担职责；其余（新建/试运行/待启用）还没接活。
