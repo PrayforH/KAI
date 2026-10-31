@@ -1125,3 +1125,48 @@ web chunk 含 `assistant-progress-metrics` 与「tokens 未计量」。
 
 未验证：**部署后新产生**的终态 notice 在真实运行里带计量（需要一次真实执行结束后看 inbox）；
 写入口径由上面的集成测试钉住，前端渲染由注入验收覆盖。
+
+## skipUnchanged 早退不再显示「tokens 未计量」（2026-11-01，web r49 + api r22，marker kai-skip-unchanged-quiet）
+
+缺口：r48/r21 的浮标计量把「无用量」统一显示成「tokens 未计量」；但 skipUnchanged 定时检查
+没唤起模型就走 `save_execution(usage=None)`，也会被当成「计量坏了」，语义错误。
+
+- 后端：`ObjectiveExecution` 增 `skippedNoModel`，service 的 skip 早退分支置 True；
+  终态 inbox 的 `metrics` 带 `skippedNoModel=true`、`unknownUsage=false`、tokens/cost 保持 None，
+  耗时照常（反映调度耗时）。**checkpoint 仍是用量审计**（无用量的跳过记录 `unknownUsage=True`），
+  不新增数据库列/迁移；托管面板按 run_id 取计量，skip 执行没有 Run，本来就不会命中该行。
+  旧行无字段仍可读。
+- 前端：`formatCheckpointMetering` 先判 `skippedNoModel` → 「未唤起模型 · 无变化」（可附耗时），
+  `data-metering="skipped"`；不再出现「tokens 未计量」或 `tokens 0`。托管面板与浮标共用该函数。
+- 未改预算公式、委派、lease、桌面仲裁。
+
+**测试**
+
+```
+uv run pytest tests/integration/storage/test_delegation_real_gateway.py -q -k "unchanged or skip"  # 2 passed
+uv run pytest tests/unit/assistant -q                                          # 102 passed
+uv run ruff check src/harness/assistant tests/unit/assistant/test_inbox_payload.py  # clean
+cd web/harness-console
+npx tsc --noEmit                                                               # clean
+npx vitest run tests/assistant-progress-metering.spec.tsx                      # 4 passed
+npx vitest run                                                                 # 1493 passed / 1 skipped / 1 既有失败
+```
+
+后端断言：skip 结果 `skipped_no_model=True`；收尾后 inbox `metrics.skippedNoModel=True /
+unknownUsage=False / tokens=None`；checkpoint 仍是 `unknown_usage=True`（审计口径）。
+前端 DOM 断言四类：measured（`tokens 1,234 · cost $0.02 · 耗时 45 秒`）、
+unknown（`tokens 未计量 · 耗时 12 秒`）、skipped（`未唤起模型 · 无变化 · 耗时 5 秒`，不含 tokens/未计量）、
+legacy（无计量行）。既有失败仍是 account-settings（无关）。
+
+**79 部署与只读验收**：api/worker/computer-control → `kai/assistant-api:20261030-managed-r22`；
+web → `kai/assistant-web:20261030-managed-r49`；`migrate` 仍 r18（无新迁移）。均 healthy，
+`/assistant` = 200；compose 备份 `compose.private.before-skip-quiet.json`。镜像内确认
+`skipped_no_model` 在 service、web chunk 含「未唤起模型 · 无变化」。
+
+- 真实 inbox 仍是历史载荷（无计量），浮标不显示计量行；
+- 四类渲染用**浏览器侧拦截** inbox 响应（不动服务端）注入验证：实机分别得到
+  measured / unknown / skipped / legacy 四行，skipped 文案 `未唤起模型 · 无变化 · 耗时 5 秒`，
+  页面无 `tokens 0`、skipped 行不含「tokens 未计量」；截图 `/tmp/kai79-accept/167-r49-skip-quiet.png`。
+
+未验证：部署后**真实**发生一次 skipUnchanged 跳过并看到浮标文案（需要一个开启 skipUnchanged 的
+定时职责且指纹未变）；判定与写入口径由上面的集成/单元测试钉住。
