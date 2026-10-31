@@ -614,3 +614,56 @@ expectedRevision: 上一步返回的 revision}`（服务端为闲置职责补一
   staleBanner=false`，按钮为 `[每小时, 每 6 小时, 每天, 站内消息, 保存并启用]`。
   因会把真实 bot 置为 active 并按其频率持续运行，未替用户点击启用。
 - 详细记录：`docs/results/2026-10-31-specialist-pending-input-setup-card.md`。
+
+## 助理面过程摘要与中间结果（2026-10-31，web r37）
+
+痛点：助理面进行中几乎只显示「正在等待本轮模型结果」，没有过程摘要/中间结果。
+
+根因（已探查确认）：后端 `tool.request` / `tool.result` 的文案在 `title`
+（「调用 Shell」「工具调用完成」），`summary` 为 null；`runtime.system requesting`
+才写 `summary`（activity.py:556-583）。`progressPhrase` 只读 summary 并反向扫描，
+于是工具阶段被跳过，长期停在等待文案。
+
+改动（只动前端，未碰委派/pending_input）：
+
+- `grok-activity.tsx`
+  - 新 `itemPhrase()`：非 prose/run 条目取 `summary?.trim() || title?.trim()`；
+    `tool.result`/`tool.allowed` 优先用 `metadata.result_summary`（如「返回 12 行 · 340 字符」），
+    比通用「工具调用完成」有信息；仍跳过 >60 字；`allowTransient` 语义不变。
+  - 新 `activitySteps()` / `shouldShowChatActivitySteps()` / `ChatActivitySteps`：
+    最近 ≤5 条 `tool.*` / `runtime.*` / `context.*`，一行一条，跳过纯等待文案、
+    跳过与主短语相同的文本、去重、失败标红；只在回合进行中渲染。
+- `agent-thread.tsx`：两处助理面活动行（turn 活动行、pre-response 活动行）在
+  `GrokActivityRow` 下方各挂一个 `ChatActivitySteps`；终态分支本来就不渲染活动行
+  （0ee6fffd 的规则），步骤条随之消失，不钉进历史。
+- `web-codex.css`：`.chat-activity-steps` 小列表（12px、缩进对齐短语、单行省略），
+  仅作用于 `.chat-stage[data-surface="assistant"]`；没有搬任务面的 ExecutionRibbon。
+
+**测试**
+
+```
+cd web/harness-console
+npx tsc --noEmit                                          # clean
+npx vitest run tests/assistant-activity-steps.spec.tsx    # 12 passed（新增）
+npx vitest run tests/assistant-activity-terminal.spec.tsx tests/assistant-dup-channels.spec.tsx   tests/assistant-duplicate.spec.tsx tests/specialist-setup-card.spec.tsx   tests/specialist-setup-card.flow.spec.tsx               # 22 passed
+npx vitest run                                            # 1444 passed / 1 skipped / 1 既有失败
+```
+
+新增断言覆盖：只有 title 的 `tool.request` → 短语「调用 Shell」；等待 summary 之后
+出现工具调用 → 取最新工具短语；`result_summary` 优先于通用标题；正文/思考/run/超长
+仍被忽略；步骤条 ≤5 条、去重、跳过瞬时等待、失败着色；`running`/`waiting_approval`
+显示步骤、`completed`/`succeeded`/`failed` 不显示（活动行本身也不显示）；
+两处活动行都接线；渲染里不出现任务面 ribbon。
+
+**79 部署与只读验收**
+
+- web `kai/assistant-web:20261030-managed-r37` 已滚到 79（healthy，`/assistant` = 200）；
+  基座 r4，ctx `web-src-r37`，3 个改动文件逐文件 sha256 与本地一致。
+  镜像内 grep：r37 的 `1syfg_iiuhqfg.js` 含「过程摘录」、`1myunhinr8dg0.css` 含
+  `.chat-activity-steps`（r36 两者都没有）。
+- 只读探针（纯 HTTP :3501 `/assistant`，硬加载 9s 后）：
+  `activityRows=0 / stepLists=0 / stepCssRules=4 / answers=12 / proseInPhrase=0`
+  ——历史终态回合不出现活动行与步骤条，样式已生效，正文没有回流到短语。
+  截图：`/tmp/kai79-accept/152-r37-assistant.png`。
+- 未验证：真实**进行中**回合的视觉（需要发起一次真实 run 并抓到工具阶段）；
+  该行为的判定逻辑由上述单测钉住。冒烟未替用户发起 run、未点任何按钮。
