@@ -16,7 +16,11 @@ export type Notice = { itemId: string; objectiveId: string; title: string; conte
 export type Specialist = { specialistId: string; name: string; slug: string; description: string;
   agentName: string; agentVersion: string;
   status: "draft" | "needs_input" | "validating" | "ready" | "active" | "paused" | "blocked" | "archived";
-  revision: number; config: Record<string, unknown>; createdAt: string; updatedAt: string };
+  revision: number; config: Record<string, unknown>;
+  // 运行态字段在顶层（不在 config）：无人查看暂停与最近查看时间。
+  lastViewedAt?: string | null;
+  routinePausedReason?: { reason?: string; hours_since_view?: number; at?: string } | null;
+  createdAt: string; updatedAt: string };
 export type Handover = { handoverId: string; specialistId: string; objectiveId: string | null;
   messageId: string; summary: string;
   status: "sent" | "received" | "applied" | "executing" | "pending_input" | "failed";

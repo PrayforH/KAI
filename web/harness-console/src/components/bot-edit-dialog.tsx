@@ -44,9 +44,8 @@ export function BotEditDialog({
   onSaved: () => void;
 }) {
   const [detail, setDetail] = useState<Detail | null>(null);
-  const paused =
-    (detail?.specialist.config as { routinePausedReason?: { reason?: string } } | undefined)
-      ?.routinePausedReason?.reason === "unviewed";
+  // 后端的 routinePausedReason 在 Specialist 顶层（与 lastViewedAt 一起），不在 config 里。
+  const paused = detail?.specialist.routinePausedReason?.reason === "unviewed";
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");

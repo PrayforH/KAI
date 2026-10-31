@@ -21,6 +21,7 @@ from harness.assistant.models import (
     UpdateObjectiveRequest,
 )
 from harness.assistant.service import AssistantService
+from harness.core.errors import NotFoundError
 from harness.studio.models import StudioModel
 
 router = APIRouter(prefix="/v1/studio/assistant", tags=["assistant"])
@@ -236,16 +237,8 @@ async def get_specialist(specialist_id: str, identity: Reader, assistant: Servic
             if bindings
             else f"assistant_{primary.objective_id}"
         )
-    # 打开该 Bot 的页面即一次"查看"：例行程序闸门据此恢复。
-    try:
-        await assistant.touch_specialist_viewed(
-            identity.tenant_id, identity.user_id, specialist_id
-        )
-    except Exception:  # noqa: BLE001 - 查看标记失败不阻塞详情读取
-        pass
-    specialist = await assistant.repository.get_specialist(
-        identity.tenant_id, identity.user_id, specialist_id
-    )
+    # 纯读：详情/编辑弹窗不算"查看"，不能在这里清掉 routinePausedReason。
+    # 真正的查看走 POST /specialists/{id}/viewed（进入该 Bot 会话时调用一次）。
     return {
         "specialist": specialist,
         "threadId": thread_id,
@@ -262,6 +255,25 @@ async def get_specialist(specialist_id: str, identity: Reader, assistant: Servic
         "agentName": specialist.agent_name,
         "agentVersion": specialist.agent_version,
     }
+
+
+@router.post("/specialists/{specialist_id}/viewed")
+async def mark_specialist_viewed(
+    specialist_id: str, identity: Writer, assistant: Service
+) -> Specialist:
+    """进入该 Bot 会话时的一次显式"查看"。
+
+    刷新 last_viewed_at 并清除 routinePausedReason（无人查看暂停据此恢复）；
+    不递增 revision。GET 详情与编辑弹窗都不算查看，必须由前端在这个入口调用。
+    """
+    viewed = await assistant.touch_specialist_viewed(
+        identity.tenant_id, identity.user_id, specialist_id
+    )
+    if not viewed:
+        raise NotFoundError("Specialist not found")
+    return await assistant.repository.get_specialist(
+        identity.tenant_id, identity.user_id, specialist_id
+    )
 
 
 class SpecialistProfileRequest(StudioModel):

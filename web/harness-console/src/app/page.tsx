@@ -239,6 +239,8 @@ function AuthenticatedHome() {
     } catch { /* optional view preference */ }
   };
   const [botParam, setBotParam] = useState<string | null>(null);
+  // 每次进入某个 Bot 会话只上报一次"查看"（botRevision 刷新不重复上报）。
+  const botViewedRef = useRef<string | null>(null);
   const [botEditOpen, setBotEditOpen] = useState(false);
   const [botRevision, setBotRevision] = useState(0);
   useEffect(() => {
@@ -260,9 +262,9 @@ function AuthenticatedHome() {
     (!threadId || threadId === PERSONAL_ASSISTANT_THREAD || botParam !== null);
 
   useEffect(() => {
-    if (!assistantEntry) return;
+    if (!assistantEntry) { botViewedRef.current = null; return; }
     const botId = botParam;
-    if (!botId) { setBot(null); return; }
+    if (!botId) { setBot(null); botViewedRef.current = null; return; }
     let active = true;
     void assistantRequest<{
       specialist: {
@@ -287,7 +289,18 @@ function AuthenticatedHome() {
           appearance: data.specialist.config?.appearance,
         });
         // 子助理没有替身会话：直接进入承接职责的原线程，结果就在这条对话里。
-        if (data.threadId) setThreadId(data.threadId);
+        if (data.threadId) {
+          setThreadId(data.threadId);
+          // 进入该 Bot 的会话＝一次显式查看：清掉"无人查看已暂停"，闸门恢复。
+          // 只打开「…」编辑弹窗不算查看（详情 GET 是纯读）。
+          if (botViewedRef.current !== botId) {
+            botViewedRef.current = botId;
+            void assistantRequest(
+              `specialists/${encodeURIComponent(botId)}/viewed`,
+              "POST",
+            ).catch(() => { /* 查看上报失败不影响会话 */ });
+          }
+        }
       })
       .catch(() => { if (active) setBot(null); });
     return () => { active = false; };
