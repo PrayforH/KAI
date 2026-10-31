@@ -53,6 +53,9 @@ export function BotEditDialog({
   const [color, setColor] = useState<string>(BOT_COLORS[7]);
   const [avatar, setAvatar] = useState<string>("blob");
   const [busy, setBusy] = useState(false);
+  const [trialBusy, setTrialBusy] = useState(false);
+  const [trialMessage, setTrialMessage] = useState("");
+  const [trialFailed, setTrialFailed] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -93,6 +96,31 @@ export function BotEditDialog({
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "保存失败");
       setBusy(false);
+    }
+  }
+
+  async function runTrial() {
+    if (!detail || trialBusy) return;
+    setTrialBusy(true);
+    setTrialMessage("");
+    setTrialFailed(false);
+    try {
+      const trial = await assistantRequest<{ executionId: string; scheduled: string }>(
+        `specialists/${encodeURIComponent(specialistId)}/trial`,
+        "POST",
+        { expectedRevision: detail.specialist.revision },
+      );
+      setTrialMessage(`${trial.scheduled}（执行 ${trial.executionId}）`);
+      window.dispatchEvent(
+        new CustomEvent("kai:specialists-changed", {
+          detail: { specialistId, reason: "trial" },
+        }),
+      );
+    } catch (cause) {
+      setTrialFailed(true);
+      setTrialMessage(cause instanceof Error ? cause.message : "试运行失败");
+    } finally {
+      setTrialBusy(false);
     }
   }
 
@@ -189,6 +217,29 @@ export function BotEditDialog({
             <p className={styles.routineEmpty}>还没有例行程序：去主助理那儿给它派一件事。</p>
           )}
         </section>
+        {detail && ["ready", "active"].includes(detail.specialist.status) && (
+          <section className={styles.trial}>
+            <button
+              type="button"
+              className={styles.trialButton}
+              disabled={busy || trialBusy}
+              onClick={() => void runTrial()}
+            >
+              {trialBusy ? "正在试运行…" : "首次试运行"}
+            </button>
+            <p className={styles.trialHint}>
+              只排一次检查并回报真实结果；试运行不会启用持续运行。
+            </p>
+            {trialMessage && (
+              <p
+                className={trialFailed ? styles.trialError : styles.trialResult}
+                role={trialFailed ? "alert" : "status"}
+              >
+                {trialMessage}
+              </p>
+            )}
+          </section>
+        )}
         {detail && (
           <SpecialistCredentials
             specialistId={specialistId}

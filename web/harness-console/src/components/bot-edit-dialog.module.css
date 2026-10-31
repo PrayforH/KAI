@@ -172,3 +172,41 @@
 .shapeButton[data-selected="true"] { border-color: #2563eb; }
 
 .routineState[data-paused="true"] { color: #e8a33d; }
+
+.trial {
+  display: grid;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.trialButton {
+  justify-self: start;
+  padding: 8px 14px;
+  border: 1px solid #3a3a3a;
+  border-radius: 10px;
+  background: #242424;
+  color: #ededed;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.trialButton:hover { background: #2e2e2e; }
+.trialButton:disabled { opacity: 0.6; cursor: default; }
+
+.trialHint {
+  margin: 0;
+  color: #8a8a8a;
+  font-size: 12px;
+}
+
+.trialResult {
+  margin: 0;
+  color: #9ad6a8;
+  font-size: 12px;
+}
+
+.trialError {
+  margin: 0;
+  color: #ff9a8a;
+  font-size: 12px;
+}
