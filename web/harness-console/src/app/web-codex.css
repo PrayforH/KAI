@@ -1596,12 +1596,15 @@ body.codex-theme-v1:has(.console-shell) .aui-user-message-content {
 
 body.codex-theme-v1:has(.console-shell) .aui-thread-viewport-footer {
   isolation: isolate;
+  box-sizing: border-box;
   width: min(800px, 100%);
   max-width: 800px;
   margin-top: 0;
+  margin-inline: auto;
   padding: 2px 0 10px;
   background: transparent;
   backdrop-filter: none;
+  align-self: center;
 }
 
 /* Paint across the scroll gutter without widening the scroll area or clipping
@@ -1619,8 +1622,10 @@ body.codex-theme-v1:has(.console-shell) .aui-thread-viewport-footer::before {
 
 body.codex-theme-v1:has(.console-shell) .harness-composer-shell {
   --composer-shadow: 0 2px 12px rgb(0 0 0 / 18%);
+  box-sizing: border-box;
   width: 100%;
   max-width: 800px;
+  margin-inline: auto;
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell {
@@ -3614,8 +3619,10 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .h
   position: relative;
 }
 
-/* 操作栏与气泡同一行、底部对齐：贴着气泡右下角出现 */
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .assistant-answer-row {
+/* 操作栏与气泡同一行、底部对齐：贴着气泡右下角出现。
+   任务面和助理面共用同一段回答结构，这里不能再按 data-surface 限定，
+   否则任务线程里的复制/回复会掉到气泡下方、漂到窗格右缘。 */
+body.codex-theme-v1:has(.console-shell) .chat-stage .assistant-answer-row {
   display: flex;
   align-items: flex-end;
   gap: 6px;
@@ -3623,11 +3630,18 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .a
   min-width: 0;
 }
 
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .assistant-answer-row > .assistant-answer {
+body.codex-theme-v1:has(.console-shell) .chat-stage .assistant-answer-row > .assistant-answer {
   min-width: 0;
 }
 
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .assistant-message-controls {
+/* 任务面沿用 codex-theme 的 100% 宽度会把短回答撑满整列；聊天回答按内容
+   收缩，操作栏才会贴着气泡右下角，而不是留在整列末端。 */
+body.codex-theme-v1:has(.console-shell) .chat-stage:not([data-surface="assistant"]) .harness-assistant-message .assistant-answer {
+  width: fit-content;
+  max-width: min(640px, 92%);
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage .assistant-message-controls {
   position: static;
   flex: 0 0 auto;
   margin: 0 0 4px;
@@ -3636,8 +3650,8 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .a
   transition: opacity 140ms ease;
 }
 
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-assistant-message:hover .assistant-message-controls,
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .harness-assistant-message:focus-within .assistant-message-controls {
+body.codex-theme-v1:has(.console-shell) .chat-stage .harness-assistant-message:hover .assistant-message-controls,
+body.codex-theme-v1:has(.console-shell) .chat-stage .harness-assistant-message:focus-within .assistant-message-controls {
   opacity: 1;
   pointer-events: auto;
 }
