@@ -1210,3 +1210,55 @@ ctx `web-src-r50`，`desktop-occupancy-chip.tsx` sha256 `8c0648ff…` 与本地�
 
 未验证：真实并发下的桌面排队（需要两项 `requiresDesktop` 同时争用，会写真实执行数据）；
 位次/原因文案与回退由 DOM + 注入验收覆盖，投影字段来自 r17 既有验收。
+
+## 进展浮标失败卡一键失败回放（2026-11-01，web r51 + api r23，marker kai-failure-replay）
+
+缺口：托管面板 P2-2 的失败卡能深链 `/?thread=&run=&trace=1&checkpoint=`，但助理面
+「后台任务进展」浮标里 `kind=failed` 的条目只有「打开原任务 → `/?thread=`」，点进去落在普通线程，
+看不到失败检查点/轨迹；后端写终态 inbox 时也没有带上 `execution.run_id`。
+
+- 后端：`AssistantInboxItem` 增可选 `runId`（`executionId` 本来就有）；`save_execution` 写终态
+  notice 时带 `run_id`。旧行无字段仍按 None 读取，不伪造 Run。
+- 前端：新增 `progressNoticeLink(notice)`：
+  - `failed`（含 timed_out/rejected）→「打开失败回放 →」，href = `/?thread=&trace=1`
+    + 有则 `run=<runId>` + `checkpoint=checkpoint_<executionId>`（与写库 `checkpoint_{execution_id}` 同口径）；
+  - 成功/取消/进行中 →「打开原任务 →」，仅 `thread`；
+  - 旧失败载荷无 run/execution → 只回 thread + `trace=1`；无 thread → 不渲染链接。
+  链接带 `data-replay="failure|thread"` 便于断言；未改轨迹控制台、托管面板与任务面。
+
+**测试**
+
+```
+uv run pytest tests/integration/storage/test_assistant_objectives.py -q          # 10 passed（含失败 runId 用例）
+uv run pytest tests/unit/assistant -q                                            # 102 passed
+uv run ruff check src/harness/assistant/models.py src/harness/assistant/repository.py tests/unit/assistant  # clean
+cd web/harness-console
+npx tsc --noEmit                                                                 # clean
+npx vitest run tests/assistant-progress-failure-replay.spec.tsx                  # 4 passed（新增）
+npx vitest run tests/assistant-progress-strip.spec.tsx tests/assistant-progress-metering.spec.tsx  # 7 passed
+npx vitest run                                                                   # 1498 passed / 1 skipped / 1 既有失败
+```
+
+DOM 断言：failed + thread/run/execution → 文案「打开失败回放 →」，params 含
+`thread=assistant_o1 / trace=1 / run=run-1 / checkpoint=checkpoint_execution-1`；
+succeeded/cancelled → 「打开原任务 →」且无 trace/run/checkpoint；legacy failed → 仅 thread + trace=1；
+helper 在无 thread 时返回 null、从不伪造 run。
+后端断言：失败终态 notice `runId="run-replay-1"`、`executionId`/`threadId` 与执行一致；
+无 Run 的结算 `runId=None`。既有失败仍是 account-settings（无关）。
+
+**79 部署与只读验收**：api/worker/computer-control → `kai/assistant-api:20261030-managed-r23`；
+web → `kai/assistant-web:20261030-managed-r51`；`migrate` 仍 r18（无新迁移）。均 healthy，
+`/assistant` = 200；compose 备份 `compose.private.before-failure-replay.json`。镜像内确认
+`runId` 在 repository，web chunk 含「打开失败回放」与 `data-replay`。
+
+- 真实 inbox：25 条全部 `succeeded`，浮标全部「打开原任务 →」、无 trace（正确的阴性）；
+  API 载荷已带 `runId` 键（旧行为 null）。
+- 失败回放链接用**浏览器侧拦截** inbox 响应（不动服务端）注入验证：
+  - 新式失败（runId + executionId）→「打开失败回放 →」，params
+    `thread=assistant_o1&trace=1&run=run-1&checkpoint=checkpoint_execution-1`；
+  - 成功 →「打开原任务 →」，仅 thread；
+  - 旧失败（无 run/execution）→「打开失败回放 →」，`thread&trace=1`，无 run/checkpoint。
+  截图 `/tmp/kai79-accept/170-r51-failure-replay.png`。
+
+未验证：部署后**真实产生**的失败 notice 带 runId 并点进轨迹页（需要一次真实失败执行）；
+写入口径由集成测试、链接构造由 DOM + 注入验收覆盖。
