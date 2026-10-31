@@ -3920,6 +3920,11 @@ body.codex-theme-v1:has(.console-shell) .bot-rail-label small {
   white-space: nowrap;
 }
 
+/* 无人查看暂停：行内一目可见（保留头像强调色，只把副标题染成琥珀）。 */
+body.codex-theme-v1:has(.console-shell) .bot-rail-item[data-paused="true"] .bot-rail-label small {
+  color: #d2a83a;
+}
+
 body.codex-theme-v1:has(.console-shell) .bot-rail-more {
   width: 100%;
   margin-top: 4px;

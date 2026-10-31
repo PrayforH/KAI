@@ -26,6 +26,11 @@ export function specialistAppearance(item: Specialist): { color: string; avatar:
   return { color: raw?.color ?? botAccent(item.specialistId), avatar: raw?.avatar ?? "blob" };
 }
 
+/** 无人查看导致的例行程序暂停（其它 reason 将来再扩展，本切片只认 unviewed）。 */
+export function isUnviewedPaused(item: Pick<Specialist, "routinePausedReason">): boolean {
+  return item.routinePausedReason?.reason === "unviewed";
+}
+
 export function botAccent(key: string): string {
   let hash = 0;
   for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) % 997;
@@ -182,6 +187,7 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
             <Link
               className="bot-rail-item"
               data-active={activeBot === item.specialistId ? "true" : undefined}
+              data-paused={isUnviewedPaused(item) ? "true" : undefined}
               href={`/assistant?bot=${encodeURIComponent(item.specialistId)}`}
               onClick={(event) => openBot(event, item.specialistId)}
             >
@@ -191,7 +197,10 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
               />
               <span className="bot-rail-label">
                 <strong>{item.name}</strong>
-                <small>{item.description || item.agentName}</small>
+                {/* 暂停时用状态文案替换描述：列表里一眼可见，且不会被省略号截掉。 */}
+                <small>
+                  {isUnviewedPaused(item) ? "已暂停 · 无人查看" : item.description || item.agentName}
+                </small>
               </span>
             </Link>
           </li>
@@ -204,6 +213,7 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
             <Link
               className="bot-rail-item"
               data-active={activeBot === item.specialistId ? "true" : undefined}
+              data-paused={isUnviewedPaused(item) ? "true" : undefined}
               href={`/assistant?bot=${encodeURIComponent(item.specialistId)}`}
               onClick={(event) => openBot(event, item.specialistId)}
             >
@@ -213,7 +223,10 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
               />
               <span className="bot-rail-label">
                 <strong>{item.name}</strong>
-                <small>{item.description || item.agentName}</small>
+                {/* 暂停时用状态文案替换描述：列表里一眼可见，且不会被省略号截掉。 */}
+                <small>
+                  {isUnviewedPaused(item) ? "已暂停 · 无人查看" : item.description || item.agentName}
+                </small>
               </span>
             </Link>
           </li>
