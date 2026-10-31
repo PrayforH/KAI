@@ -1075,3 +1075,53 @@ api 未动，仍 r20；compose 备份 `compose.private.before-r47.json`。
 截图 `/tmp/kai79-accept/164-r47-paused-before.png`、`165-r47-paused-after.png`。
 真实数据当前没有暂停中的 Bot，所以未做「真实 24h 无人查看」链路；本轮验证的是 viewed→刷新→徽章消失
 这段新增行为，暂停本身的产生仍由 r41 的后端验收覆盖。
+
+## 助理面进展浮标显示检查点计量（2026-11-01，web r48 + api r21，marker kai-progress-metering）
+
+缺口：P2-1 已把 tokens/cost/耗时投影进托管面板，但 `/assistant` 的「后台任务进展」浮标从 inbox
+只拿到 title/content，打开助理面无法立刻感知一趟执行花了多少。
+
+> 编号说明：本批任务书写的是 web r47，但 r47 已由上一片（kai-rail-refresh-after-viewed）占用并部署，
+> 所以本片落在 **web r48 + api r21**。
+
+- 后端：`AssistantInboxItem` 增可选 `metrics{tokens,costUsd,unknownUsage}`（`AssistantInboxMetrics`）
+  与 `durationSeconds`；`save_execution` 写终态 notice 时带同次 checkpoint 的结算值
+  （两者都空 → `unknownUsage=True`）和 `finishedAt-createdAt` 秒数。旧行没有字段仍按 None 读取。
+- 前端：新增共享 `checkpoint-metering.tsx`（`formatCheckpointMetering` / `CheckpointMeteringLine`），
+  托管面板与浮标共用同一份文案：`tokens 1,234 · cost $0.02 · 耗时 45 秒`；
+  未知用量显示「tokens 未计量」（绝不显示 `tokens 0`）；无 metrics 且无耗时 → 不渲染计量行。
+  浮标展开明细里新增 `.assistant-progress-metrics`（`data-metering="measured|unknown"`），折叠摘要不变。
+- 未改预算闸门/结算公式/委派/lease/desktop 仲裁。
+
+**测试**
+
+```
+uv run pytest tests/integration/storage/test_assistant_objectives.py -q            # 9 passed（含新终态载荷用例）
+uv run pytest tests/unit/assistant -q                                              # 101 passed
+uv run ruff check src/harness/assistant/{models,repository}.py tests/...           # clean
+cd web/harness-console
+npx tsc --noEmit                                                                   # clean
+npx vitest run tests/assistant-progress-metering.spec.tsx                          # 3 passed（新增）
+npx vitest run tests/assistant-progress-strip.spec.tsx tests/managed-metrics.spec.tsx  # 6 passed
+npx vitest run                                                                     # 1492 passed / 1 skipped / 1 既有失败
+```
+
+后端用例：终态 notice 带 `tokens=1234 / cost=0.02 / unknownUsage=False / durationSeconds=45`；
+无用量那次 `tokens=None / unknownUsage=True`；旧载荷无字段可 validate。前端 DOM 用例覆盖
+千分位、cost、耗时、未计量不出现 `tokens 0`、旧 notice 无计量行；托管面板断言改指共享组件。
+
+**79 部署与只读验收**：api/worker/computer-control → `kai/assistant-api:20261030-managed-r21`
+（worker 也会调 `save_execution`，必须同版）；web → `kai/assistant-web:20261030-managed-r48`；
+`migrate` 仍 r18（无新迁移）。均 healthy，`/assistant` = 200；compose 备份
+`compose.private.before-metering.json`。镜像内确认 `AssistantInboxMetrics` 在 models/repository，
+web chunk 含 `assistant-progress-metrics` 与「tokens 未计量」。
+
+- 真实 inbox：25 条历史 notice 全部无计量（`withMetrics=0`），页面展开浮标 `metricLines=0`
+  ——旧载荷兼容、不显示假 0。
+- 计量视觉用**浏览器侧拦截** inbox 响应（不动服务端）注入 measured/unknown/legacy 三条：
+  实机分别渲染 `tokens 1,234 · cost $0.02 · 耗时 45 秒`（measured）、
+  `tokens 未计量 · 耗时 12 秒`（unknown）、无计量行（legacy）；截图
+  `/tmp/kai79-accept/166-r48-metering.png`。
+
+未验证：**部署后新产生**的终态 notice 在真实运行里带计量（需要一次真实执行结束后看 inbox）；
+写入口径由上面的集成测试钉住，前端渲染由注入验收覆盖。
