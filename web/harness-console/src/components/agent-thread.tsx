@@ -1358,6 +1358,7 @@ function TurnActivity({
   ) return null;
 
   const activitySurface = useAssistantSurface();
+  const activityAvatar = useAssistantBot()?.appearance?.avatar;
   if (activitySurface) {
     // 聊天形态：活动＝脸 + 渐现短语，一行，占位与客户端一致。
     // 短语只取真正的进展（progressPhrase 排除 message.delta 的正文）；
@@ -1374,7 +1375,7 @@ function TurnActivity({
         className={`latest-activity ${displayed.status}`}
         data-activity-source={isLast ? "current-run" : "captured-turn"}
       >
-        <GrokActivityRow phrase={phrase} state={faceState} />
+        <GrokActivityRow phrase={phrase} state={faceState} avatar={activityAvatar} />
         <ChatActivitySteps activity={displayed} phrase={phrase} />
       </div>
     );
@@ -1797,6 +1798,7 @@ function useMessageEditor() {
 function HarnessUserMessage() {
   const redact = useConversationRedactor();
   const assistantSurface = useAssistantSurface();
+  const activityAvatar = useAssistantBot()?.appearance?.avatar;
   const message = useAuiState((state) => state.message);
   const isLastMessage = useAuiState((state) => state.message.isLast);
   const threadRunning = useAuiState((state) => state.thread.isRunning);
@@ -1924,6 +1926,7 @@ function HarnessUserMessage() {
                 <GrokActivityRow
                   phrase={progressPhrase(preResponseActivity)}
                   state={preResponseActivity.status === "failed" ? "failed" : "working"}
+                  avatar={activityAvatar}
                 />
                 <ChatActivitySteps
                   activity={preResponseActivity}

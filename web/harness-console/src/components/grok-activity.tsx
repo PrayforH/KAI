@@ -1,17 +1,37 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useAssistantBot } from "./assistant-bot-context";
+import { botShape } from "./bot-rail";
 
 export type GrokFaceState = "idle" | "working" | "done" | "failed";
 
+/** 不同外形下的眼睛位置/大小；树、水滴等窄外形把眼睛收一点，保证可读。 */
+const EYE_GEOMETRY: Record<string, { cx: number; cy: number; rx: number; ry: number }> = {
+  blob: { cx: 26, cy: 30, rx: 2.6, ry: 4.6 },
+  star: { cx: 28.6, cy: 29, rx: 2.1, ry: 3.7 },
+};
+
 /**
- * 对齐客户端 GrokBotMark 的观感：blob 身体 + 两只眼睛。
+ * 对齐客户端 GrokBotMark 的观感：保存的外形（色 + 形）+ 两只眼睛。
+ * - 外形取 config.appearance.avatar（缺/未知 → blob），与 rail / 顶栏同源；
  * - idle：约 4s 一次慢眨眼
  * - working：轻微上下浮动 + 眼睛随鼠标注视（attachMarkHoverGaze 的等价物）
  * - done / failed：一次弹跳定格
  * 颜色取当前 bot 的强调色（--kai-bot-accent），墨色与眼色走 CSS 变量。
  */
-export function GrokFace({ state, size = 22 }: { state: GrokFaceState; size?: number }) {
+export function GrokFace({
+  state,
+  size = 22,
+  avatar,
+}: {
+  state: GrokFaceState;
+  size?: number;
+  avatar?: string | null;
+}) {
+  const assistantBot = useAssistantBot();
+  const glyph = botShape(avatar ?? assistantBot?.appearance?.avatar);
+  const eye = EYE_GEOMETRY[glyph.id] ?? EYE_GEOMETRY.blob!;
   const ref = useRef<HTMLSpanElement | null>(null);
   useEffect(() => {
     const node = ref.current;
@@ -50,17 +70,29 @@ export function GrokFace({ state, size = 22 }: { state: GrokFaceState; size?: nu
       ref={ref}
       className="grok-face"
       data-state={state}
+      data-avatar={glyph.id}
       style={{ width: size, height: size }}
       aria-hidden="true"
     >
       <svg viewBox="0 0 64 64">
-        <path
-          className="grok-face-body"
-          d="M32 6c11 0 19 7 19 17 0 9-7 13-7 22 0 7-6 11-12 11-7 0-12-4-12-12 0-9-7-12-7-21C13 13 21 6 32 6Z"
-        />
+        <path className="grok-face-body" d={glyph.path} />
         <g className="grok-face-eyes" style={{ transform: "translate(var(--gaze-x, 0px), var(--gaze-y, 0px))" }}>
-          <ellipse className="grok-face-eye" data-blink={blink ? "true" : undefined} cx="26" cy="30" rx="2.6" ry="4.6" />
-          <ellipse className="grok-face-eye" data-blink={blink ? "true" : undefined} cx="38" cy="30" rx="2.6" ry="4.6" />
+          <ellipse
+            className="grok-face-eye"
+            data-blink={blink ? "true" : undefined}
+            cx={eye.cx}
+            cy={eye.cy}
+            rx={eye.rx}
+            ry={eye.ry}
+          />
+          <ellipse
+            className="grok-face-eye"
+            data-blink={blink ? "true" : undefined}
+            cx={64 - eye.cx}
+            cy={eye.cy}
+            rx={eye.rx}
+            ry={eye.ry}
+          />
         </g>
       </svg>
     </span>
@@ -134,9 +166,11 @@ function sharedPrefixLength(before: readonly string[], after: readonly string[])
 export function GrokActivityRow({
   phrase,
   state,
+  avatar,
 }: {
   phrase: string;
   state: GrokFaceState;
+  avatar?: string | null;
 }) {
   // 行内再走一次 10 字口径：即便有调用方塞进长段落，也不会铺满一行。
   const capped = phrase.length > MAX_PHRASE_CHARS
@@ -145,7 +179,7 @@ export function GrokActivityRow({
   const short = trimConclusion(capped);
   return (
     <div className="grok-activity-row" data-state={state} aria-live="polite">
-      <GrokFace state={state} />
+      <GrokFace state={state} avatar={avatar} />
       <ActivityPhrase text={short} />
     </div>
   );
