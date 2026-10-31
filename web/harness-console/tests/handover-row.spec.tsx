@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { HandoverInlineRows } from "../src/components/handover-row";
+import { HandoverInlineRows, shouldShowHandoverRows } from "../src/components/handover-row";
 import { handoverStore, statusLead } from "../src/lib/handover-store";
 
 const agentSource = readFileSync(
@@ -27,12 +27,24 @@ describe("handover inline rows", () => {
     handoverStore.subscribe(() => {})(); // noop to appease linter on import side effect
   });
 
-  it("is scroll content inside the assistant message, never a sticky top bar", () => {
+  it("is scroll content inside the main assistant message, never a sticky top bar", () => {
     // 挂在最后一条助手消息内（随流滚动）；旧置顶条组件不得回归。
-    expect(agentSource).toContain("{personalAssistant && isLast ? <HandoverInlineRows /> : null}");
+    expect(agentSource).toContain(
+      "{shouldShowHandoverRows(personalAssistant, assistantSurface, Boolean(assistantBot)) && isLast ? <HandoverInlineRows /> : null}",
+    );
     expect(agentSource).not.toContain("HandoverStrip");
     const css = readFileSync(join(process.cwd(), "src/app/web-codex.css"), "utf8");
     expect(css).not.toMatch(/\.handover-inline[^-][^}]*position:\s*(sticky|fixed)/);
+  });
+
+  it("only mounts in the main assistant conversation, not task or bot threads", () => {
+    expect(shouldShowHandoverRows(true, true, false)).toBe(true);
+    // /assistant 下打开旧任务：入口仍为 true，但 data-surface 已是 task。
+    expect(shouldShowHandoverRows(true, false, false)).toBe(false);
+    // 子助理自己的会话不承接主助理的转交回执。
+    expect(shouldShowHandoverRows(true, true, true)).toBe(false);
+    // 普通任务入口（非 /assistant）永远不显示。
+    expect(shouldShowHandoverRows(false, false, false)).toBe(false);
   });
 
   it("maps statuses to Chinese leads and dedupes per bot", () => {

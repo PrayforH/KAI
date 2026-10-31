@@ -5,6 +5,19 @@ import { handoverStore, useHandoverNotices } from "../lib/handover-store";
 import { statusLead } from "../lib/handover-store";
 
 /**
+ * 转交回执属于主助理会话，而不是当前打开的任何任务线程。
+ * /assistant 入口会给整页包上 PersonalAssistantEntry；任务面切回来时它仍为
+ * true，所以还要结合助理面和 bot 绑定，避免回执落进历史任务消息流。
+ */
+export function shouldShowHandoverRows(
+  personalAssistant: boolean,
+  assistantSurface: boolean,
+  hasBot: boolean,
+): boolean {
+  return personalAssistant && assistantSurface && !hasBot;
+}
+
+/**
  * 主对话流内的转交状态行（对齐 Grok「已发送给 X」）：居中、细字、
  * 随消息滚动（非 sticky/置顶条），点击进入目标 bot 会话。
  * 数据源：派活工具的 ui.handover 自定义事件（即时）+ 页面加载时的一次性

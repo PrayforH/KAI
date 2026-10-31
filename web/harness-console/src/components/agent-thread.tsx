@@ -58,7 +58,7 @@ import { setPendingReply } from "../lib/reply-references";
 import { loadComposerReplyDraft, persistComposerReplyDraft } from "../lib/task-composer-draft";
 import { useAssistantBot, useAssistantSurface } from "./assistant-bot-context";
 import { GrokActivityRow, type GrokFaceState } from "./grok-activity";
-import { HandoverInlineRows } from "./handover-row";
+import { HandoverInlineRows, shouldShowHandoverRows } from "./handover-row";
 import {
   ComposerReplyProvider,
   MessageReplyButton,
@@ -1498,6 +1498,7 @@ export function responseTextForTurn(messageId: string, nativeText: string, direc
 export function HarnessAssistantMessage() {
   const redact = useConversationRedactor();
   const assistantSurface = useAssistantSurface();
+  const assistantBot = useAssistantBot();
   const personalAssistant = usePersonalAssistantEntry();
   const conversationScope = useConversationScope();
   const live = useLiveResponse();
@@ -1669,7 +1670,7 @@ export function HarnessAssistantMessage() {
         </>
       ) : null}
       {conversationScope?.afterMessage(messageId)}
-      {personalAssistant && isLast ? <HandoverInlineRows /> : null}
+      {shouldShowHandoverRows(personalAssistant, assistantSurface, Boolean(assistantBot)) && isLast ? <HandoverInlineRows /> : null}
     </AssistantMessage.Root>
     </PublishedBlocksProvider>
     </AnswerCitationProvider>
