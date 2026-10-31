@@ -912,3 +912,41 @@ ctx `web-src-r43`，3 个文件逐文件 sha256 与本地一致；`task-context-
 
 截图 `/tmp/kai79-accept/158-r43-header-main.png`、`159-r43-header-bot.png`。
 未验证：非 blob 外形在 79 顶栏的视觉（现网真实数据只有 blob；DOM 用例覆盖 star/未知）。api 未动，仍 r20。
+
+## 活动行脸的外形与 appearance 对齐（2026-10-31，web r44，marker kai-activity-face-shape）
+
+缺口：`GrokFace` 的身体 path 写死一份接近 blob 的曲线，无视 `config.appearance.avatar`；
+`/assistant?bot=…` 跑起来后，活动行「脸」与左侧 rail / 顶栏的色+形身份不一致。
+
+- `GrokFace` 复用 `botShape()`（bot-rail 导出，path 表仍是 create-bot-dialog 的唯一一份）：
+  `avatar` prop 优先，否则读 `useAssistantBot()?.appearance?.avatar`；缺/未知 → blob。
+  `data-avatar="<id>"` 写在外层 `.grok-face`，便于 DOM 断言。
+- 眼睛按外形微调（star 收窄眼距/缩小眼径），眨眼、注视、working/done/failed 动画与
+  `aria-hidden` 均保持；颜色仍走 `--kai-bot-accent`。
+- `GrokActivityRow` 透传 `avatar`；`agent-thread` 两处（turn 活动行 + pre-response 活动行）
+  都传当前 bot 的 `appearance.avatar`；主助理（无 bot）→ blob（没有被某个子助理外形污染）。
+- 未改任务面 `ActivitySummary`、编辑弹窗、rail、顶栏与 API。
+
+**测试**
+
+```
+cd web/harness-console
+npx tsc --noEmit                                                # clean
+npx vitest run tests/grok-activity-face-shape.spec.tsx          # 5 passed（新增，SSR DOM 断言）
+npx vitest run tests/grok-activity.spec.tsx tests/assistant-phrase-reveal.spec.tsx \
+  tests/assistant-activity-steps.spec.tsx                       # 29 passed
+npx vitest run                                                  # 1477 passed / 1 skipped / 1 既有失败
+```
+
+断言：`avatar="star"` → `path[d]` 等于 BOT_SHAPES star、`data-avatar="star"`、无写死 blob 路径；
+缺/未知 → blob；Provider 内有 bot → 用 bot 外形，无 bot → blob；`GrokActivityRow` 透传；
+idle 有 `data-blink`、working 无，眼睛（2 个 ellipse）与 `aria-hidden` 始终存在。
+
+**79 部署与只读验收**：web `kai/assistant-web:20261030-managed-r44` 已滚（healthy，`/assistant` = 200）；
+ctx `web-src-r44`，`grok-activity.tsx` sha256 `1224b5cb…`、`agent-thread.tsx` `7187c7d3…` 与本地一致；
+grok 组件 chunk 由 r43 的 `426p7dn1ljfv4.js` 变为 `166uf93upn6yg.js`。页面探针：顶栏与 rail
+外形正常（休息提醒 `blob/#0d9655`）、无 console/page error、历史终态无活动行（`grok-face` = 0）。
+截图 `/tmp/kai79-accept/160-r44-bot.png`。
+
+未验证：真实**进行中**回合里活动行脸的视觉——活动行只在 run 进行中渲染，需要发起一次真实 run
+（会往用户会话写消息并消耗额度），本轮未做；外形分支由上面的 SSR/DOM 断言覆盖。api 未动，仍 r20。
