@@ -134,6 +134,43 @@ export function GrokActivityRow({
 }
 
 
+/**
+ * 瞬时等待/进行中的状态短语：只在回合进行中有意义，终态后必须消失
+ * （对齐客户端：交办或回合结束后中间状态不留在历史流里）。
+ */
+const TRANSIENT_PROGRESS = [
+  "正在等待本轮模型结果",
+  "正在生成回复",
+  "正在准备运行环境",
+  "正在准备运行",
+  "正在整理本轮结果",
+  "正在生成可恢复的上下文摘要",
+  "正在处理",
+];
+
+export function isTransientProgress(text: string): boolean {
+  const value = text.trim();
+  return TRANSIENT_PROGRESS.some((phrase) => value === phrase || value.startsWith(`${phrase}（`));
+}
+
+/** 只有这些 Run 状态才有"进行中的活动行"；终态一律不画。 */
+const ACTIVE_PROGRESS_STATUSES = new Set([
+  "queued",
+  "pending",
+  "provisioning",
+  "running",
+  "waiting",
+  "waiting_approval",
+  "cancelling",
+]);
+
+/** 聊天形态活动行的唯一开关：有合格进展，且回合仍未结束。 */
+export function shouldShowChatActivityRow(status: string, activity: { items: ReadonlyArray<{ event_type: string; summary?: string | null }> }, options: { allowTransient?: boolean } = {}): boolean {
+  const phrase = progressPhrase(activity, options);
+  if (!phrase) return false;
+  return ACTIVE_PROGRESS_STATUSES.has(status);
+}
+
 /** 正文类事件（message.*）与思考类事件不进活动行：它们是回答本体，不是进展。 */
 const PROSE_EVENT_PREFIXES = ["message.", "reasoning."];
 const MAX_PHRASE_CHARS = 60;
@@ -147,7 +184,9 @@ const MAX_PHRASE_CHARS = 60;
  */
 export function progressPhrase(
   activity: { items: ReadonlyArray<{ event_type: string; summary?: string | null }> },
+  options: { allowTransient?: boolean } = {},
 ): string {
+  const allowTransient = options.allowTransient ?? true;
   const items = [...activity.items].reverse();
   for (const item of items) {
     const summary = (item.summary ?? "").trim();
@@ -156,6 +195,7 @@ export function progressPhrase(
     if (type.startsWith("run.")) continue;
     if (PROSE_EVENT_PREFIXES.some((prefix) => type.startsWith(prefix))) continue;
     if (summary.length > MAX_PHRASE_CHARS) continue;
+    if (!allowTransient && isTransientProgress(summary)) continue;
     return summary;
   }
   return "";

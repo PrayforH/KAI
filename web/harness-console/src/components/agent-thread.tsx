@@ -57,7 +57,12 @@ import { groupWorkspaceFiles } from "../lib/workspace-file-groups";
 import { setPendingReply } from "../lib/reply-references";
 import { loadComposerReplyDraft, persistComposerReplyDraft } from "../lib/task-composer-draft";
 import { useAssistantBot, useAssistantSurface } from "./assistant-bot-context";
-import { GrokActivityRow, progressPhrase, type GrokFaceState } from "./grok-activity";
+import {
+  GrokActivityRow,
+  progressPhrase,
+  shouldShowChatActivityRow,
+  type GrokFaceState,
+} from "./grok-activity";
 import { HandoverInlineRows, shouldShowHandoverRows } from "./handover-row";
 import {
   ComposerReplyProvider,
@@ -1354,9 +1359,11 @@ function TurnActivity({
   const activitySurface = useAssistantSurface();
   if (activitySurface) {
     // 聊天形态：活动＝脸 + 渐现短语，一行，占位与客户端一致。
-    // 短语只取真正的进展（progressPhrase 排除 message.delta 的正文）。
+    // 短语只取真正的进展（progressPhrase 排除 message.delta 的正文）；
+    // 回合已终态就不再画这行——「正在等待本轮模型结果」这类瞬时状态
+    // 不能钉在历史流里（对齐客户端：结束后只留结果）。
+    if (!shouldShowChatActivityRow(displayed.status, displayed)) return null;
     const phrase = progressPhrase(displayed);
-    if (!phrase) return null;
     const faceState: GrokFaceState =
       displayed.status === "failed" ? "failed"
       : ["completed", "succeeded"].includes(displayed.status) ? "done"
@@ -1910,10 +1917,12 @@ function HarnessUserMessage() {
           data-activity-source="pre-response"
         >
           {assistantSurface ? (
-            <GrokActivityRow
-              phrase={progressPhrase(preResponseActivity)}
-              state={preResponseActivity.status === "failed" ? "failed" : "working"}
-            />
+            shouldShowChatActivityRow(preResponseActivity.status, preResponseActivity) ? (
+              <GrokActivityRow
+                phrase={progressPhrase(preResponseActivity)}
+                state={preResponseActivity.status === "failed" ? "failed" : "working"}
+              />
+            ) : null
           ) : (
             <ActivitySummary activity={preResponseActivity} />
           )}
