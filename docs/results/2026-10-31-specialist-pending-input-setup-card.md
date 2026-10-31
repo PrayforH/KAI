@@ -104,3 +104,10 @@ r36 构建 ctx `web-src-r36`（由 r35 源码复制后覆盖本轮 3 个文件�
 3. 卡片变为「已启用，首次执行排队中」，侧栏该 bot 从「待启用」移到「在岗」；
 4. 稍等（首个执行入队 → worker 接单），会话内出现运行活动/首条结果；
    「…」编辑弹窗的例行程序区显示周期与「已激活」。
+
+## 追加（2026-11-01）：主会话亦可内联
+
+主 `/assistant` 出现 `pending_input` 转交行时会直接挂同一张 `SpecialistSetupCard`，
+选频率 →「保存并启用」即可完成 config→status 与首跑入队，**无需**跳到 `/assistant?bot=…`；
+成功后行态由「待补充」变为「已安排」，卡片收起。详见
+`docs/results/2026-10-30-kai-assistant-managed-79.md` 的 kai-main-session-pending-input-card 小节。

@@ -1262,3 +1262,50 @@ web → `kai/assistant-web:20261030-managed-r51`；`migrate` 仍 r18（无新迁
 
 未验证：部署后**真实产生**的失败 notice 带 runId 并点进轨迹页（需要一次真实失败执行）；
 写入口径由集成测试、链接构造由 DOM + 注入验收覆盖。
+
+## 主会话内联完成 pending_input 补配置（2026-11-01，web r52 + r53，marker kai-main-session-pending-input-card）
+
+缺口：缺 `schedule_minutes`/`notify_channel` 时后端把 handover 置 `pending_input` 且不入队（语义正确），
+但主 `/assistant` 的转交行只有「待补充 ·「X」」链接，必须跳到 `/assistant?bot=…` 才能用上
+`SpecialistSetupCard`；Grok 的「补充输入在主 bot 消息里做」在助理面缺失。
+
+- r52：`HandoverInlineRows` 对 `status === "pending_input"` 的条目，在状态行下方内联挂同一张
+  `SpecialistSetupCard`（没有第二套频率/渠道 UI），保存仍走 config→status 两步；成功后：
+  `handoverStore.markConfigured()` 把行态改为 `applied`（「已安排」）、卡片随之卸载，
+  并派发 `kai:specialists-changed` 让 rail 立刻重拉（该 bot 从「待启用」移到「在岗」）。
+  非 `pending_input` 行保持原链接；未改委派/入队/lease/预算/desktop 与飞书微信入站。
+- r53（实机发现的问题）：79 上 2 条历史 `pending_input` 转交指向的 Bot **早已 active**，
+  卡片按既有口径不渲染（active 不常驻表单），行却一直停在「待补充」。补了 `onAlreadyActive`：
+  打开时若 specialist 已是 active，就把行态归一为「已安排」（只改本地展示，不写服务端）。
+  保存流程用 ref 防重复上报。
+
+**测试**
+
+```
+cd web/harness-console
+npx tsc --noEmit                                                   # clean
+npx vitest run tests/main-session-pending-input-card.spec.tsx      # 3 passed（新增）
+npx vitest run tests/handover-row.spec.tsx tests/specialist-setup-card.spec.tsx \
+  tests/specialist-setup-card.flow.spec.tsx                        # 11 passed
+npx vitest run                                                     # 1501 passed / 1 skipped / 1 既有失败
+```
+
+DOM 断言：pending_input → 行出现「待补充 ·」+ 卡片（频率档/「保存并启用」可见）；点「每小时」→
+「保存并启用」后调用序列 config→status、status=active、卡片消失、行变「已安排」、store 无 pending_input；
+全程**未调用 location.assign**（URL 仍 `/assistant`，无 `?bot=`）；已 active 的陈旧 pending 行直接归一为
+「已安排」且无卡片；非 pending 行仍是普通链接。既有失败仍是 account-settings（无关）。
+
+**79 部署与只读验收**：web 先滚 `kai/assistant-web:20261030-managed-r52`，发现陈旧 active 行问题后
+再滚 `:managed-r53`（healthy，`/assistant` = 200）；ctx `web-src-r52/53`，
+`handover-row.tsx`/`handover-store.ts`/`specialist-setup-card.tsx` sha256 与本地一致；
+`handover-inline-item` 出现在 `0yg3lgmx1aftc.js`（r51 无）。api 未动，仍 r23；
+compose 备份 `compose.private.before-r52.json` / `before-r53.json`。
+
+- 真实页面（r53）：两条历史 `pending_input` 行均显示「已安排」，无卡片（对应 Bot 已 active）；
+- 内联完成流程用**浏览器侧拦截** API（handovers/specialists/detail/config/status，均 fixture，不写服务端）：
+  实机出现「待补充 ·「休息提醒」」+ 完整卡片，点「每小时」→「保存并启用」后请求序列为
+  `config → status`，卡片消失、行变「已安排」，URL 始终 `/assistant`（未跳 ?bot=），rail 收到刷新事件。
+  截图 `/tmp/kai79-accept/174-r53-inline-card.png`、`172/173-r52-inline-*.png`。
+
+未验证：真实「未配置的 pending_input Bot 在主会话里点完成」——现网 pending 转交都指向已 active 的 Bot，
+造一条新的需要真实委派（会写用户数据）；流程由 DOM 用例 + 注入式实机验收覆盖。
