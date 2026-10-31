@@ -583,7 +583,7 @@ specialist.config，不同步到 `objective.schedule/next_check_at`；启用也�
 
 79 说明：本轮未改部署、未推送镜像；上述为工作树本地单测与类型检查证据。
 
-## 转交后「保存并启用」补齐配置（2026-10-31，web r35）
+## 转交后「保存并启用」补齐配置（2026-10-31，web r36）
 
 `pending_input` 在助理面此前只有文字说明、没有补配置入口，用户看到「待补充」却无处可点。
 新增 `web/harness-console/src/components/specialist-setup-card.tsx`，在
@@ -600,13 +600,17 @@ expectedRevision: 上一步返回的 revision}`（服务端为闲置职责补一
   `tests/specialist-setup-card.flow.spec.tsx` → 3 passed（jsdom 真点击，断言 config→status
   调用顺序、revision 传递、`schedule_minutes=60`/`notify_channel=inbox`、成功文案与 `onReady`、
   以及 active 加载不渲染残留横幅）。
-- `npx tsc --noEmit` → 通过；`npx vitest run`（全套）→ 1415 passed / 1 既有失败
+- `npx tsc --noEmit` → 通过；`npx vitest run`（全套）→ 1432 passed / 1 skipped / 1 既有失败
   （`account-settings.spec.ts`，与本次无关）。
 - 后端未改，「配置齐全 → applied + 恰好 1 条 queued 执行」「启用后补首跑」由既有集成测试
   `test_applied_delegate_enqueues_exactly_one_first_execution`、
   `test_completed_specialist_config_enables_first_execution` 覆盖。
-- 79 冒烟（只读）：web `kai/assistant-web:20261030-managed-r35` 已滚到 79（healthy，web=200）；
-  打开 `/assistant?bot=specialist_466780791f3c4f218b66019818346459`（休息提醒）实测卡片渲染，
-  按钮为 `[每小时, 每 6 小时, 每天, 站内消息, 保存并启用]`，默认选中「每天」。
+- 79 已滚到 web `kai/assistant-web:20261030-managed-r36`（healthy，`/assistant` = 200）；
+  以 `kai/assistant-web:20261030-managed-r4` 为基座从 `web-src-r36` 构建，
+  3 个改动文件逐文件 sha256 与本地一致，卡片 chunk 由 `2be9lq7pqnt3n.js` 变为
+  `0z38mvebel7wp.js`（确认镜像里是新代码）。
+- 79 冒烟（只读，纯 HTTP :3501）：`/assistant?bot=specialist_466780791f3c4f218b66019818346459`
+  （休息提醒）实测 `card=true / title=还差两步就能开始跑 / 默认每天 / 站内消息已选禁改 /
+  staleBanner=false`，按钮为 `[每小时, 每 6 小时, 每天, 站内消息, 保存并启用]`。
   因会把真实 bot 置为 active 并按其频率持续运行，未替用户点击启用。
 - 详细记录：`docs/results/2026-10-31-specialist-pending-input-setup-card.md`。

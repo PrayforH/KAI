@@ -75,14 +75,26 @@ npx vitest run tests/                                     # 1415 passed / 1 既�
 
 ## 79 冒烟（只读）
 
-web `kai/assistant-web:20261030-managed-r35` 已滚到 79（healthy，web=200）。
+web `kai/assistant-web:20261030-managed-r36` 已滚到 79（healthy，`/assistant` = 200）。
+r36 构建 ctx `web-src-r36`（由 r35 源码复制后覆盖本轮 3 个文件，逐文件 sha256 对账一致），
+`web-r36.Dockerfile` 以 `kai/assistant-web:20261030-managed-r4` 为运行基座。
+卡片的 page chunk 哈希由 `2be9lq7pqnt3n.js` 变为 `0z38mvebel7wp.js`，说明镜像里确实是新代码。
 
-打开 `https://172.20.105.79:3543/assistant?bot=specialist_466780791f3c4f218b66019818346459`（休息提醒）：
+用纯 HTTP `http://172.20.105.79:3501/assistant?bot=specialist_466780791f3c4f218b66019818346459`
+（休息提醒）实测：
 
-- 卡片渲染在会话顶部：标题「还差两步就能开始跑」、按钮
-  `["每小时","每 6 小时","每天","站内消息","保存并启用"]`、默认选中「每天」
+```json
+{ "card": true, "state": null, "title": "还差两步就能开始跑",
+  "buttons": ["每小时","每 6 小时","每天","站内消息","保存并启用"],
+  "每天.selected": "true", "站内消息.disabled": true,
+  "staleBanner": false }
+```
+
+- 卡片渲染在对话区顶部：标题「还差两步就能开始跑」、默认选中「每天」、站内消息已选且不可改
+- 页面上没有「已启用，首次执行排队中」（needs_input 的 bot 不该出现旧回执）
 - 因涉及真实数据（会把该 bot 置为 active 并按频率持续运行），冒烟**只验证渲染**，
   没有替用户点击启用；点一次即可完成「补齐→启用→首跑入队」。
+- 截图：`/tmp/kai79-accept/151-setup-card-r36.png`
 
 ## 如何在 /assistant 点验
 
