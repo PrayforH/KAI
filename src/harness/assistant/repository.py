@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from harness.assistant.lifecycle import next_check, transition
 from harness.assistant.models import (
     AssistantInboxItem,
+    AssistantInboxMetrics,
     DesktopTurn,
     HandoverStatus,
     ManagedTask,
@@ -629,6 +630,11 @@ class PostgresAssistantRepository:
                         created_at=now,
                     )
                 )
+                duration_seconds = (
+                    max(0, int((execution.finished_at - execution.created_at).total_seconds()))
+                    if execution.finished_at is not None
+                    else None
+                )
                 item = AssistantInboxItem(
                     itemId=f"notice_{execution.execution_id}",
                     objectiveId=execution.objective_id,
@@ -637,6 +643,13 @@ class PostgresAssistantRepository:
                     title=objective.title,
                     content=summary,
                     threadId=execution.thread_id,
+                    # 与同次 checkpoint 同口径：两条都为空才算未计量。
+                    metrics=AssistantInboxMetrics(
+                        tokens=usage_tokens,
+                        cost_usd=usage_cost,
+                        unknown_usage=usage_tokens is None and usage_cost is None,
+                    ),
+                    durationSeconds=duration_seconds,
                     createdAt=now,
                 )
                 session.add(

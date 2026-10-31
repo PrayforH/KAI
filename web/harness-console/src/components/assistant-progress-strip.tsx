@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { assistantRequest, type Notice } from "../lib/assistant-client";
+import { CheckpointMeteringLine } from "./checkpoint-metering";
 
 const KIND_LABEL: Record<string, { label: string; tone: "done" | "working" | "attention" }> = {
   succeeded: { label: "已交付", tone: "done" },
@@ -87,6 +88,11 @@ export function AssistantProgressStrip() {
               <span className="assistant-progress-kind">{KIND_LABEL[item.kind]?.label ?? item.kind}</span>
               <span className="assistant-progress-title">{item.title}</span>
               <span className="assistant-progress-excerpt">{item.content}</span>
+              <CheckpointMeteringLine
+                metrics={item.metrics}
+                durationSeconds={item.durationSeconds}
+                className="assistant-progress-metrics"
+              />
               {item.threadId && (
                 <Link
                   className="assistant-progress-link"

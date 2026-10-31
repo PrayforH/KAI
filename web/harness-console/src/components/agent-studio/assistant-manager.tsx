@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { assistantRequest, type Objective, type Execution, type Notice, type Specialist, type Handover, type ManagedPanel, type ManagedProgress } from "../../lib/assistant-client";
 import { isFailedRunStatus, runStatusLabel } from "../../lib/run-status";
 import styles from "./assistant-manager.module.css";
+import { CheckpointMeteringLine } from "../checkpoint-metering";
 
 type Agent = { name: string; version: string; display_name: string; owner_user_id?: string; space_id?: string };
 type Project = { projectId: string; name: string };
@@ -206,21 +207,11 @@ export function AssistantManager() {
         ) : (
           <Link href={`/?thread=${encodeURIComponent(task.threadId)}`}>打开原任务 →</Link>
         )}
-        {task.progress?.metrics || task.progress?.duration_seconds != null ? (
-          <p className={styles.muted}>
-            {[
-              task.progress.metrics
-                ? task.progress.metrics.unknownUsage || task.progress.metrics.tokens == null
-                  ? "tokens 未计量"
-                  : `tokens ${task.progress.metrics.tokens.toLocaleString("zh-CN")}`
-                : null,
-              task.progress.metrics?.costUsd != null ? `cost $${task.progress.metrics.costUsd}` : null,
-              task.progress.duration_seconds != null
-                ? `耗时 ${Math.max(1, Math.round(task.progress.duration_seconds))} 秒`
-                : null,
-            ].filter(Boolean).join(" · ")}
-          </p>
-        ) : null}
+        <CheckpointMeteringLine
+          metrics={task.progress?.metrics}
+          durationSeconds={task.progress?.duration_seconds}
+          className={styles.muted}
+        />
       </article>)}
       {panel?.aggregate && <pre className={styles.aggregate}>{panel.aggregate}</pre>}
       <form onSubmit={event => { event.preventDefault();

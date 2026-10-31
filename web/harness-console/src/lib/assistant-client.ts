@@ -12,7 +12,10 @@ export type Execution = { executionId: string; threadId: string; runId: string |
   status: "pending" | "running" | "succeeded" | "failed" | "cancelled";
   summary: string; createdAt: string };
 export type Notice = { itemId: string; objectiveId: string; title: string; content: string;
-  kind: string; createdAt: string; readAt: string | null; threadId?: string | null };
+  kind: string; createdAt: string; readAt: string | null; threadId?: string | null;
+  // 终态 notice 的结算计量（与同次 checkpoint 同口径）；旧行没有这两个字段。
+  metrics?: { tokens: number | null; costUsd: number | null; unknownUsage: boolean } | null;
+  durationSeconds?: number | null };
 export type Specialist = { specialistId: string; name: string; slug: string; description: string;
   agentName: string; agentVersion: string;
   status: "draft" | "needs_input" | "validating" | "ready" | "active" | "paused" | "blocked" | "archived";

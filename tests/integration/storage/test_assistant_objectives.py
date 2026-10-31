@@ -8,6 +8,7 @@ from harness.assistant.models import (
     Objective,
     ObjectiveAction,
     ObjectiveBrief,
+    ObjectiveExecutionStatus,
     ObjectiveSchedule,
     ObjectiveStatus,
 )
@@ -204,6 +205,61 @@ async def test_expired_worker_cannot_write_and_result_is_private(database: Datab
     await repo.read_notice("tenant-a", "user-a", notices[0].item_id, later)
     assert (await repo.inbox("tenant-a", "user-a"))[0].read_at == later
     assert (await repo.get("tenant-a", "user-a", "objective-a")).status is ObjectiveStatus.ACTIVE
+
+
+@pytest.mark.asyncio
+async def test_terminal_notice_carries_checkpoint_metering(database: DatabaseFixture) -> None:
+    """终态 inbox 与同次 checkpoint 同口径：有量带 tokens/cost/耗时，未知不冒充 0。"""
+    repo = PostgresAssistantRepository(database[1])
+    await repo.create(objective())
+
+    await repo.enqueue("tenant-a", "user-a", "objective-a", trigger_key="measured", now=NOW)
+    claim = await repo.claim(NOW)
+    assert claim is not None
+    finished = claim[0].model_copy(
+        update={
+            "status": ObjectiveExecutionStatus.SUCCEEDED,
+            "finished_at": NOW + timedelta(seconds=45),
+            "summary": "已完成本次检查",
+        }
+    )
+    assert await repo.save_execution(
+        finished,
+        claim[1],
+        NOW + timedelta(seconds=45),
+        usage_tokens=1234,
+        usage_cost=0.02,
+    )
+
+    # 第二次执行没有任何用量：unknownUsage=True，tokens/cost 保持 None。
+    await repo.enqueue("tenant-a", "user-a", "objective-a", trigger_key="unknown", now=NOW)
+    claim_unknown = await repo.claim(NOW + timedelta(seconds=61))
+    assert claim_unknown is not None
+    finished_unknown = claim_unknown[0].model_copy(
+        update={
+            "status": ObjectiveExecutionStatus.SUCCEEDED,
+            "finished_at": NOW + timedelta(seconds=100),
+            "summary": "本次未提供用量",
+        }
+    )
+    assert await repo.save_execution(
+        finished_unknown, claim_unknown[1], NOW + timedelta(seconds=100)
+    )
+
+    notices = {notice.execution_id: notice for notice in await repo.inbox("tenant-a", "user-a")}
+    measured = notices[finished.execution_id]
+    assert measured.metrics is not None
+    assert measured.metrics.tokens == 1234
+    assert measured.metrics.cost_usd == 0.02
+    assert measured.metrics.unknown_usage is False
+    assert measured.duration_seconds == 45
+
+    unknown = notices[finished_unknown.execution_id]
+    assert unknown.metrics is not None
+    assert unknown.metrics.tokens is None
+    assert unknown.metrics.cost_usd is None
+    assert unknown.metrics.unknown_usage is True
+    assert unknown.duration_seconds == 100
 
 
 @pytest.mark.asyncio

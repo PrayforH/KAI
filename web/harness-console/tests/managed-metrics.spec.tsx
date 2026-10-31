@@ -6,6 +6,10 @@ const managerSource = readFileSync(
   join(process.cwd(), "src/components/agent-studio/assistant-manager.tsx"),
   "utf8",
 );
+const meteringSource = readFileSync(
+  join(process.cwd(), "src/components/checkpoint-metering.tsx"),
+  "utf8",
+);
 const apiSource = readFileSync(
   join(process.cwd(), "../../src/harness/assistant/api.py"),
   "utf8",
@@ -17,15 +21,19 @@ const serviceSource = readFileSync(
 
 describe("managed panel metering", () => {
   it("shows real tokens/cost and duration when a checkpoint measured them", () => {
-    expect(managerSource).toContain("tokens ${task.progress.metrics.tokens.toLocaleString");
-    expect(managerSource).toContain("cost $${task.progress.metrics.costUsd}");
-    expect(managerSource).toContain("耗时 ${Math.max(1, Math.round(task.progress.duration_seconds))} 秒");
+    // 文案口径已抽到共享组件，托管面板与进展浮标共用同一份。
+    expect(meteringSource).toContain('toLocaleString("zh-CN")');
+    expect(meteringSource).toContain("`tokens ${tokens!");
+    expect(meteringSource).toContain("cost $${metrics.costUsd}");
+    expect(meteringSource).toContain("耗时 ${Math.max(1, Math.round(durationSeconds))} 秒");
+    expect(managerSource).toContain("<CheckpointMeteringLine");
   });
 
   it("shows 未计量 instead of a fake 0 when usage is unknown", () => {
     // unknownUsage 或 tokens 缺失 → 明确「tokens 未计量」，不得渲染 tokens 0。
-    expect(managerSource).toContain('"tokens 未计量"');
-    expect(managerSource).toContain("unknownUsage || task.progress.metrics.tokens == null");
+    expect(meteringSource).toContain('"tokens 未计量"');
+    expect(meteringSource).toContain("unknownUsage || tokens == null");
+    expect(meteringSource).not.toContain("tokens 0");
     expect(managerSource).not.toContain("tokens 0");
   });
 

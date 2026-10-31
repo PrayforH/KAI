@@ -3514,6 +3514,19 @@ body.codex-theme-v1:has(.console-shell) .assistant-progress-title {
   color: #efefef;
 }
 
+/* 展开明细里的结算计量：单独一行，不挤占标题/摘要。 */
+body.codex-theme-v1:has(.console-shell) .assistant-progress-strip li:has(.assistant-progress-metrics) {
+  flex-wrap: wrap;
+}
+
+body.codex-theme-v1:has(.console-shell) .assistant-progress-metrics {
+  flex: 0 0 100%;
+  margin: 0;
+  color: #8a8a8a;
+  font-size: 12px;
+  line-height: 16px;
+}
+
 body.codex-theme-v1:has(.console-shell) .assistant-progress-excerpt {
   flex: 1 1 auto;
   min-width: 0;

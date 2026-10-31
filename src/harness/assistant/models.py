@@ -192,6 +192,14 @@ class ObjectiveEvent(StudioModel):
     created_at: datetime = Field(alias="createdAt")
 
 
+class AssistantInboxMetrics(StudioModel):
+    """一次执行的结算计量：与同次 checkpoint 同口径（unknown 时不冒充 0）。"""
+
+    tokens: int | None = None
+    cost_usd: float | None = Field(default=None, alias="costUsd")
+    unknown_usage: bool = Field(default=False, alias="unknownUsage")
+
+
 class AssistantInboxItem(StudioModel):
     item_id: str = Field(alias="itemId")
     objective_id: str = Field(alias="objectiveId")
@@ -200,6 +208,10 @@ class AssistantInboxItem(StudioModel):
     title: str
     content: str
     thread_id: str | None = Field(default=None, alias="threadId")
+    # 结算结果可见：终态 notice 带同次 checkpoint 的 tokens/cost 与执行耗时；
+    # 旧行没有这些字段，仍按 None 读取（不渲染计量行）。
+    metrics: AssistantInboxMetrics | None = None
+    duration_seconds: int | None = Field(default=None, alias="durationSeconds")
     created_at: AwareDatetime = Field(alias="createdAt")
     read_at: AwareDatetime | None = Field(default=None, alias="readAt")
 
