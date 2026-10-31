@@ -950,3 +950,49 @@ grok 组件 chunk 由 r43 的 `426p7dn1ljfv4.js` 变为 `166uf93upn6yg.js`。页
 
 未验证：真实**进行中**回合里活动行脸的视觉——活动行只在 run 进行中渲染，需要发起一次真实 run
 （会往用户会话写消息并消耗额度），本轮未做；外形分支由上面的 SSR/DOM 断言覆盖。api 未动，仍 r20。
+
+## 顶栏电脑旁的只读占用 chip（2026-10-31，web r45，marker kai-desktop-occupancy-chip）
+
+缺口：顶栏只有电脑面板开关，用户不打开面板就看不到「谁在占用共享桌面 / 还有几人排队」；
+后端 P1-4 的只读投影早就存在，但 web 源码没有任何引用。
+
+- 新增 `DesktopOccupancyChip`（`components/desktop-occupancy-chip.tsx`），放在助理面
+  `HeaderUtilities` 的电脑入口旁（仅 `personalAssistant` 分支；任务面不出现）：
+  - `holder` 有标题 → 「占用：<标题>」（空标题退 `objective_id` 前 12 字），有排队追加「· 排队 N」；
+  - 无 holder 但有排队 → 「桌面排队 N」；
+  - 空闲（holder=null 且 waiting=[]）→ **不渲染**（口径选隐藏）；
+  - `data-occupancy="held|queued"`、`role="status"`、`aria-live="polite"`、稳定的 `aria-label`
+    （含占用者与排队数）。
+- 数据只读自 `GET /api/studio/assistant/desktop/occupancy`（`cache:"no-store"`）；
+  轻轮询 15s，`document.hidden` 暂停、`focus`/`visibilitychange` 立即刷新、8s abort 超时、
+  失败静默保留上次值。未改仲裁/入队/lease、未动右侧电脑面板与电脑钮开合。
+
+**测试**
+
+```
+cd web/harness-console
+npx tsc --noEmit                                                # clean
+npx vitest run tests/desktop-occupancy-chip.spec.tsx            # 5 passed（新增）
+npx vitest run tests/workbench-layout.spec.ts   tests/assistant-channel-status.spec.tsx                       # 56 passed
+npx vitest run                                                  # 1482 passed / 1 skipped / 1 既有失败
+```
+
+DOM 断言：holder 有标题 + 2 排队 → chip 文案含标题与「排队 2」、`data-occupancy="held"`、
+aria 含「2 项排队」；只有排队 → `queued`；空闲 → 不渲染；holder 无标题 → 短 id；
+请求失败 → chip 不出现、顶栏不报错。`workbench-layout` 的「电脑入口只在助理面」断言同步
+更新为新结构（`<DesktopOccupancyChip` + `<AssistantComputerLink`）。既有失败仍是 account-settings。
+
+**79 部署与只读验收**：web `kai/assistant-web:20261030-managed-r45` 已滚（healthy，`/assistant` = 200）；
+ctx `web-src-r45`，3 个文件逐文件 sha256 与本地一致；`desktop-occupancy-chip` 出现在
+`3kmldlkyb5580.js` / `35jvfggwehpv-.css`（r44 无）。api 未动，仍 r20。
+compose 备份 `compose.private.before-r45.json`。
+
+- 真实投影当前为空闲：`GET desktop/occupancy` → `{"holder":null,"waiting":[]}`，
+  页面 chip 不渲染（符合「空闲隐藏」口径），顶栏两个图标按钮不变，无 console/page error；
+  截图 `/tmp/kai79-accept/161-r45-header-chips.png`。
+- 占用视觉用**浏览器侧拦截**（`page.route` 只改本次页面的响应，不动服务端数据）注入
+  holder + 2 排队，实机渲染为「占用：预算受限验收职责检查 · 排队 2」、`held`、aria 正确、
+  高 22px 位于顶栏；截图 `/tmp/kai79-accept/162-r45-chip-injected.png`。这不是真实占用数据。
+
+未验证：真实桌面占用/排队下的页面行为（需要有一次 `requiresDesktop` 的进行中执行，会写真实数据）；
+文案与状态机由上面的 DOM 用例 + 注入渲染覆盖。

@@ -52,6 +52,7 @@ pending_input/failed），本轮补了主对话里的转交状态行（`.handove
 - 每 bot 一个强调色（头像与用户气泡同色，主助理固定蓝 `#126fd4`）；
 - 侧栏 bot 头像与新建/编辑保存的 appearance（色 + 形 blob|drop|block|star|cloud|pebble）对齐，
   主助理仍是固定「K」入口；顶栏（会话标题左侧）与活动行的脸也已接入同一外形，与 rail 一致；
+- 顶栏电脑入口旁显示共享桌面的只读占用/排队（接 P1-4 `desktop/occupancy`，空闲时隐藏）；
 - bot 的会话即承接职责的原线程（无替身会话），结果直接落在对话流；
 - 主对话转交状态行；
 - "无人查看就暂停例行任务"：`schedule_due` 对绑定 Bot 的职责超过 24h 未查看则跳过入队、
