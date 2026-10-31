@@ -339,6 +339,14 @@ function AuthenticatedHome() {
   const [stageView, setStageView] = useState<"conversation" | "trace">(
     "conversation",
   );
+  // 失败回放入口会带 trace=1 与 run（及可选 checkpoint）；轨迹页据此选中失败节点。
+  // 在 effect 里读 URL，避免服务端首屏与客户端水合不一致。
+  const [focusRunId, setFocusRunId] = useState<string | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("trace") === "1") setStageView("trace");
+    setFocusRunId(params.get("run"));
+  }, []);
   useEffect(() => {
     const openTrace = () => setStageView("trace");
     window.addEventListener("harness:open-trace", openTrace);
@@ -932,6 +940,7 @@ function AuthenticatedHome() {
                 threadId={threadId}
                 liveActivity={runActivity}
                 runBusy={currentTaskBusy}
+                focusRunId={focusRunId}
                 onBack={() => setStageView("conversation")}
                 agentName={selectedAgent?.name}
                 agentVersion={selectedAgent?.version}

@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { assistantRequest, type Objective, type Execution, type Notice, type Specialist, type Handover, type ManagedPanel } from "../../lib/assistant-client";
+import { assistantRequest, type Objective, type Execution, type Notice, type Specialist, type Handover, type ManagedPanel, type ManagedProgress } from "../../lib/assistant-client";
+import { isFailedRunStatus, runStatusLabel } from "../../lib/run-status";
 import styles from "./assistant-manager.module.css";
 
 type Agent = { name: string; version: string; display_name: string; owner_user_id?: string; space_id?: string };
@@ -49,6 +50,13 @@ const describeBudget = (budget: Record<string, unknown>) => {
   return parts.length ? parts.join(" · ") : "未设置上限";
 };
 const date = (value: string) => new Date(value).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+// 失败回放：只带导航与定位参数，不做录像式回放；run/checkpoint 缺失时仍可回到原线程。
+const replayHref = (progress: ManagedProgress) => {
+  const params = new URLSearchParams({ thread: progress.thread_id, trace: "1" });
+  if (progress.run_id) params.set("run", progress.run_id);
+  if (progress.checkpoint_id) params.set("checkpoint", progress.checkpoint_id);
+  return `/?${params.toString()}`;
+};
 
 export function AssistantManager() {
   const [items, setItems] = useState<Objective[]>([]);
@@ -183,9 +191,21 @@ export function AssistantManager() {
           <span className={styles.badge}>{task.role === "execute" ? "执行托管" : "只读关注"}</span>
         </div>
         <p className={styles.muted}>
-          {task.progress ? `${task.progress.active ? "进行中" : task.progress.status}：${task.progress.summary || "暂无记录"}` : "读不到该线程的最近运行"}
+          {task.progress
+            ? `${task.progress.active ? "进行中" : runStatusLabel(task.progress.status)}：${task.progress.summary || "暂无记录"}`
+            : "读不到该线程的最近运行"}
           {task.dependsOnObjectiveId ? ` · 依赖 ${task.dependsOnObjectiveId}` : ""}
         </p>
+        {task.progress && isFailedRunStatus(task.progress.status) ? (
+          <div className={styles.failure}>
+            <p>
+              失败上下文：{task.progress.checkpoint_summary?.slice(0, 160) || "未留下检查点摘要，可回到原任务查看运行轨迹。"}
+            </p>
+            <Link href={replayHref(task.progress)}>打开失败回放 →</Link>
+          </div>
+        ) : (
+          <Link href={`/?thread=${encodeURIComponent(task.threadId)}`}>打开原任务 →</Link>
+        )}
         {task.progress?.metrics || task.progress?.duration_seconds != null ? (
           <p className={styles.muted}>
             {[
@@ -201,7 +221,6 @@ export function AssistantManager() {
             ].filter(Boolean).join(" · ")}
           </p>
         ) : null}
-        <Link href={`/?thread=${encodeURIComponent(task.threadId)}`}>打开原任务 →</Link>
       </article>)}
       {panel?.aggregate && <pre className={styles.aggregate}>{panel.aggregate}</pre>}
       <form onSubmit={event => { event.preventDefault();

@@ -551,3 +551,34 @@ specialist.config，不同步到 `objective.schedule/next_check_at`；启用也�
 - `uv run ruff check`（改动的 service/delegation/单测文件）→ All checks passed。
 - 注：`tests/integration/storage/test_delegation_real_gateway.py` 的 I001 为既有
   局部 import 顺序问题（基线同样存在），未在本轮顺手改动。
+
+## P2-2 故障回放：失败 run 一键回到原线程（2026-10-31）
+
+范围：只做导航与上下文投影，不做录像式回放。托管面板里最近一次 run 为
+`failed` / `timed_out` / `rejected` 时，任务卡显示中文「运行失败」与检查点摘要，
+并提供「打开失败回放 →」；无失败 run 时仍只有原来的「打开原任务 →」，不出现假入口。
+
+- 后端（最小补投影）：`GET /objectives/{id}/managed` 在既有 checkpoint 按 run_id
+  投影里补 `checkpoint_id` 与 `checkpoint_summary`（摘要截断 300 字），
+  `metrics` 形状不变；不改委派、lease、预算闸门。
+- 前端：失败入口目标为
+  `/?thread=<threadId>&run=<runId>&trace=1[&checkpoint=<checkpointId>]`；
+  目标页读取 `trace=1` 直接进调用轨迹，`run` 用于选中该 run 的异常节点
+  （无异常节点时落到该 run 首个节点）。非失败态沿用原线程链接。
+
+**命令与现象（本地证据；本轮未部署 79）**
+- `npx vitest run tests/managed-replay.spec.tsx tests/managed-metrics.spec.tsx tests/assistant-manager.spec.tsx tests/run-trace-console.spec.tsx`
+  → 4 files / 12 tests passed；覆盖失败时入口存在且 href 含
+  `thread/run/checkpoint/trace=1`、成功 run 不渲染失败入口、深链进入轨迹并按 run 定位。
+- `npx tsc --noEmit` → 通过。
+- `uv run pytest tests/unit/assistant/test_managed_replay.py -q` → 1 passed；
+  断言 managed 投影带 `checkpoint_id`、摘要与既有 metrics。
+- `uv run pytest tests/unit/assistant -q` → 96 passed。
+- `HARNESS_TEST_DATABASE_URL=postgresql+asyncpg://harness:harness@127.0.0.1:35432/harness_test uv run pytest tests/integration/storage/test_delegation_real_gateway.py -q -k "managed_overview or checkpoint"`
+  → 3 passed。
+- `npx vitest run`（全套）→ 1404 passed / 1 skipped / 1 既有失败
+  （`tests/account-settings.spec.ts` 的设置导航链接计数，与本次改动文件无关）。
+- `uv run ruff check src/harness/assistant/api.py tests/unit/assistant/test_managed_replay.py`
+  → All checks passed。
+
+79 说明：本轮未改部署、未推送镜像；上述为工作树本地单测与类型检查证据。

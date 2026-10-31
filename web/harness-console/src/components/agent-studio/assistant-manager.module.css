@@ -55,6 +55,24 @@
 }
 
 
+/* 失败回放：区分「看结果」与「查失败」，入口只在失败态出现。 */
+.failure {
+  margin: 4px 0 0;
+  padding: 8px 0 0 10px;
+  border-left: 2px solid var(--codex-danger, #bd4141);
+}
+
+.failure p {
+  margin: 0 0 6px;
+  color: var(--codex-muted, #73767c);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.failure a {
+  font-weight: 600;
+}
+
 /* 预算与授权范围：与执行配置分开成组，避免每次新建都被迫填写。 */
 .budgetFieldset {
   border: 1px solid rgba(255, 255, 255, 0.08);

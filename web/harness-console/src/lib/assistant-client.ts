@@ -49,6 +49,7 @@ export async function assistantRequest<T>(path: string, method = "GET", body?: u
 export type ManagedProgress = {
   thread_id: string; title: string; status: string; summary: string; active: boolean;
   run_id?: string | null; duration_seconds?: number | null;
+  checkpoint_id?: string | null; checkpoint_summary?: string | null;
   metrics?: { tokens: number | null; costUsd: number | null; unknownUsage: boolean } | null;
 };
 export type ManagedPanel = {

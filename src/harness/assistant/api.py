@@ -365,9 +365,15 @@ async def managed_overview(objective_id: str, identity: Reader, assistant: Servi
         identity.tenant_id, identity.user_id, objective_id, limit=50
     )
     metrics_by_run: dict[str, dict[str, object]] = {}
+    # 失败回放只需定位：检查点 id 与摘要随 overview 一起投影，避免前端二次查询。
+    checkpoint_ids_by_run: dict[str, str] = {}
+    checkpoint_summaries_by_run: dict[str, str] = {}
     for checkpoint in checkpoints:
         if checkpoint.run_id is None or checkpoint.run_id in metrics_by_run:
             continue
+        checkpoint_ids_by_run[checkpoint.run_id] = checkpoint.checkpoint_id
+        # 只做失败卡摘要预览，截断避免一次返回整段执行总结。
+        checkpoint_summaries_by_run[checkpoint.run_id] = checkpoint.summary[:300]
         if checkpoint.unknown_usage or checkpoint.tokens is None:
             metrics_by_run[checkpoint.run_id] = {
                 "tokens": None,
@@ -382,7 +388,12 @@ async def managed_overview(objective_id: str, identity: Reader, assistant: Servi
             }
     for item in overview:
         run_id = item.get("run_id")
-        item["metrics"] = metrics_by_run.get(str(run_id)) if run_id else None
+        run_key = str(run_id) if run_id else None
+        item["metrics"] = metrics_by_run.get(run_key) if run_key else None
+        item["checkpoint_id"] = checkpoint_ids_by_run.get(run_key) if run_key else None
+        item["checkpoint_summary"] = (
+            checkpoint_summaries_by_run.get(run_key) if run_key else None
+        )
     return {
         "objectiveId": objective.objective_id,
         "revision": objective.revision,
