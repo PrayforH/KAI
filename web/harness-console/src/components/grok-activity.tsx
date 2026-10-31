@@ -180,95 +180,170 @@ export type ActivityLike = {
   metadata?: Record<string, unknown> | null;
 };
 
-/** 正文类事件（message.*）与思考类事件不进活动行：它们是回答本体，不是进展。 */
-const PROSE_EVENT_PREFIXES = ["message.", "reasoning."];
-const MAX_PHRASE_CHARS = 60;
+const MAX_PHRASE_CHARS = 160;
 
 /**
- * 一条活动条目能当"进展"用的文本。
- *
- * 后端的 tool.request / tool.result 把文案写在 title（「调用 Shell」
- * 「工具调用完成」），summary 为 null；runtime.system 才写 summary
- * （「正在等待本轮模型结果」）。只看 summary 会让工具阶段永远停在等待文案。
- * tool.result 另有 metadata.result_summary（「返回 12 行 · 340 字符」），
- * 比通用的「工具调用完成」更有信息，优先使用。
+ * 活动行要展示的是"工具之间的业务结论"（收到快捷操作… / 参数已确认…），
+ * 不是工具调用日志。结论语来自 message.delta / reasoning.summary.delta，
+ * 但只取**末次工具调用之前**的那些：末次工具之后的 message.* 是本轮终答，
+ * 已经在回答气泡里，不能再用活动行复述一遍（dce054a7 的重复问题）。
  */
-function itemPhrase(item: ActivityLike): string {
-  const summary = (item.summary ?? "").trim();
-  if (summary) return summary;
-  if (item.event_type === "tool.result" || item.event_type === "tool.allowed") {
-    const result = item.metadata?.result_summary;
-    if (typeof result === "string" && result.trim()) return result.trim();
-  }
-  return (item.title ?? "").trim();
+const CONCLUSION_EVENT_TYPES = ["message.delta", "reasoning.summary.delta"];
+const PROCESS_EVENT_PREFIXES = ["tool.", "runtime.", "context."];
+/** 源文本上限：整篇终答通常远超它，天然被挡在外面。 */
+const MAX_CONCLUSION_CHARS = 160;
+/** 展示口径：优先在句末截断，最长 120 字。 */
+const DISPLAY_CONCLUSION_CHARS = 120;
+const MAX_STEPS = 5;
+
+/** 工具日志/引导类文案：即使没有结论语也不拿来当主展示。 */
+const GUIDANCE_PATTERNS = [
+  /^调用\s/,
+  /^工具调用/,
+  /^已加载\s*\d+\s*项/,
+  /^\d+\s*项工具/,
+  /^运行环境/,
+  /^正在准备运行/,
+];
+
+function normalizeText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function isGuidanceText(text: string): boolean {
+  return GUIDANCE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+/** 结论语展示：过长时优先截到句末，其次硬截并加省略号。 */
+export function trimConclusion(text: string, limit = DISPLAY_CONCLUSION_CHARS): string {
+  const value = normalizeText(text);
+  if (value.length <= limit) return value;
+  const window = value.slice(0, limit);
+  const ends = ["。", "！", "？", "；", "!", "?", ";", "."].map((mark) =>
+    window.lastIndexOf(mark),
+  );
+  const at = Math.max(...ends);
+  if (at >= Math.floor(limit * 0.4)) return window.slice(0, at + 1);
+  return `${window.trimEnd()}…`;
+}
+
+type Conclusion = { id: string; text: string };
+
+/** 末次工具/runtime 事件的位置；其后的 message.* 是终答，不属于过程。 */
+function lastProcessIndex(items: ReadonlyArray<ActivityLike>): number {
+  let last = -1;
+  items.forEach((item, index) => {
+    const type = item.event_type ?? "";
+    if (PROCESS_EVENT_PREFIXES.some((prefix) => type.startsWith(prefix))) last = index;
+  });
+  return last;
 }
 
 /**
- * 活动行的短语：只取真正的进展条目（runtime/tool/guidance/compaction 等）。
- *
- * 后端把每条 message.delta 也记成一条 activity item，summary 就是当轮正文
- * （src/harness/agui/activity.py:516）。照着"最新带 summary 的条目"取短语，
- * 会把整段回答画在脸旁边，与 .assistant-answer 气泡重复——历史线程硬刷新必现。
+ * 结论语池：末次工具之前的短 message.delta（业务摘要）。
+ * 有 message 结论时不再混入 reasoning 摘要，避免思考碎片与结论语抢同一行。
+ */
+function conclusionPool(
+  activity: { items: ReadonlyArray<ActivityLike> },
+): Array<Conclusion & { kind: "message" | "reasoning" }> {
+  const items = activity.items;
+  const boundary = lastProcessIndex(items);
+  const collected: Array<Conclusion & { kind: "message" | "reasoning" }> = [];
+  const seen = new Set<string>();
+  items.forEach((item, index) => {
+    if (index >= boundary) return;
+    const type = item.event_type ?? "";
+    if (!CONCLUSION_EVENT_TYPES.includes(type)) return;
+    const raw = normalizeText(item.summary ?? "");
+    if (!raw || raw.length > MAX_CONCLUSION_CHARS) return;
+    if (isGuidanceText(raw)) return;
+    const text = trimConclusion(raw);
+    if (!text || seen.has(text)) return;
+    seen.add(text);
+    collected.push({
+      id: typeof item.id === "string" && item.id ? item.id : `${type}:${index}`,
+      text,
+      kind: type.startsWith("message.") ? "message" : "reasoning",
+    });
+  });
+  const messages = collected.filter((entry) => entry.kind === "message");
+  return messages.length ? messages : collected;
+}
+
+/**
+ * 工具/运行条目的可回落文本。tool.request 只有「调用 X」这类日志，不参与；
+ * tool.result 优先 metadata.result_summary（「返回 12 行 · 340 字符」），
+ * runtime 用 summary（等待/压缩等即时状态）。
+ */
+function fallbackText(item: ActivityLike): string {
+  const type = item.event_type ?? "";
+  if (type.startsWith("tool.")) {
+    if (type === "tool.request") return "";
+    const result = item.metadata?.result_summary;
+    if (typeof result === "string" && result.trim()) return normalizeText(result);
+    if (type === "tool.result" || type === "tool.allowed") {
+      return normalizeText(item.summary ?? "");
+    }
+    return "";
+  }
+  return normalizeText(item.summary ?? "");
+}
+
+/**
+ * 活动行的短语：优先最新的中间结论语；没有结论语时只回落一句非引导的进展
+ * （工具调用名、工具数量、运行环境提示都不当主展示）。
+ * 终态是否渲染由 shouldShowChatActivityRow 决定，这里不掺入 status。
  */
 export function progressPhrase(
   activity: { items: ReadonlyArray<ActivityLike> },
   options: { allowTransient?: boolean } = {},
 ): string {
   const allowTransient = options.allowTransient ?? true;
+  const pool = conclusionPool(activity);
+  for (let index = pool.length - 1; index >= 0; index -= 1) {
+    const text = pool[index].text;
+    if (!allowTransient && isTransientProgress(text)) continue;
+    return text;
+  }
+
   const items = [...activity.items].reverse();
   for (const item of items) {
     const type = item.event_type ?? "";
     if (type.startsWith("run.")) continue;
-    if (PROSE_EVENT_PREFIXES.some((prefix) => type.startsWith(prefix))) continue;
-    const phrase = itemPhrase(item);
-    if (!phrase) continue;
-    if (phrase.length > MAX_PHRASE_CHARS) continue;
-    if (!allowTransient && isTransientProgress(phrase)) continue;
-    return phrase;
+    if (CONCLUSION_EVENT_TYPES.includes(type)) continue;
+    if (!PROCESS_EVENT_PREFIXES.some((prefix) => type.startsWith(prefix))) continue;
+    const text = fallbackText(item);
+    if (!text || text.length > MAX_PHRASE_CHARS) continue;
+    if (isGuidanceText(text)) continue;
+    if (!allowTransient && isTransientProgress(text)) continue;
+    return trimConclusion(text);
   }
   return "";
 }
 
-/** 过程摘录只收这几类：工具调用/结果、运行环境、上下文压缩。 */
-const STEP_EVENT_PREFIXES = ["tool.", "runtime.", "context."];
-const MAX_STEP_CHARS = 80;
-const MAX_STEPS = 5;
-
 export type ChatActivityStep = {
   id: string;
   text: string;
-  tone: "tool" | "runtime" | "failed";
+  tone: "note";
 };
 
 /**
- * 助理面活动行下方的精简过程摘录（最近 ≤5 条）。
- * 只取带文本的 tool.* / runtime.* / context.* 条目，跳过纯等待文案与正文；
- * 与主短语相同的文本不重复列（否则「调用 Shell」会在两行里各出现一次）。
+ * 助理面活动行下方的过程摘录（最近 ≤5 条结论语）。
+ * 只列结论语；工具调用日志不进来。与主短语相同的文本不重复列。
  */
 export function activitySteps(
   activity: { items: ReadonlyArray<ActivityLike> },
   options: { limit?: number; excludeText?: string } = {},
 ): ChatActivityStep[] {
   const limit = options.limit ?? MAX_STEPS;
-  const exclude = (options.excludeText ?? "").trim();
+  const exclude = normalizeText(options.excludeText ?? "");
+  const pool = conclusionPool(activity);
   const picked: ChatActivityStep[] = [];
-  for (const item of [...activity.items].reverse()) {
-    if (picked.length >= limit) break;
-    const type = item.event_type ?? "";
-    if (!STEP_EVENT_PREFIXES.some((prefix) => type.startsWith(prefix))) continue;
-    const text = itemPhrase(item);
-    if (!text || text.length > MAX_STEP_CHARS) continue;
-    if (isTransientProgress(text)) continue;
-    if (exclude && text === exclude) continue;
-    if (picked.some((step) => step.text === text)) continue;
-    picked.push({
-      id: typeof item.id === "string" && item.id ? item.id : `${type}:${picked.length}:${text}`,
-      text,
-      tone:
-        item.status === "failed" ? "failed"
-        : type.startsWith("tool.") ? "tool"
-        : "runtime",
-    });
+  for (let index = pool.length - 1; index >= 0 && picked.length < limit; index -= 1) {
+    const entry = pool[index];
+    if (exclude && entry.text === exclude) continue;
+    if (picked.some((step) => step.text === entry.text)) continue;
+    picked.push({ id: entry.id, text: entry.text, tone: "note" });
   }
   return picked.reverse();
 }
