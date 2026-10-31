@@ -53,6 +53,7 @@ pending_input/failed），本轮补了主对话里的转交状态行（`.handove
 - 侧栏 bot 头像与新建/编辑保存的 appearance（色 + 形 blob|drop|block|star|cloud|pebble）对齐，
   主助理仍是固定「K」入口；顶栏（会话标题左侧）与活动行的脸也已接入同一外形，与 rail 一致；
 - 顶栏电脑入口旁显示共享桌面的只读占用/排队（接 P1-4 `desktop/occupancy`，空闲时隐藏）；
+  chip 可读排队位次（`排队中 #n`）与中文等待原因，长文本靠 ellipsis + aria/title 保留全文；
 - 助理面「后台任务进展」浮标展开后，每条终态进展显示检查点计量（tokens/cost/耗时，未计量显式标注）；
   skipUnchanged 早退（未唤起模型）单独显示「未唤起模型 · 无变化」，不冒充「tokens 未计量」；
 - 左侧 rail 对「无人查看已暂停」直接标「已暂停 · 无人查看」（琥珀副标题），不必进编辑弹窗；

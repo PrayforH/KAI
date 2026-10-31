@@ -1170,3 +1170,43 @@ web → `kai/assistant-web:20261030-managed-r49`；`migrate` 仍 r18（无新迁
 
 未验证：部署后**真实**发生一次 skipUnchanged 跳过并看到浮标文案（需要一个开启 skipUnchanged 的
 定时职责且指纹未变）；判定与写入口径由上面的集成/单元测试钉住。
+
+## 占用 chip 可读排队位次与等待原因（2026-11-01，web r50，marker kai-computer-queue-chip）
+
+缺口：r45 的占用 chip 只有「· 排队 N」计数；P1-4 早已返回 `waiting[].position` 与中文
+`wait_reason`，但用户不打开右侧电脑面板仍无法判断「我排第几 / 为何在等」。
+
+- `desktopOccupancyLabel` 消费首个 waiting 的 `position` / `wait_reason`：
+  - 有 holder：「占用：<标题> · 排队中 #1 · 共 N · <原因>」；无 holder 仅排队：「排队中 #1 · 共 N · <原因>」；
+  - 旧载荷没有 `position` → 退回「· 排队 N」/「桌面排队 N」，不显示 `#`；
+  - `wait_reason` 为空不硬编原因；过长文本被 240px 胶囊 ellipsis 截断，`title`/`aria-label` 保留全文。
+- chip 增 `data-queue-position` / `data-wait-reason`（有则写）；`data-occupancy` 仍 `held|queued`。
+  轮询/hidden/focus/abort 与「空闲不渲染」口径不变；未改右侧面板、acquire/FIFO 仲裁、入队与 lease。
+
+**测试**
+
+```
+cd web/harness-console
+npx tsc --noEmit                                              # clean
+npx vitest run tests/desktop-occupancy-chip.spec.tsx          # 6 passed
+npx vitest run                                                # 1494 passed / 1 skipped / 1 既有失败
+```
+
+DOM 断言：holder + waiting[0].position=1 + 原因 → 文案含「排队中 #1」「共 2」与原因、
+`data-queue-position="1"`、aria 含「排队中第 1 位」「等待原因：…」；仅排队 position=2 → 「排队中 #2」；
+无 position 旧载荷 → 「桌面排队 1」且无 `#`、原因仍可读；空闲 → 不渲染。既有失败仍是 account-settings（无关）。
+
+**79 部署与只读验收**：web `kai/assistant-web:20261030-managed-r50` 已滚（healthy，`/assistant` = 200）；
+ctx `web-src-r50`，`desktop-occupancy-chip.tsx` sha256 `8c0648ff…` 与本地一致；`data-queue-position`
+出现在 `3d2xzaxt7osgb.js`（r49 无）。api 未动，仍 r22；compose 备份 `compose.private.before-r50.json`。
+
+- 真实投影当前空闲 → chip 不渲染（与 r45 一致）。
+- 队列视觉用**浏览器侧拦截**占用响应（不动服务端）注入验证：
+  - holder + 2 排队（#1）：实机「占用：预算受限验收职责检查 · 排队中 #1 …」，`data-queue-position=1`、
+    `data-wait-reason` 为中文原因，aria 含位次/共 N/原因，高 22px；
+  - 无 holder、position=2：实机「排队中 #2 · 等待桌面就绪」；
+  - 旧载荷无 position：实机「桌面排队 1」、无 `data-queue-position`。
+  截图 `/tmp/kai79-accept/168-r50-queue-held.png`、`169-r50-queue-queued.png`。
+
+未验证：真实并发下的桌面排队（需要两项 `requiresDesktop` 同时争用，会写真实执行数据）；
+位次/原因文案与回退由 DOM + 注入验收覆盖，投影字段来自 r17 既有验收。
