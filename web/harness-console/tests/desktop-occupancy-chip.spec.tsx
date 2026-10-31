@@ -60,7 +60,7 @@ async function mount() {
 }
 
 describe("desktop occupancy chip", () => {
-  it("shows who holds the desktop and how many are queued", async () => {
+  it("shows who holds the desktop, the queue position and the wait reason", async () => {
     respond({ holder, waiting: [waiting(0), waiting(1)] });
     await mount();
 
@@ -70,9 +70,14 @@ describe("desktop occupancy chip", () => {
     expect(chip?.getAttribute("role")).toBe("status");
     expect(chip?.getAttribute("aria-live")).toBe("polite");
     expect(chip?.textContent).toContain("预算受限验收职责检查");
-    expect(chip?.textContent).toContain("排队 2");
+    expect(chip?.textContent).toContain("排队中 #1");
+    expect(chip?.textContent).toContain("共 2");
+    expect(chip?.textContent).toContain("单执行者占用中（另一项职责正在使用共享桌面）");
+    expect(chip?.getAttribute("data-queue-position")).toBe("1");
+    expect(chip?.getAttribute("data-wait-reason")).toContain("单执行者占用中");
     expect(chip?.getAttribute("aria-label")).toContain("预算受限验收职责检查");
-    expect(chip?.getAttribute("aria-label")).toContain("2 项排队");
+    expect(chip?.getAttribute("aria-label")).toContain("排队中第 1 位");
+    expect(chip?.getAttribute("aria-label")).toContain("等待原因：单执行者占用中");
 
     // 只读投影：带 no-store，且只打这一个端点。
     expect(fetchMock).toHaveBeenCalledWith(
@@ -81,12 +86,27 @@ describe("desktop occupancy chip", () => {
     );
   });
 
-  it("shows only the queue count when nobody holds the desktop", async () => {
-    respond({ holder: null, waiting: [waiting(0), waiting(1)] });
+  it("shows the queue position when nobody holds the desktop", async () => {
+    respond({ holder: null, waiting: [{ ...waiting(0), position: 2 }] });
     await mount();
     const chip = host.querySelector(".desktop-occupancy-chip");
     expect(chip?.getAttribute("data-occupancy")).toBe("queued");
-    expect(chip?.textContent).toContain("排队 2");
+    expect(chip?.textContent).toContain("排队中 #2");
+    expect(chip?.getAttribute("data-queue-position")).toBe("2");
+    expect(chip?.getAttribute("aria-label")).toContain("第 2 位");
+  });
+
+  it("falls back to the queue count for old payloads without position", async () => {
+    const legacy = waiting(0);
+    delete (legacy as { position?: number }).position;
+    respond({ holder: null, waiting: [legacy] });
+    await mount();
+    const chip = host.querySelector(".desktop-occupancy-chip");
+    expect(chip?.textContent).toContain("桌面排队 1");
+    expect(chip?.textContent).not.toContain("#");
+    expect(chip?.getAttribute("data-queue-position")).toBeNull();
+    // 原因仍可读（旧载荷有 wait_reason 时照常展示）。
+    expect(chip?.textContent).toContain("单执行者占用中");
   });
 
   it("stays hidden when the desktop is idle", async () => {
