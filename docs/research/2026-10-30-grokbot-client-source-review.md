@@ -61,6 +61,7 @@ pending_input/failed），本轮补了主对话里的转交状态行（`.handove
   打开该 Bot 会话（viewed 成功）后列表立即重拉，暂停标不需要等下一次轮询；
 - bot 的会话即承接职责的原线程（无替身会话），结果直接落在对话流；
 - 子助理凭据可在编辑弹窗（补配置卡内也有可选入口）里保存：密文入库、页面只显示「已配置 · 名称」；
+  编辑弹窗对 ready/active 的 Bot 也提供「首次试运行」（trial ≠ 启用持续运行）；
   `config.required_credentials` 声明必填项时，主会话转交行会内联「必填凭据」卡，填完即收起（前端推导，不改委派状态机）；
 - 主对话转交状态行；子 bot 的 `pending_approval` 也会投影到主会话，可直接批准/拒绝（走既有 approvals 端点）；子 bot 线程里待回答的 ask（harness-input）会投影到主会话并可就地作答，
   答案写回该 bot 线程（AG-UI run），`pending_input` 时可在主会话内联补齐配置并启用（不必跳进 bot 会话），

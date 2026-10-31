@@ -1500,3 +1500,45 @@ compose 备份 `compose.private.before-r57.json`。
 
 未验证：真实 `waiting_approval` 线程在主会话被批准（现网没有待审批 Run；真实点批准会改变运行状态）。
 **decide 路径 = 既有 `PUT /api/harness/approvals/{approvalId}`**。
+
+## 编辑弹窗里的「首次试运行」（2026-11-01，web r58，marker kai-assistant-bot-edit-trial）
+
+缺口：studio「专职子助理」页有「首次试运行」，但 `/assistant` 的 Bot 编辑弹窗没有——
+助理面用户只能改外观/凭据/看职责，不能就地跑一次真实检查。
+
+- `bot-edit-dialog`：当 `detail.specialist.status ∈ {ready, active}` 时，在「例行程序」下方显示
+  「首次试运行」按钮 + 说明「只排一次检查并回报真实结果；试运行不会启用持续运行」。
+- 点击走既有 `POST specialists/{id}/trial`，body `{expectedRevision}`（与 assistant-manager 一致）；
+  成功显示 `${trial.scheduled}（执行 ${trial.executionId}）` 并派发 `kai:specialists-changed`
+  （rail 可刷新）；失败原样展示服务端文案（如「配置缺项，不能试运行：schedule_minutes」），
+  按钮恢复可点。**trial ≠ 启用**：服务端成功后状态仍是 ready，本片也没有加启用/暂停整套。
+- 未改 trial 后端语义、委派/lease/enqueue/预算/desktop、SetupCard「保存并启用」与主会话其余卡。
+
+**测试**
+
+```
+cd web/harness-console
+npx tsc --noEmit                                                   # clean
+npx vitest run tests/bot-edit-dialog-trial.spec.tsx                # 3 passed（新增）
+npx vitest run tests/bot-edit-dialog.spec.tsx tests/bot-edit-dialog-paused.spec.tsx \
+  tests/specialist-credentials.spec.tsx                            # 12 passed
+npx vitest run                                                     # 1517 passed / 1 skipped / 1 既有失败
+```
+
+DOM 断言：ready → 按钮与说明可见；点击 → `POST …/trial` body `{expectedRevision:3}`，
+成功出现「已排入首次检查（执行 execution_trial_1）」；needs_input → 不渲染按钮；
+active + 服务端冲突 → 显示「配置缺项，不能试运行…」且按钮可重试。既有失败仍是 account-settings（无关）。
+
+**79 部署与只读验收**：web `kai/assistant-web:20261030-managed-r58` 已滚（healthy，`/assistant` = 200）；
+ctx `web-src-r58`，`bot-edit-dialog.tsx` sha256 `4476ecee…`、`bot-edit-dialog.module.css` `7ad9a27b…`
+与本地一致；「试运行不会启用持续运行」出现在 `1pmgiqjj_07g9.js`（r57 无）。api 未动，仍 r23；
+compose 备份 `compose.private.before-r58.json`。
+
+- 真实 active Bot（行业快报监控）弹窗：`首次试运行` 按钮与说明可见（**未点击**，避免真实排一次执行）；
+  截图 `/tmp/kai79-accept/181-r58-trial-dialog.png`。
+- 注入式（**浏览器侧拦截 specialists/trial，不写服务端**）：ready fixture 点「首次试运行」→
+  `POST specialists/{id}/trial` body `{"expectedRevision":3}`，界面显示
+  「已排入首次检查（执行 execution_fixture_trial）」，URL 不变。
+
+未验证：真实点一次 trial（会为该 Bot 排入一条真实执行，消耗额度）；trial 的成功文案与服务端拒绝由
+DOM 用例 + 注入式实机验收覆盖。
