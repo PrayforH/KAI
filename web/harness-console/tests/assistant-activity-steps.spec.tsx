@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   ChatActivitySteps,
+  GrokActivityRow,
   activitySteps,
   progressPhrase,
   shouldShowChatActivityRow,
@@ -50,21 +51,18 @@ const toolResult = item("tool.result", {
 describe("progressPhrase prefers business conclusions", () => {
   it("uses the latest intermediate message.delta as the phrase", () => {
     const activity = { items: [progressNote, toolRequest, toolResult] };
-    expect(progressPhrase(activity)).toBe("收到快捷操作：目标改为 8 公里。先确认参数。");
+    // 活动行只留极短结论（≤10 汉字宽），停在从句边界。
+    expect(progressPhrase(activity)).toBe("收到快捷操作：");
   });
 
   it("takes the newest conclusion when there are several between tools", () => {
     const activity = { items: [progressNote, toolRequest, appliedNote, toolResult] };
-    expect(progressPhrase(activity)).toBe(
-      "参数已确认：当前目标 8 公里，现在改目标距离为 8000 米。",
-    );
+    expect(progressPhrase(activity)).toBe("参数已确认：");
   });
 
   it("never uses the final answer that follows the last tool", () => {
     const activity = { items: [progressNote, toolRequest, appliedNote, toolResult, finalAnswer] };
-    expect(progressPhrase(activity)).toBe(
-      "参数已确认：当前目标 8 公里，现在改目标距离为 8000 米。",
-    );
+    expect(progressPhrase(activity)).toBe("参数已确认：");
   });
 
   it("does not treat tool guidance as the main phrase", () => {
@@ -80,7 +78,7 @@ describe("progressPhrase prefers business conclusions", () => {
 
   it("falls back to one non-guidance tool result when no conclusion exists", () => {
     const activity = { items: [toolRequest, toolResult] };
-    expect(progressPhrase(activity)).toBe("返回 12 行 · 340 字符");
+    expect(progressPhrase(activity)).toBe("返回 12 行 · 340…");
   });
 
   it("keeps the waiting phrase only as a fallback while nothing better is known", () => {
@@ -98,9 +96,7 @@ describe("assistant activity steps list conclusions, not tool logs", () => {
   it("lists the older conclusions and drops the phrase duplicate", () => {
     const phrase = progressPhrase(activity);
     const steps = activitySteps(activity, { excludeText: phrase });
-    expect(steps.map((step) => step.text)).toEqual([
-      "收到快捷操作：目标改为 8 公里。先确认参数。",
-    ]);
+    expect(steps.map((step) => step.text)).toEqual(["收到快捷操作："]);
     expect(steps.every((step) => !step.text.startsWith("调用"))).toBe(true);
     expect(steps.every((step) => step.text !== "工具调用完成")).toBe(true);
   });
@@ -137,13 +133,36 @@ describe("assistant activity steps list conclusions, not tool logs", () => {
   });
 });
 
-describe("conclusion trimming", () => {
-  it("keeps short sentences intact and cuts long ones at a sentence end", () => {
+function displayWidth(text: string): number {
+  return [...text].reduce((sum, ch) => sum + (/^[\x00-\x7F]$/.test(ch) ? 0.5 : 1), 0);
+}
+
+describe("conclusion trimming stays inside ten hanzi", () => {
+  it("keeps a short conclusion intact", () => {
     expect(trimConclusion("参数已确认。")).toBe("参数已确认。");
-    const long = `${"第一句结论。".repeat(20)}`;
-    const trimmed = trimConclusion(long);
-    expect(trimmed.length).toBeLessThanOrEqual(120);
-    expect(trimmed.endsWith("。")).toBe(true);
+  });
+
+  it("stops long Chinese at a clause boundary inside the budget", () => {
+    expect(trimConclusion("收到快捷操作：目标改为 8 公里。先确认参数。")).toBe("收到快捷操作：");
+    expect(trimConclusion("第一句结论。".repeat(20))).toBe("第一句结论。");
+  });
+
+  it("hard-trims to nine hanzi plus an ellipsis when no boundary fits", () => {
+    const trimmed = trimConclusion("很长的进展说明文字".repeat(5));
+    expect(trimmed.endsWith("…")).toBe(true);
+    expect(displayWidth(trimmed)).toBeLessThanOrEqual(10);
+    expect([...trimmed]).toHaveLength(10); // 9 个汉字 + 省略号
+  });
+
+  it("allows roughly twenty ASCII characters for the same budget", () => {
+    const trimmed = trimConclusion("Reading the two source files carefully");
+    expect(trimmed.endsWith("…")).toBe(true);
+    expect(trimmed.length).toBeLessThanOrEqual(20);
+  });
+
+  it("never returns a long paragraph as a conclusion", () => {
+    const long = "我先盘点工作区里的文件，确认这次检查需要核对哪些材料。".repeat(4);
+    expect(displayWidth(trimConclusion(long))).toBeLessThanOrEqual(10);
   });
 });
 
@@ -174,9 +193,19 @@ describe("ChatActivitySteps rendering", () => {
       );
     });
     const rows = [...host.querySelectorAll(".chat-activity-steps li")].map((n) => n.textContent);
-    expect(rows).toEqual(["收到快捷操作：目标改为 8 公里。先确认参数。"]);
+    expect(rows).toEqual(["收到快捷操作："]);
     expect(host.textContent ?? "").not.toContain("调用 Bash");
     expect(host.querySelector(".execution-ribbon")).toBeNull();
+  });
+
+  it("caps the row phrase itself even if a caller passes a paragraph", async () => {
+    await act(async () => {
+      root!.render(
+        <GrokActivityRow phrase={"这是一段很长的进展说明".repeat(6)} state="working" />,
+      );
+    });
+    const text = host.querySelector(".grok-phrase")?.textContent ?? "";
+    expect(displayWidth(text)).toBeLessThanOrEqual(10);
   });
 
   it("renders nothing when there is only a tool log", async () => {

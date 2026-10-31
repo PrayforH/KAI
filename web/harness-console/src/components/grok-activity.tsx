@@ -122,9 +122,11 @@ export function GrokActivityRow({
   phrase: string;
   state: GrokFaceState;
 }) {
-  const short = phrase.length > MAX_PHRASE_CHARS
-    ? `${phrase.slice(0, MAX_PHRASE_CHARS)}…`
+  // 行内再走一次 10 字口径：即便有调用方塞进长段落，也不会铺满一行。
+  const capped = phrase.length > MAX_PHRASE_CHARS
+    ? phrase.slice(0, MAX_PHRASE_CHARS)
     : phrase;
+  const short = trimConclusion(capped);
   return (
     <div className="grok-activity-row" data-state={state} aria-live="polite">
       <GrokFace state={state} />
@@ -192,9 +194,12 @@ const CONCLUSION_EVENT_TYPES = ["message.delta", "reasoning.summary.delta"];
 const PROCESS_EVENT_PREFIXES = ["tool.", "runtime.", "context."];
 /** 源文本上限：整篇终答通常远超它，天然被挡在外面。 */
 const MAX_CONCLUSION_CHARS = 160;
-/** 展示口径：优先在句末截断，最长 120 字。 */
-const DISPLAY_CONCLUSION_CHARS = 120;
-const MAX_STEPS = 5;
+/**
+ * 展示口径：对齐本机 Grok Bot 的极短结论语——约 10 个汉字宽（ASCII 半角按 0.5 计，
+ * 即英文约 20 字符）。宁可截断，也不让长段落占住活动行。
+ */
+const DISPLAY_CONCLUSION_CHARS = 10;
+const MAX_STEPS = 5; 
 
 /** 工具日志/引导类文案：即使没有结论语也不拿来当主展示。 */
 const GUIDANCE_PATTERNS = [
@@ -206,6 +211,9 @@ const GUIDANCE_PATTERNS = [
   /^正在准备运行/,
 ];
 
+/** 可以在 10 字预算内收口的从句边界：优先停在「收到快捷操作：」这种可读处。 */
+const CLAUSE_BOUNDARIES = new Set(["。", "！", "？", "；", "：", "，", "!", "?", ";", ":", ","]);
+
 function normalizeText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
@@ -214,17 +222,61 @@ function isGuidanceText(text: string): boolean {
   return GUIDANCE_PATTERNS.some((pattern) => pattern.test(text));
 }
 
-/** 结论语展示：过长时优先截到句末，其次硬截并加省略号。 */
+type GraphemeSegmenter = new (
+  locale?: string,
+  options?: { granularity: "grapheme" },
+) => { segment(input: string): Iterable<{ segment: string }> };
+
+/** 按字素切分（emoji/组合字符不会被切成半个）；环境无 Segmenter 时退回码点。 */
+function splitGraphemes(value: string): string[] {
+  const Segmenter = (Intl as unknown as { Segmenter?: GraphemeSegmenter }).Segmenter;
+  if (Segmenter) {
+    const segmenter = new Segmenter("zh", { granularity: "grapheme" });
+    return Array.from(segmenter.segment(value), (part) => part.segment);
+  }
+  return Array.from(value);
+}
+
+/** 显示宽度：ASCII 半角 0.5，汉字/全角 1。 */
+function graphemeWidth(grapheme: string): number {
+  return /^[\x00-\x7F]+$/.test(grapheme) ? grapheme.length / 2 : 1;
+}
+
+/**
+ * 结论语展示：最多约 10 个汉字宽。
+ * 优先停在句子/从句边界（「收到快捷操作：」），否则硬截并加省略号。
+ */
 export function trimConclusion(text: string, limit = DISPLAY_CONCLUSION_CHARS): string {
   const value = normalizeText(text);
-  if (value.length <= limit) return value;
-  const window = value.slice(0, limit);
-  const ends = ["。", "！", "？", "；", "!", "?", ";", "."].map((mark) =>
-    window.lastIndexOf(mark),
-  );
-  const at = Math.max(...ends);
-  if (at >= Math.floor(limit * 0.4)) return window.slice(0, at + 1);
-  return `${window.trimEnd()}…`;
+  const units = splitGraphemes(value);
+  let width = 0;
+  let fitting = 0;
+  let boundaryAt = 0;
+  let boundaryWidth = 0;
+  for (const unit of units) {
+    const next = width + graphemeWidth(unit);
+    if (next > limit) break;
+    width = next;
+    fitting += 1;
+    if (CLAUSE_BOUNDARIES.has(unit)) {
+      boundaryAt = fitting;
+      boundaryWidth = width;
+    }
+  }
+  if (fitting >= units.length) return value;
+  if (boundaryAt > 0 && boundaryWidth >= limit * 0.4) {
+    return units.slice(0, boundaryAt).join("").trimEnd();
+  }
+  // 硬截时给省略号留一个宽度单位（汉字则 9 字 + …，英文约 18 字符 + …）。
+  let kept = 0;
+  let used = 0;
+  for (const unit of units) {
+    const next = used + graphemeWidth(unit);
+    if (next + 1 > limit) break;
+    used = next;
+    kept += 1;
+  }
+  return `${units.slice(0, kept).join("").trimEnd()}…`;
 }
 
 type Conclusion = { id: string; text: string };
