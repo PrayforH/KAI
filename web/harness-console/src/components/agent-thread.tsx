@@ -117,7 +117,11 @@ import {
   useRunStream,
 } from "../lib/run-stream-store";
 import { AUTHORING_PROGRESS_PART_NAME, AuthoringProgressPart } from "./authoring-progress";
-import { normalizeMessageText } from "../lib/message-text";
+import {
+  collapseRepeatedAssistantText,
+  isDuplicateAssistantReply,
+  normalizeMessageText,
+} from "../lib/message-text";
 import { inputArtifactIdFromAttachment } from "../lib/input-attachment-adapter";
 import type { TaskAgent } from "../lib/task-agent-catalog";
 import {
@@ -1537,7 +1541,25 @@ export function HarnessAssistantMessage() {
     ? currentActivity : undefined;
   const terminalActivity = ownedActivity && (!durable?.success || durable.data.run_id === ownedActivity.run_id)
     ? ownedActivity : durable?.success ? durable.data : undefined;
-  const copyText = redact(responseTextForDisplay(responseCandidate, terminalActivity));
+  const responseText = collapseRepeatedAssistantText(responseTextForDisplay(responseCandidate, terminalActivity));
+  const copyText = redact(responseText);
+  const previousAssistantText = useAuiState((state) => {
+    const messages = state.thread.messages;
+    let index = messages.findIndex((message) => message.id === messageId);
+    if (index < 0) index = messages.length;
+    const previous = messages[index - 1];
+    if (!previous || previous.role !== "assistant") return "";
+    return normalizeMessageText(collapseRepeatedAssistantText(
+      previous.content.flatMap((part, partIndex) => (
+        part.type === "text" && !isIntermediateAssistantTextPart(previous.content, partIndex) ? [part.text] : []
+      )).join("\n"),
+    ));
+  });
+  const duplicateAssistantReply = isDuplicateAssistantReply(
+    responseText,
+    previousAssistantText,
+    messageStatus?.type,
+  );
   const capturedCitations = useRef<{ messageId: string; citations: RunCitation[] }>({ messageId, citations: [] });
   const turnCitations = citationsForTurn(messageId, isLast, runView, durable?.success ? durable.data : undefined);
   if (turnCitations) capturedCitations.current = { messageId, citations: turnCitations };
@@ -1576,6 +1598,8 @@ export function HarnessAssistantMessage() {
     }).catch(() => { /* persisted history remains available on refresh */ });
   }, [actionHistory, threadRuntime]);
   const actionBusy = ["running", "queued", "waiting_approval"].includes(runView?.phase ?? "");
+  // 历史/重试偶尔把同一条回答写成相邻两条 assistant；只保留第一条。
+  if (duplicateAssistantReply) return null;
   return (
     <AnswerCitationProvider citations={answerCitations}>
     <PublishedBlocksProvider sources={publishedBlocks}>
