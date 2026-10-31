@@ -1,13 +1,18 @@
 "use client";
 
 export type CheckpointMetrics =
-  | { tokens?: number | null; costUsd?: number | null; unknownUsage?: boolean | null }
+  | {
+      tokens?: number | null;
+      costUsd?: number | null;
+      unknownUsage?: boolean | null;
+      skippedNoModel?: boolean | null;
+    }
   | null
   | undefined;
 
 export type CheckpointMeteringView = {
   text: string;
-  state: "measured" | "unknown";
+  state: "measured" | "unknown" | "skipped";
 };
 
 /**
@@ -15,12 +20,20 @@ export type CheckpointMeteringView = {
  * - 有 tokens → 「tokens 1,234」（zh-CN 千分位）；
  * - 用量未知 → 「tokens 未计量」（绝不显示 0）；
  * - cost / 耗时只在有值时追加。
+ * - skipUnchanged 早退（未唤起模型）单独一档：不是"未计量"，也不显示 0。
  * 两者都没有 → null（调用方不渲染计量行，兼容历史载荷）。
  */
 export function formatCheckpointMetering(
   metrics: CheckpointMetrics,
   durationSeconds?: number | null,
 ): CheckpointMeteringView | null {
+  if (metrics?.skippedNoModel) {
+    const parts = ["未唤起模型 · 无变化"];
+    if (durationSeconds != null) {
+      parts.push(`耗时 ${Math.max(1, Math.round(durationSeconds))} 秒`);
+    }
+    return { text: parts.join(" · "), state: "skipped" };
+  }
   const tokens = metrics?.tokens ?? null;
   const unknownUsage = Boolean(metrics && (metrics.unknownUsage || tokens == null));
   const parts: string[] = [];

@@ -14,7 +14,12 @@ export type Execution = { executionId: string; threadId: string; runId: string |
 export type Notice = { itemId: string; objectiveId: string; title: string; content: string;
   kind: string; createdAt: string; readAt: string | null; threadId?: string | null;
   // 终态 notice 的结算计量（与同次 checkpoint 同口径）；旧行没有这两个字段。
-  metrics?: { tokens: number | null; costUsd: number | null; unknownUsage: boolean } | null;
+  metrics?: {
+    tokens: number | null;
+    costUsd: number | null;
+    unknownUsage: boolean;
+    skippedNoModel?: boolean;
+  } | null;
   durationSeconds?: number | null };
 export type Specialist = { specialistId: string; name: string; slug: string; description: string;
   agentName: string; agentVersion: string;
@@ -57,7 +62,12 @@ export type ManagedProgress = {
   thread_id: string; title: string; status: string; summary: string; active: boolean;
   run_id?: string | null; duration_seconds?: number | null;
   checkpoint_id?: string | null; checkpoint_summary?: string | null;
-  metrics?: { tokens: number | null; costUsd: number | null; unknownUsage: boolean } | null;
+  metrics?: {
+    tokens: number | null;
+    costUsd: number | null;
+    unknownUsage: boolean;
+    skippedNoModel?: boolean;
+  } | null;
 };
 export type ManagedPanel = {
   objectiveId: string;

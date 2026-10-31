@@ -647,7 +647,12 @@ class PostgresAssistantRepository:
                     metrics=AssistantInboxMetrics(
                         tokens=usage_tokens,
                         cost_usd=usage_cost,
-                        unknown_usage=usage_tokens is None and usage_cost is None,
+                        unknown_usage=(
+                            not execution.skipped_no_model
+                            and usage_tokens is None
+                            and usage_cost is None
+                        ),
+                        skipped_no_model=execution.skipped_no_model,
                     ),
                     durationSeconds=duration_seconds,
                     createdAt=now,

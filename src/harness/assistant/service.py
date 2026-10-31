@@ -584,6 +584,8 @@ class AssistantService:
                         update={
                             "status": ObjectiveExecutionStatus.SUCCEEDED,
                             "finished_at": now,
+                            # 明确标记：这次成功没有唤起模型，用量"不适用"。
+                            "skipped_no_model": True,
                             "summary": (
                                 "本次定时检查未发现变化，未唤起模型。"
                                 f"未变化指纹 {hash_suffix(fingerprint)}"

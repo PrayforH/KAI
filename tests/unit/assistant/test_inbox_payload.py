@@ -38,3 +38,27 @@ def test_terminal_payload_exposes_unknown_usage_without_zero() -> None:
     assert item.metrics.tokens is None
     assert item.metrics.unknown_usage is True
     assert item.duration_seconds == 12
+
+
+def test_skipped_run_is_not_reported_as_unknown_usage() -> None:
+    item = AssistantInboxItem.model_validate(
+        {
+            "itemId": "notice_skipped",
+            "objectiveId": "objective-a",
+            "kind": "succeeded",
+            "title": "巡检职责",
+            "content": "本次定时检查未发现变化，未唤起模型。",
+            "metrics": {
+                "tokens": None,
+                "costUsd": None,
+                "unknownUsage": False,
+                "skippedNoModel": True,
+            },
+            "durationSeconds": 5,
+            "createdAt": "2026-10-01T00:00:00Z",
+        }
+    )
+    assert item.metrics is not None
+    assert item.metrics.skipped_no_model is True
+    assert item.metrics.unknown_usage is False
+    assert item.metrics.tokens is None

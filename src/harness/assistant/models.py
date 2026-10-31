@@ -170,6 +170,8 @@ class ObjectiveExecution(StudioModel):
     run_id: str | None = Field(default=None, alias="runId")
     summary: str = ""
     error_code: str | None = Field(default=None, alias="errorCode")
+    # skipUnchanged 早退：成功但没有唤起模型，计量语义是"不适用"而不是"未知"。
+    skipped_no_model: bool = Field(default=False, alias="skippedNoModel")
     created_at: AwareDatetime = Field(alias="createdAt")
     finished_at: AwareDatetime | None = Field(default=None, alias="finishedAt")
 
@@ -198,6 +200,7 @@ class AssistantInboxMetrics(StudioModel):
     tokens: int | None = None
     cost_usd: float | None = Field(default=None, alias="costUsd")
     unknown_usage: bool = Field(default=False, alias="unknownUsage")
+    skipped_no_model: bool = Field(default=False, alias="skippedNoModel")
 
 
 class AssistantInboxItem(StudioModel):
@@ -252,6 +255,9 @@ class ObjectiveCheckpoint(StudioModel):
     tokens: int | None = None
     cost_usd: float | None = Field(default=None, alias="costUsd")
     unknown_usage: bool = Field(default=False, alias="unknownUsage")
+    skipped_no_model: bool = Field(default=False, alias="skippedNoModel")
+    # 未唤起模型的定时跳过：没有用量可言，UI 不应显示"未计量"。
+    skipped_no_model: bool = Field(default=False, alias="skippedNoModel")
     created_at: AwareDatetime = Field(alias="createdAt")
 
 

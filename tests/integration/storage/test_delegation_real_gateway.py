@@ -1120,6 +1120,25 @@ async def test_unchanged_schedule_skips_the_model_call(database: DatabaseFixture
     assert created_runs == []
     assert result.status is ObjectiveExecutionStatus.SUCCEEDED
     assert "未唤起模型" in result.summary
+    assert result.skipped_no_model is True
+
+    # 收尾后：inbox 与 checkpoint 都明确"未唤起模型"，不能冒充 tokens 未计量。
+    claim = await service.repository.claim(NOW)
+    assert claim is not None
+    assert await service.repository.save_execution(result, claim[1], NOW)
+    notice = (await service.repository.inbox("tenant-a", "user-a"))[0]
+    assert notice.metrics is not None
+    assert notice.metrics.skipped_no_model is True
+    assert notice.metrics.unknown_usage is False
+    assert notice.metrics.tokens is None
+    checkpoint = (
+        await service.repository.checkpoints(
+            "tenant-a", "user-a", objective.objective_id, limit=1
+        )
+    )[0]
+    # checkpoint 是"用量审计"：没有用量就是 unknown；面向用户的 inbox 才区分跳过。
+    assert checkpoint.tokens is None
+    assert checkpoint.unknown_usage is True
 
 
 @pytest.mark.asyncio
