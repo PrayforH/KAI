@@ -210,3 +210,43 @@
   color: #ff9a8a;
   font-size: 12px;
 }
+
+.statusActions {
+  display: grid;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.statusPrimary,
+.statusSecondary {
+  justify-self: start;
+  padding: 9px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.statusPrimary {
+  border: 1px solid #4c8dff;
+  background: #1f4f95;
+  color: #f4f8ff;
+}
+
+.statusPrimary:hover { background: #245aa8; }
+
+.statusSecondary {
+  border: 1px solid #3a3a3a;
+  background: #242424;
+  color: #ededed;
+}
+
+.statusSecondary:hover { background: #2e2e2e; }
+
+.statusPrimary:disabled,
+.statusSecondary:disabled { opacity: 0.6; cursor: default; }
+
+.statusHint {
+  margin: 0;
+  color: #8a8a8a;
+  font-size: 12px;
+}

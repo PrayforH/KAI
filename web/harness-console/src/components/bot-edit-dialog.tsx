@@ -56,6 +56,9 @@ export function BotEditDialog({
   const [trialBusy, setTrialBusy] = useState(false);
   const [trialMessage, setTrialMessage] = useState("");
   const [trialFailed, setTrialFailed] = useState(false);
+  const [statusBusy, setStatusBusy] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
+  const [statusFailed, setStatusFailed] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -96,6 +99,33 @@ export function BotEditDialog({
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "保存失败");
       setBusy(false);
+    }
+  }
+
+  async function changeStatus(next: "active" | "paused") {
+    if (!detail || statusBusy || trialBusy || busy) return;
+    setStatusBusy(true);
+    setStatusMessage("");
+    setStatusFailed(false);
+    try {
+      const updated = await assistantRequest<Specialist>(
+        `specialists/${encodeURIComponent(specialistId)}/status`,
+        "POST",
+        { status: next, expectedRevision: detail.specialist.revision },
+      );
+      // 用服务端返回的 revision 继续后续操作，避免 CAS 冲突。
+      setDetail({ ...detail, specialist: updated });
+      setStatusMessage(next === "active" ? "已启用持续运行" : "已暂停");
+      window.dispatchEvent(
+        new CustomEvent("kai:specialists-changed", {
+          detail: { specialistId, reason: "status" },
+        }),
+      );
+    } catch (cause) {
+      setStatusFailed(true);
+      setStatusMessage(cause instanceof Error ? cause.message : "状态更新失败");
+    } finally {
+      setStatusBusy(false);
     }
   }
 
@@ -217,6 +247,44 @@ export function BotEditDialog({
             <p className={styles.routineEmpty}>还没有例行程序：去主助理那儿给它派一件事。</p>
           )}
         </section>
+        {detail && (detail.specialist.status === "ready" || detail.specialist.status === "active") && (
+          <section className={styles.statusActions}>
+            {detail.specialist.status === "ready" ? (
+              <button
+                type="button"
+                className={styles.statusPrimary}
+                data-action="enable"
+                disabled={busy || trialBusy || statusBusy}
+                onClick={() => void changeStatus("active")}
+              >
+                {statusBusy ? "正在启用…" : "启用持续运行"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={styles.statusSecondary}
+                data-action="pause"
+                disabled={busy || trialBusy || statusBusy}
+                onClick={() => void changeStatus("paused")}
+              >
+                {statusBusy ? "正在暂停…" : "暂停"}
+              </button>
+            )}
+            <p className={styles.statusHint}>
+              {detail.specialist.status === "ready"
+                ? "启用后按检查频率持续运行；试运行只是排一次检查。"
+                : "暂停后不再按频率排入新的检查，可随时重新启用。"}
+            </p>
+          </section>
+        )}
+        {statusMessage && (
+          <p
+            className={statusFailed ? styles.trialError : styles.trialResult}
+            role={statusFailed ? "alert" : "status"}
+          >
+            {statusMessage}
+          </p>
+        )}
         {detail && ["ready", "active"].includes(detail.specialist.status) && (
           <section className={styles.trial}>
             <button
