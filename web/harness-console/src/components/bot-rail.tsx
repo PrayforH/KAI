@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { assistantRequest, type Specialist } from "../lib/assistant-client";
-import { CreateBotDialog } from "./create-bot-dialog";
+import { BOT_SHAPES, CreateBotDialog } from "./create-bot-dialog";
 import { SidebarIcon } from "./sidebar-icon";
 import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
 
@@ -36,10 +36,43 @@ function toneOf(key: string): string {
   return botAccent(key);
 }
 
-function BotAvatar({ name, tone }: { name: string; tone: string }) {
+/** 已选外形；缺失或未知 id 一律回到新建默认的 blob（不回退成字母）。 */
+export function botShape(avatar: string | undefined | null) {
+  return BOT_SHAPES.find((shape) => shape.id === avatar) ?? BOT_SHAPES[0];
+}
+
+/**
+ * 侧栏头像：子助理用「色 + 形」的身份（与新建/编辑里选的外观一致），
+ * 主助理保留固定的「K」字母入口，不会被某个子助理的外形污染。
+ */
+export function BotRailAvatar({
+  tone,
+  shape,
+  letter,
+}: {
+  tone: string;
+  shape?: string | null;
+  letter?: string;
+}) {
+  if (letter) {
+    return (
+      <span className="bot-rail-avatar" data-avatar="letter" style={{ background: tone }} aria-hidden="true">
+        {letter}
+      </span>
+    );
+  }
+  const glyph = botShape(shape);
   return (
-    <span className="bot-rail-avatar" style={{ background: tone }} aria-hidden="true">
-      {name.trim().slice(0, 1) || "K"}
+    <span
+      className="bot-rail-avatar"
+      data-avatar="shape"
+      data-shape={glyph.id}
+      style={{ background: "transparent" }}
+      aria-hidden="true"
+    >
+      <svg viewBox="0 0 64 64" focusable="false">
+        <path d={glyph.path} fill={tone} />
+      </svg>
     </span>
   );
 }
@@ -116,7 +149,7 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
             href="/assistant"
             onClick={(event) => openBot(event, null)}
           >
-            <BotAvatar name="K" tone={BOT_ACCENTS[0]!} />
+            <BotRailAvatar letter="K" tone={BOT_ACCENTS[0]!} />
             <span className="bot-rail-label">
               <strong>主助理</strong>
               <small>统一接活、跟进与交付</small>
@@ -132,7 +165,10 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
               href={`/assistant?bot=${encodeURIComponent(item.specialistId)}`}
               onClick={(event) => openBot(event, item.specialistId)}
             >
-              <BotAvatar name={item.name} tone={specialistAppearance(item).color} />
+              <BotRailAvatar
+                tone={specialistAppearance(item).color}
+                shape={specialistAppearance(item).avatar}
+              />
               <span className="bot-rail-label">
                 <strong>{item.name}</strong>
                 <small>{item.description || item.agentName}</small>
@@ -151,7 +187,10 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
               href={`/assistant?bot=${encodeURIComponent(item.specialistId)}`}
               onClick={(event) => openBot(event, item.specialistId)}
             >
-              <BotAvatar name={item.name} tone={specialistAppearance(item).color} />
+              <BotRailAvatar
+                tone={specialistAppearance(item).color}
+                shape={specialistAppearance(item).avatar}
+              />
               <span className="bot-rail-label">
                 <strong>{item.name}</strong>
                 <small>{item.description || item.agentName}</small>

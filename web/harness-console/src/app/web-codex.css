@@ -3857,6 +3857,13 @@ body.codex-theme-v1:has(.console-shell) .bot-rail-avatar {
   font-weight: 600;
 }
 
+/* 子助理头像用已选的外形（色 + 形），不再是名字首字。 */
+body.codex-theme-v1:has(.console-shell) .bot-rail-avatar svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+
 body.codex-theme-v1:has(.console-shell) .bot-rail-label {
   display: grid;
   min-width: 0;
