@@ -1637,3 +1637,57 @@ web → `kai/assistant-web:20261030-managed-r60`；`migrate` 仍 r18（无新迁
 
 未验证：真实 paused Bot 的「暂停→恢复」（79 现网没有 paused 状态的 Bot；真实恢复会改变持续运行状态）；
 判定与入队守卫由集成测试覆盖，交互由 DOM + 注入式实机验收覆盖。
+
+## 本地工具权限：逐项授权（2026-11-01，web r61，marker kai-assistant-local-tool-permission）
+
+缺口：主会话 HITL 已有配置/凭据/ask/审批，但没有「按能力逐项询问」的本地权限面；
+用户无法在编辑弹窗或主会话里为某个 Bot 授予/收回本机能力。
+
+**键约定（声明式，前端推导，未动后端）**
+- 已授予：`specialist.config.local_tool_permissions: string[]`；声明需要：`config.required_local_tools: string[]`；
+  `pendingLocalTools = required_local_tools − local_tool_permissions`，非空才强制出卡。
+- 固定四项：`run_commands` 在共享电脑上运行命令 / `access_private_files` 访问私人文件 /
+  `use_connected_apps` 使用已连接的应用 / `run_background_tasks` 运行后台/例行任务（未知键忽略）。
+- 写入一律 `POST specialists/{id}/config`（body 合并 config + `expectedRevision`），成功用返回 Specialist 刷新；
+  不写密钥、不新增表；本片**不做**工具调用前的强制拦截策略引擎（仅声明 + UI 授权）。
+
+**实现**
+- 编辑弹窗新增「本地工具权限」小节（`LocalToolPermissions`）：4 个复选框，切换即 POST config +
+  `kai:specialists-changed`；失败 alert 服务端文案、可重试；未改外观/试运行/启用暂停/凭据语义。
+- 主会话每条转交行挂 `HandoverLocalToolPermissionCard`：未满足能力逐条显示
+  「允许「{bot}」{label} 吗？」；「允许」把 pending 并入 `local_tool_permissions` 后 POST config，
+  成功卡收起；「暂不」只在本地 settled，不伪造已授予。无 pending 不渲染，全程不 `location.assign(?bot=)`。
+
+**测试**
+
+```
+cd web/harness-console
+npx tsc --noEmit                                                          # clean
+npx vitest run tests/bot-edit-local-tool-permission.spec.tsx              # 3 passed（新增）
+npx vitest run tests/main-session-local-tool-permission-card.spec.tsx     # 3 passed（新增）
+npx vitest run tests/bot-edit-dialog-enable.spec.tsx tests/main-session-ask-card.spec.tsx \
+  tests/main-session-credential-card.spec.tsx tests/main-session-approval-card.spec.tsx  # 16 passed
+npx vitest run                                                            # 1530 passed / 1 skipped / 1 既有失败
+```
+
+DOM 断言：编辑弹窗四项标签齐全、初始未勾选；勾选 `run_commands` → POST `/config` 的
+`config.local_tool_permissions=["run_commands"]` 且 `expectedRevision=3`，成功后复选框选中；
+失败 alert 且不勾选；已授予项显示选中。主会话 fixture `required_local_tools=["run_commands"]` →
+出现「待你授权本地能力 / 允许「休息提醒」在共享电脑上运行命令吗？」；点允许 → POST config
+合并授权、卡收起、URL 仍 `/`；已全部授予 → 无卡；点「暂不」→ 卡收起且没有任何 config 写入。
+既有失败仍是 account-settings（无关）。
+
+**79 部署与只读验收**：web `kai/assistant-web:20261030-managed-r61` 已滚（healthy，`/assistant` = 200）；
+ctx `web-src-r61`，5 个文件 sha256 与本地一致（`local-tool-permissions.ts` `996c232b…`、
+组件 `9feddbf7…`、dialog `46200c58…`、handover-row `c09719a6…`、css `b0fd333b…`）；
+「本地工具权限」「待你授权本地能力」出现在 `0a7yhr_s76963.js` / `0fjj7r3oqlpya.js`（r60 无）。
+api 未动，仍 r24；compose 备份 `compose.private.before-r61.json`。
+
+- 真实 Bot 弹窗：四项均可见且未勾选（**未勾选/未保存**，不改真实 config）；
+- 注入式（浏览器侧拦截 specialists/config 等，**不写服务端**）：主会话出现授权卡；点「允许」捕获
+  `POST specialists/{id}/config` body
+  `{config:{required_local_tools:["run_commands"], local_tool_permissions:["run_commands"]}, expectedRevision:3}`，
+  卡收起、URL 不变。截图 `/tmp/kai79-accept/184-r61-tools-card.png`。
+
+未验证：真实 Bot 声明 `required_local_tools` 后在主会话授权的完整链路（现网没有该配置，需改真实 config）；
+键推导、POST body 与卡收起由 DOM + 注入式实机验收覆盖。
