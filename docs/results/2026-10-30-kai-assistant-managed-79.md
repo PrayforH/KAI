@@ -1586,3 +1586,54 @@ compose 备份 `compose.private.before-r59.json`。
 
 未验证：真实点启用/暂停（会改变用户 Bot 的持续运行状态）；请求体/文案/禁用条件由 DOM 用例 +
 注入式实机验收覆盖。
+
+## paused 可恢复持续运行（2026-11-01，api r24 + web r60，marker kai-assistant-bot-edit-resume）
+
+缺口：r59 能给 active 点「暂停」，但 `paused` 状态没有任何恢复入口——后端
+`set_specialist_status(status=ACTIVE)` 只要不是 `ready` 就拒绝「只有 ready 状态可以启用持续运行」，
+于是「暂停后…可随时重新启用」的文案是空头支票。
+
+- **后端（api r24）**：目标 `ACTIVE` 时允许当前状态 ∈ `{ready, paused}`；其它状态仍 Conflict，
+  文案改为「只有 ready 或 paused 状态可以启用持续运行」。配置缺项 / 未绑定职责检查保持原样；
+  从 paused 恢复照常走 `_start_duty_if_idle`——只给**尚无任何执行**的职责补一次首跑，
+  已有执行历史的职责不会重复入队。`routinePausedReason`（无人查看闸门）未被当成 `paused`。
+- **前端（web r60）**：`bot-edit-dialog` 的 `status === "paused"` 显示主按钮「恢复持续运行」
+  （`data-action="resume"`）→ `POST {status:"active", expectedRevision}`，成功文案「已恢复持续运行」、
+  用返回的 Specialist 刷新后切成「暂停」；`paused` 时不显示试运行（与 manager 口径一致）；
+  hint 改为「已暂停；点「恢复持续运行」会重新按频率检查」。
+  同步给 studio `assistant-manager` 的 paused 状态补了同一按钮，避免该页仍卡死。
+- 未改委派/lease/trial 语义、无人查看 viewed 闸门、预算/desktop。
+
+**测试**
+
+```
+HARNESS_TEST_DATABASE_URL=postgresql+asyncpg://harness:harness@127.0.0.1:35432/harness_test \
+  uv run pytest tests/integration/storage/test_delegation_real_gateway.py -q           # 33 passed
+uv run pytest tests/unit/assistant -q                                                  # 102 passed
+uv run ruff check src/harness/assistant/service.py …                                   # service clean
+cd web/harness-console
+npx tsc --noEmit                                                                       # clean
+npx vitest run tests/bot-edit-dialog-enable.spec.tsx                                   # 7 passed
+npx vitest run                                                                         # 1524 passed / 1 skipped / 1 既有失败
+```
+
+后端新用例：ready→active 仍成功；paused→active 成功且恢复后执行数仍为 1（不重复补跑）；
+blocked→active 仍 Conflict（「ready 或 paused」）；缺配置/无职责用例保持通过。
+前端：paused → 仅「恢复持续运行」（无启用/暂停/试运行）、点击 POST active+expectedRevision、
+出现「已恢复持续运行」并切成「暂停」；ready/active 行为不回退；服务端 409 文案进 alert 且可重试。
+既有失败仍是 account-settings（无关）；test 文件两处 `I001` 为基线既有。
+
+**79 部署与只读验收**：api/worker/computer-control → `kai/assistant-api:20261030-managed-r24`；
+web → `kai/assistant-web:20261030-managed-r60`；`migrate` 仍 r18（无新迁移）。均 healthy，
+`/assistant` = 200；compose 备份 `compose.private.before-resume.json`。镜像内确认
+`ready 或 paused` 在 service、`恢复持续运行` 在 web chunk。
+
+- 后端实机（不改状态）：对一个 **active** Bot 直接 `POST status=active` → 409，
+  返回「只有 ready 或 paused 状态可以启用持续运行」——新判定已生效且没有写入。
+- 前端注入式（浏览器侧拦截 specialists/status，**不写服务端**）：paused fixture 弹窗只有
+  「恢复持续运行」+ 暂停提示（无启用/暂停/试运行）；点击后捕获
+  `POST …/status {status:"active", expectedRevision:5}`，出现「已恢复持续运行」并切为「暂停」，URL 不变。
+  截图 `/tmp/kai79-accept/183-r60-resume-dialog.png`。
+
+未验证：真实 paused Bot 的「暂停→恢复」（79 现网没有 paused 状态的 Bot；真实恢复会改变持续运行状态）；
+判定与入队守卫由集成测试覆盖，交互由 DOM + 注入式实机验收覆盖。
