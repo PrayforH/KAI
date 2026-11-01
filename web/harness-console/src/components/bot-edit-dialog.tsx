@@ -115,7 +115,13 @@ export function BotEditDialog({
       );
       // 用服务端返回的 revision 继续后续操作，避免 CAS 冲突。
       setDetail({ ...detail, specialist: updated });
-      setStatusMessage(next === "active" ? "已启用持续运行" : "已暂停");
+      setStatusMessage(
+        next === "active"
+          ? detail.specialist.status === "paused"
+            ? "已恢复持续运行"
+            : "已启用持续运行"
+          : "已暂停",
+      );
       window.dispatchEvent(
         new CustomEvent("kai:specialists-changed", {
           detail: { specialistId, reason: "status" },
@@ -247,9 +253,9 @@ export function BotEditDialog({
             <p className={styles.routineEmpty}>还没有例行程序：去主助理那儿给它派一件事。</p>
           )}
         </section>
-        {detail && (detail.specialist.status === "ready" || detail.specialist.status === "active") && (
+        {detail && ["ready", "active", "paused"].includes(detail.specialist.status) && (
           <section className={styles.statusActions}>
-            {detail.specialist.status === "ready" ? (
+            {detail.specialist.status === "ready" && (
               <button
                 type="button"
                 className={styles.statusPrimary}
@@ -259,7 +265,8 @@ export function BotEditDialog({
               >
                 {statusBusy ? "正在启用…" : "启用持续运行"}
               </button>
-            ) : (
+            )}
+            {detail.specialist.status === "active" && (
               <button
                 type="button"
                 className={styles.statusSecondary}
@@ -270,10 +277,23 @@ export function BotEditDialog({
                 {statusBusy ? "正在暂停…" : "暂停"}
               </button>
             )}
+            {detail.specialist.status === "paused" && (
+              <button
+                type="button"
+                className={styles.statusPrimary}
+                data-action="resume"
+                disabled={busy || trialBusy || statusBusy}
+                onClick={() => void changeStatus("active")}
+              >
+                {statusBusy ? "正在恢复…" : "恢复持续运行"}
+              </button>
+            )}
             <p className={styles.statusHint}>
               {detail.specialist.status === "ready"
                 ? "启用后按检查频率持续运行；试运行只是排一次检查。"
-                : "暂停后不再按频率排入新的检查，可随时重新启用。"}
+                : detail.specialist.status === "paused"
+                  ? "已暂停；点「恢复持续运行」会重新按频率检查。"
+                  : "暂停后不再按频率排入新的检查，可点恢复持续运行重新启用。"}
             </p>
           </section>
         )}

@@ -243,6 +243,10 @@ export function AssistantManager() {
           await assistantRequest(`specialists/${selectedSpecialistItem.specialistId}/status`, "POST", { status: "paused", expectedRevision: selectedSpecialistItem.revision });
           setMessage("已暂停该子助理的全部职责。");
         })}>暂停</button>}
+        {selectedSpecialistItem.status === "paused" && <button className={styles.primary} disabled={busy} onClick={() => void perform(async () => {
+          await assistantRequest(`specialists/${selectedSpecialistItem.specialistId}/status`, "POST", { status: "active", expectedRevision: selectedSpecialistItem.revision });
+          setMessage("已恢复持续运行；下一次检查时间以服务端记录为准。");
+        })}>恢复持续运行</button>}
       </div>
       <form onSubmit={event => { event.preventDefault(); const form = event.currentTarget;
         const schedule = Number(new FormData(form).get("schedule")); const notify = String(new FormData(form).get("notify"));

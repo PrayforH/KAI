@@ -85,7 +85,7 @@ async function mount(status: string, nextStatus = status) {
   return () => window.removeEventListener("kai:specialists-changed", onEvent);
 }
 
-function action(name: "enable" | "pause"): HTMLButtonElement | null {
+function action(name: "enable" | "pause" | "resume"): HTMLButtonElement | null {
   return host.querySelector<HTMLButtonElement>(`button[data-action="${name}"]`);
 }
 
@@ -129,20 +129,52 @@ describe("bot edit dialog enable / pause", () => {
     cleanup();
   });
 
-  it("shows neither action for needs_input or paused bots", async () => {
+  it("shows no status action for needs_input bots", async () => {
     const cleanupNeeds = await mount("needs_input");
     expect(action("enable")).toBeNull();
     expect(action("pause")).toBeNull();
     cleanupNeeds();
+  });
 
-    await act(async () => root!.unmount());
-    root = createRoot(host);
-    const cleanupPaused = await mount("paused");
+  it("offers only resume for a paused bot", async () => {
+    const cleanup = await mount("paused");
+    expect(action("resume")?.textContent).toContain("恢复持续运行");
     expect(action("enable")).toBeNull();
     expect(action("pause")).toBeNull();
-    // 本片不做 paused → active 的假恢复。
-    expect(host.textContent).not.toContain("启用持续运行");
-    cleanupPaused();
+    expect(host.textContent).toContain("已暂停；点「恢复持续运行」会重新按频率检查");
+    cleanup();
+  });
+
+  it("resumes a paused bot back to active", async () => {
+    const cleanup = await mount("paused");
+    await act(async () => action("resume")!.click());
+    await flush();
+
+    const call = assistantRequest.mock.calls.find(([path]) =>
+      String(path).endsWith("/status"),
+    );
+    expect(call![2]).toEqual({ status: "active", expectedRevision: 3 });
+    expect(host.textContent).toContain("已恢复持续运行");
+    expect(action("pause")).not.toBeNull();
+    expect(action("resume")).toBeNull();
+    expect(events).toContain("kai:specialists-changed");
+    cleanup();
+  });
+
+  it("keeps the resume button retryable when the server rejects", async () => {
+    const cleanup = await mount("paused");
+    assistantRequest.mockImplementation(async (path: string) => {
+      if (path === "specialists/specialist_status") return specialist("paused");
+      if (path === "specialists/specialist_status/status") {
+        throw new Error("只有 ready 或 paused 状态可以启用持续运行");
+      }
+      throw new Error(`unexpected request ${path}`);
+    });
+    await act(async () => action("resume")!.click());
+    await flush();
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain("ready 或 paused");
+    expect(action("resume")?.disabled).toBe(false);
+    cleanup();
   });
 
   it("shows the server conflict and keeps the button retryable", async () => {
