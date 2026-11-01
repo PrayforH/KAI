@@ -874,8 +874,9 @@ class AssistantService:
             missing = _specialist_missing_config(current.config)
             if missing:
                 raise ConflictError(f"配置缺项，不能启用：{'、'.join(missing)}")
-            if current.status is not SpecialistStatus.READY:
-                raise ConflictError("只有 ready 状态可以启用持续运行")
+            # paused 是用户显式暂停：恢复同样走激活，给还没有执行的职责补首跑。
+            if current.status not in {SpecialistStatus.READY, SpecialistStatus.PAUSED}:
+                raise ConflictError("只有 ready 或 paused 状态可以启用持续运行")
             bound = [
                 item
                 for item in await self.repository.list(tenant_id, user_id)

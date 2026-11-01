@@ -1322,6 +1322,112 @@ async def test_specialist_without_a_duty_cannot_be_activated(database: DatabaseF
 
 
 @pytest.mark.asyncio
+async def test_paused_specialist_resumes_without_duplicate_first_run(
+    database: DatabaseFixture,
+) -> None:
+    """显式暂停的专职子助理可以恢复为 active；已有执行历史的职责不会重复补跑。"""
+    from harness.assistant.models import SpecialistStatus
+
+    service = make_service(database)
+    service._agui = cast(Any, _StubAgui())  # pyright: ignore[reportPrivateUsage]
+    duty = await service.create("tenant-a", "user-a", brief())
+    specialist, _ = await service.create_specialist(
+        "tenant-a",
+        "user-a",
+        name="resume",
+        description="暂停后可恢复",
+        agent_name="audit-agent",
+        agent_version="1.0.0",
+    )
+    attached = await service.attach_duty(
+        "tenant-a",
+        "user-a",
+        specialist.specialist_id,
+        objective_id=duty.objective_id,
+        expected_revision=specialist.revision,
+    )
+    configured = await service.configure_specialist(
+        "tenant-a",
+        "user-a",
+        specialist.specialist_id,
+        config={"schedule_minutes": 60, "notify_channel": "inbox"},
+        expected_revision=attached.revision,
+    )
+    assert configured.status is SpecialistStatus.READY
+
+    enabled = await service.set_specialist_status(
+        "tenant-a",
+        "user-a",
+        specialist.specialist_id,
+        status=SpecialistStatus.ACTIVE,
+        expected_revision=configured.revision,
+    )
+    assert enabled.status is SpecialistStatus.ACTIVE
+    first_executions = await service.repository.executions(
+        "tenant-a", "user-a", duty.objective_id
+    )
+    assert len(first_executions) == 1
+
+    paused = await service.set_specialist_status(
+        "tenant-a",
+        "user-a",
+        specialist.specialist_id,
+        status=SpecialistStatus.PAUSED,
+        expected_revision=enabled.revision,
+    )
+    assert paused.status is SpecialistStatus.PAUSED
+
+    resumed = await service.set_specialist_status(
+        "tenant-a",
+        "user-a",
+        specialist.specialist_id,
+        status=SpecialistStatus.ACTIVE,
+        expected_revision=paused.revision,
+    )
+    assert resumed.status is SpecialistStatus.ACTIVE
+    # 已有执行历史：恢复不会重复塞一条首跑。
+    assert (
+        len(await service.repository.executions("tenant-a", "user-a", duty.objective_id))
+        == 1
+    )
+
+    # 其它状态仍拒绝：先把一个完整配置的实例直接置为 blocked，再尝试激活。
+    other, _ = await service.create_specialist(
+        "tenant-a",
+        "user-a",
+        name="blocked",
+        description="其它状态",
+        agent_name="audit-agent",
+        agent_version="1.0.0",
+    )
+    other_configured = await service.configure_specialist(
+        "tenant-a",
+        "user-a",
+        other.specialist_id,
+        config={"schedule_minutes": 60, "notify_channel": "inbox"},
+        expected_revision=other.revision,
+    )
+    blocked = await service.repository.update_specialist(
+        "tenant-a",
+        "user-a",
+        other.specialist_id,
+        expected_revision=other_configured.revision,
+        status=SpecialistStatus.BLOCKED,
+        now=NOW,
+    )
+    from harness.core.errors import ConflictError
+
+    with pytest.raises(ConflictError, match="ready 或 paused"):
+        await service.set_specialist_status(
+            "tenant-a",
+            "user-a",
+            other.specialist_id,
+            status=SpecialistStatus.ACTIVE,
+            expected_revision=blocked.revision,
+        )
+
+
+@pytest.mark.asyncio
 async def test_attach_existing_duty_to_a_specialist_and_trial_it(
     database: DatabaseFixture,
 ) -> None:
