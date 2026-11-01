@@ -4232,6 +4232,59 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .h
   gap: 2px;
 }
 
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-permission-card {
+  width: min(640px, 92%);
+  margin: 6px auto 2px;
+  padding: 10px 12px;
+  border: 1px solid #3a3a3a;
+  border-radius: 14px;
+  background: #1b1b1b;
+  text-align: left;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-title {
+  margin: 0 0 6px;
+  color: #d2a83a;
+  font-size: 12px;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  color: #dcdcdc;
+  font-size: 13px;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-actions button {
+  padding: 7px 14px;
+  border: 1px solid #3a3a3a;
+  border-radius: 9px;
+  background: #242424;
+  color: #ededed;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-actions button[data-action="allow"] {
+  border-color: #4c8dff;
+  background: #1f4f95;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-error {
+  margin: 6px 0 0;
+  color: #ff9a8a;
+  font-size: 12px;
+}
+
 body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-approval-card {
   width: min(640px, 92%);
   margin: 6px auto 2px;

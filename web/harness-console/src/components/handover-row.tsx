@@ -8,6 +8,11 @@ import { pendingThreadAsk, submitThreadAnswer, type ThreadAsk } from "../lib/thr
 import { ApprovalCard, type ApprovalDetails } from "./approval-card";
 import { ConversationInputCard } from "./conversation-input-card";
 import { loadTaskSummary } from "../lib/project-space";
+import {
+  grantedLocalTools,
+  localToolLabel,
+  pendingLocalTools,
+} from "../lib/local-tool-permissions";
 import { SpecialistCredentials, pendingCredentialNames } from "./specialist-credentials";
 import { SpecialistSetupCard } from "./specialist-setup-card";
 
@@ -22,6 +27,95 @@ export function shouldShowHandoverRows(
   hasBot: boolean,
 ): boolean {
   return personalAssistant && assistantSurface && !hasBot;
+}
+
+/**
+ * 本地工具权限的一等触发：config.required_local_tools 有未授予项时，
+ * 在主会话该行下展开授权卡；允许走既有 specialists/{id}/config（合并 config），
+ * 暂不只在本地收起，不伪造已授予。
+ */
+function HandoverLocalToolPermissionCard({
+  specialistId,
+  specialistName,
+}: {
+  specialistId: string;
+  specialistName: string;
+}) {
+  const [specialist, setSpecialist] = useState<Specialist | null>(null);
+  const [settled, setSettled] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    void assistantRequest<{ specialist: Specialist }>(
+      `specialists/${encodeURIComponent(specialistId)}`,
+    )
+      .then((data) => {
+        if (alive) setSpecialist(data.specialist);
+      })
+      .catch(() => {
+        // 权限卡是增强信息：读不到静默，任务面仍可配置。
+      });
+    return () => {
+      alive = false;
+    };
+  }, [specialistId]);
+
+  if (!specialist || settled) return null;
+  const pending = pendingLocalTools(specialist);
+  if (!pending.length) return null;
+
+  async function allow() {
+    if (!specialist || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const merged = [...new Set([...grantedLocalTools(specialist), ...pending])];
+      const updated = await assistantRequest<Specialist>(
+        `specialists/${encodeURIComponent(specialistId)}/config`,
+        "POST",
+        {
+          config: { ...specialist.config, local_tool_permissions: merged },
+          expectedRevision: specialist.revision,
+        },
+      );
+      setSpecialist(updated);
+      window.dispatchEvent(
+        new CustomEvent("kai:specialists-changed", {
+          detail: { specialistId, reason: "local-tools" },
+        }),
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "授权失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="handover-local-tool-permission-card">
+      <p className="handover-local-tool-title">待你授权本地能力</p>
+      <ul className="handover-local-tool-list">
+        {pending.map((key) => (
+          <li key={key}>允许「{specialistName}」{localToolLabel(key)}吗？</li>
+        ))}
+      </ul>
+      {error && (
+        <p className="handover-local-tool-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="handover-local-tool-actions">
+        <button type="button" data-action="later" disabled={busy} onClick={() => setSettled(true)}>
+          暂不
+        </button>
+        <button type="button" data-action="allow" disabled={busy} onClick={() => void allow()}>
+          {busy ? "正在授权…" : "允许"}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -240,6 +334,10 @@ export function HandoverInlineRows() {
               <span className="handover-inline-target">「{notice.specialistName}」</span>
             </a>
           </p>
+          <HandoverLocalToolPermissionCard
+            specialistId={notice.specialistId}
+            specialistName={notice.specialistName}
+          />
           <HandoverApprovalCard
             specialistId={notice.specialistId}
             specialistName={notice.specialistName}

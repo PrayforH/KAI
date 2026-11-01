@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { assistantRequest, type Specialist } from "../lib/assistant-client";
 import { BOT_COLORS, BOT_SHAPES } from "./create-bot-dialog";
+import { LocalToolPermissions } from "./local-tool-permissions";
 import { SpecialistCredentials } from "./specialist-credentials";
 import styles from "./bot-edit-dialog.module.css";
 
@@ -327,6 +328,13 @@ export function BotEditDialog({
               </p>
             )}
           </section>
+        )}
+        {detail && (
+          <LocalToolPermissions
+            specialistId={specialistId}
+            specialist={detail.specialist}
+            onUpdated={(updated) => setDetail({ ...detail, specialist: updated })}
+          />
         )}
         {detail && (
           <SpecialistCredentials
