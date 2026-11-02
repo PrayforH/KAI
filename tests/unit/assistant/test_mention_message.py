@@ -33,7 +33,10 @@ def _specialist(status: SpecialistStatus = SpecialistStatus.READY) -> Specialist
     )
 
 
-def _service(specialist: Specialist | None = None, handovers: list[SpecialistHandover] | None = None):
+def _service(
+    specialist: Specialist | None = None,
+    handovers: list[SpecialistHandover] | None = None,
+):
     from harness.assistant.service import AssistantService
 
     repo, agents, auth, projects, agui, runs, events = [AsyncMock() for _ in range(7)]

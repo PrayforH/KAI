@@ -46,6 +46,7 @@ from harness.assistant.storage import (
     SpecialistCredentialRow,
     SpecialistHandoverRow,
     SpecialistRow,
+    VaultItemRow,
 )
 from harness.core.errors import ConflictError, NotFoundError
 from harness.core.events import RunEvent
@@ -1511,6 +1512,105 @@ class PostgresAssistantRepository:
                     created_at=now,
                 )
             )
+
+    async def list_vault_items(
+        self, tenant_id: str, user_id: str
+    ) -> list[VaultItemRow]:
+        """本人在助理资料库里的条目；只回元数据，不回密文。"""
+        async with self._context() as session:
+            rows = await session.scalars(
+                select(VaultItemRow)
+                .where(
+                    VaultItemRow.tenant_id == tenant_id,
+                    VaultItemRow.user_id == user_id,
+                )
+                .order_by(VaultItemRow.updated_at.desc())
+            )
+            return list(rows)
+
+    async def get_vault_item(
+        self, tenant_id: str, user_id: str, item_id: str
+    ) -> VaultItemRow:
+        async with self._context() as session:
+            row = await session.scalar(
+                select(VaultItemRow).where(
+                    VaultItemRow.tenant_id == tenant_id,
+                    VaultItemRow.user_id == user_id,
+                    VaultItemRow.item_id == item_id,
+                )
+            )
+            if row is None:
+                raise NotFoundError("Vault item not found")
+            return row
+
+    async def create_vault_item(self, row: VaultItemRow) -> VaultItemRow:
+        async with self._context(write=True) as session:
+            session.add(row)
+        return row
+
+    async def update_vault_item(
+        self,
+        tenant_id: str,
+        user_id: str,
+        item_id: str,
+        *,
+        expected_revision: int,
+        changes: dict[str, object],
+        now: datetime,
+    ) -> VaultItemRow:
+        async with self._context(write=True) as session:
+            row = await session.scalar(
+                select(VaultItemRow)
+                .where(
+                    VaultItemRow.tenant_id == tenant_id,
+                    VaultItemRow.user_id == user_id,
+                    VaultItemRow.item_id == item_id,
+                )
+                .with_for_update()
+            )
+            if row is None:
+                raise NotFoundError("Vault item not found")
+            if row.revision != expected_revision:
+                raise ConflictError("资料已变化，请刷新后重试")
+            for key, value in changes.items():
+                setattr(row, key, value)
+            row.revision += 1
+            row.updated_at = now
+        return row
+
+    async def delete_vault_item(self, tenant_id: str, user_id: str, item_id: str) -> bool:
+        async with self._context(write=True) as session:
+            row = await session.scalar(
+                select(VaultItemRow)
+                .where(
+                    VaultItemRow.tenant_id == tenant_id,
+                    VaultItemRow.user_id == user_id,
+                    VaultItemRow.item_id == item_id,
+                )
+                .with_for_update()
+            )
+            if row is None:
+                return False
+            await session.delete(row)
+        return True
+
+    async def delete_credential_blob(
+        self, tenant_id: str, user_id: str, reference: str
+    ) -> bool:
+        async with self._context(write=True) as session:
+            row = await session.scalar(
+                select(SpecialistCredentialRow)
+                .where(
+                    SpecialistCredentialRow.tenant_id == tenant_id,
+                    SpecialistCredentialRow.user_id == user_id,
+                    SpecialistCredentialRow.reference == reference,
+                )
+                .with_for_update()
+            )
+            if row is None:
+                return False
+            await session.delete(row)
+        return True
 
     async def desktop_occupancy(
         self, *, tenant_id: str, user_id: str, now: datetime

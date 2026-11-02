@@ -46,6 +46,8 @@ from harness.assistant.models import (
 )
 from harness.assistant.permissions import pending_local_tools, require_local_tools
 from harness.assistant.repository import MANAGED_PROGRESS_EVENTS, PostgresAssistantRepository
+from harness.assistant.storage import VaultItemRow
+from harness.assistant.vault import VaultCategory, VaultItem
 from harness.auth.service import AuthService
 from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
 from harness.core.events import RunEvent
@@ -1091,6 +1093,125 @@ class AssistantService:
             if isinstance(raw, dict):
                 used.append({key: str(value) for key, value in raw.items()})
         return choose_appearance(used)
+
+    # ---- 助理资料库（Vault） ---------------------------------------------
+
+    @staticmethod
+    def _vault_item(row) -> VaultItem:
+        """列表投影：只有脱敏元数据，值与密文都不在这里。"""
+        return VaultItem(
+            itemId=row.item_id,
+            category=VaultCategory(row.category),
+            title=row.title,
+            reference=row.reference,
+            hasSecret=bool(row.has_value),
+            last4=row.last4,
+            revision=row.revision,
+            createdAt=row.created_at,
+            updatedAt=row.updated_at,
+        )
+
+    async def vault_items(self, tenant_id: str, user_id: str) -> list[VaultItem]:
+        """本人资料库条目：跨用户看不见别人的条目。"""
+        rows = await self.repository.list_vault_items(tenant_id, user_id)
+        return [self._vault_item(row) for row in rows]
+
+    async def create_vault_item(
+        self, tenant_id: str, user_id: str, *,
+        category: VaultCategory, title: str, value: str | None = None,
+        last4: str | None = None,
+    ) -> VaultItem:
+        """新建一条资料：值进既有加密凭据表，这里只留脱敏元数据。"""
+        if self._cipher is None:
+            raise ConflictError("凭据存储未配置")
+        now = datetime.now(UTC)
+        reference = f"vault_{uuid4().hex}"
+        if value:
+            ciphertext = self._cipher.encrypt(
+                tenant_id, user_id, reference, {"secret": SecretStr(value)}
+            )
+            await self.repository.save_credential_blob(
+                tenant_id, user_id, reference, ciphertext, now=now
+            )
+        row = VaultItemRow(
+            item_id=f"vault_item_{uuid4().hex}",
+            tenant_id=tenant_id,
+            user_id=user_id,
+            category=category.value,
+            title=title[:120],
+            reference=reference,
+            last4=last4,
+            has_value=bool(value),
+            revision=1,
+            created_at=now,
+            updated_at=now,
+        )
+        await self.repository.create_vault_item(row)
+        return self._vault_item(row)
+
+    async def update_vault_item(
+        self, tenant_id: str, user_id: str, item_id: str, *,
+        expected_revision: int, title: str | None = None,
+        value: str | None = None, last4: str | None = None,
+    ) -> VaultItem:
+        row = await self.repository.get_vault_item(tenant_id, user_id, item_id)
+        now = datetime.now(UTC)
+        changes: dict[str, object] = {}
+        if title is not None:
+            changes["title"] = title[:120]
+        if last4 is not None:
+            changes["last4"] = last4
+        if value:
+            if self._cipher is None:
+                raise ConflictError("凭据存储未配置")
+            # 覆盖同一个 reference 的密文：先删旧的，再写新的。
+            await self.repository.delete_credential_blob(
+                tenant_id, user_id, row.reference
+            )
+            ciphertext = self._cipher.encrypt(
+                tenant_id, user_id, row.reference, {"secret": SecretStr(value)}
+            )
+            await self.repository.save_credential_blob(
+                tenant_id, user_id, row.reference, ciphertext, now=now
+            )
+            changes["has_value"] = True
+        updated = await self.repository.update_vault_item(
+            tenant_id, user_id, item_id,
+            expected_revision=expected_revision, changes=changes, now=now,
+        )
+        return self._vault_item(updated)
+
+    async def delete_vault_item(
+        self, tenant_id: str, user_id: str, item_id: str, *, confirm_title: str
+    ) -> bool:
+        """删除条目：必须确认标题，密文一起删掉，不留孤儿。"""
+        row = await self.repository.get_vault_item(tenant_id, user_id, item_id)
+        if confirm_title.strip() != row.title:
+            raise ConflictError("确认标题与这条资料不一致，未删除")
+        await self.repository.delete_credential_blob(tenant_id, user_id, row.reference)
+        return await self.repository.delete_vault_item(tenant_id, user_id, item_id)
+
+    async def grant_vault_item(
+        self, tenant_id: str, user_id: str, specialist_id: str, *,
+        item_id: str, granted: bool, expected_revision: int,
+    ) -> Specialist:
+        """把资料授权给某个 Bot：写 credential_ref；撤销时移除。
+
+        默认不共享：没有授权就没有引用，Bot 侧拿不到这条资料。
+        """
+        row = await self.repository.get_vault_item(tenant_id, user_id, item_id)
+        specialist = await self.repository.get_specialist(tenant_id, user_id, specialist_id)
+        key = f"credential_ref:{row.title}"
+        config = dict(specialist.config)
+        if granted:
+            config[key] = row.reference
+        else:
+            config.pop(key, None)
+        return await self.repository.update_specialist(
+            tenant_id, user_id, specialist_id,
+            expected_revision=expected_revision, config=config,
+            now=datetime.now(UTC),
+        )
 
     async def update_specialist_profile(
         self,
