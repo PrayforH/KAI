@@ -99,7 +99,7 @@ describe("progress notice replay link", () => {
     expect(params.get("checkpoint")).toBe("checkpoint_execution-1");
   });
 
-  it("keeps succeeded and cancelled notices on the plain thread link", async () => {
+  it("keeps the original run on result links without opening failure trace", async () => {
     await mountExpanded();
     const succeeded = linkFor("行业快报");
     expect(succeeded?.textContent).toBe("打开原任务 →");
@@ -107,7 +107,7 @@ describe("progress notice replay link", () => {
     const params = new URL(succeeded!.href).searchParams;
     expect(params.get("thread")).toBe("assistant_o2");
     expect(params.has("trace")).toBe(false);
-    expect(params.has("run")).toBe(false);
+    expect(params.get("run")).toBe("run-2");
     expect(params.has("checkpoint")).toBe(false);
 
     const cancelled = linkFor("手动停止");
@@ -133,6 +133,13 @@ describe("progressNoticeLink helper", () => {
     const legacy = progressNoticeLink({ kind: "failed", threadId: "t", runId: null, executionId: null });
     expect(legacy?.href).toBe("/?thread=t&trace=1");
     const measured = progressNoticeLink({ kind: "succeeded", threadId: "t", runId: "r" });
-    expect(measured?.href).toBe("/?thread=t");
+    expect(measured?.href).toBe("/?thread=t&run=r");
   });
+});
+
+it("returns a standalone Bot result to its dedicated conversation", () => {
+  const link = progressNoticeLink({
+    kind: "succeeded", threadId: "assistant_specialist_coding", runId: "run-result",
+  });
+  expect(link?.href).toBe("/assistant?bot=specialist_coding&run=run-result");
 });

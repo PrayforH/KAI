@@ -60,6 +60,8 @@ def brief(**overrides: Any) -> ObjectiveBrief:
 
 def make_service(database: DatabaseFixture) -> AssistantService:
     repo = PostgresAssistantRepository(database[1])
+    from unittest.mock import AsyncMock
+
     # The stubs implement exactly the service surface the delegation path
     # touches; full AgentService/AuthService collaborators are out of scope.
     return AssistantService(
@@ -69,7 +71,7 @@ def make_service(database: DatabaseFixture) -> AssistantService:
         projects=cast(Any, _StubProjects()),
         agui=cast(Any, None),
         runs=cast(Any, None),
-        events=cast(Any, None),
+        events=cast(Any, SimpleNamespace(list_after=AsyncMock(return_value=[]))),
     )
 
 
@@ -873,6 +875,14 @@ async def test_managed_overview_projects_each_thread_and_renders_summary(
         return [run_stub(RunStatus.RUNNING, "正在整理主任务证据", "run-main-1")]
 
     runs.list_for_sessions = runs_for  # type: ignore[method-assign]
+    from harness.core.events import RunEvent
+    async def result_events(_tenant: str, run_id: str, _after: int):
+        return [RunEvent(
+            event_id=f"{run_id}-result", tenant_id="tenant-a", run_id=run_id,
+            session_id="session-a", sequence=1, timestamp=stamp, type="message.delta",
+            payload={"text": "配套真实结果" if run_id == "run-extra-1" else "主任务当前结果"},
+        )]
+    service._events = cast(Any, SimpleNamespace(list_after=result_events))
     overview = await service.managed_overview(
         "tenant-a", "user-a", coordinator.objective_id
     )
@@ -880,7 +890,8 @@ async def test_managed_overview_projects_each_thread_and_renders_summary(
     rendered = service.render_managed_overview(overview)
     assert "纳管任务进展" in rendered
     assert "主任务" in rendered and "配套任务" in rendered
-    assert "已完成配套交付" in rendered and "正在整理主任务证据" in rendered
+    assert "配套真实结果" in rendered and "主任务当前结果" in rendered
+    assert "已完成配套交付" not in rendered and "正在整理主任务证据" not in rendered
 
 
 @pytest.mark.asyncio

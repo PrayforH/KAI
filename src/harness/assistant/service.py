@@ -19,6 +19,7 @@ from harness.application.agents import AgentService
 from harness.application.runs import RunService
 from harness.assistant.lifecycle import next_check
 from harness.assistant.models import (
+    AssistantInboxItem,
     DelegationMode,
     HandoverStatus,
     ManagedTask,
@@ -35,9 +36,10 @@ from harness.assistant.models import (
     SpecialistStatus,
 )
 from harness.assistant.permissions import pending_local_tools, require_local_tools
-from harness.assistant.repository import PostgresAssistantRepository
+from harness.assistant.repository import MANAGED_PROGRESS_EVENTS, PostgresAssistantRepository
 from harness.auth.service import AuthService
 from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
+from harness.core.events import RunEvent
 from harness.core.models import Run, RunStatus
 from harness.core.ports import EventRepository
 from harness.projects.service import ProjectService
@@ -136,12 +138,11 @@ class AssistantService:
             allowed = budget.max_new_tasks if budget is not None else None
             if allowed is None:
                 raise ConflictError("该职责未被授权在项目内新建任务")
-            if await self.repository.count_children(
-                tenant_id, user_id, parent_objective_id
-            ) >= allowed:
-                raise ConflictError(
-                    f"已达新建任务授权上限（{allowed}），请调整授权范围后再派发"
-                )
+            if (
+                await self.repository.count_children(tenant_id, user_id, parent_objective_id)
+                >= allowed
+            ):
+                raise ConflictError(f"已达新建任务授权上限（{allowed}），请调整授权范围后再派发")
         objective = await self.repository.create(
             Objective(
                 **brief.model_dump(),
@@ -167,6 +168,14 @@ class AssistantService:
                     userId=user_id,
                     threadId=managed_thread_id,
                     projectId=objective.project_id,
+                    role=(
+                        ManagedTaskRole.OBSERVE
+                        if objective.mode is DelegationMode.FOLLOW_ONLY
+                        else ManagedTaskRole.EXECUTE
+                    ),
+                    source=source,
+                    notifyOnProgress=objective.mode is DelegationMode.FOLLOW_ONLY,
+                    notifySince=now if objective.mode is DelegationMode.FOLLOW_ONLY else None,
                     createdAt=now,
                 )
             )
@@ -187,6 +196,7 @@ class AssistantService:
             summary = item.get("summary")
             parts.append(
                 f"{item.get('thread_id')}:{item.get('status')}:"
+                f"{item.get('event_sequence', 0)}:"
                 f"{(summary if isinstance(summary, str) else '')[:80]}"
             )
         signature = "|".join(parts)
@@ -237,18 +247,21 @@ class AssistantService:
                 record = await self._agui.get_thread_record(
                     tenant_id=tenant_id, user_id=user_id, thread_id=task.thread_id
                 )
-                runs = await self._runs.list_for_sessions(
-                    tenant_id, [binding.session_id], limit=5
-                )
+                runs = await self._runs.list_for_sessions(tenant_id, [binding.session_id], limit=5)
             except (NotFoundError, PermissionDeniedError, ConflictError):
                 continue
-            latest = next(
-                (run for run in runs if not run.status.is_terminal), None
-            ) or (runs[0] if runs else None)
+            latest = next((run for run in runs if not run.status.is_terminal), None) or (
+                runs[0] if runs else None
+            )
             if latest is None:
                 continue
-            raw_prompt = latest.input.get("prompt")
-            prompt = raw_prompt[:200] if isinstance(raw_prompt, str) else ""
+            run_events = await self._events.list_after(tenant_id, latest.run_id, 0)
+            answer = final_response_text(run_events)[:1_200]
+            summary = answer or (
+                "本次运行已结束，尚无可展示的结果摘要。"
+                if latest.status.is_terminal
+                else "任务正在执行，尚未产生结果。"
+            )
             title: str = record.title or task.thread_id
             duration_seconds = None
             if latest.status.is_terminal:
@@ -260,7 +273,8 @@ class AssistantService:
                     "thread_id": task.thread_id,
                     "title": title,
                     "status": latest.status.value,
-                    "summary": prompt,
+                    "summary": summary,
+                    "event_sequence": max((item.sequence for item in run_events), default=0),
                     "active": not latest.status.is_terminal,
                     "run_id": latest.run_id,
                     "duration_seconds": duration_seconds,
@@ -279,7 +293,13 @@ class AssistantService:
         return "\n".join(lines)
 
     async def bind_thread(
-        self, tenant_id: str, user_id: str, objective_id: str, thread_id: str
+        self,
+        tenant_id: str,
+        user_id: str,
+        objective_id: str,
+        thread_id: str,
+        *,
+        notify_on_progress: bool = False,
     ) -> None:
         """把既有线程纳入一个职责的纳管集合（observe 角色），依赖链服务端校验。"""
         objective = await self.repository.get(tenant_id, user_id, objective_id)
@@ -308,8 +328,52 @@ class AssistantService:
                 threadId=thread_id,
                 projectId=binding.project_id,
                 role=ManagedTaskRole.OBSERVE,
+                notifyOnProgress=notify_on_progress,
+                notifySince=datetime.now(UTC) if notify_on_progress else None,
                 createdAt=datetime.now(UTC),
             )
+        )
+
+    async def configure_managed_notifications(
+        self,
+        tenant_id: str,
+        user_id: str,
+        objective_id: str,
+        managed_id: str,
+        *,
+        enabled: bool,
+        expected_revision: int,
+    ) -> ManagedTask:
+        objective = await self.repository.get(tenant_id, user_id, objective_id)
+        await self.validate(tenant_id, user_id, objective)
+        task = next(
+            (
+                item
+                for item in await self.repository.managed_bindings(
+                    tenant_id, user_id, objective_id=objective_id
+                )
+                if item.managed_id == managed_id
+            ),
+            None,
+        )
+        if task is None:
+            raise NotFoundError("Managed task not found")
+        if enabled:
+            record = await self._agui.get_thread_record(
+                tenant_id=tenant_id, user_id=user_id, thread_id=task.thread_id
+            )
+            if getattr(record, "project_id", None):
+                await self._projects.get(
+                    tenant_id=tenant_id, user_id=user_id, project_id=record.project_id
+                )
+        return await self.repository.configure_managed_notifications(
+            tenant_id,
+            user_id,
+            objective_id,
+            managed_id,
+            enabled=enabled,
+            expected_revision=expected_revision,
+            now=datetime.now(UTC),
         )
 
     def set_cipher(self, cipher: Any) -> None:
@@ -336,9 +400,7 @@ class AssistantService:
         if cipher is None:
             raise ConflictError("凭据存储未配置")
         reference = f"specialist_credential_{uuid4().hex}"
-        ciphertext = cipher.encrypt(
-            tenant_id, user_id, reference, {"secret": SecretStr(secret)}
-        )
+        ciphertext = cipher.encrypt(tenant_id, user_id, reference, {"secret": SecretStr(secret)})
         await self.repository.save_credential_blob(
             tenant_id,
             user_id,
@@ -430,7 +492,78 @@ class AssistantService:
             "message": "当前没有进行中的执行；补充已入档，将进入下一次执行的上下文。",
         }
 
+    async def observe_run_event(self, event: RunEvent) -> None:
+        """Project an opted-in original task's facts without starting any work."""
+        if event.type not in MANAGED_PROGRESS_EVENTS:
+            return
+        targets = await self.repository.managed_event_targets(event)
+        run_events: list[RunEvent] | None = None
+        for task, objective in targets:
+            if event.timestamp < (task.notify_since or task.created_at):
+                continue
+            try:
+                await self.validate(task.tenant_id, task.user_id, objective)
+                record = await self._agui.get_thread_record(
+                    tenant_id=task.tenant_id, user_id=task.user_id, thread_id=task.thread_id
+                )
+                if getattr(record, "project_id", None):
+                    await self._projects.get(
+                        tenant_id=task.tenant_id, user_id=task.user_id, project_id=record.project_id
+                    )
+            except (NotFoundError, PermissionDeniedError):
+                # Leave the source event intact. No model, replay, or external send.
+                await self.repository.suspend_managed_notifications(task)
+                continue
+            if run_events is None:
+                run_events = await self._events.list_after(event.tenant_id, event.run_id, 0)
+            relevant = [item for item in run_events if item.type in MANAGED_PROGRESS_EVENTS]
+            if not relevant:
+                continue
+            latest = max(relevant, key=lambda item: item.sequence)
+            terminal = next(
+                (item for item in reversed(relevant) if item.type.startswith("run.")), None
+            )
+            kind = terminal.type.removeprefix("run.") if terminal else "artifact_ready"
+            summary = final_response_text(run_events)[:1_200] if terminal else ""
+            if not summary:
+                summary = (
+                    "本次运行已结束；工作目标是否完成请核对原任务。"
+                    if kind == "succeeded"
+                    else "成果已就绪，可在原任务预览和下载。"
+                    if kind == "artifact_ready"
+                    else f"本次运行状态：{kind}，请查看原任务记录。"
+                )
+            key = f"{task.managed_id}:{event.run_id}"
+            await self.repository.record_managed_notice(
+                task,
+                event,
+                AssistantInboxItem(
+                    itemId="managed_notice_" + hashlib.sha256(key.encode()).hexdigest(),
+                    objectiveId=task.objective_id,
+                    kind=kind,
+                    title=record.title or objective.title,
+                    content=summary,
+                    threadId=task.thread_id,
+                    runId=event.run_id,
+                    sourceEventId=latest.event_id,
+                    sourceSequence=latest.sequence,
+                    createdAt=latest.timestamp,
+                ),
+            )
+
     async def process_once(self) -> None:
+        # Reconcile missed event fan-out on the existing maintenance loop.
+        try:
+            async with asyncio.timeout(2.0):
+                for event in await self.repository.pending_managed_events(limit=25):
+                    try:
+                        await self.observe_run_event(event)
+                    except Exception:
+                        logger.exception("managed progress projection retry: %s", event.event_id)
+        except TimeoutError:
+            logger.warning(
+                "managed progress reconciliation deferred; execution maintenance continues"
+            )
         await self.repository.schedule_due(
             datetime.now(UTC), unviewed_pause_hours=self._unviewed_pause_hours
         )
@@ -476,9 +609,9 @@ class AssistantService:
                 # including a crash between successful submission and linking the run.
                 logger.exception("assistant execution retry: %s", execution.execution_id)
 
-    async def _usage_for(self, execution: ObjectiveExecution, run_id: str | None) -> tuple[
-        int | None, float | None
-    ]:
+    async def _usage_for(
+        self, execution: ObjectiveExecution, run_id: str | None
+    ) -> tuple[int | None, float | None]:
         """一次执行的真实用量：token 与费用（费用来自 micro-USD 账本）。
 
         配额服务未配置或账本没有该运行的记录时返回 (None, None)——调用方据此
@@ -558,14 +691,17 @@ class AssistantService:
                     try:
                         require_local_tools(specialist.config)
                         if specialist.status not in {
-                            SpecialistStatus.READY, SpecialistStatus.ACTIVE
+                            SpecialistStatus.READY,
+                            SpecialistStatus.ACTIVE,
                         }:
-                            return execution.model_copy(update={
-                                "status": ObjectiveExecutionStatus.FAILED,
-                                "error_code": "SpecialistNotReady",
-                                "summary": "助理未就绪或已暂停，未提交新的运行。",
-                                "finished_at": now,
-                            })
+                            return execution.model_copy(
+                                update={
+                                    "status": ObjectiveExecutionStatus.FAILED,
+                                    "error_code": "SpecialistNotReady",
+                                    "summary": "助理未就绪或已暂停，未提交新的运行。",
+                                    "finished_at": now,
+                                }
+                            )
                     except ConflictError as error:
                         return execution.model_copy(
                             update={
@@ -906,9 +1042,7 @@ class AssistantService:
         expected_revision: int,
     ) -> Specialist:
         """把一项既有职责挂到子助理名下（职责与子助理正交，可更换承接者）。"""
-        specialist = await self.repository.get_specialist(
-            tenant_id, user_id, specialist_id
-        )
+        specialist = await self.repository.get_specialist(tenant_id, user_id, specialist_id)
         if specialist.revision != expected_revision:
             raise ConflictError("子助理已更新，请刷新后重试")
         objective = await self.repository.get(tenant_id, user_id, objective_id)
@@ -931,9 +1065,7 @@ class AssistantService:
 
         试运行成功不等于"已启用持续运行"，状态仍是 ready，由用户显式启用。
         """
-        specialist = await self.repository.get_specialist(
-            tenant_id, user_id, specialist_id
-        )
+        specialist = await self.repository.get_specialist(tenant_id, user_id, specialist_id)
         if specialist.revision != expected_revision:
             raise ConflictError("Subsist 配置已变化，请刷新后重试")
         missing = _specialist_missing_config(specialist.config)
@@ -1066,9 +1198,7 @@ class AssistantService:
                 tenant_id,
                 user_id,
                 objective.objective_id,
-                trigger_key=(
-                    f"delegate-specialist:{handover.message_id}:{objective.objective_id}"
-                ),
+                trigger_key=(f"delegate-specialist:{handover.message_id}:{objective.objective_id}"),
                 now=datetime.now(UTC),
             )
         except ConflictError as error:

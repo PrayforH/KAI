@@ -95,6 +95,7 @@ export type ManagedPanel = {
   revision: number;
   budget: Record<string, unknown> | null;
   managed: Array<{
+    managedId?: string; notifyOnProgress?: boolean; notificationError?: string | null;
     threadId: string; role: "execute" | "observe"; projectId: string | null;
     dependsOnObjectiveId: string | null; progress: ManagedProgress | null;
   }>;

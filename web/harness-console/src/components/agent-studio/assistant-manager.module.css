@@ -93,3 +93,6 @@
   gap: 8px;
   font-size: 13px;
 }
+
+.manager .checkOption { display: flex; align-items: center; gap: 8px; }
+.manager .checkOption input { width: auto; padding: 0; }

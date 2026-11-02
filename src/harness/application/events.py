@@ -1,5 +1,8 @@
 """Ordered event persistence and fan-out."""
 
+import asyncio
+import logging
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -7,6 +10,8 @@ from harness.application.types import Clock, IdGenerator
 from harness.core.errors import ConflictError, EventSequenceConflictError
 from harness.core.events import RunEvent
 from harness.core.ports import EventBus, EventRepository
+
+logger = logging.getLogger(__name__)
 
 
 class TraceContext(Protocol):
@@ -47,7 +52,7 @@ class EventService:
                     raise ConflictError("outbox event identity has different content")
                 # Persistence may have succeeded before fan-out failed. Retry delivery
                 # with the same identity so subscribers can safely deduplicate it.
-                await self._bus.publish(existing)
+                await self._publish(existing)
                 return existing
             event = RunEvent(
                 event_id=event_id,
@@ -75,7 +80,7 @@ class EventService:
                 ):
                     continue
                 raise
-            await self._bus.publish(event)
+            await self._publish(event)
             return event
 
     def __init__(
@@ -92,6 +97,22 @@ class EventService:
         self._clock = clock
         self._id_generator = id_generator
         self._trace_context = trace_context
+        self._listeners: list[Callable[[RunEvent], Awaitable[None]]] = []
+
+    def add_persisted_listener(self, listener: Callable[[RunEvent], Awaitable[None]]) -> None:
+        """Small projections may consume durable events; they must be replayable."""
+        self._listeners.append(listener)
+
+    async def _publish(self, event: RunEvent) -> None:
+        for listener in self._listeners:
+            try:
+                async with asyncio.timeout(1.0):
+                    await listener(event)
+            except Exception:
+                # A projection failure cannot fail an already-persisted Run event.
+                # Its consumer must reconcile from PostgreSQL after interruption.
+                logger.exception("event projection deferred: %s", event.event_id)
+        await self._bus.publish(event)
 
     async def list_after(
         self,
@@ -179,5 +200,5 @@ class EventService:
             except EventSequenceConflictError:
                 continue
             break
-        await self._bus.publish(event)
+        await self._publish(event)
         return event

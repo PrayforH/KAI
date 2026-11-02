@@ -59,3 +59,15 @@ it("can be dismissed for the session", async () => {
   await act(async () => hide!.click());
   expect(host.querySelector(".assistant-progress-strip")).toBeNull();
 });
+
+it("distinguishes a ready artifact from delivery and keeps its original run", async () => {
+  fetcher.mockImplementation(async () => Response.json([{
+    ...notices[0], kind: "artifact_ready", runId: "run-original", content: "成果可预览下载",
+  }]));
+  await act(async () => root.render(<AssistantProgressStrip />));
+  await act(async () => host.querySelector<HTMLButtonElement>(".assistant-progress-toggle")!.click());
+  expect(host.querySelector(".assistant-progress-kind")?.textContent).toBe("成果已就绪");
+  expect(host.textContent).not.toContain("已交付");
+  const link = host.querySelector<HTMLAnchorElement>(".assistant-progress-link")!;
+  expect(new URL(link.href).searchParams.get("run")).toBe("run-original");
+});

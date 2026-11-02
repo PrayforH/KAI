@@ -1912,6 +1912,7 @@ def build_production_container(
         unviewed_pause_hours=settings.assistant_unviewed_pause_hours,
     )
     assistant.set_cipher(mcp_credential_service.cipher)
+    events.add_persisted_listener(assistant.observe_run_event)
     feishu_settings = FeishuSettings()
 
     async def channel_vision_route(tenant_id: str, configured_route: str = "") -> str:

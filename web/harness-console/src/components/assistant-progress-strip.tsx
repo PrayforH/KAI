@@ -6,7 +6,8 @@ import { assistantRequest, type Notice } from "../lib/assistant-client";
 import { CheckpointMeteringLine } from "./checkpoint-metering";
 
 const KIND_LABEL: Record<string, { label: string; tone: "done" | "working" | "attention" }> = {
-  succeeded: { label: "已交付", tone: "done" },
+  succeeded: { label: "本次执行完成", tone: "done" },
+  artifact_ready: { label: "成果已就绪", tone: "done" },
   failed: { label: "需要你处理", tone: "attention" },
   timed_out: { label: "需要你处理", tone: "attention" },
   rejected: { label: "需要你处理", tone: "attention" },
@@ -27,14 +28,18 @@ export function progressNoticeLink(
 ): { href: string; label: string; mode: "failure" | "thread" } | null {
   if (!notice.threadId) return null;
   const failure = FAILURE_KINDS.has(notice.kind);
-  const params = new URLSearchParams({ thread: notice.threadId });
+  const botThread = notice.threadId.startsWith("assistant_specialist_");
+  const params = new URLSearchParams(botThread
+    ? { bot: notice.threadId.slice("assistant_".length) }
+    : { thread: notice.threadId });
+  if (notice.runId) params.set("run", notice.runId);
   if (failure) {
     params.set("trace", "1");
     if (notice.runId) params.set("run", notice.runId);
     if (notice.executionId) params.set("checkpoint", `checkpoint_${notice.executionId}`);
   }
   return {
-    href: `/?${params.toString()}`,
+    href: `${botThread ? "/assistant" : "/"}?${params.toString()}`,
     label: failure ? "打开失败回放 →" : "打开原任务 →",
     mode: failure ? "failure" : "thread",
   };

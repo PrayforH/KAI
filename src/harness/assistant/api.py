@@ -10,6 +10,7 @@ from harness.api.dependencies import Identity, ensure_permission, require_identi
 from harness.assistant.models import (
     AssistantInboxItem,
     HandoverStatus,
+    ManagedTask,
     Objective,
     ObjectiveActionRequest,
     ObjectiveBrief,
@@ -115,8 +116,12 @@ async def update_objective_schedule(
     )
     await assistant.validate(identity.tenant_id, identity.user_id, brief)
     return await assistant.repository.update(
-        identity.tenant_id, identity.user_id, objective_id,
-        expected_revision=body.expected_revision, now=datetime.now(UTC), brief=brief,
+        identity.tenant_id,
+        identity.user_id,
+        objective_id,
+        expected_revision=body.expected_revision,
+        now=datetime.now(UTC),
+        brief=brief,
     )
 
 
@@ -165,17 +170,23 @@ async def execute(
         now=datetime.now(UTC),
     )
     if objective.specialist_id and execution.status in {
-        ObjectiveExecutionStatus.PENDING, ObjectiveExecutionStatus.RUNNING
+        ObjectiveExecutionStatus.PENDING,
+        ObjectiveExecutionStatus.RUNNING,
     }:
         for handover in await assistant.repository.handovers(
             identity.tenant_id, identity.user_id, specialist_id=objective.specialist_id
         ):
             if handover.objective_id == objective_id and handover.status in {
-                HandoverStatus.SENT, HandoverStatus.RECEIVED, HandoverStatus.PENDING_INPUT
+                HandoverStatus.SENT,
+                HandoverStatus.RECEIVED,
+                HandoverStatus.PENDING_INPUT,
             }:
                 await assistant.repository.update_handover(
-                    identity.tenant_id, identity.user_id, handover.handover_id,
-                    status=HandoverStatus.APPLIED, now=datetime.now(UTC),
+                    identity.tenant_id,
+                    identity.user_id,
+                    handover.handover_id,
+                    status=HandoverStatus.APPLIED,
+                    now=datetime.now(UTC),
                 )
     return execution
 
@@ -273,11 +284,7 @@ async def get_specialist(specialist_id: str, identity: Reader, assistant: Servic
         bindings = await assistant.repository.managed_bindings(
             identity.tenant_id, identity.user_id, objective_id=primary.objective_id
         )
-        thread_id = (
-            bindings[0].thread_id
-            if bindings
-            else f"assistant_{primary.objective_id}"
-        )
+        thread_id = bindings[0].thread_id if bindings else f"assistant_{primary.objective_id}"
     # 纯读：详情/编辑弹窗不算"查看"，不能在这里清掉 routinePausedReason。
     # 真正的查看走 POST /specialists/{id}/viewed（进入该 Bot 会话时调用一次）。
     return {
@@ -290,9 +297,11 @@ async def get_specialist(specialist_id: str, identity: Reader, assistant: Servic
                 "title": item.title,
                 "status": item.status.value,
                 "revision": item.revision,
-                "hasExecutions": bool(await assistant.repository.executions(
-                    identity.tenant_id, identity.user_id, item.objective_id
-                )),
+                "hasExecutions": bool(
+                    await assistant.repository.executions(
+                        identity.tenant_id, identity.user_id, item.objective_id
+                    )
+                ),
                 "schedule": item.schedule.model_dump(by_alias=True) if item.schedule else None,
             }
             for item in duties
@@ -402,20 +411,17 @@ class ManagedBindingRequest(StudioModel):
     depends_on_objective_id: str | None = Field(
         default=None, alias="dependsOnObjectiveId", max_length=128
     )
+    notify_on_progress: bool = Field(default=False, alias="notifyOnProgress")
 
 
 @router.get("/objectives/{objective_id}/managed")
 async def managed_overview(objective_id: str, identity: Reader, assistant: Service):
     """项目托管面板：纳管绑定 + 每个任务的进展与检查点（只读投影）。"""
-    objective = await assistant.repository.get(
-        identity.tenant_id, identity.user_id, objective_id
-    )
+    objective = await assistant.repository.get(identity.tenant_id, identity.user_id, objective_id)
     bindings = await assistant.repository.managed_bindings(
         identity.tenant_id, identity.user_id, objective_id=objective_id
     )
-    overview = await assistant.managed_overview(
-        identity.tenant_id, identity.user_id, objective_id
-    )
+    overview = await assistant.managed_overview(identity.tenant_id, identity.user_id, objective_id)
     by_thread = {str(item["thread_id"]): item for item in overview}
     # 检查点计量投影：run_id → 最新检查点的 tokens/cost/unknown_usage。
     checkpoints = await assistant.repository.checkpoints(
@@ -448,9 +454,7 @@ async def managed_overview(objective_id: str, identity: Reader, assistant: Servi
         run_key = str(run_id) if run_id else None
         item["metrics"] = metrics_by_run.get(run_key) if run_key else None
         item["checkpoint_id"] = checkpoint_ids_by_run.get(run_key) if run_key else None
-        item["checkpoint_summary"] = (
-            checkpoint_summaries_by_run.get(run_key) if run_key else None
-        )
+        item["checkpoint_summary"] = checkpoint_summaries_by_run.get(run_key) if run_key else None
     return {
         "objectiveId": objective.objective_id,
         "revision": objective.revision,
@@ -458,7 +462,10 @@ async def managed_overview(objective_id: str, identity: Reader, assistant: Servi
         "managed": [
             {
                 "threadId": task.thread_id,
+                "managedId": task.managed_id,
                 "role": task.role.value,
+                "notifyOnProgress": task.notify_on_progress,
+                "notificationError": task.notification_error,
                 "projectId": task.project_id,
                 "dependsOnObjectiveId": task.depends_on_objective_id,
                 "progress": by_thread.get(task.thread_id),
@@ -476,9 +483,36 @@ async def bind_managed_thread(
 ):
     """把一个既有线程纳入职责的纳管集合；依赖成环由服务端拒绝。"""
     await assistant.bind_thread(
-        identity.tenant_id, identity.user_id, objective_id, body.thread_id
+        identity.tenant_id,
+        identity.user_id,
+        objective_id,
+        body.thread_id,
+        notify_on_progress=body.notify_on_progress,
     )
     return {"objectiveId": objective_id, "threadId": body.thread_id, "bound": True}
+
+
+class ManagedNotificationRequest(StudioModel):
+    enabled: bool
+    expected_revision: int = Field(alias="expectedRevision", ge=1)
+
+
+@router.patch("/objectives/{objective_id}/managed/{managed_id}/notifications")
+async def configure_managed_notifications(
+    objective_id: str,
+    managed_id: str,
+    body: ManagedNotificationRequest,
+    identity: Writer,
+    assistant: Service,
+) -> ManagedTask:
+    return await assistant.configure_managed_notifications(
+        identity.tenant_id,
+        identity.user_id,
+        objective_id,
+        managed_id,
+        enabled=body.enabled,
+        expected_revision=body.expected_revision,
+    )
 
 
 class SpecialistTrialRequest(StudioModel):
@@ -518,9 +552,7 @@ async def trial_specialist(
 
 
 @router.get("/desktop/occupancy")
-async def desktop_occupancy(
-    identity: Reader, assistant: Service
-) -> dict[str, object]:
+async def desktop_occupancy(identity: Reader, assistant: Service) -> dict[str, object]:
     """共享桌面占用/排队的只读投影：谁在占用、等待者位置与原因（中文可读）。"""
     return await assistant.desktop_occupancy(identity.tenant_id, identity.user_id)
 

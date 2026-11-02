@@ -12,7 +12,7 @@ type Project = { projectId: string; name: string };
 const statusLabel = { active: "持续跟进", paused: "已暂停", completed: "已完成", cancelled: "已停止",
   pending: "等待执行", running: "执行中", succeeded: "执行成功", failed: "执行失败" };
 const specialistLabel = { draft: "待配置", needs_input: "待补充配置", validating: "验证中",
-  ready: "待启用", active: "运行中", paused: "已暂停", blocked: "受阻", archived: "已归档" };
+  ready: "可接单", active: "可接单", paused: "已暂停", blocked: "受阻", archived: "已归档" };
 const handoverLabel = { sent: "已发送", received: "已接收", applied: "已安排执行",
   executing: "执行中", pending_input: "待补充", failed: "失败" };
 // 运行中的子助理如果承接的职责都没有定时，实际只能手动执行：如实标注。
@@ -21,7 +21,7 @@ const specialistState = (specialist: Specialist, objectives: Objective[]) => {
   if (specialist.status !== "active") return base;
   const duties = objectives.filter((item) => item.specialistId === specialist.specialistId);
   const scheduled = duties.some((item) => Boolean(item.schedule));
-  return scheduled ? base : "已启用（职责未设定时）";
+  return scheduled ? `${base}（有周期职责）` : base;
 };
 const budgetFromForm = (form: FormData): Record<string, unknown> | null => {
   const number = (key: string) => {
@@ -69,6 +69,7 @@ export function AssistantManager() {
   const [tab, setTab] = useState<"objectives" | "inbox" | "specialists" | "managed">("objectives");
   const [panel, setPanel] = useState<ManagedPanel | null>(null);
   const [bindThread, setBindThread] = useState("");
+  const [notifyOnProgress, setNotifyOnProgress] = useState(true);
   const [panelRevision, setPanelRevision] = useState(0);
   const [specialists, setSpecialists] = useState<Specialist[]>([]);
   const [handovers, setHandovers] = useState<Handover[]>([]);
@@ -207,6 +208,18 @@ export function AssistantManager() {
         ) : (
           <Link href={`/?thread=${encodeURIComponent(task.threadId)}`}>打开原任务 →</Link>
         )}
+        {task.managedId && <div className={styles.actions}>
+          <span>{task.notifyOnProgress ? "有新结果时通知 · 不自动执行" : "进展通知未开启"}</span>
+          <button disabled={busy} onClick={() => void perform(async () => {
+            await assistantRequest(
+              `objectives/${selectedItem.objectiveId}/managed/${task.managedId}/notifications`,
+              "PATCH", { enabled: !task.notifyOnProgress, expectedRevision: selectedItem.revision },
+            );
+            setPanelRevision(value => value + 1);
+            setMessage(task.notifyOnProgress ? "已关闭这项关注的通知。" : "将通知此后出现的新结果，不重跑任务。");
+          })}>{task.notifyOnProgress ? "关闭进展通知" : "开启进展通知"}</button>
+        </div>}
+        {task.notificationError && <p role="alert">{task.notificationError}</p>}
         <CheckpointMeteringLine
           metrics={task.progress?.metrics}
           durationSeconds={task.progress?.duration_seconds}
@@ -216,12 +229,13 @@ export function AssistantManager() {
       {panel?.aggregate && <pre className={styles.aggregate}>{panel.aggregate}</pre>}
       <form onSubmit={event => { event.preventDefault();
         void perform(async () => {
-          await assistantRequest(`objectives/${selectedItem.objectiveId}/managed`, "POST", { threadId: bindThread.trim() });
+          await assistantRequest(`objectives/${selectedItem.objectiveId}/managed`, "POST", { threadId: bindThread.trim(), notifyOnProgress });
           setBindThread("");
           setPanelRevision((current) => current + 1);
           setMessage("已纳入该职责的关注范围（只读跟进）。");
         });
       }}><label>纳管一个既有任务（线程 ID）<input value={bindThread} onChange={e => setBindThread(e.target.value)} required maxLength={128} placeholder="例如 kai-personal-assistant-v1 之外的线程 ID" /></label>
+      <label className={styles.checkOption}><input type="checkbox" checked={notifyOnProgress} onChange={e => setNotifyOnProgress(e.target.checked)} />有新结果时通知我（只读关注，不自动执行）</label>
       <button disabled={busy || !bindThread.trim()}>纳管</button></form>
     </> : <p className={styles.empty}>选择一个职责，查看它的纳管任务、成果汇总与预算授权。</p>}</div></div>}
     {tab === "specialists" && <div className={styles.workspace}><div className={styles.list}>

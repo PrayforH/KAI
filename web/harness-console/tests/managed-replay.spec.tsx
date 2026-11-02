@@ -113,3 +113,24 @@ it("lands the deep link in the trace view focused on the failed run", () => {
   expect(trace).toContain("setSelectedId((failed ?? runNodes[0]).id)");
 });
 
+
+it("toggles a read-only event subscription with the objective revision and no execution", async () => {
+  const data = panel("succeeded");
+  Object.assign(data.managed[0], { managedId: "watch-1", notifyOnProgress: true });
+  await renderManaged(data);
+  const off = [...host.querySelectorAll("button")].find(button => button.textContent === "关闭进展通知");
+  expect(off).toBeTruthy();
+  const previousFetch = fetcher.getMockImplementation()!;
+  fetcher.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (init?.method === "PATCH") return Response.json({});
+    return previousFetch(url, init);
+  });
+  await act(async () => off!.click());
+  await flush();
+  const writes = fetcher.mock.calls.filter(([, init]) => init?.method === "PATCH");
+  expect(writes).toHaveLength(1);
+  expect(writes[0][0]).toBe("/api/studio/assistant/objectives/o1/managed/watch-1/notifications");
+  expect(JSON.parse(writes[0][1].body)).toEqual({ enabled: false, expectedRevision: 7 });
+  expect(fetcher.mock.calls.some(([url]) => String(url).endsWith("/executions") &&
+    fetcher.mock.calls.some(([other, init]) => other === url && init?.method === "POST"))).toBe(false);
+});

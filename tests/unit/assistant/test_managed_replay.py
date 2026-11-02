@@ -20,6 +20,7 @@ async def test_managed_overview_projects_checkpoint_context_for_failed_run() -> 
     )
     objective = SimpleNamespace(objective_id="obj-1", revision=3, budget=None)
     binding = SimpleNamespace(
+        managed_id="managed-1", notify_on_progress=False, notification_error=None,
         thread_id="thread-1",
         role=SimpleNamespace(value="execute"),
         project_id=None,

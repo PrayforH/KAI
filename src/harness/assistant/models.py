@@ -130,9 +130,7 @@ class Objective(ObjectiveBrief):
     # 由专职子助理承接的职责：定时能力属于职责，不属于头像或名称。
     specialist_id: str | None = Field(default=None, alias="specialistId", max_length=128)
     # 协调职责派生的子任务：用于按授权范围计数，不构成隐式子职责树。
-    parent_objective_id: str | None = Field(
-        default=None, alias="parentObjectiveId", max_length=128
-    )
+    parent_objective_id: str | None = Field(default=None, alias="parentObjectiveId", max_length=128)
     mode: DelegationMode = DelegationMode.AUTONOMOUS
     next_check_at: AwareDatetime | None = Field(default=None, alias="nextCheckAt")
     created_at: AwareDatetime = Field(alias="createdAt")
@@ -220,6 +218,8 @@ class AssistantInboxItem(StudioModel):
     duration_seconds: int | None = Field(default=None, alias="durationSeconds")
     created_at: AwareDatetime = Field(alias="createdAt")
     read_at: AwareDatetime | None = Field(default=None, alias="readAt")
+    source_event_id: str | None = Field(default=None, alias="sourceEventId")
+    source_sequence: int | None = Field(default=None, alias="sourceSequence", ge=1)
 
 
 class ManagedTask(StudioModel):
@@ -239,6 +239,10 @@ class ManagedTask(StudioModel):
     )
     role: ManagedTaskRole = ManagedTaskRole.EXECUTE
     source: ManagedTaskSource = ManagedTaskSource.API
+    # Explicit read-only subscription. Legacy bindings never opt in on read.
+    notify_on_progress: bool = Field(default=False, alias="notifyOnProgress")
+    notify_since: AwareDatetime | None = Field(default=None, alias="notifySince")
+    notification_error: str | None = Field(default=None, alias="notificationError")
     created_at: AwareDatetime = Field(alias="createdAt")
 
 

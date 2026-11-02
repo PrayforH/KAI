@@ -8,7 +8,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import DateTime, Select, and_, cast, func, literal, or_, select
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,7 +46,18 @@ from harness.assistant.storage import (
     SpecialistRow,
 )
 from harness.core.errors import ConflictError, NotFoundError
+from harness.core.events import RunEvent
 from harness.storage.database import SessionFactory
+from harness.storage.models import AguiThreadBindingRow, EventRow, RunRow, SessionRow
+
+MANAGED_PROGRESS_EVENTS = (
+    "run.succeeded",
+    "run.failed",
+    "run.rejected",
+    "run.timed_out",
+    "run.cancelled",
+    "artifact.ready",
+)
 
 _OPEN_EXECUTIONS = (
     ObjectiveExecutionStatus.PENDING.value,
@@ -373,16 +385,11 @@ class PostgresAssistantRepository:
                 )
                 if budget.max_tokens is not None and int(used_tokens or 0) >= budget.max_tokens:
                     raise ConflictError("预算已用尽：达到 token 上限，不再派发新执行")
-                if (
-                    budget.max_cost_usd is not None
-                    and float(used_cost or 0) >= budget.max_cost_usd
-                ):
+                if budget.max_cost_usd is not None and float(used_cost or 0) >= budget.max_cost_usd:
                     raise ConflictError("预算已用尽：达到费用上限，不再派发新执行")
                 if unknown and budget.max_tokens is not None:
                     # 有历史执行没有可靠计量：不能声称仍在额度内。
-                    raise ConflictError(
-                        "token 预算无法核实：存在未计量执行，请先核对用量再派发"
-                    )
+                    raise ConflictError("token 预算无法核实：存在未计量执行，请先核对用量再派发")
         notes = list(
             await session.scalars(
                 select(ObjectiveEventRow.content)
@@ -516,9 +523,7 @@ class PostgresAssistantRepository:
             return None
         specialist = Specialist.model_validate(specialist_row.payload)
         viewed_at = specialist.last_viewed_at
-        stale_seconds = (
-            (now - viewed_at).total_seconds() if viewed_at is not None else None
-        )
+        stale_seconds = (now - viewed_at).total_seconds() if viewed_at is not None else None
         if stale_seconds is not None and stale_seconds < pause_hours * 3600:
             if specialist.routine_paused_reason is not None:
                 # 查看过就放行：顺手清掉历史暂停标记（自愈）。
@@ -526,9 +531,7 @@ class PostgresAssistantRepository:
                     update={"routine_paused_reason": None, "updated_at": now}
                 ).model_dump(mode="json", by_alias=True)
             return None
-        hours = (
-            round(stale_seconds / 3600, 1) if stale_seconds is not None else None
-        )
+        hours = round(stale_seconds / 3600, 1) if stale_seconds is not None else None
         reason = {
             "reason": "unviewed",
             "hours_since_view": hours,
@@ -686,6 +689,267 @@ class PostgresAssistantRepository:
                 )
             return True
 
+    def _managed_event_query(self) -> Select[tuple[ManagedTaskRow, ObjectiveRow]]:
+        # Join the canonical Run/session owner, never trust a display summary or ID alone.
+        return (
+            select(ManagedTaskRow, ObjectiveRow)
+            .join(ObjectiveRow, ObjectiveRow.objective_id == ManagedTaskRow.objective_id)
+            .join(
+                AguiThreadBindingRow,
+                and_(
+                    AguiThreadBindingRow.tenant_id == ManagedTaskRow.tenant_id,
+                    AguiThreadBindingRow.user_id == ManagedTaskRow.user_id,
+                    AguiThreadBindingRow.thread_id == ManagedTaskRow.thread_id,
+                ),
+            )
+            .join(
+                RunRow,
+                and_(
+                    RunRow.tenant_id == AguiThreadBindingRow.tenant_id,
+                    or_(
+                        RunRow.session_id == AguiThreadBindingRow.session_id,
+                        cast(AguiThreadBindingRow.payload["previous_session_ids"], JSONB).contains(
+                            func.jsonb_build_array(RunRow.session_id)
+                        ),
+                    ),
+                ),
+            )
+            .join(
+                SessionRow,
+                and_(
+                    SessionRow.tenant_id == RunRow.tenant_id,
+                    SessionRow.user_id == AguiThreadBindingRow.user_id,
+                    SessionRow.session_id == RunRow.session_id,
+                ),
+            )
+            .outerjoin(
+                AssistantInboxRow,
+                and_(
+                    AssistantInboxRow.tenant_id == ManagedTaskRow.tenant_id,
+                    AssistantInboxRow.user_id == ManagedTaskRow.user_id,
+                    AssistantInboxRow.dedup_key
+                    == (
+                        literal("managed:")
+                        + ManagedTaskRow.managed_id
+                        + literal(":")
+                        + RunRow.run_id
+                    ),
+                ),
+            )
+            .where(
+                ObjectiveRow.status == ObjectiveStatus.ACTIVE.value,
+                ManagedTaskRow.payload["notifyOnProgress"].as_boolean().is_(True),
+                ObjectiveRow.payload["notificationMode"].as_string() != "none",
+                or_(
+                    ObjectiveRow.payload["endsAt"].as_string().is_(None),
+                    cast(ObjectiveRow.payload["endsAt"].as_string(), DateTime(timezone=True))
+                    > func.now(),
+                ),
+            )
+        )
+
+    async def managed_event_targets(self, event: RunEvent) -> list[tuple[ManagedTask, Objective]]:
+        async with self._context() as session:
+            rows = await session.execute(
+                self._managed_event_query().where(
+                    RunRow.tenant_id == event.tenant_id,
+                    RunRow.run_id == event.run_id,
+                    RunRow.session_id == event.session_id,
+                    or_(
+                        AssistantInboxRow.item_id.is_(None),
+                        AssistantInboxRow.payload["sourceSequence"].as_integer() < event.sequence,
+                    ),
+                )
+            )
+            return [
+                (ManagedTask.model_validate(task.payload), _objective(obj)) for task, obj in rows
+            ]
+
+    async def pending_managed_events(self, *, limit: int = 100) -> list[RunEvent]:
+        """Repair missed fan-out from the source log and each card's consumed sequence.
+
+        There is no global timestamp high-water mark: late commits in other Runs
+        remain discoverable. One card per binding/Run coalesces bursts.
+        """
+        query = (
+            self._managed_event_query()
+            .join(
+                EventRow,
+                and_(
+                    EventRow.tenant_id == RunRow.tenant_id,
+                    EventRow.run_id == RunRow.run_id,
+                ),
+            )
+            .where(
+                EventRow.payload["type"].as_string().in_(MANAGED_PROGRESS_EVENTS),
+                ~select(ObjectiveExecutionRow.execution_id)
+                .where(
+                    ObjectiveExecutionRow.objective_id == ManagedTaskRow.objective_id,
+                    ObjectiveExecutionRow.payload["runId"].as_string() == EventRow.run_id,
+                )
+                .exists(),
+                EventRow.timestamp
+                >= func.coalesce(
+                    cast(
+                        ManagedTaskRow.payload["notifySince"].as_string(), DateTime(timezone=True)
+                    ),
+                    ManagedTaskRow.created_at,
+                ),
+                or_(
+                    AssistantInboxRow.item_id.is_(None),
+                    AssistantInboxRow.payload["sourceSequence"].as_integer() < EventRow.sequence,
+                ),
+            )
+            .with_only_columns(EventRow)
+            .order_by(EventRow.timestamp, EventRow.sequence)
+            .limit(limit)
+        )
+        async with self._context() as session:
+            rows = await session.scalars(query)
+            return [RunEvent.model_validate(row.payload) for row in rows.unique()]
+
+    async def record_managed_notice(
+        self,
+        task: ManagedTask,
+        signal: RunEvent,
+        notice: AssistantInboxItem,
+    ) -> bool:
+        async with self._context(write=True) as session:
+            objective = _objective(
+                await self._owned(
+                    session, task.tenant_id, task.user_id, task.objective_id, lock=True
+                )
+            )
+            matched = (
+                await session.execute(
+                    self._managed_event_query()
+                    .where(
+                        ManagedTaskRow.managed_id == task.managed_id,
+                        RunRow.tenant_id == signal.tenant_id,
+                        RunRow.run_id == signal.run_id,
+                        RunRow.session_id == signal.session_id,
+                    )
+                    .with_for_update(of=ManagedTaskRow)
+                )
+            ).first()
+            if matched is None or objective.notification_mode.value == "none":
+                return False
+            current = ManagedTask.model_validate(matched[0].payload)
+            if signal.timestamp < (current.notify_since or current.created_at):
+                return False
+            # Objective executions already produce their own canonical notice.
+            if await session.scalar(
+                select(ObjectiveExecutionRow.execution_id)
+                .where(
+                    ObjectiveExecutionRow.objective_id == task.objective_id,
+                    ObjectiveExecutionRow.payload["runId"].as_string() == signal.run_id,
+                )
+                .limit(1)
+            ):
+                return False
+            key = f"managed:{task.managed_id}:{signal.run_id}"
+            row = await session.scalar(
+                select(AssistantInboxRow)
+                .where(
+                    AssistantInboxRow.tenant_id == task.tenant_id,
+                    AssistantInboxRow.user_id == task.user_id,
+                    AssistantInboxRow.dedup_key == key,
+                )
+                .with_for_update()
+            )
+            if row is not None:
+                previous = AssistantInboxItem.model_validate(row.payload)
+                if (previous.source_sequence or 0) >= (notice.source_sequence or 0):
+                    return False
+                # Only new material reopens the same card; duplicates do not reset read state.
+                row.payload = notice.model_dump(mode="json", by_alias=True)
+                row.created_at, row.read_at = notice.created_at, None
+            else:
+                session.add(
+                    AssistantInboxRow(
+                        item_id=notice.item_id,
+                        objective_id=task.objective_id,
+                        tenant_id=task.tenant_id,
+                        user_id=task.user_id,
+                        dedup_key=key,
+                        created_at=notice.created_at,
+                        payload=notice.model_dump(mode="json", by_alias=True),
+                    )
+                )
+            return True
+
+    async def configure_managed_notifications(
+        self,
+        tenant_id: str,
+        user_id: str,
+        objective_id: str,
+        managed_id: str,
+        *,
+        enabled: bool,
+        expected_revision: int,
+        now: datetime,
+    ) -> ManagedTask:
+        async with self._context(write=True) as session:
+            row = await self._owned(session, tenant_id, user_id, objective_id, lock=True)
+            current = _objective(row)
+            if current.revision != expected_revision:
+                raise ConflictError("事项已变更，请刷新后重试")
+            if enabled and current.status.terminal:
+                raise ConflictError("职责已结束，不能重新开启进展通知")
+            binding = await session.scalar(
+                select(ManagedTaskRow)
+                .where(
+                    ManagedTaskRow.managed_id == managed_id,
+                    ManagedTaskRow.tenant_id == tenant_id,
+                    ManagedTaskRow.user_id == user_id,
+                    ManagedTaskRow.objective_id == objective_id,
+                )
+                .with_for_update()
+            )
+            if binding is None:
+                raise NotFoundError("Managed task not found")
+            task = ManagedTask.model_validate(binding.payload)
+            updated = task.model_copy(
+                update={
+                    "notify_on_progress": enabled,
+                    "notification_error": None,
+                    "notify_since": now
+                    if enabled and not task.notify_on_progress
+                    else task.notify_since,
+                }
+            )
+            binding.payload = updated.model_dump(mode="json", by_alias=True)
+            _store(
+                row,
+                current.model_copy(update={"revision": current.revision + 1, "updated_at": now}),
+            )
+            _event(session, current, "managed_subscription", f"{managed_id}:{enabled}", now)
+            return updated
+
+    async def suspend_managed_notifications(self, task: ManagedTask) -> None:
+        """Access revocation disables this projection; it never restarts work."""
+        async with self._context(write=True) as session:
+            row = await session.scalar(
+                select(ManagedTaskRow)
+                .where(
+                    ManagedTaskRow.managed_id == task.managed_id,
+                    ManagedTaskRow.tenant_id == task.tenant_id,
+                    ManagedTaskRow.user_id == task.user_id,
+                )
+                .with_for_update()
+            )
+            if row is None:
+                return
+            current = ManagedTask.model_validate(row.payload)
+            if current.notify_since != task.notify_since:
+                return
+            row.payload = current.model_copy(
+                update={
+                    "notify_on_progress": False,
+                    "notification_error": "访问权限或关联资源已失效，请核对后重新开启关注。",
+                }
+            ).model_dump(mode="json", by_alias=True)
+
     async def bind_managed(self, task: ManagedTask) -> tuple[ManagedTask, bool]:
         """Bind an objective to an original thread; the execute slot is unique.
 
@@ -702,6 +966,10 @@ class PostgresAssistantRepository:
                     ManagedTaskRow.user_id == task.user_id,
                     ManagedTaskRow.thread_id == task.thread_id,
                     ManagedTaskRow.role == task.role.value,
+                    or_(
+                        ManagedTaskRow.role == "execute",
+                        ManagedTaskRow.objective_id == task.objective_id,
+                    ),
                 )
             )
             if existing is not None:
@@ -754,11 +1022,7 @@ class PostgresAssistantRepository:
                 task.tenant_id, task.user_id, objective_id=current
             )
             current = next(
-                (
-                    item.depends_on_objective_id
-                    for item in bindings
-                    if item.depends_on_objective_id
-                ),
+                (item.depends_on_objective_id for item in bindings if item.depends_on_objective_id),
                 None,
             )
 
@@ -772,9 +1036,7 @@ class PostgresAssistantRepository:
         now: datetime,
     ) -> Objective:
         async with self._context(write=True) as session:
-            row = await self._owned(
-                session, tenant_id, user_id, objective_id, lock=True
-            )
+            row = await self._owned(session, tenant_id, user_id, objective_id, lock=True)
             current = _objective(row)
             updated = Objective.model_validate(
                 current.model_dump()
@@ -958,9 +1220,7 @@ class PostgresAssistantRepository:
                 return Specialist.model_validate(existing.payload)
         return specialist
 
-    async def get_specialist(
-        self, tenant_id: str, user_id: str, specialist_id: str
-    ) -> Specialist:
+    async def get_specialist(self, tenant_id: str, user_id: str, specialist_id: str) -> Specialist:
         async with self._context() as session:
             row = await session.scalar(
                 select(SpecialistRow).where(
@@ -1165,9 +1425,7 @@ class PostgresAssistantRepository:
                     )
                 )
                 title = (
-                    str(objective_row.payload.get("title", ""))
-                    if objective_row is not None
-                    else ""
+                    str(objective_row.payload.get("title", "")) if objective_row is not None else ""
                 )
                 holder = {
                     "objective_id": holder_row.objective_id,
@@ -1181,8 +1439,7 @@ class PostgresAssistantRepository:
                 .join(
                     ObjectiveRow,
                     and_(
-                        ObjectiveRow.objective_id
-                        == ObjectiveExecutionRow.objective_id,
+                        ObjectiveRow.objective_id == ObjectiveExecutionRow.objective_id,
                         ObjectiveRow.tenant_id == ObjectiveExecutionRow.tenant_id,
                         ObjectiveRow.user_id == ObjectiveExecutionRow.user_id,
                     ),
@@ -1297,9 +1554,7 @@ class PostgresAssistantRepository:
             if row is not None:
                 row.released_at = now
 
-    async def active_desktop_turn(
-        self, tenant_id: str, user_id: str
-    ) -> DesktopTurn | None:
+    async def active_desktop_turn(self, tenant_id: str, user_id: str) -> DesktopTurn | None:
         async with self._context() as session:
             row = await session.scalar(
                 select(DesktopTurnRow).where(
