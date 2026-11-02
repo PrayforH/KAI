@@ -26,6 +26,12 @@ export function assistantCopy(text: string): string {
     .replace(/\bfollow_only\b/g, "只跟进").replace(/\bautonomous\b/g, "自动推进")
     .replace(/\[needs_input\]|\bpending_input\b/g, "等你补充信息")
     .replace(/\[ready\]/g, "可接单")
+    .replace(/\bsucceeded\b/g, "本次处理已结束")
+    .replace(/\bqueued\b/g, "已排队").replace(/\brunning\b/g, "正在处理")
+    .replace(/\bwaiting_approval\b/g, "等待你确认")
+    .replace(/\bfailed\b/g, "处理失败").replace(/\btimed_out\b/g, "处理超时")
+    .replace(/\brejected\b/g, "未获批准").replace(/\bcancelled\b/g, "已停止")
+    .replace(/\bschedule_minutes\b/g, "执行频率").replace(/\bnotify_channel\b/g, "通知方式")
     .replace(/\b(?:managed_id|objective_id|thread_id)\b\s*`?\s*[,，；;]/g, "")
     .replace(/\bobjective\s*状态(?:为|是)\s*active\b/g, "事项仍在跟进")
     .replace(/\bmode\s*=\s*/g, "")
@@ -76,4 +82,20 @@ export function assistantPresentation<T extends {kind: string; data: Record<stri
     data.columns = columns;
   }
   return {...item, data, title: item.title ? assistantCopy(item.title) : item.title, fallback_text: assistantCopy(item.fallback_text)};
+}
+
+/** Coordination uses short chat receipts; reports and business answers keep
+ * their own content. Never convert a failed or waiting reply into success. */
+export function compactAssistantReceipt(text: string): string {
+  const clean = assistantCopy(text);
+  const lines = clean.split(/\n+/).map(line => line.replace(/^\s*[-*\d.]+\s*/, "").trim())
+    .filter(line => line && !/^(?:只读查询结果|查询结果|转交结果)[：:]?$/.test(line));
+  if (!lines.length) return "";
+  const facts = lines.flatMap(line => line.match(/[^。！？]+[。！？]?/g) ?? [])
+    .map(line => line.trim()).filter(Boolean);
+  const lead = facts.slice(0, 2);
+  // Keep later failures and concrete input requests visible as well.
+  const attention = facts.slice(2).filter(line => problem.test(line));
+  const result = [...new Set([...lead, ...attention])];
+  return result.join("\n\n");
 }

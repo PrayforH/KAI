@@ -81,7 +81,7 @@ import { ApprovalCard, type ApprovalDetails } from "./approval-card";
 import { ArtifactCard, isImageArtifact, type ArtifactDetails } from "./artifact-list";
 import { AssistantResults } from "./assistant-results";
 import { assistantControlSummary } from "../lib/assistant-control-receipt";
-import { assistantCopy, assistantPresentation, compactAssistantProgress } from "../lib/assistant-copy";
+import { assistantCopy, assistantPresentation, compactAssistantProgress, compactAssistantReceipt } from "../lib/assistant-copy";
 import { AssistantNoticeSource } from "./assistant-notice-source";
 import { usePersonalAssistantEntry } from "./personal-assistant-context";
 import { replyWebImages } from "../lib/reply-web-images";
@@ -1611,8 +1611,11 @@ export function HarnessAssistantMessage() {
   const activeInputMessage = useAuiState(state => latestConversationInput(state.thread.messages)?.messageId);
   const showingInputCard = activeInputMessage === messageId && !conversationScope?.composerAccessory;
   const displayCandidate = controlSummary ? redact(controlSummary) : showingInputCard ? conversationInputIntro(copyText) : copyText;
+  const coordinationRequests = terminalActivity?.items.filter(item => item.event_type === "tool.request") ?? [];
+  const coordinationOnly = coordinationRequests.length > 0 && coordinationRequests.every(item =>
+    /^mcp__harness-builder__assistant_(?:resolve_target|manage_work|delegate_to_specialist|work_notifications|update_task|task_status|send_instruction|create_task)$/.test(String(item.metadata.name)));
   const displayedText = compactMain
-    ? (isNotice ? compactAssistantProgress : assistantCopy)(stripHarnessUiFences(displayCandidate, publishedBlocks))
+    ? (isNotice ? compactAssistantProgress : coordinationOnly && !showingInputCard ? compactAssistantReceipt : assistantCopy)(stripHarnessUiFences(displayCandidate, publishedBlocks))
     : displayCandidate;
   const actionText = showingInputCard ? (compactMain ? assistantCopy(conversationInputDisplay(copyText)) : conversationInputDisplay(copyText)) : displayedText;
   const draftScope = useContext(ComposerDraftContext);

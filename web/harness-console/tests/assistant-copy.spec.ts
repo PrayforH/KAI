@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {assistantCopy, assistantPresentation, compactAssistantProgress} from "../src/lib/assistant-copy";
+import {assistantCopy, assistantPresentation, compactAssistantProgress, compactAssistantReceipt} from "../src/lib/assistant-copy";
 const id = "objective_35ee45a4baa148159c64d47c3713efb4";
 describe("main assistant conversational copy", () => {
   it("removes coordination metadata but preserves the actual result", () => {
@@ -37,4 +37,12 @@ it("cleans labels of multiple links without changing their destinations", () => 
  const copy=assistantCopy(text);
  expect(copy.match(new RegExp(id,"g"))).toHaveLength(2);
  expect(copy).toBe(`[](/?thread=${id}) [](/?thread=${id})`);
+});
+
+it("reduces coordination narration while keeping later blockers", () => {
+ const text="结果通知已关闭。没有停止原任务。\n\n这是过去的运行记录，不是新结果。\n\n文件下载失败，请重新下载。";
+ const copy=compactAssistantReceipt(text);
+ expect(copy).toContain("结果通知已关闭");expect(copy).not.toContain("过去的运行记录");
+ expect(copy).toContain("文件下载失败");expect(copy).not.toContain("succeeded");
+ expect(assistantCopy("状态 succeeded，schedule_minutes 待补充。")).toBe("状态 本次处理已结束，执行频率 待补充。");
 });
