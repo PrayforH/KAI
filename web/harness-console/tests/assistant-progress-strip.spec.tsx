@@ -30,15 +30,15 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("collapses to a single floating line so it cannot push the composer out of view", async () => {
+it("collapses to a single header entry so it cannot push the composer out of view", async () => {
   await act(async () => root.render(<AssistantProgressStrip />));
   await act(async () => { await Promise.resolve(); });
   const strip = host.querySelector(".assistant-progress-strip");
   expect(strip).toBeTruthy();
   // 折叠态不渲染明细列表，只有一行摘要
   expect(host.querySelectorAll("li").length).toBe(0);
-  expect(strip?.textContent).toContain("后台任务进展");
-  expect(strip?.textContent).toContain("需要你处理");
+  expect(strip?.textContent).toContain("新进展");
+  expect(host.querySelector(".assistant-progress-toggle")?.getAttribute("aria-label")).toContain("需要你处理");
 });
 
 it("expands on demand and links back to the original task", async () => {
@@ -52,12 +52,14 @@ it("expands on demand and links back to the original task", async () => {
   expect(link?.getAttribute("href")).toBe("/?thread=assistant_o1");
 });
 
-it("can be dismissed for the session", async () => {
+it("closes the list while retaining its unread entry", async () => {
   await act(async () => root.render(<AssistantProgressStrip />));
   await act(async () => { await Promise.resolve(); });
+  await act(async () => host.querySelector<HTMLButtonElement>(".assistant-progress-toggle")!.click());
   const hide = host.querySelector<HTMLButtonElement>(".assistant-progress-hide");
   await act(async () => hide!.click());
-  expect(host.querySelector(".assistant-progress-strip")).toBeNull();
+  expect(host.querySelector("ul")).toBeNull();
+  expect(host.querySelector(".assistant-progress-toggle")).not.toBeNull();
 });
 
 it("distinguishes a ready artifact from delivery and keeps its original run", async () => {
@@ -122,7 +124,7 @@ it("filters read records before taking the six visible cards", async () => {
     notices[1],
   ]));
   await act(async () => root.render(<AssistantProgressStrip />));
-  expect(host.textContent).toContain("1 项进展");
+  expect(host.textContent).toContain("1 条新进展");
   await act(async () => host.querySelector<HTMLButtonElement>(".assistant-progress-toggle")!.click());
   expect(host.textContent).toContain("预算受限职责");
 });
@@ -147,4 +149,15 @@ it("does not resurrect an acknowledged card from an older in-flight poll", async
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("closes its header popover with Escape and restores focus without clearing unread results", async () => {
+  await act(async () => root.render(<AssistantProgressStrip />));
+  const toggle = host.querySelector<HTMLButtonElement>(".assistant-progress-toggle")!;
+  await act(async () => toggle.click());
+  expect(host.querySelector("ul")).not.toBeNull();
+  await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+  expect(host.querySelector("ul")).toBeNull();
+  expect(document.activeElement).toBe(toggle);
+  expect(toggle.textContent).toContain("2 条新进展");
 });

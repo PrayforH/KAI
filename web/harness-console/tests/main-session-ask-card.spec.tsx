@@ -1,3 +1,4 @@
+import { emitHandover } from "./helpers/handover";
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -97,15 +98,11 @@ async function flush(rounds = 10) {
 
 async function mountWithHandover() {
   await act(async () => {
-    root!.render(<HandoverInlineRows />);
+    root!.render(<HandoverInlineRows messageId="assistant-run-ui-test" />);
   });
   await flush(2);
   await act(async () => {
-    window.dispatchEvent(
-      new CustomEvent("kai:handover", {
-        detail: { specialist_id: specialistId, specialist_name: "休息提醒", status: "applied" },
-      }),
-    );
+    emitHandover({ specialist_id: specialistId, specialist_name: "休息提醒", status: "applied" });
   });
   await flush();
 }
@@ -171,4 +168,21 @@ describe("main session ask projection", () => {
     await mountWithHandover();
     expect(host.querySelector(".handover-ask-card")).toBeNull();
   });
+});
+
+it("keeps an actionable confirmation on its current source message without repeating it under old or unrelated answers", async () => {
+  await mountWithHandover();
+  await act(async () => {
+    emitHandover({ handover_id: "older-request", run_id: "run-old", specialist_id: specialistId,
+      specialist_name: "休息提醒", status: "applied", created_at: "2026-11-01T01:00:00Z", updated_at: "2026-11-03T01:00:00Z" });
+    root!.render(<HandoverInlineRows messageId="assistant-run-old" />);
+  });
+  await flush();
+  expect(host.textContent).toContain("已安排");
+  expect(host.querySelector(".handover-ask-card")).toBeNull();
+  await act(async () => root!.render(<HandoverInlineRows messageId="assistant-unrelated" />));
+  expect(host.textContent).toBe("");
+  await act(async () => root!.render(<HandoverInlineRows messageId="assistant-run-ui-test" />));
+  await flush();
+  expect(host.querySelector(".handover-ask-card")).not.toBeNull();
 });

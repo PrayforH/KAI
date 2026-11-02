@@ -1719,7 +1719,7 @@ export function HarnessAssistantMessage() {
         </>
       ) : null}
       {conversationScope?.afterMessage(messageId)}
-      {shouldShowHandoverRows(personalAssistant, assistantSurface, Boolean(assistantBot)) && isLast ? <HandoverInlineRows /> : null}
+      {shouldShowHandoverRows(personalAssistant, assistantSurface, Boolean(assistantBot)) ? <HandoverInlineRows messageId={messageId} liveRunId={isLast ? runView?.runId : undefined} /> : null}
     </AssistantMessage.Root>
     </PublishedBlocksProvider>
     </AnswerCitationProvider>

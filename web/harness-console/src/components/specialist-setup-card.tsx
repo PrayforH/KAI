@@ -116,30 +116,13 @@ export function SpecialistSetupCard({
   }
 
   if (justEnabled) {
-    return (
-      <div className="specialist-setup-card" data-state="enabled">
-        <p className="specialist-setup-done">本次交办已安排</p>
-        <p className="specialist-setup-hint">
-          结果以该任务的执行记录为准；不会因此建立定时任务。
-        </p>
-      </div>
-    );
+    return <p className="specialist-setup-done" role="status">本次交办已安排</p>;
   }
 
   const status = detail.specialist.status;
   if (!SETUP_STATUSES.has(status)) return null;
   if (detail.duties?.some(duty => duty.objectiveId === (objectiveId || detail.primaryObjectiveId) && duty.hasExecutions)) return null;
-  if (!detail.primaryObjectiveId) {
-    if (status === "ready") return null;
-    return (
-      <div className="specialist-setup-card" data-state="no-duty">
-        <p className="specialist-setup-title">可以直接和这个助理对话</p>
-        <p className="specialist-setup-hint">
-          它会在收到消息或明确交办后工作；定时规则可以为具体任务单独设置。
-        </p>
-      </div>
-    );
-  }
+  if (!detail.primaryObjectiveId) return null;
 
   return (
     <div className="specialist-setup-card" role="group" aria-label="补齐子助理配置">

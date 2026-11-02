@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { handoverStore, useHandoverNotices } from "../lib/handover-store";
+import { handoverStore, handoversForMessage, isLatestHandover, useHandoverNotices } from "../lib/handover-store";
 import { statusLead } from "../lib/handover-store";
 import { assistantRequest, type Specialist } from "../lib/assistant-client";
 import { pendingThreadAsk, submitThreadAnswer, type ThreadAsk } from "../lib/thread-answer";
@@ -297,21 +297,20 @@ function HandoverRequiredCredentials({ specialistId }: { specialistId: string })
  * 数据源：派活工具的 ui.handover 自定义事件（即时）+ 页面加载时的一次性
  * handovers 投影（刷新后仍在）；无轮询。
  */
-export function HandoverInlineRows() {
-  const notices = useHandoverNotices();
+export function HandoverInlineRows({ messageId, liveRunId }: { messageId: string; liveRunId?: string }) {
+  const allNotices = useHandoverNotices();
+  const notices = handoversForMessage(allNotices, messageId, liveRunId);
   useEffect(() => {
     void handoverStore.seed();
-    const onHandover = (event: Event) => handoverStore.ingest((event as CustomEvent).detail);
-    window.addEventListener("kai:handover", onHandover);
-    return () => window.removeEventListener("kai:handover", onHandover);
   }, []);
   if (!notices.length) return null;
   return (
     <div className="handover-inline" aria-label="转交状态">
       {notices.map((notice) => {
-        // 行态与真实配置对齐：内联保存成功、或该 Bot 早前已启用，都显示「已安排」。
+        const current = isLatestHandover(notice, allNotices);
+        // Only a confirmed execution settles this specific handover.
         const settled = () => {
-          handoverStore.markConfigured(notice.specialistId);
+          handoverStore.markConfigured(notice.handoverId);
           // rail 也立刻重拉，把该 bot 从「待启用」移到「在岗」。
           window.dispatchEvent(
             new CustomEvent("kai:specialists-changed", {
@@ -320,9 +319,8 @@ export function HandoverInlineRows() {
           );
         };
         return (
-        <div className="handover-inline-item" key={notice.specialistId}>
-        <details open={notice.status !== "applied"}>
-          <summary className="handover-inline-line">
+        <div className="handover-inline-item" key={notice.handoverId}>
+        <p className="handover-inline-line" role={notice.status === "failed" ? "alert" : undefined}>
             {/* 与 bot-rail 同判：软导航不重挂载页面，旧线程会盖住新 bot。 */}
             <a
               href={`/assistant?bot=${encodeURIComponent(notice.specialistId)}`}
@@ -334,11 +332,9 @@ export function HandoverInlineRows() {
               {statusLead(notice.status)}
               <span className="handover-inline-target">「{notice.specialistName}」</span>
             </a>
-            {notice.status === "applied" && <span className="handover-receipt-hint">查看回执</span>}
-          </summary>
-          <p className="handover-receipt-detail">已登记转交；实际执行和成果以原任务记录为准。</p>
-        </details>
-          {/* Actionable cards stay outside the quiet receipt, including a later revocation. */}
+        </p>
+          {/* Prompts belong to the latest request, never every historical receipt. */}
+          {current && <>
           <HandoverLocalToolPermissionCard
             specialistId={notice.specialistId}
             specialistName={notice.specialistName}
@@ -363,6 +359,7 @@ export function HandoverInlineRows() {
               onAlreadyActive={settled}
             />
           )}
+          </>}
         </div>
         );
       })}

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { HandoverInlineRows, shouldShowHandoverRows } from "../src/components/handover-row";
+import { emitHandover } from "./helpers/handover";
 import { handoverStore, statusLead } from "../src/lib/handover-store";
 
 const agentSource = readFileSync(
@@ -12,12 +13,12 @@ const agentSource = readFileSync(
 
 describe("handover inline rows", () => {
   it("renders a centered thin line per bot with a link into its conversation", () => {
-    handoverStore.ingest({
+    emitHandover({
       specialist_id: "specialist-1",
       specialist_name: "行业快报监控",
       status: "sent",
     });
-    const html = renderToStaticMarkup(<HandoverInlineRows />);
+    const html = renderToStaticMarkup(<HandoverInlineRows messageId="assistant-run-ui-test" />);
     expect(html).toContain("已发送给");
     expect(html).toContain("「行业快报监控」");
     expect(html).toContain('href="/assistant?bot=specialist-1"');
@@ -28,10 +29,8 @@ describe("handover inline rows", () => {
   });
 
   it("is scroll content inside the main assistant message, never a sticky top bar", () => {
-    // 挂在最后一条助手消息内（随流滚动）；旧置顶条组件不得回归。
-    expect(agentSource).toContain(
-      "{shouldShowHandoverRows(personalAssistant, assistantSurface, Boolean(assistantBot)) && isLast ? <HandoverInlineRows /> : null}",
-    );
+    // Each receipt stays inside its originating assistant message.
+    expect(agentSource).toContain("<HandoverInlineRows messageId={messageId}");
     expect(agentSource).not.toContain("HandoverStrip");
     const css = readFileSync(join(process.cwd(), "src/app/web-codex.css"), "utf8");
     expect(css).not.toMatch(/\.handover-inline[^-][^}]*position:\s*(sticky|fixed)/);
@@ -50,8 +49,8 @@ describe("handover inline rows", () => {
   it("maps statuses to Chinese leads and dedupes per bot", () => {
     expect(statusLead("sent")).toBe("已发送给");
     expect(statusLead("pending_input")).toBe("待补充 ·");
-    handoverStore.ingest({ specialist_id: "s2", specialist_name: "B", status: "sent" });
-    handoverStore.ingest({ specialist_id: "s2", specialist_name: "B2", status: "applied" });
+    emitHandover({ specialist_id: "s2", specialist_name: "B", status: "sent" });
+    emitHandover({ specialist_id: "s2", specialist_name: "B2", status: "applied" });
     const names = handoverStore.snapshot().filter((n) => n.specialistId === "s2");
     expect(names).toHaveLength(1);
     expect(names[0]?.specialistName).toBe("B2");

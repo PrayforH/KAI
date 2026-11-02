@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { assistantRequest, type Notice } from "../lib/assistant-client";
 import { CheckpointMeteringLine } from "./checkpoint-metering";
@@ -54,9 +54,26 @@ export function AssistantProgressStrip() {
   const [reading, setReading] = useState<ReadonlySet<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const receiptVersion = useRef(0);
-  // 默认收成一行浮标，不挤占对话高度；需要时再展开（对齐 bot 的悬浮交互）。
+  // Header entry only; background results never cover the conversation.
   const [expanded, setExpanded] = useState(false);
-  const [hidden, setHidden] = useState(false);
+  const panel = useRef<HTMLElement>(null);
+  const toggle = useRef<HTMLButtonElement>(null);
+  const listId = useId();
+  useEffect(() => {
+    if (!expanded) return;
+    const outside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !panel.current?.contains(event.target)) setExpanded(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setExpanded(false); toggle.current?.focus(); }
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [expanded]);
 
   const load = useCallback(async () => {
     const version = receiptVersion.current;
@@ -101,7 +118,7 @@ export function AssistantProgressStrip() {
   }, [load]);
 
   const visible = notices;
-  if (!visible.length || hidden) return null;
+  if (!visible.length) return null;
   const attention = visible.filter((item) => KIND_LABEL[item.kind]?.tone === "attention").length;
   const summary = [
     visible.length ? `${visible.length} 项进展` : "",
@@ -113,34 +130,39 @@ export function AssistantProgressStrip() {
 
   return (
     <aside
+      ref={panel}
       className="assistant-progress-strip"
       data-expanded={expanded ? "true" : "false"}
-      aria-label="后台任务进展"
+      aria-label="新进展"
     >
       <div className="assistant-progress-head">
         <button
           type="button"
+          ref={toggle}
           className="assistant-progress-toggle"
+          aria-controls={expanded ? listId : undefined}
           aria-expanded={expanded}
+          aria-label={`查看新进展：${summary}`}
           onClick={() => setExpanded((value) => !value)}
         >
           <span className="assistant-progress-dot" data-tone={attention ? "attention" : "done"} />
-          <span className="assistant-progress-summary">后台任务进展 · {summary}</span>
-          <span className="assistant-progress-chevron" aria-hidden="true">{expanded ? "收起" : "展开"}</span>
+          <span className="assistant-progress-summary">{visible.length} 条新进展{attention ? ` · ${attention} 待处理` : ""}</span>
+          <span className="assistant-progress-chevron" aria-hidden="true">{expanded ? "⌃" : "⌄"}</span>
         </button>
         <button
           type="button"
           className="assistant-progress-hide"
-          aria-label="收起后台任务进展浮标"
+          aria-label="关闭新进展列表"
           title="收起"
-          onClick={() => setHidden(true)}
+          hidden={!expanded}
+          onClick={() => setExpanded(false)}
         >
           ×
         </button>
       </div>
-      {error && <p role="alert">{error}</p>}
       {expanded && (
-      <ul>
+      <ul id={listId}>
+        {error && <li data-tone="attention"><p role="alert">{error}</p></li>}
         {shown.map((item) => {
           const tone = KIND_LABEL[item.kind]?.tone ?? "working";
           const link = progressNoticeLink(item);

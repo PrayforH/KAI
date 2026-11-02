@@ -52,6 +52,8 @@ class FakeGateway:
         self.handovers: list[Any] = []
         self.delegate_outcome: dict[str, Any] = {
             "handover_id": "handover-1",
+            "created_at": NOW.isoformat(),
+            "updated_at": NOW.isoformat(),
             "specialist_id": "specialist-1",
             "objective_id": "objective-9",
             "status": "pending_input",
@@ -728,6 +730,10 @@ async def test_delegate_emits_ui_handover_event_for_the_main_thread():
     assert captured and captured[0]["specialist_name"] == "行业快报监控"
     assert captured[0]["status"] == "pending_input"
     assert captured[0]["specialist_id"] == "specialist-1"
+    assert captured[0]["handover_id"] == "handover-1"
+    assert captured[0]["run_id"] == "run-1"
+    assert captured[0]["created_at"] == NOW.isoformat()
+    assert captured[0]["updated_at"] == NOW.isoformat()
 
 
 @pytest.mark.asyncio

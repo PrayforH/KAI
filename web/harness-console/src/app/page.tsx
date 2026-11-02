@@ -131,15 +131,18 @@ function SidebarExpandToggle({ onToggle }: { onToggle: () => void }) {
 
 function HeaderUtilities({
   computerControl,
+  notifications,
   taskRailOpen,
   onToggleTaskRail,
 }: {
   computerControl?: ReactNode;
+  notifications?: ReactNode;
   taskRailOpen: boolean;
   onToggleTaskRail: () => void;
 }) {
   return (
     <div className="header-utilities">
+      {notifications}
       {computerControl}
       <SidebarPanelToggle expanded={taskRailOpen} onToggle={onToggleTaskRail} />
     </div>
@@ -969,6 +972,7 @@ function AuthenticatedHome() {
               />}
             </div>
             <HeaderUtilities
+              notifications={personalAssistant ? <AssistantProgressStrip /> : undefined}
               computerControl={personalAssistant ? (
                 <>
                   <DesktopOccupancyChip />
@@ -1021,7 +1025,6 @@ function AuthenticatedHome() {
                   onReady={() => setBotRevision((current) => current + 1)}
                 />
               )}
-              {personalAssistant && <AssistantProgressStrip />}
               {versionSwitchError && <p role="alert">{versionSwitchError}</p>}
               {botParam && !bot?.threadId ? (
                 <div className="bot-empty-state">

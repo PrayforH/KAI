@@ -1241,7 +1241,7 @@ class AssistantService:
         if not created and handover.status is not HandoverStatus.SENT:
             # 重复转交按 message 幂等：回执不重建，职责不重复创建。
             return {
-                "handover_id": handover.handover_id,
+                **_handover_coordinates(handover),
                 "specialist_id": specialist.specialist_id,
                 "objective_id": handover.objective_id,
                 "status": handover.status.value,
@@ -1285,7 +1285,7 @@ class AssistantService:
                     now=datetime.now(UTC),
                 )
             return {
-                "handover_id": updated_handover.handover_id,
+                **_handover_coordinates(updated_handover),
                 "specialist_id": specialist.specialist_id,
                 "objective_id": objective.objective_id,
                 "status": updated_handover.status.value,
@@ -1310,7 +1310,7 @@ class AssistantService:
                 error,
             )
             return {
-                "handover_id": handover.handover_id,
+                **_handover_coordinates(updated_handover),
                 "specialist_id": specialist.specialist_id,
                 "objective_id": objective.objective_id,
                 "status": HandoverStatus.RECEIVED.value,
@@ -1318,7 +1318,7 @@ class AssistantService:
                 "created_specialist": created,
                 "error": str(error),
             }
-        await self.repository.update_handover(
+        handover = await self.repository.update_handover(
             tenant_id,
             user_id,
             handover.handover_id,
@@ -1326,7 +1326,7 @@ class AssistantService:
             now=datetime.now(UTC),
         )
         return {
-            "handover_id": handover.handover_id,
+            **_handover_coordinates(handover),
             "specialist_id": specialist.specialist_id,
             "objective_id": objective.objective_id,
             "status": HandoverStatus.APPLIED.value,
@@ -1335,6 +1335,14 @@ class AssistantService:
             "execution_id": execution.execution_id,
             "thread_id": execution.thread_id,
         }
+
+
+def _handover_coordinates(handover: SpecialistHandover) -> dict[str, str]:
+    return {
+        "handover_id": handover.handover_id,
+        "created_at": handover.created_at.isoformat(),
+        "updated_at": handover.updated_at.isoformat(),
+    }
 
 
 def _specialist_slug(name: str) -> str:

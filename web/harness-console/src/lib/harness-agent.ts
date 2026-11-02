@@ -13,6 +13,7 @@ import {
   type ActivityPatchOperation,
   activityStore,
 } from "./activity-store";
+import { handoverStore } from "./handover-store";
 import { liveResponseStore } from "./live-response-store";
 import { runStreamStore } from "./run-stream-store";
 import { runReuseStore } from "./run-reuse-store";
@@ -341,7 +342,7 @@ export class HarnessHttpAgent extends HttpAgent {
       onCustomEvent: async (params) => {
         if (options?.signal?.aborted) return;
         if (params.event.name === "ui.handover" && typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("kai:handover", { detail: params.event.value }));
+          handoverStore.ingest(params.event.value);
         }
         return subscriber?.onCustomEvent?.(params);
       },

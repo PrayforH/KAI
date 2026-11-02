@@ -429,6 +429,9 @@ def assistant_delegation_overlay(
                 await emit(
                     {
                         "handover_id": outcome["handover_id"],
+                        "run_id": run.run_id,
+                        "created_at": outcome.get("created_at"),
+                        "updated_at": outcome.get("updated_at"),
                         "specialist_id": outcome["specialist_id"],
                         "specialist_name": name,
                         "status": status,

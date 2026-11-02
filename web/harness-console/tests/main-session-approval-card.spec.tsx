@@ -1,3 +1,4 @@
+import { emitHandover } from "./helpers/handover";
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -103,15 +104,11 @@ async function flush(rounds = 12) {
 
 async function mountWithHandover() {
   await act(async () => {
-    root!.render(<HandoverInlineRows />);
+    root!.render(<HandoverInlineRows messageId="assistant-run-ui-test" />);
   });
   await flush(2);
   await act(async () => {
-    window.dispatchEvent(
-      new CustomEvent("kai:handover", {
-        detail: { specialist_id: specialistId, specialist_name: "行业快报监控", status: "applied" },
-      }),
-    );
+    emitHandover({ specialist_id: specialistId, specialist_name: "行业快报监控", status: "applied" });
   });
   await flush();
 }

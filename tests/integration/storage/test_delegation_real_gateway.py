@@ -492,6 +492,9 @@ async def test_delegate_to_specialist_creates_deduped_handover_and_objective(
         message_id="delegate-specialist:run-1:费用监控",
     )
     assert replay["handover_id"] == outcome["handover_id"]
+    stored = (await service.repository.handovers("tenant-a", "user-a"))[0]
+    assert outcome["created_at"] == replay["created_at"] == stored.created_at.isoformat()
+    assert outcome["updated_at"] == replay["updated_at"] == stored.updated_at.isoformat()
     assert await service.repository.list("tenant-a", "user-a") == objectives
 
 

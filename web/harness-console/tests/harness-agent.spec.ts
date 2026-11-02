@@ -709,3 +709,18 @@ it("clears the previous response before a default-id run reaches the network", a
   expect(observed?.messageId).toBeUndefined();
   liveResponseStore.clear();
 });
+
+it("projects a live handover to its server run without a global latest-message event", async () => {
+  const { handoverStore } = await import("../src/lib/handover-store");
+  vi.stubGlobal("window", {});
+  try {
+    const payload = { handover_id: "h-stream", run_id: "run-handover-stream", specialist_id: "stream-bot", specialist_name: "按需协同", status: "pending_input", created_at: "2026-11-02T01:00:00Z", updated_at: "2026-11-02T01:01:00Z" };
+    const agent = new HarnessHttpAgent({ url: "http://harness/v1/agui", threadId: "thread-handover-stream", fetch: async () => new Response([
+      { type: "RUN_STARTED", threadId: "thread-handover-stream", runId: "run-handover-stream" },
+      { type: "CUSTOM", name: "ui.handover", value: payload },
+      { type: "RUN_FINISHED", threadId: "thread-handover-stream", runId: "run-handover-stream" },
+    ].map(event => `data: ${JSON.stringify(event)}\n\n`).join(""), { headers: { "Content-Type": "text/event-stream" } }) });
+    await agent.runAgent({ runId: "run-handover-stream" });
+    expect(handoverStore.snapshot().find(x => x.handoverId === "h-stream")).toMatchObject({ sourceRunId: "run-handover-stream", status: "pending_input" });
+  } finally { vi.unstubAllGlobals(); }
+});
