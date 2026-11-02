@@ -1211,6 +1211,8 @@ class AssistantService:
         return await self.repository.update_specialist(
             tenant_id, user_id, specialist_id,
             expected_revision=expected_revision, config=config,
+            # 撤销时必须真正移除引用，否则 Bot 仍然拿得到这条资料。
+            config_remove=() if granted else (key,),
             now=datetime.now(UTC),
         )
 

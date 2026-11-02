@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import cast as type_cast
@@ -1368,6 +1368,7 @@ class PostgresAssistantRepository:
         *,
         expected_revision: int,
         config: dict[str, object] | None = None,
+        config_remove: Sequence[str] = (),
         status: SpecialistStatus | None = None,
         profile: dict[str, object] | None = None,
         now: datetime,
@@ -1393,6 +1394,9 @@ class PostgresAssistantRepository:
             if config is not None:
                 merged = dict(current.config)
                 merged.update(config)
+                # 撤销授权要真正移除引用：合并语义不会删除键。
+                for key in config_remove:
+                    merged.pop(key, None)
                 changes["config"] = merged
             if status is not None:
                 changes["status"] = status.value

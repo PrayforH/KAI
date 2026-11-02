@@ -68,9 +68,14 @@ def _service(rows=None, specialist=None):
     repo.get_specialist.side_effect = NotFoundError("missing") if specialist is None else None
     if specialist is not None:
         repo.get_specialist.return_value = specialist
-    repo.update_specialist.side_effect = lambda tenant, user, specialist_id, **kwargs: _specialist(
-        kwargs.get("config") or {}
-    )
+
+    def _apply(tenant, user, specialist_id, **kwargs):
+        config = dict(kwargs.get("config") or {})
+        for key in kwargs.get("config_remove") or ():
+            config.pop(key, None)
+        return _specialist(config)
+
+    repo.update_specialist.side_effect = _apply
     auth.profile.return_value = (SimpleNamespace(disabled=False), SimpleNamespace(role="member"))
     agui.get_binding.return_value = SimpleNamespace(session_id="session")
     service = AssistantService(
@@ -150,6 +155,8 @@ async def test_granting_writes_a_credential_ref_and_revoking_removes_it() -> Non
     await service.grant_vault_item(
         "t", "u", "specialist_a", item_id="vault_item_1", granted=False, expected_revision=1
     )
+    # 撤销必须真正移除引用：合并语义不会删键，得显式移除。
+    assert repo.update_specialist.await_args.kwargs["config_remove"] == ("credential_ref:行情网站",)
     config = repo.update_specialist.await_args.kwargs["config"]
     assert "credential_ref:行情网站" not in config
 
