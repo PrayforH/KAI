@@ -221,3 +221,38 @@ async def test_revoking_a_grant_retries_after_a_concurrent_edit() -> None:
     )
     await service.delete_vault_item("t", "u", "vault_item_1", confirm_title="行情网站")
     assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_authorized_credential_resolves_for_the_bot_that_was_granted() -> None:
+    """授权后按引用解析：值只在进程内给到要用它的工具，不经过接口。"""
+    from pydantic import SecretStr
+
+    from harness.studio.mcp_credential_store import McpCredentialCipher
+
+    cipher = McpCredentialCipher(SecretStr("test-key"))
+    service, repo = _service(rows=[_vault_row()], specialist=_specialist(
+        {"credential_ref:行情网站": "vault_abc"}))
+    service.set_cipher(cipher)
+    reference = "vault_abc"
+    ciphertext = cipher.encrypt("t", "u", reference, {"secret": SecretStr("s3cret-value")})
+    repo.get_credential_blob.return_value = SimpleNamespace(
+        reference=reference, ciphertext=ciphertext, created_at=datetime(2026, 11, 3, tzinfo=UTC))
+    value = await service.resolve_specialist_credential(
+        "t", "u", "specialist_a", name="行情网站")
+    assert value == "s3cret-value"
+
+
+@pytest.mark.asyncio
+async def test_resolving_a_revoked_or_deleted_credential_is_refused() -> None:
+    """撤销或资料被删后立刻拒用；旧引用给出明确原因而不是崩溃。"""
+    service, repo = _service(rows=[_vault_row()], specialist=_specialist({}))
+    with pytest.raises(ConflictError):
+        await service.resolve_specialist_credential("t", "u", "specialist_a", name="行情网站")
+    repo.get_credential_blob.assert_not_called()
+
+    service, repo = _service(rows=[_vault_row()], specialist=_specialist(
+        {"credential_ref:行情网站": "vault_abc"}))
+    repo.get_credential_blob.return_value = None
+    with pytest.raises(ConflictError):
+        await service.resolve_specialist_credential("t", "u", "specialist_a", name="行情网站")

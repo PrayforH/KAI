@@ -1598,6 +1598,19 @@ class PostgresAssistantRepository:
             await session.delete(row)
         return True
 
+    async def get_credential_blob(
+        self, tenant_id: str, user_id: str, reference: str
+    ) -> SpecialistCredentialRow | None:
+        """按引用取回密文；只有已授权的运行时才会走到这里。"""
+        async with self._context() as session:
+            return await session.scalar(
+                select(SpecialistCredentialRow).where(
+                    SpecialistCredentialRow.tenant_id == tenant_id,
+                    SpecialistCredentialRow.user_id == user_id,
+                    SpecialistCredentialRow.reference == reference,
+                )
+            )
+
     async def delete_credential_blob(
         self, tenant_id: str, user_id: str, reference: str
     ) -> bool:

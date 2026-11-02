@@ -65,6 +65,7 @@ import { HandoverInlineRows, shouldShowHandoverRows } from "./handover-row";
 import { AssistantMentionReceipts, MentionChips } from "./assistant-mention-bar";
 import {
   MENTION_PREFIX,
+  deliverMentions,
   mentionIdempotencyKey,
   useMentionableAssistants,
   type MentionedAssistant,
@@ -691,45 +692,34 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     const key = mentionKeyRef.current ?? mentionIdempotencyKey();
     mentionKeyRef.current = key;
     const text = composerText.trim();
-    const delivered: string[] = [];
-    const failed: Array<{ id: string; reason: string }> = [];
-    for (const bot of mentions) {
-      try {
-        const detail = await assistantRequest<{
-          specialist: { name: string };
-          threadId: string | null;
-          agentName: string;
-          agentVersion: string;
-        }>(`specialists/${encodeURIComponent(bot.specialistId)}`);
-        if (!detail.threadId) throw new Error(`${bot.name} 还没有可接收消息的会话`);
-        await submitThreadAnswer({
-          threadId: detail.threadId,
-          agentName: detail.agentName,
-          agentVersion: detail.agentVersion,
-          text,
-        });
-        const receipt = await assistantRequest<{ handoverId: string }>(
-          `specialists/${encodeURIComponent(bot.specialistId)}/messages`,
-          "POST",
-          { text },
-          key,
-        );
-        handoverStore.ingestMention({
-          handoverId: receipt.handoverId,
-          specialistId: bot.specialistId,
-          specialistName: detail.specialist.name || bot.name,
-        });
-        delivered.push(bot.specialistId);
-      } catch (error) {
-        // 多目标时一个失败不阻断其余：已送达的照常发回执，失败的留在提及里可重试。
-        failed.push({
-          id: bot.specialistId,
-          reason: error instanceof Error ? error.message : "发送失败",
-        });
-      }
-    }
+    const { delivered, failed } = await deliverMentions(mentions, text, async (bot, body) => {
+      const detail = await assistantRequest<{
+        specialist: { name: string };
+        threadId: string | null;
+        agentName: string;
+        agentVersion: string;
+      }>(`specialists/${encodeURIComponent(bot.specialistId)}`);
+      if (!detail.threadId) throw new Error(`${bot.name} 还没有可接收消息的会话`);
+      await submitThreadAnswer({
+        threadId: detail.threadId,
+        agentName: detail.agentName,
+        agentVersion: detail.agentVersion,
+        text: body,
+      });
+      const receipt = await assistantRequest<{ handoverId: string }>(
+        `specialists/${encodeURIComponent(bot.specialistId)}/messages`,
+        "POST",
+        { text: body },
+        key,
+      );
+      handoverStore.ingestMention({
+        handoverId: receipt.handoverId,
+        specialistId: bot.specialistId,
+        specialistName: detail.specialist.name || bot.name,
+      });
+    });
     if (failed.length) {
-      setMentions((current) => current.filter((item) => failed.some((entry) => entry.id === item.specialistId)));
+      setMentions((current) => current.filter((item) => failed.some((entry) => entry.specialistId === item.specialistId)));
       setInputError(
         failed.map((entry) => `${entry.reason}`).join("\n") +
         (delivered.length ? `\n已送达 ${delivered.length} 个助理。` : ""),
@@ -739,6 +729,9 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       mentionKeyRef.current = null;
       setMentions([]);
       aui.composer().setText("");
+      // 消息已经投给被 @ 的助理：当前会话里的引用就此作废，
+      // 不能在下一条消息里又挂上那条被引用的内容。
+      replyScope?.cancelReply();
       onSubmitted?.();
     } else if (delivered.length) {
       aui.composer().setText("");

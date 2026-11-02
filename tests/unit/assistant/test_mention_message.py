@@ -112,3 +112,15 @@ async def test_mention_to_a_paused_bot_is_refused() -> None:
             "t", "u", "specialist_a", text="在吗", idempotency_key="key-12345678"
         )
     repo.record_handover.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_mention_to_another_users_bot_is_not_found() -> None:
+    """跨用户 ID：别人的 Bot 既不能投递，也不能留下回执。"""
+    service, repo = _service()
+    repo.get_specialist.side_effect = NotFoundError("missing")
+    with pytest.raises(NotFoundError):
+        await service.record_mention_handover(
+            "t", "u", "specialist_other_user", text="在吗", idempotency_key="key-12345678"
+        )
+    repo.record_handover.assert_not_called()

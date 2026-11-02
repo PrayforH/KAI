@@ -1228,6 +1228,41 @@ class AssistantService:
                         tenant_id, user_id, specialist.specialist_id
                     )
 
+    async def resolve_specialist_credential(
+        self, tenant_id: str, user_id: str, specialist_id: str, *, name: str
+    ) -> str:
+        """按授权解析一条凭据：只在进程内交给要用它的工具。
+
+        授权来自 `specialist.config` 的 `credential_ref:<名称>`。撤销或资料被删后
+        这里立刻拒用：引用指向的密文不存在时给出「请重新授权」，而不是让运行崩掉。
+        值不会出现在任何 API 响应、模型上下文、RunEvent 或日志里。
+        """
+        from harness.studio.mcp_credential_store import StoredMcpCredential
+
+        specialist = await self.repository.get_specialist(tenant_id, user_id, specialist_id)
+        reference = specialist.config.get(f"credential_ref:{name}")
+        if not isinstance(reference, str) or not reference:
+            raise ConflictError(f"「{name}」还没有授权给这个 Bot")
+        row = await self.repository.get_credential_blob(tenant_id, user_id, reference)
+        if row is None:
+            raise ConflictError(f"「{name}」的资料已被删除或收回，请重新授权")
+        if self._cipher is None:
+            raise ConflictError("凭据存储未配置")
+        values = self._cipher.decrypt(StoredMcpCredential(
+            tenant_id=tenant_id,
+            owner_user_id=user_id,
+            reference=reference,
+            revision=1,
+            key_names=("secret",),
+            ciphertext=row.ciphertext,
+            updated_by=user_id,
+            updated_at=row.created_at,
+        ))
+        secret = values.get("secret")
+        if secret is None:
+            raise ConflictError(f"「{name}」的资料已不可用，请重新授权")
+        return secret.get_secret_value()
+
     async def grant_vault_item(
         self, tenant_id: str, user_id: str, specialist_id: str, *,
         item_id: str, granted: bool, expected_revision: int,
