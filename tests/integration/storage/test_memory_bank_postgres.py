@@ -511,3 +511,141 @@ async def test_extraction_on_a_duty_thread_scopes_to_the_specialist(
         assert job is not None
         # 写侧 scope 与读侧（MemoryBankGateway scope=specialist:{slug}）一致。
         assert job.agent_name == "specialist:zhs-scope-test"
+
+
+@pytest.mark.asyncio
+async def test_bot_conversation_threads_resolve_the_specialist_scope_directly(
+    memory_database: SessionFactory,
+) -> None:
+    """Bot 会话线程 assistant_specialist_<id> 没有 ObjectiveRow，也要落 specialist:{slug}。"""
+    import json
+
+    import httpx
+    from pydantic import SecretStr
+    from sqlalchemy import select
+
+    from harness.assistant.models import Specialist, SpecialistStatus
+    from harness.assistant.storage import SpecialistRow
+    from harness.core.models import Run, RunStatus, Session
+    from harness.memory_bank.extraction import MemoryExtractor
+    from harness.memory_bank.processing import MemoryProcessingController
+    from harness.storage.models import (
+        AguiThreadBindingRow,
+        MemoryExtractionJobRow,
+        RunRow,
+        SessionRow,
+    )
+
+    bot_thread = "assistant_specialist_bot-scope-1"
+    bot_session = "session_bot_scope_1"
+    specialist = Specialist.model_validate(
+        {
+            "specialistId": "specialist_bot-scope-1",
+            "tenantId": "tenant-a",
+            "userId": "user-a",
+            "name": "记忆验收Bot",
+            "slug": "mem-accept-bot",
+            "agentName": "lead-agent",
+            "agentVersion": "1",
+            "status": SpecialistStatus.ACTIVE.value,
+            "createdAt": NOW.isoformat(),
+            "updatedAt": NOW.isoformat(),
+        }
+    )
+    run = Run(
+        tenant_id="tenant-a",
+        run_id="run-scope-bot-1",
+        session_id=bot_session,
+        status=RunStatus.SUCCEEDED,
+        idempotency_key="scope-bot-test",
+        created_at=NOW,
+        updated_at=NOW,
+        input={"prompt": "记住交付目录"},
+    )
+    session = Session(
+        tenant_id="tenant-a",
+        session_id=bot_session,
+        user_id="user-a",
+        agent_name="lead-agent",
+        agent_version="1",
+        created_at=NOW,
+    )
+    async with memory_database() as db:
+        db.add(
+            SessionRow(
+                tenant_id=session.tenant_id,
+                session_id=session.session_id,
+                user_id=session.user_id,
+                payload=session.model_dump(mode="json"),
+            )
+        )
+        db.add(
+            RunRow(
+                tenant_id=run.tenant_id,
+                run_id=run.run_id,
+                session_id=run.session_id,
+                idempotency_key="scope-bot-test",
+                status="succeeded",
+                fencing_token=0,
+                updated_at=NOW,
+                payload=run.model_dump(mode="json"),
+            )
+        )
+        db.add(
+            AguiThreadBindingRow(
+                tenant_id="tenant-a",
+                user_id="user-a",
+                thread_id=bot_thread,
+                session_id=bot_session,
+                payload={},
+            )
+        )
+        db.add(
+            SpecialistRow(
+                specialist_id=specialist.specialist_id,
+                tenant_id="tenant-a",
+                user_id="user-a",
+                slug=specialist.slug,
+                status=specialist.status.value,
+                revision=1,
+                created_at=NOW,
+                updated_at=NOW,
+                payload=specialist.model_dump(mode="json", by_alias=True),
+            )
+        )
+        await db.commit()
+
+    async def handler(request):
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": json.dumps({"candidates": []})}}]},
+        )
+
+    extractor = MemoryExtractor(
+        "http://test/v1", SecretStr("test"), "chat", transport=httpx.MockTransport(handler)
+    )
+    bank = MemoryBankService(PostgresMemoryBankRepository(memory_database))
+    # 读侧同判：Bot 会话的 scoped_identity 也落在 specialist:{slug}。
+    scoped = await bank.scoped_identity(
+        ExecutionIdentity(
+            tenant_id="tenant-a",
+            user_id="user-a",
+            project_id="lead-agent",
+            session_id=bot_session,
+            run_id=run.run_id,
+            agent_name="lead-agent",
+            agent_version="1",
+        )
+    )
+    assert scoped.agent_name == "specialist:mem-accept-bot"
+    # 写侧（提取入队）同判。
+    controller = MemoryProcessingController(memory_database, bank, extractor, since=NOW)
+    assert await controller.process_once() == 1
+    async with memory_database() as db:
+        job = await db.scalar(
+            select(MemoryExtractionJobRow).where(
+                MemoryExtractionJobRow.run_id == run.run_id
+            )
+        )
+        assert job is not None
+        assert job.agent_name == "specialist:mem-accept-bot"
