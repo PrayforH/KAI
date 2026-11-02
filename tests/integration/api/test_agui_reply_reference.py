@@ -8,6 +8,7 @@ from httpx import ASGITransport, AsyncClient
 
 from harness.api.app import create_memory_app
 from harness.api.dependencies import ApiContainer
+from harness.assistant.conversation import PersonalConversation
 from tests.integration.api.test_agui_history_pagination import (
     FIXTURE_MANIFEST,
     HEADERS,
@@ -47,6 +48,37 @@ class _Thread:
         await self._container.worker.execute("tenant-a", creation.run.run_id)
         self._prompts.append(prompt)
         return creation.run.run_id
+
+
+@pytest.mark.asyncio
+async def test_channel_result_followup_reuses_real_original_thread_and_history() -> None:
+    app = create_memory_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        container = app.state.container
+        original = _Thread(container, "original-report")
+        run_id = await original.send("original report")
+        conversation = PersonalConversation(
+            agui=container.agui, runs=container.runs,
+            agents=container.agents, events=container.events,
+        )
+        reference = await conversation.result_reference("tenant-a", "user-1", run_id=run_id)
+        assert reference is not None and reference["threadId"] == "original-report"
+        followup = await conversation.submit(
+            "tenant-a", "user-1", "channel-followup", "append budget", reply_to=reference
+        )
+        await container.worker.execute("tenant-a", followup.run_id)
+        history = await client.get(
+            "/v1/agui/threads/original-report/history?limit=100", headers=HEADERS
+        )
+        assert history.status_code == 200
+        body = history.json()
+        assert body["replies"][f"user-{followup.run_id}"]["messageId"] == reference["messageId"]
+        assert "append budget" in str(body["messages"])
+        recovered = await conversation.submit(
+            "tenant-a", "user-1", "channel-followup", "append budget", reply_to=reference
+        )
+        assert recovered.run_id == followup.run_id
 
 
 @pytest.mark.asyncio

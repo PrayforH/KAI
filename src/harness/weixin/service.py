@@ -401,6 +401,10 @@ class WeixinService:
                     if quoted_id
                     else None
                 )
+                # Our sent client IDs can be echoed by a native quote. Keep that
+                # exact identifier; hashing it as an inbound ID loses its owner.
+                if quoted_id.startswith("kai-wx-"):
+                    reply_to_key = "weixin-reply-" + quoted_id.removeprefix("kai-wx-")
                 await s.execute(
                     insert(Message)
                     .values(
@@ -581,9 +585,33 @@ class WeixinService:
                     if not row.run_id and row.reply_to_key:
                         # 引用映射不到内部消息时保持为空：回复里说明无法定位，
                         # 而不是凭"最近一条"猜目标。
-                        reply_to = await self.conversation.reply_reference_by_key(
-                            tenant, user, key=row.reply_to_key
-                        )
+                        if row.reply_to_key.startswith("weixin-reply-"):
+                            original = await s.scalar(
+                                select(Message).where(
+                                    Message.tenant_id == tenant,
+                                    Message.user_id == user,
+                                    Message.generation == row.generation,
+                                    Message.message_id == row.reply_to_key.removeprefix(
+                                        "weixin-reply-"
+                                    ),
+                                    Message.status == "done",
+                                )
+                            )
+                            if original and original.run_id:
+                                reply_to = await self.conversation.result_reference(
+                                    tenant, user, run_id=original.run_id
+                                )
+                        else:
+                            reply_to = await self.conversation.reply_reference_by_key(
+                                tenant, user, key=row.reply_to_key
+                            )
+                        if reply_to is None:
+                            row.reply = (
+                                "无法定位被引用的原任务，"
+                                "请提供任务编号或在网页打开原任务后继续。"
+                            )
+                            row.status = "ready"
+                            return True
                     if row.run_id:
                         run = await self.conversation.runs.get(tenant, row.run_id)
                     elif prepared:
@@ -765,7 +793,7 @@ def _quoted_message_id(msg: dict[str, Any]) -> str:
         if not isinstance(holder, dict):
             continue
         fields = cast(dict[str, object], holder)
-        for name in ("message_id", "msg_id"):
+        for name in ("message_id", "msg_id", "client_id"):
             value = fields.get(name)
             if isinstance(value, str) and value:
                 return value

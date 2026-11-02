@@ -61,6 +61,7 @@ async def row(worker):
 @pytest.mark.asyncio
 async def test_durable_upload_and_send_are_idempotent_and_do_not_rerun(database):
     worker, artifacts, transport = setup(database)
+    transport.send.return_value = "om-file-receipt"
     await enqueue(worker)
     await enqueue(worker)
     assert await worker.deliver_once()
@@ -70,6 +71,7 @@ async def test_durable_upload_and_send_are_idempotent_and_do_not_rerun(database)
     restarted = ChannelFiles(worker.sessions, artifacts, worker.cipher, transport)
     assert await restarted.deliver_once()
     assert (await row(worker)).status == "sent"
+    assert (await row(worker)).message_id == "om-file-receipt"
     assert not await restarted.deliver_once()
     transport.upload.assert_awaited_once()
     transport.send.assert_awaited_once_with(

@@ -11,12 +11,35 @@ from harness.assistant.models import (
     ObjectiveExecutionStatus,
     ObjectiveSchedule,
     ObjectiveStatus,
+    Specialist,
 )
 from harness.assistant.repository import PostgresAssistantRepository
 from harness.core.errors import ConflictError, NotFoundError
 from tests.integration.storage.conftest import DatabaseFixture
 
 NOW = datetime(2026, 10, 22, 12, tzinfo=UTC)
+
+
+@pytest.mark.asyncio
+async def test_declared_capabilities_gate_durable_intent_creation(database: DatabaseFixture):
+    repo = PostgresAssistantRepository(database[1])
+    bot = await repo.create_specialist(Specialist(
+        specialistId="bot", tenantId="tenant-a", userId="user-a", slug="bot", name="Bot",
+        description="test", agentName="audit-agent", agentVersion="1.0.0",
+        config={"required_local_tools": ["run_commands"]}, createdAt=NOW, updatedAt=NOW,
+    ))
+    await repo.create(objective().model_copy(update={"specialist_id": bot.specialist_id}))
+    with pytest.raises(ConflictError, match="待授权"):
+        await repo.enqueue("tenant-a", "user-a", "objective-a", trigger_key="grant-test", now=NOW)
+    assert await repo.executions("tenant-a", "user-a", "objective-a") == []
+    await repo.update_specialist(
+        "tenant-a", "user-a", "bot", expected_revision=bot.revision,
+        config={"local_tool_permissions": ["run_commands"]}, now=NOW,
+    )
+    execution = await repo.enqueue(
+        "tenant-a", "user-a", "objective-a", trigger_key="grant-test", now=NOW
+    )
+    assert execution.status is ObjectiveExecutionStatus.PENDING
 
 
 def objective() -> Objective:

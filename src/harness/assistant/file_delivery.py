@@ -31,6 +31,9 @@ class ChannelFileRow(Base):
     __tablename__ = "assistant_channel_files"
     __table_args__ = (
         Index("ix_assistant_channel_files_work", "channel", "status", "next_attempt_at"),
+        Index(
+            "ix_assistant_channel_files_reference", "channel", "tenant_id", "user_id", "message_id"
+        ),
     )
     delivery_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     channel: Mapped[str] = mapped_column(String(16))
@@ -42,6 +45,8 @@ class ChannelFileRow(Base):
     artifact_id: Mapped[str] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(16), default="pending")
     ciphertext: Mapped[str] = mapped_column(String, default="")
+    # Public transport receipt for reverse lookup; upload credentials stay encrypted.
+    message_id: Mapped[str | None] = mapped_column(String(128))
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     error_code: Mapped[str | None] = mapped_column(String(64))
     first_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -244,6 +249,7 @@ class ChannelFiles:
                         payload = self.unseal(row)
                         receipt = await self.transport.send(target, payload, row.delivery_id)
                         if isinstance(receipt, str) and receipt:
+                            row.message_id = receipt
                             row.ciphertext = self.seal(row, {**payload, "message_id": receipt})
                         row.status, row.error_code = "sent", None
                 except (NotFoundError, PermissionDeniedError):

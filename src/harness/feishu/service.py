@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import secrets
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 
 from pydantic import ValidationError
@@ -13,7 +14,7 @@ from sqlalchemy.orm import aliased
 from harness.application.agents import AgentService
 from harness.assistant.controls import parse_control
 from harness.assistant.conversation import PersonalConversation
-from harness.assistant.file_delivery import ChannelFiles
+from harness.assistant.file_delivery import ChannelFileRow, ChannelFiles
 from harness.assistant.models import Objective, ObjectiveAction, ObjectiveBrief, ObjectiveStatus
 from harness.assistant.service import AssistantService
 from harness.assistant.storage import ObjectiveRow
@@ -252,6 +253,40 @@ class FeishuService:
             row.attempts += 1
         return True
 
+    async def result_reference(
+        self, session: AsyncSession, binding: BindingRow, message_id: str
+    ) -> Mapping[str, str] | None:
+        """Only confirmed receipts in the current binding can name an original task."""
+        files = await session.scalars(
+            select(ChannelFileRow.run_id).where(
+                ChannelFileRow.channel == "feishu",
+                ChannelFileRow.tenant_id == binding.tenant_id,
+                ChannelFileRow.user_id == binding.user_id,
+                ChannelFileRow.route == self.settings.app_id + ":" + binding.binding_id,
+                ChannelFileRow.message_id == message_id,
+                ChannelFileRow.status == "sent",
+            ).distinct().limit(2)
+        )
+        replies = await session.scalars(
+            select(IncomingRow.run_id).join(
+                DeliveryRow,
+                DeliveryRow.dedup_key == "chat-result:" + IncomingRow.incoming_id,
+            ).where(
+                DeliveryRow.app_id == self.settings.app_id,
+                IncomingRow.app_id == self.settings.app_id,
+                DeliveryRow.binding_id == binding.binding_id,
+                IncomingRow.binding_id == binding.binding_id,
+                DeliveryRow.message_id == message_id,
+                DeliveryRow.status == "sent",
+            ).distinct().limit(2)
+        )
+        targets = {run_id for run_id in [*files, *replies] if run_id}
+        if len(targets) != 1:
+            return None
+        return await self.conversation.result_reference(
+            binding.tenant_id, binding.user_id, run_id=targets.pop()
+        )
+
     async def process_conversation_once(self, now: datetime | None = None) -> bool:
         now = now or datetime.now(UTC)
         earlier = aliased(IncomingRow)
@@ -301,12 +336,25 @@ class FeishuService:
                     reply_to = None
                     if not row.run_id and incoming.reply_to_message_id:
                         # 原生引用 id → 内部消息；解析不到时不外发猜测。
-                        reply_to = await self.conversation.reply_reference(
-                            binding.tenant_id,
-                            binding.user_id,
-                            platform_message_id=incoming.reply_to_message_id,
-                            prefix="feishu-chat-",
+                        reply_to = await self.result_reference(
+                            session, binding, incoming.reply_to_message_id
                         )
+                        if reply_to is None:
+                            reply_to = await self.conversation.reply_reference(
+                                binding.tenant_id,
+                                binding.user_id,
+                                platform_message_id=incoming.reply_to_message_id,
+                                prefix="feishu-chat-",
+                            )
+                        if reply_to is None:
+                            await self.repository.reply(
+                                session, key="quote-unresolved:" + row.incoming_id,
+                                actor=incoming.actor, binding=binding,
+                                content=text_message("无法定位被引用的原任务，请提供任务编号或在网页打开原任务后继续。"),
+                                now=now,
+                            )
+                            row.status, row.finished_at = "done", now
+                            return True
                     run = (
                         await self.conversation.runs.get(binding.tenant_id, row.run_id)
                         if row.run_id

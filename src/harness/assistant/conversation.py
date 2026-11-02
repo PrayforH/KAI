@@ -62,12 +62,14 @@ class PersonalConversation:
         model_route: str | None = None,
         reply_to: Mapping[str, str] | None = None,
     ) -> Run:
-        coordinates = dict(
-            tenant_id=tenant_id, user_id=user_id, thread_id=PERSONAL_ASSISTANT_THREAD
-        )
+        target_thread = (reply_to or {}).get("threadId", PERSONAL_ASSISTANT_THREAD)
+        coordinates = dict(tenant_id=tenant_id, user_id=user_id, thread_id=target_thread)
         try:
             record = await self.agui.get_thread_record(**coordinates)
         except NotFoundError:
+            if target_thread != PERSONAL_ASSISTANT_THREAD:
+                # An unavailable quoted task must never become a replacement task.
+                raise
             record = None
         previous: list[str] = []
         if record:
@@ -96,12 +98,13 @@ class PersonalConversation:
             agent_version=version,
             agent_owner_user_id=owner,
             space_id=space,
+            project_id=getattr(record, "project_id", None),
             connection_mode="service_owned",
             # Distinct external messages must retain their own durable key,
             # including two identical greetings while another turn is active.
             deduplicate_active_input=False,
             request=RunAgentInput(
-                thread_id=PERSONAL_ASSISTANT_THREAD,
+                thread_id=target_thread,
                 run_id=key,
                 state={},
                 # AG-UI uses the user-message path to distinguish an append
@@ -150,6 +153,32 @@ class PersonalConversation:
             ),
         )
         return created.run
+
+    async def result_reference(
+        self, tenant_id: str, user_id: str, *, run_id: str
+    ) -> Mapping[str, str] | None:
+        """Resolve a transport's durable result receipt under the current owner's binding.
+
+        The channel adapter supplies run_id from its own sent rows, never from
+        quoted text. Access is checked again on submission through AG-UI.
+        """
+        try:
+            run = await self.runs.get(tenant_id, run_id)
+            thread = await self.agui.get_thread_record_for_session(
+                tenant_id=tenant_id, user_id=user_id, session_id=run.session_id
+            )
+        except (NotFoundError, PermissionDeniedError):
+            return None
+        events = await self.events.list_after(tenant_id, run_id, 0)
+        messages = [event for event in events if event.type == "message.delta"]
+        if not messages:
+            return None
+        last = messages[-1]
+        return {
+            "threadId": thread.thread_id,
+            "messageId": str(last.payload.get("message_id", f"assistant-{run_id}")),
+            "excerpt": final_response_text(events)[:200],
+        }
 
     async def reply_reference(
         self, tenant_id: str, user_id: str, *, platform_message_id: str, prefix: str
