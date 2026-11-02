@@ -1534,7 +1534,11 @@ export function HarnessAssistantMessage() {
   const responseCandidate = responseTextForTurn(messageId, nativeText, directStream, live, capturedResponse, pendingLive);
   const feedbackRun = feedbackRunId(messageId, isLast, runView?.runId);
   const isNotice = messageId.startsWith("notice-");
-  const noticeExchange = useAuiState(state => isNotice ? noticeExchangeForMessage(state.thread.messages, messageId) : null);
+  // Select the immutable source, then derive outside the external-store selector.
+  // A new grouping object per getSnapshot causes an update loop on notice turns.
+  const noticeMessages = useAuiState(state => state.thread.messages);
+  const noticeExchange = useMemo(() => isNotice ? noticeExchangeForMessage(noticeMessages, messageId) : null,
+    [isNotice, noticeMessages, messageId]);
   // Requirement: citations must be reachable from the reply itself, not only
   // from the collapsed execution summary. Deduplicate by chunk so repeated
   // retrieval in one run shows one chip per slice.
