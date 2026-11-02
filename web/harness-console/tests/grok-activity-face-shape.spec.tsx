@@ -68,12 +68,14 @@ describe("GrokFace draws the bot's saved shape", () => {
     expect(assistant).toContain('data-avatar="blob"');
   });
 
-  it("keeps the status text-only even when a Bot avatar is configured", () => {
+  it("draws the Bot's saved shape in the status row and drops the trailing punctuation", () => {
     const html = renderToStaticMarkup(
       <GrokActivityRow phrase="继续盯梢本轮：" state="working" avatar="pebble" />,
     );
-    expect(html).not.toContain("grok-face");
-    expect(html).toContain("继续盯梢本轮");
-    expect(html.replace(/<[^>]+>/g, "")).toContain("继续盯梢本轮：");
+    expect(html).toContain("grok-face");
+    expect(html).toContain('data-avatar="pebble"');
+    expect(html.replace(/<[^>]+>/g, "")).toContain("继续盯梢本轮");
+    // 句末标点不进状态行。
+    expect(html.replace(/<[^>]+>/g, "")).not.toContain("继续盯梢本轮：");
   });
 });

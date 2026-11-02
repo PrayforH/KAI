@@ -24,7 +24,7 @@ export function AssistantProgress({ activity, avatar, publicMessagesVisible = fa
   const processAt = activity.items.findLastIndex(item => /^(?:tool|runtime|context|approval|subagent|artifact)\./.test(item.event_type));
   if (publicMessagesVisible && textAt > processAt && !hasPendingProgressAction(activity)) return null;
   return <>
-    <GrokActivityRow phrase={phrase} state="working" />
+    <GrokActivityRow phrase={phrase} state="working" avatar={avatar} />
     {!publicMessagesVisible && <ChatActivitySteps activity={activity} phrase={phrase} />}
     {since && elapsed >= 30 && <p className="chat-progress-wait" aria-live="off">
       模型尚未返回新的进展 · 已等待 {elapsed < 60 ? `${elapsed} 秒` : `${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒`}

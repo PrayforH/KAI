@@ -18,7 +18,7 @@ import {
 } from "react";
 import { AgentThread } from "../components/agent-thread";
 import { usePrimaryBot } from "../components/use-primary-bot";
-import { BotEditDialog } from "../components/bot-edit-dialog";
+import { BotProfileDialog } from "../components/bot-profile-dialog";
 import { AuthProvider, useAuth } from "../components/auth-provider";
 import { AssistantChannelStatus } from "../components/assistant-channel-status";
 import { assistantRequest } from "../lib/assistant-client";
@@ -27,7 +27,8 @@ import {
   ConversationSurfaceProvider,
   type AssistantBot,
 } from "../components/assistant-bot-context";
-import { AssistantHeaderAvatar, BOT_ACCENTS, botAccent } from "../components/bot-rail";
+import { botAccent } from "../components/bot-rail";
+import { botAppearanceVars } from "../lib/bot-appearance";
 import { AssistantComputerLink } from "../components/assistant-computer-link";
 import { DesktopOccupancyChip } from "../components/desktop-occupancy-chip";
 import { AssistantComputerPane } from "../components/assistant-computer-pane";
@@ -263,7 +264,7 @@ function AuthenticatedHome() {
   };
   // 每次进入某个 Bot 会话只上报一次"查看"（botRevision 刷新不重复上报）。
   const botViewedRef = useRef<string | null>(null);
-  const [botEditOpen, setBotEditOpen] = useState(false);
+  const [botProfileOpen, setBotProfileOpen] = useState(false);
   const [botRevision, setBotRevision] = useState(0);
 
 
@@ -422,7 +423,7 @@ function AuthenticatedHome() {
   useEffect(() => {
     setStageView(routeTrace ? "trace" : "conversation");
     setFocusRunId(routeRunId);
-    setBotEditOpen(false);
+    setBotProfileOpen(false);
   }, [routeRunId, routeTrace, botParam]);
   useEffect(() => {
     const openTrace = () => setStageView("trace");
@@ -948,25 +949,18 @@ function AuthenticatedHome() {
                 <span className="task-project-separator" aria-hidden="true">/</span>
               </Link>}
               {assistantView ? <div className="task-context-bar">
-                {/* 顶栏身份标记与 rail 同源：子助理用保存的色+形，主助理固定 K。 */}
-                <AssistantHeaderAvatar bot={bot} />
-                <strong className="task-context-title">{bot ? bot.name : "我的助理"}</strong>
-                {bot ? (
-                  <>
-                    <span className="task-context-bot-hint">{bot.description || "专职子助理"}</span>
-                    <button
-                      type="button"
-                      className="task-context-bot-more"
-                      aria-label="编辑这个 Bot"
-                      title="编辑这个 Bot"
-                      onClick={() => setBotEditOpen(true)}
-                    >
-                      …
-                    </button>
-                  </>
-                ) : (
-                  <AssistantChannelStatus />
-                )}
+                {/* 页头只留名称：无头像、无角色副标题、无更多按钮；点名称直接改资料。 */}
+                <button
+                  type="button"
+                  className="task-context-title task-context-bot-name"
+                  aria-label="编辑助理资料"
+                  title="编辑助理资料"
+                  disabled={!bot}
+                  onClick={() => setBotProfileOpen(true)}
+                >
+                  {bot ? bot.name : "我的助理"}
+                </button>
+                {!bot && <AssistantChannelStatus />}
               </div> : <TaskContextBar
                 taskTitle={currentTaskTitle}
                 onForked={switchTask}
@@ -1019,7 +1013,7 @@ function AuthenticatedHome() {
           <section
             className="chat-stage"
             data-surface={conversationSurface}
-            style={{ ["--kai-bot-accent" as string]: bot ? (bot.appearance?.color ?? botAccent(bot.specialistId)) : BOT_ACCENTS[0] }}
+            style={botAppearanceVars(bot?.appearance?.color ?? botAccent(bot?.specialistId ?? "")) as React.CSSProperties}
             aria-label={personalAssistant ? "我的助理对话" : "Agent 任务对话"}
           >
             {stageView === "trace" ? (
@@ -1037,12 +1031,12 @@ function AuthenticatedHome() {
             <div className="chat-surface">
               <ConversationSurfaceProvider surface={conversationSurface}>
               <AssistantBotProvider bot={botParam ? bot : null}>
-              {bot && botEditOpen && (
-                <BotEditDialog
+              {bot && botProfileOpen && (
+                <BotProfileDialog
                   specialistId={bot.specialistId}
-                  onClose={() => setBotEditOpen(false)}
+                  onClose={() => setBotProfileOpen(false)}
                   onSaved={() => {
-                    setBotEditOpen(false);
+                    setBotProfileOpen(false);
                     setBotRevision((current) => current + 1);
                     window.dispatchEvent(new CustomEvent("kai:specialists-changed"));
                   }}

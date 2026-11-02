@@ -238,6 +238,12 @@ async def list_specialists(identity: Reader, assistant: Service) -> list[Special
     return await assistant.repository.list_specialists(identity.tenant_id, identity.user_id)
 
 
+@router.get("/specialists/appearance/palette")
+async def appearance_palette(identity: Reader, assistant: Service) -> dict[str, list[str]]:
+    """外观清单由服务端给出：前端不再各写一份取色表，新建时也不会漏项。"""
+    return assistant.appearance_palette()
+
+
 class SpecialistAppearance(StudioModel):
     """Bot 的外观选择（对齐客户端的新建 Bot 弹窗）：只影响呈现。"""
 

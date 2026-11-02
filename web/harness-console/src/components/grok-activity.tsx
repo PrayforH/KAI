@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAssistantBot } from "./assistant-bot-context";
 import { botShape } from "./bot-rail";
-import { activitySteps, trimConclusion, type ActivityLike } from "../lib/assistant-progress";
+import { activitySteps, statusPhrase, type ActivityLike } from "../lib/assistant-progress";
 
 export type GrokFaceState = "idle" | "working" | "done" | "failed";
 
@@ -178,25 +178,30 @@ function sharedPrefixLength(before: readonly string[], after: readonly string[])
   return count;
 }
 
-/** Live status stays text-only; the avatar belongs to conversation identity. */
+/**
+ * 助理状态行：当前 Bot 的图标 + 一句短阶段 + 扫光。
+ * 主助理与子助理共用同一套外观（appearance），不另开卡片。
+ */
 export function GrokActivityRow({
   phrase,
   state,
+  avatar,
 }: {
   phrase: string;
   state: GrokFaceState;
   avatar?: string | null;
 }) {
-  const short = trimConclusion(phrase);
+  const short = statusPhrase(phrase);
   return (
     <div className="grok-activity-row" data-state={state} role="status" aria-label="处理进展">
+      <GrokFace state={state} avatar={avatar} />
       <ActivityPhrase text={short} instant />
     </div>
   );
 }
 
 
-export { activitySteps, progressPhrase, shouldShowChatActivityRow, shouldShowChatActivitySteps, isTransientProgress, trimConclusion } from "../lib/assistant-progress";
+export { activitySteps, progressPhrase, shouldShowChatActivityRow, shouldShowChatActivitySteps, isTransientProgress, statusPhrase, trimConclusion } from "../lib/assistant-progress";
 export type { ActivityLike, ChatActivityStep } from "../lib/assistant-progress";
 
 /** 助理面的过程摘录：一行一条，轻量小列表，不做任务面那种整块面板。 */

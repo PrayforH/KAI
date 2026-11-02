@@ -100,12 +100,20 @@ export function progressPhrase(activity: ProgressActivity, options: { allowTrans
   }
   if (note) return note.text;
   if (options.allowTransient === false) return "";
-  if (activity.items.some(item => item.event_type === "run.running")) return "已开始处理，正在准备回复。";
+  if (activity.items.some(item => item.event_type === "run.running")) return "正在思考";
   if (activity.items.some(item => item.event_type === "run.provisioning")) return "收到这条消息了，正在准备处理。";
   if (["queued", "pending"].includes(activity.status ?? "")) return "收到这条消息了，等候开始处理。";
   if (activity.status === "provisioning") return "正在连接本次运行环境。";
   if (activity.items.some(item => item.event_type === "runtime.system" && (isTransientProgress(item.summary ?? "") || item.title === "模型正在处理"))) return "正在处理你的请求。";
   return "";
+}
+
+/**
+ * 状态行短语：只留短阶段，去掉句末标点。
+ * 「正在检索相关资料。」在状态行里显示成「正在检索相关资料」。
+ */
+export function statusPhrase(text: string): string {
+  return trimConclusion(text).replace(/[。．.！!？?，,、；;：:]+$/u, "");
 }
 
 export function activitySteps(activity: ProgressActivity, options: { limit?: number; excludeText?: string } = {}): ChatActivityStep[] {

@@ -7,6 +7,7 @@ import hashlib
 import logging
 import re
 import unicodedata
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
@@ -19,6 +20,11 @@ from harness.agui.response import final_response_text
 from harness.agui.service import AguiRunService
 from harness.application.agents import AgentService
 from harness.application.runs import RunService
+from harness.assistant.appearance import (
+    APPEARANCE_COLORS,
+    APPEARANCE_SHAPES,
+    choose_appearance,
+)
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD, primary_specialist_id
 from harness.assistant.lifecycle import next_check
 from harness.assistant.models import (
@@ -999,7 +1005,8 @@ class AssistantService:
         # 名字（slug）是去重键：已有 Bot 直接复用它已验证的绑定，
         # 不再重查注册表——调用方给的版本可能是幻觉，旧绑定永远可用。
         slug = _specialist_slug(name)
-        for item in await self.repository.list_specialists(tenant_id, user_id):
+        siblings = await self.repository.list_specialists(tenant_id, user_id)
+        for item in siblings:
             if item.slug == slug:
                 return item, False
         # 新建 Bot 不强制用户挑执行智能体：先沿用本人已有 Bot 用过的那个，
@@ -1009,6 +1016,9 @@ class AssistantService:
         await self._agents.get_published(tenant_id, user_id, agent_name, agent_version)
         now = datetime.now(UTC)
         specialist_id = f"specialist_{uuid4().hex}"
+        # 外观只影响呈现，不参与运行判定；存 config 便于跨设备一致。
+        # 没指定就由服务端从「还没人用过」的外观里随机取一次，取完即固化。
+        chosen = dict(appearance) if appearance else self._random_appearance(siblings)
         specialist = Specialist(
             specialistId=specialist_id,
             tenantId=tenant_id,
@@ -1019,10 +1029,9 @@ class AssistantService:
             agentName=agent_name,
             agentVersion=agent_version,
             status=SpecialistStatus.READY,
-            # 外观只影响呈现，不参与运行判定；存 config 便于跨设备一致。
             config={
                 "conversation_thread_id": f"assistant_{specialist_id}",
-                **({"appearance": dict(appearance)} if appearance else {}),
+                "appearance": chosen,
             },
             # 记录创建时的查看时间；以后明确配置周期时复用同一查看闸门。
             lastViewedAt=now,
@@ -1031,6 +1040,23 @@ class AssistantService:
         )
         stored = await self.repository.create_specialist(specialist)
         return stored, stored.specialist_id == specialist.specialist_id
+
+    def appearance_palette(self) -> dict[str, list[str]]:
+        """外观清单由服务端给出，前端不再各写一份取色表。"""
+        return {
+            "colors": list(APPEARANCE_COLORS),
+            "avatars": list(APPEARANCE_SHAPES),
+        }
+
+    @staticmethod
+    def _random_appearance(siblings: Sequence[Specialist]) -> dict[str, str]:
+        """给新 Bot 随机一套没人用过的外观；只调用一次，之后随资料一起固化。"""
+        used: list[dict[str, str]] = []
+        for item in siblings:
+            raw = item.config.get("appearance")
+            if isinstance(raw, dict):
+                used.append({key: str(value) for key, value in raw.items()})
+        return choose_appearance(used)
 
     async def update_specialist_profile(
         self,

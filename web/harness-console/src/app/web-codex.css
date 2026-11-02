@@ -1069,6 +1069,24 @@ body.codex-theme-v1:has(.console-shell) .console-header {
   white-space: nowrap;
 }
 
+/* 助理会话页头只留名称：点名称直接改资料，按钮不带任何默认外观。 */
+.task-context-bot-name {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-context-bot-name:disabled { cursor: default; }
+
+.task-context-bot-name:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
 .task-context-chip {
   min-width: 0;
   height: 30px;

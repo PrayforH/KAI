@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { assistantRequest, type Specialist } from "../lib/assistant-client";
-import { BOT_COLORS, BOT_SHAPES } from "../lib/bot-appearance";
+import { BOT_SHAPES, botAppearanceTokens, botAppearanceVars } from "../lib/bot-appearance";
+import { useAppearancePalette } from "../lib/bot-appearance-palette";
 import { BotGlyph } from "./bot-glyph";
 import { DutyScheduleControl, type BotDuty } from "./duty-schedule-control";
 import { LocalToolPermissions } from "./local-tool-permissions";
@@ -46,8 +47,9 @@ export function BotEditDialog({
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [color, setColor] = useState<string>(BOT_COLORS[7]);
+  const [color, setColor] = useState<string>("");
   const [avatar, setAvatar] = useState<string>("blob");
+  const palette = useAppearancePalette();
   const [busy, setBusy] = useState(false);
   const [trialBusy, setTrialBusy] = useState(false);
   const [trialMessage, setTrialMessage] = useState("");
@@ -68,7 +70,8 @@ export function BotEditDialog({
         setDescription(data.specialist.description ?? "");
         const appearance = (data.specialist.config as { appearance?: { color?: string; avatar?: string } })
           ?.appearance;
-        if (appearance?.color) setColor(appearance.color);
+        // 老 Bot 可能没有存过外观：先给一个默认值，保存时由服务端继续接管。
+        setColor(appearance?.color ?? "#126fd4");
         if (appearance?.avatar) setAvatar(appearance.avatar);
       })
       .catch((cause) => {
@@ -163,16 +166,19 @@ export function BotEditDialog({
           ×
         </button>
         <div className={styles.appearance}>
-          <div className={styles.avatarPreview} style={{ background: `${color}22` }}>
+          <div
+            className={styles.avatarPreview}
+            style={{ background: `${color}22`, ...botAppearanceVars(color) } as React.CSSProperties}
+          >
             <svg viewBox="0 0 64 64" aria-hidden="true">
               <path
                 d={(BOT_SHAPES.find((item) => item.id === avatar) ?? BOT_SHAPES[0]).path}
-                fill={color}
+                fill={botAppearanceTokens(color).accent}
               />
             </svg>
           </div>
           <div className={styles.colors}>
-            {BOT_COLORS.map((item) => (
+            {(color && !palette.colors.includes(color) ? [color, ...palette.colors] : palette.colors).map((item) => (
               <button
                 key={item}
                 type="button"
@@ -194,7 +200,7 @@ export function BotEditDialog({
                 className={styles.shapeButton}
                 onClick={() => setAvatar(item.id)}
               >
-                <BotGlyph shape={item.id} color={item.id === avatar ? color : "#5b5b5b"} />
+                <BotGlyph shape={item.id} color={item.id === avatar ? botAppearanceTokens(color).accent : "#5b5b5b"} />
               </button>
             ))}
           </div>
