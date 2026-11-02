@@ -1240,11 +1240,21 @@ class PostgresAssistantRepository:
                 raise NotFoundError("Specialist not found")
             return Specialist.model_validate(row.payload)
 
-    async def list_specialists(self, tenant_id: str, user_id: str) -> list[Specialist]:
+    async def list_specialists(
+        self, tenant_id: str, user_id: str, *, query: str | None = None,
+    ) -> list[Specialist]:
         async with self._context() as session:
+            statement = select(SpecialistRow).where(
+                SpecialistRow.tenant_id == tenant_id, SpecialistRow.user_id == user_id
+            )
+            if query:
+                statement = statement.where(or_(
+                    func.lower(SpecialistRow.payload["name"].as_string())
+                    .contains(query.lower(), autoescape=True),
+                    SpecialistRow.specialist_id == query,
+                ))
             rows = await session.scalars(
-                select(SpecialistRow)
-                .where(SpecialistRow.tenant_id == tenant_id, SpecialistRow.user_id == user_id)
+                statement
                 .order_by(SpecialistRow.updated_at.desc())
                 .limit(100)
             )

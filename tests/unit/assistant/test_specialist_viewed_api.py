@@ -68,6 +68,11 @@ class _Service:
         self.found = found
         self.touches = 0
 
+    async def specialist_thread(
+        self, tenant_id: str, user_id: str, specialist: Specialist, *, duties: list[Any],
+    ) -> str:
+        return f"assistant_{specialist.specialist_id}"
+
     async def touch_specialist_viewed(
         self, tenant_id: str, user_id: str, specialist_id: str
     ) -> bool:

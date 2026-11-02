@@ -330,6 +330,7 @@ class AguiThreadBindingRepository(Protocol):
         archived: bool = False,
         project_id: str | None = None,
         offset: int = 0,
+        query: str | None = None,
     ) -> list[AguiThreadBinding]: ...
 
     async def update_title(

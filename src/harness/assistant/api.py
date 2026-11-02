@@ -271,8 +271,7 @@ async def create_specialist(
 async def get_specialist(specialist_id: str, identity: Reader, assistant: Service):
     """子助理详情 + 它的会话入口。
 
-    子助理的对话就是承接职责的原线程：结果直接回到这条会话里，
-    不需要为"聊天"再造一条替身线程。
+    子助理独立会话与旧职责入口使用同一只读解析，不迁移或重开线程。
     """
     specialist = await assistant.repository.get_specialist(
         identity.tenant_id, identity.user_id, specialist_id
@@ -282,17 +281,9 @@ async def get_specialist(specialist_id: str, identity: Reader, assistant: Servic
         for item in await assistant.repository.list(identity.tenant_id, identity.user_id)
         if item.specialist_id == specialist_id
     ]
-    thread_id = f"assistant_{specialist_id}"
-    if specialist.config.get("conversation_thread_id") == f"assistant_{specialist_id}":
-        thread_id = f"assistant_{specialist_id}"
-    elif duties and not await assistant.has_specialist_conversation(
-        identity.tenant_id, identity.user_id, specialist_id
-    ):
-        primary = duties[0]
-        bindings = await assistant.repository.managed_bindings(
-            identity.tenant_id, identity.user_id, objective_id=primary.objective_id
-        )
-        thread_id = bindings[0].thread_id if bindings else f"assistant_{primary.objective_id}"
+    thread_id = await assistant.specialist_thread(
+        identity.tenant_id, identity.user_id, specialist, duties=duties
+    )
     # 纯读：详情/编辑弹窗不算"查看"，不能在这里清掉 routinePausedReason。
     # 真正的查看走 POST /specialists/{id}/viewed（进入该 Bot 会话时调用一次）。
     return {

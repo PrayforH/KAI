@@ -6,8 +6,10 @@ import asyncio
 import hashlib
 import logging
 import re
+import unicodedata
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
 from ag_ui.core import RunAgentInput, UserMessage
@@ -420,39 +422,135 @@ class AssistantService:
             now=datetime.now(UTC),
         )
 
-    async def resolve_targets(self, tenant_id: str, user_id: str, query: str, *, limit: int = 5):
-        """把自然语言目标解析成可核验的候选原任务，不猜最近一条。"""
-        needle = query.strip().lower()
-        bindings = await self._agui.list_bindings(
-            tenant_id=tenant_id, user_id=user_id, limit=50, archived=False
+    async def specialist_thread(
+        self, tenant_id: str, user_id: str, specialist: Specialist,
+        *, duties: list[Objective] | None = None,
+    ) -> str:
+        """One read-only conversation address for navigation and target resolution."""
+        thread = f"assistant_{specialist.specialist_id}"
+        if specialist.config.get("conversation_thread_id") == thread:
+            return thread
+        if await self.has_specialist_conversation(tenant_id, user_id, specialist.specialist_id):
+            return thread
+        if duties is None:
+            duties = [item for item in await self.repository.list(tenant_id, user_id)
+                      if item.specialist_id == specialist.specialist_id]
+        if not duties:
+            return thread
+        primary = duties[0]
+        bindings = await self.repository.managed_bindings(
+            tenant_id, user_id, objective_id=primary.objective_id
         )
-        scored = [
-            binding
-            for binding in bindings
-            if not needle
-            or needle in (binding.title or "").lower()
-            or needle in binding.thread_id.lower()
-        ]
+        return bindings[0].thread_id if bindings else f"assistant_{primary.objective_id}"
+
+    async def resolve_targets(self, tenant_id: str, user_id: str, query: str, *, limit: int = 5):
+        """Resolve owned contacts and tasks without manufacturing a replacement thread."""
+        value = unicodedata.normalize("NFKC", query).strip()
+        for left, right in (("「", "」"), ("『", "』"), ('"', '"'), ("'", "'"), ("“", "”")):
+            if value.startswith(left) and value.endswith(right):
+                value = value[1:-1].strip()
+                break
+        explicit = value.startswith(("https://", "http://", "/"))
+        contact_reference = value if value.startswith("specialist_") else None
+        if explicit:
+            parsed = urlsplit(value)
+            params = parse_qs(parsed.query, keep_blank_values=True)
+            references = [(key, part) for key in ("thread", "bot") for part in params.get(key, [])]
+            if parsed.username or parsed.password or len(references) != 1:
+                raise ValueError("请提供只指向一个原任务或子助理的链接")
+            key, reference = references[0]
+            if not reference or len(reference) > 128:
+                raise ValueError("任务链接中的目标不合法")
+            value = f"assistant_{reference}" if key == "bot" else reference
+            contact_reference = reference if key == "bot" else None
+        needle = value.casefold()
+        limit = max(1, min(limit, 10))
         managed = {
             task.thread_id: task.objective_id
             for task in await self.repository.managed_bindings(tenant_id, user_id)
         }
-        candidates: list[dict[str, object]] = []
-        for binding in scored[:limit]:
-            detailed = await self._agui.get_binding(
-                tenant_id=tenant_id, user_id=user_id, thread_id=binding.thread_id
-            )
-            candidates.append(
-                {
-                    "thread_id": binding.thread_id,
-                    "title": binding.title,
-                    "agent_name": detailed.agent_name,
-                    "agent_version": detailed.agent_version,
-                    "project_id": detailed.project_id,
-                    "managed_objective_id": managed.get(binding.thread_id),
+        candidates: dict[str, dict[str, object]] = {}
+
+        async def include(thread: str, specialist: Specialist | None = None) -> None:
+            if specialist is None and thread.startswith("assistant_specialist_"):
+                try:
+                    specialist = await self.repository.get_specialist(
+                        tenant_id, user_id, thread.removeprefix("assistant_")
+                    )
+                except NotFoundError:
+                    return
+            if specialist is not None:
+                # A contact can exist before its first conversation. Report the
+                # owned contact, but never offer its fabricated address as work.
+                candidates[thread] = {
+                    "thread_id": thread, "title": specialist.name, "kind": "specialist",
+                    "agent_name": specialist.agent_name, "agent_version": specialist.agent_version,
+                    "project_id": None, "managed_objective_id": managed.get(thread),
+                    "unavailable_reason": "尚无可访问的原对话，或子助理/会话已归档；不能建立关注",
                 }
-            )
-        return candidates
+                if specialist.status is SpecialistStatus.ARCHIVED:
+                    return
+            try:
+                record = await self._agui.get_thread_record(
+                    tenant_id=tenant_id, user_id=user_id, thread_id=thread
+                )
+                if record.archived_at is not None:
+                    return
+                detailed = await self._agui.get_binding(
+                    tenant_id=tenant_id, user_id=user_id, thread_id=thread
+                )
+            except (NotFoundError, PermissionDeniedError, ConflictError):
+                return
+            candidates[thread] = {
+                "thread_id": thread,
+                "title": specialist.name if specialist else record.title,
+                "kind": "specialist" if specialist else "task",
+                "agent_name": detailed.agent_name,
+                "agent_version": detailed.agent_version,
+                "project_id": detailed.project_id,
+                "managed_objective_id": managed.get(thread),
+            }
+
+        async def include_specialist(specialist: Specialist) -> None:
+            thread = (f"assistant_{specialist.specialist_id}"
+                      if specialist.status is SpecialistStatus.ARCHIVED
+                      else await self.specialist_thread(tenant_id, user_id, specialist))
+            await include(thread, specialist)
+
+        # Exact identifiers and links bypass the recent-list window, but still
+        # go through the same owner-scoped record and binding checks.
+        if contact_reference is not None:
+            try:
+                specialist = await self.repository.get_specialist(
+                    tenant_id, user_id, contact_reference
+                )
+            except NotFoundError:
+                return []
+            await include_specialist(specialist)
+            return list(candidates.values())
+        await include(value)
+        if candidates or explicit:
+            return list(candidates.values())
+        specialists = [
+            item for item in await self.repository.list_specialists(tenant_id, user_id, query=value)
+            if needle in item.name.casefold() or needle == item.specialist_id.casefold()
+        ]
+        exact = [item for item in specialists
+                 if needle in (item.name.casefold(), item.specialist_id.casefold())]
+        for specialist in (exact or specialists)[:limit]:
+            await include_specialist(specialist)
+        bindings = await self._agui.list_bindings(
+            tenant_id=tenant_id, user_id=user_id, limit=limit, archived=False, query=value,
+        )
+        for binding in bindings:
+            if binding.thread_id not in candidates and (
+                not needle or needle in (binding.title or "").casefold()
+                or needle in binding.thread_id.casefold()
+            ):
+                await include(binding.thread_id)
+            if len(candidates) >= limit:
+                break
+        return list(candidates.values())[:limit]
 
     async def instruct(
         self, tenant_id: str, user_id: str, objective_id: str, text: str, *, request_id: str

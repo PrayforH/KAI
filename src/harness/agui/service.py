@@ -215,6 +215,7 @@ class AguiRunService:
         archived: bool = False,
         project_id: str | None = None,
         offset: int = 0,
+        query: str | None = None,
     ) -> list[StoredAguiThreadBinding]:
         return await self._bindings.list_for_user(
             tenant_id,
@@ -223,6 +224,7 @@ class AguiRunService:
             archived=archived,
             project_id=project_id,
             offset=offset,
+            **({"query": query} if query is not None else {}),
         )
 
     async def mark_read(

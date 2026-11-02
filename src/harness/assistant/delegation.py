@@ -50,6 +50,10 @@ INSTRUCTIONS = (
     "assistant_work_notifications 省略 enabled 可查看各原任务的关注开关、摘要和 revision；"
     "用户要求开启或关闭某条关注时，再传 managed_id、enabled、expected_revision。"
     "关闭关注不停止原任务，暂停整个职责才用 assistant_update_task。\n"
+    "普通交办、关注或设置回执，主回复默认只用一两句说明实际结果和必要的下一步；"
+    "不要照抄工具返回的 JSON、thread/objective/managed ID、revision 或 before/after 表。"
+    "这些定位与版本事实保留在工具过程里，用户明确索要诊断或编号时再提供。"
+    "遇到冲突、未确认或缺项仍须直接说明，不能为了简短隐藏错误。\n"
     "入队只表示已安排，不代表后台已在执行；不要把简单问答包装成后台任务。"
 )
 
@@ -240,17 +244,19 @@ def assistant_delegation_overlay(
     async def resolve_target(arguments: dict[str, Any]) -> dict[str, Any]:
         """把用户点名的目标解析成可核验的候选原任务；歧义时列候选，不猜。"""
         query = str(arguments.get("query", "")).strip()
-        if not 1 <= len(query) <= 200:
-            return _text("目标描述需在 1–200 字之间。")
+        if not 1 <= len(query) <= 2048:
+            return _text("请提供任务名称、子助理名称或原会话链接（不超过2048字）。")
         try:
             candidates = await gateway.resolve_targets(tenant_id, user_id, query)
-        except (NotFoundError, PermissionDeniedError) as error:
+        except (NotFoundError, PermissionDeniedError, ConflictError, ValueError) as error:
             return _text(f"目标解析失败：{error}")
         if not candidates:
             return _text("没有匹配的任务；请用户给出更准确的名称或任务链接。")
         lines = [
             f"- {item['title'] or item['thread_id']}"
-            f"（thread={item['thread_id']}，agent={item['agent_name']}@{item['agent_version']}）"
+            + ("（子助理原对话）" if item.get("kind") == "specialist" else "")
+            + f"（thread={item['thread_id']}，agent={item['agent_name']}@{item['agent_version']}）"
+            + (f"；不可用：{item['unavailable_reason']}" if item.get("unavailable_reason") else "")
             + (
                 f"，已由 {item['managed_objective_id']} 托管"
                 if item["managed_objective_id"]
@@ -259,7 +265,9 @@ def assistant_delegation_overlay(
             for item in candidates
         ]
         return _text(
-            "候选任务（用 thread 调 assistant_manage_work 绑定）：\n" + "\n".join(lines)
+            ("有多个匹配，请用户确认原对话后再绑定，不要按排序猜测。\n"
+             if len(candidates) > 1 else "候选原任务（可用时用 thread 绑定）：\n")
+            + "\n".join(lines)
         )
 
     async def manage_work(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -293,10 +301,13 @@ def assistant_delegation_overlay(
             match = next((item for item in candidates if item["thread_id"] == thread_id), None)
             if match is None:
                 return _text("找不到该任务线程或无权访问。")
+            if match.get("unavailable_reason"):
+                return _text(f"不能绑定该原对话：{match['unavailable_reason']}，不会创建替身线程。")
             if match["managed_objective_id"]:
                 return _text(
                     f"该任务已由 {match['managed_objective_id']} 托管，不重复接管；"
-                    "如需调整请用 assistant_update_task。"
+                    "如需调整关注请用 assistant_work_notifications，"
+                    "暂停或停止执行才用 assistant_update_task。"
                 )
             brief = ObjectiveBrief.model_validate(
                 {
@@ -676,7 +687,7 @@ def assistant_delegation_overlay(
                 description="把用户点名的任务解析成候选（thread、智能体、是否已被托管）；歧义时列候选确认。",
                 schema={
                     "type": "object",
-                    "properties": {"query": {"type": "string", "maxLength": 200}},
+                    "properties": {"query": {"type": "string", "maxLength": 2048}},
                     "required": ["query"],
                 },
                 handler=resolve_target,
