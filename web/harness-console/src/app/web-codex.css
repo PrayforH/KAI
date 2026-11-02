@@ -4044,24 +4044,15 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .l
 body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-inline {
   display: grid;
   gap: 2px;
-  justify-items: center;
-  margin: 6px auto 2px;
+  justify-items: stretch;
+  width: 100%;
+  margin: 6px 0 2px;
 }
 
 body.codex-theme-v1:has(.console-shell) .handover-inline-item {
   width: 100%;
   min-width: 0;
 }
-body.codex-theme-v1:has(.console-shell) .handover-receipt-note {
-  margin: 2px 0 6px;
-  text-align: center;
-  font-size: 12px;
-  color: var(--muted-ink);
-}
-body.codex-theme-v1:has(.console-shell) .handover-receipt-note[role="alert"] {
-  color: #c97973;
-}
-
 /* 转交后缺配置的补齐卡：贴会话顶部、随内容滚动（非置顶条） */
 body.codex-theme-v1:has(.console-shell) .specialist-setup-card {
   margin: 12px auto 4px;
@@ -4160,7 +4151,7 @@ body.codex-theme-v1:has(.console-shell) .specialist-setup-submit:disabled {
   opacity: 0.6;
   cursor: default;
 }
-/* Settled handovers keep their receipt without occupying the conversation. */
+/* Input and approval components supply their own card frame. */
 
 body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] :is(.handover-ask-card, .handover-approval-card, .handover-credential-card) {
   border: 0;
@@ -4200,4 +4191,73 @@ body.codex-theme-v1:has(.console-shell) .assistant-event-line a:focus-visible {
   outline: 2px solid var(--codex-accent, #9ec1ff);
   outline-offset: 4px;
   border-radius: 4px;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-permission-card {
+  width: min(640px, 92%);
+  margin: 6px auto 2px;
+  padding: 10px 12px;
+  border: 1px solid #3a3a3a;
+  border-radius: 14px;
+  background: #1b1b1b;
+  text-align: left;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-title {
+  margin: 0 0 6px;
+  color: #d2a83a;
+  font-size: 12px;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  color: #dcdcdc;
+  font-size: 13px;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-actions button {
+  padding: 7px 14px;
+  border: 1px solid #3a3a3a;
+  border-radius: 9px;
+  background: #242424;
+  color: #ededed;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-actions button[data-action="allow"] {
+  border-color: #4c8dff;
+  background: #1f4f95;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-error {
+  margin: 6px 0 0;
+  color: #ff9a8a;
+  font-size: 12px;
+}
+
+/* Questions follow assistant content on the left; only event receipts center. */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-inline-item > :is(.handover-ask-card, .handover-approval-card, .handover-credential-card, .handover-local-tool-permission-card, .specialist-setup-card) {
+  box-sizing: border-box;
+  width: min(640px, 100%);
+  max-width: 100%;
+  justify-self: start;
+  margin: 8px 0 2px;
+  text-align: left;
+}
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] :is(.handover-ask-title, .handover-approval-title, .handover-local-tool-title) {
+  margin: 0 0 8px;
+  text-align: left;
+  font-size: 13px;
+  color: var(--muted-ink);
 }

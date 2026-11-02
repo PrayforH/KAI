@@ -12,7 +12,7 @@ import {emitHandover} from "./helpers/handover";
 let host:HTMLDivElement, root:Root;
 beforeEach(()=>{
  host=document.createElement("div");document.body.append(host);root=createRoot(host);
- request.mockReset();request.mockResolvedValue([]);
+ request.mockReset();request.mockImplementation(async (path:string)=>["handovers","specialists"].includes(path)?[]:{specialist:{specialistId:path.split("/").at(-1),name:"编码协同",status:"ready",revision:1,config:{}},threadId:null,primaryObjectiveId:null,duties:[]});
 });
 afterEach(async()=>{await act(async()=>root.unmount());host.remove();});
 async function mount(status:string){
@@ -22,14 +22,13 @@ async function mount(status:string){
  });
 }
 describe("handover delivery event",()=>{
- it.each(["sent","received","applied","executing","pending_input"])("shows an identity link without mirrored controls (%s)",async status=>{
+ it.each(["sent","received","applied","executing"])("shows an identity link without idle controls (%s)",async status=>{
   await mount(status);
   const row=Array.from(host.querySelectorAll(".handover-inline-item")).find(node=>node.querySelector("a")?.getAttribute("href")==="/assistant?bot=event-bot-"+status)!;
   expect(row.querySelector(".assistant-event-line")?.textContent).toBe("已发送消息给编码协同");
   expect(row.querySelector("svg")).not.toBeNull();
   expect(row.querySelector("form,button,input,select,textarea,details")).toBeNull();
   expect(request.mock.calls.some(([,method])=>method&&method!=="GET")).toBe(false);
-  expect(request.mock.calls.every(([path])=>["handovers","specialists"].includes(path))).toBe(true);
  });
  it("does not claim delivery success for failed or unknown receipts",async()=>{
   await mount("failed");await mount("unknown");
