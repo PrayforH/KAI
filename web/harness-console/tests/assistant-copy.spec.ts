@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {assistantCopy, assistantPresentation, compactAssistantProgress, compactAssistantReceipt} from "../src/lib/assistant-copy";
+import {assistantCopy, assistantPresentation, compactAssistantProgress, compactAssistantReceipt, assistantQuoteCopy} from "../src/lib/assistant-copy";
 const id = "objective_35ee45a4baa148159c64d47c3713efb4";
 describe("main assistant conversational copy", () => {
   it("removes coordination metadata but preserves the actual result", () => {
@@ -45,4 +45,10 @@ it("reduces coordination narration while keeping later blockers", () => {
  expect(copy).toContain("结果通知已关闭");expect(copy).not.toContain("过去的运行记录");
  expect(copy).toContain("文件下载失败");expect(copy).not.toContain("succeeded");
  expect(assistantCopy("状态 succeeded，schedule_minutes 待补充。")).toBe("状态 本次处理已结束，执行频率 待补充。");
+});
+
+it("removes a complete or truncated legacy source footer from quoted receipts", () => {
+ for(const url of ["/assistant?bot=specialist_bd6ae2c429d24bd88b771fd112219c62)","/assistant?bot=specialist_bd6ae2c429d24bd88b771fd1"])
+  expect(assistantQuoteCopy("报告已准备好。 [回到原对话]("+url)).toBe("报告已准备好。");
+ expect(assistantQuoteCopy("[报告文件](/api/harness/artifacts/artifact_12345678)")).toBe("报告文件");
 });

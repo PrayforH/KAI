@@ -20,11 +20,11 @@ import {
   subscribeReplyReferences,
 } from "../lib/reply-references";
 import type { ReplyReference } from "../lib/reply-references";
-import { assistantCopy } from "../lib/assistant-copy";
+import { assistantQuoteCopy } from "../lib/assistant-copy";
 
 function quoteLabel(text: string | null | undefined, threadId: string) {
   return threadId === PERSONAL_ASSISTANT_THREAD
-    ? assistantCopy((text ?? "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1"))
+    ? assistantQuoteCopy(text ?? "")
     : text;
 }
 

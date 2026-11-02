@@ -99,3 +99,11 @@ export function compactAssistantReceipt(text: string): string {
   const result = [...new Set([...lead, ...attention])];
   return result.join("\n\n");
 }
+
+/** Old quoted receipts can contain a truncated Markdown source URL. Keep the
+ * quoted business text, not its obsolete system footer or raw coordinates. */
+export function assistantQuoteCopy(text: string): string {
+  return assistantCopy(text
+    .replace(/\[(?:回到原对话|查看失败原因)\]\(\/(?:assistant\?|\?)[^)]*(?:\)|$)/g, "")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1"));
+}
