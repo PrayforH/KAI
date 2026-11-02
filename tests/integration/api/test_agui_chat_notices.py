@@ -53,6 +53,7 @@ def attach(app, items):
 
     repo = SimpleNamespace(
         conversation_notices=AsyncMock(side_effect=page),
+        conversation_notice_sources=AsyncMock(return_value={}),
         conversation_notice=AsyncMock(side_effect=one),
     )
     app.state.container = replace(app.state.container, assistant=SimpleNamespace(repository=repo))
@@ -160,3 +161,30 @@ async def test_quoting_notice_resolves_server_text_not_client_excerpt():
             "/v1/agui?agent_name=echo-agent&agent_version=0.1.0", json=body, headers=HEADERS
         )
         assert denied.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_history_carries_source_identity_without_a_body_navigation_link():
+    app = create_memory_app()
+    item = notice()
+    repo = attach(app, [item])
+    repo.conversation_notice_sources.return_value = {
+        item.item_id: {
+            "name": "编码协同",
+            "href": "/assistant?bot=specialist_report",
+            "avatar": "blob",
+            "color": "#f68b20",
+        },
+    }
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(f"/v1/agui/threads/{MAIN}/history", headers=HEADERS)
+    body = response.json()
+    message, result = body["messages"]
+    assert message["id"] == "notice-result-a" and "回到原对话" not in message["content"]
+    call = message["toolCalls"][0]
+    assert call["function"]["name"] == "harness_notice_source"
+    import json
+
+    assert json.loads(call["function"]["arguments"])["name"] == "编码协同"
+    assert result["role"] == "tool" and result["toolCallId"] == call["id"]
+    assert body["status"] == "idle" and "run_id" not in body

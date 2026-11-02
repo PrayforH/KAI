@@ -52,3 +52,37 @@ async def test_chat_receipts_page_beyond_inbox_limit_with_ties_and_read_items(
     for tenant, user in (("tenant-a", "other"), ("other", "user-a")):
         assert await repo.conversation_notices(tenant, user) == ([], 0)
         assert await repo.conversation_notice(tenant, user, "result-000") is None
+
+
+@pytest.mark.asyncio
+async def test_notice_sources_resolve_owned_bot_name_and_avatar_instead_of_internal_ids(
+    database: DatabaseFixture,
+):
+    from harness.assistant.models import Specialist, SpecialistStatus
+
+    repo = PostgresAssistantRepository(database[1])
+    bot = await repo.create_specialist(
+        Specialist(
+            specialistId="specialist_source",
+            tenantId="tenant-a",
+            userId="user-a",
+            slug="source",
+            name="编码协同",
+            agentName="audit-agent",
+            agentVersion="1.0.0",
+            status=SpecialistStatus.READY,
+            createdAt=NOW,
+            updatedAt=NOW,
+            config={"appearance": {"color": "#f68b20", "avatar": "blob"}},
+        )
+    )
+    await repo.create(objective().model_copy(update={"specialist_id": bot.specialist_id}))
+    item = notice(threadId="assistant_specialist_source")
+    source = (await repo.conversation_notice_sources("tenant-a", "user-a", [item]))[item.item_id]
+    assert source["name"] == "编码协同"
+    assert source["color"] == "#f68b20" and source["avatar"] == "blob"
+    assert source["href"].startswith("/assistant?bot=specialist_source")
+    for tenant, user in (("tenant-a", "other"), ("other", "user-a")):
+        other = await repo.conversation_notice_sources(tenant, user, [item])
+        assert other[item.item_id]["name"] != "编码协同"
+        assert "avatar" not in other[item.item_id]

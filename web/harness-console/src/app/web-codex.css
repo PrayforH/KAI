@@ -4280,3 +4280,37 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] :i
   padding: 0;
   background: transparent;
 }
+
+/* A source identity is a quiet conversation event, not an action card. */
+body.codex-theme-v1:has(.console-shell) .assistant-message-source {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 7px;
+  margin: 8px 0 14px;
+  color: var(--muted-ink);
+  font-size: 13px;
+  line-height: 1.5;
+}
+body.codex-theme-v1:has(.console-shell) .assistant-message-source a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
+  text-decoration: none;
+  min-width: 0;
+}
+body.codex-theme-v1:has(.console-shell) .assistant-message-source a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+body.codex-theme-v1:has(.console-shell) .assistant-message-source .bot-rail-avatar {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+}
+body.codex-theme-v1:has(.console-shell) .assistant-message-source a:focus-visible {
+  outline: 2px solid var(--codex-accent, #9ec1ff);
+  outline-offset: 4px;
+  border-radius: 4px;
+}

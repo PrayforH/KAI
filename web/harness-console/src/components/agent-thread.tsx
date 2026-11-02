@@ -81,6 +81,8 @@ import { ApprovalCard, type ApprovalDetails } from "./approval-card";
 import { ArtifactCard, isImageArtifact, type ArtifactDetails } from "./artifact-list";
 import { AssistantResults } from "./assistant-results";
 import { assistantControlSummary } from "../lib/assistant-control-receipt";
+import { assistantCopy, assistantPresentation, compactAssistantProgress } from "../lib/assistant-copy";
+import { AssistantNoticeSource } from "./assistant-notice-source";
 import { usePersonalAssistantEntry } from "./personal-assistant-context";
 import { replyWebImages } from "../lib/reply-web-images";
 import { ReplyWebImages } from "./reply-web-images";
@@ -160,7 +162,7 @@ import {
   type PresentationActionHandler,
 } from "./intelligent-ui/presentation-host";
 import { submitUiAction } from "./intelligent-ui/client";
-import { modelBlockSources, presentationsForMessage } from "./intelligent-ui/schema";
+import { modelBlockSources, presentationsForMessage, stripHarnessUiFences } from "./intelligent-ui/schema";
 import { PublishedBlocksProvider } from "./intelligent-ui/turn-context";
 import { hasPendingProjectTaskLaunch, consumeProjectTaskLaunch } from "../lib/project-task-launch";
 import { useProjectTaskLaunch } from "./use-project-task-launch";
@@ -1205,7 +1207,7 @@ function HarnessToolPart(part: ToolCallMessagePartProps) {
   const args = objectValue(part.args);
   const runView = useRunViewModel();
   if (part.toolName === "harness_video_generation") return <DurableVideoGenerationPart data={args} />;
-  if (part.toolName === "harness_run_activity") {
+  if (part.toolName === "harness_run_activity" || part.toolName === "harness_notice_source") {
     return null;
   }
   if (part.toolName === "Task" || part.toolName === "Agent") {
@@ -1267,6 +1269,7 @@ type AssistantPartLike = {
 const responseProjectionToolNames = new Set([
   "harness_video_generation",
   "harness_run_activity",
+  "harness_notice_source",
   "harness_present_artifact",
   "harness_present_ui",
 ]);
@@ -1595,17 +1598,23 @@ export function HarnessAssistantMessage() {
   );
   // Interactive answer blocks arrive on the same tool-call channel artifacts do,
   // so they are present live and after a reload without a second code path.
-  const turnPresentations = useMemo(() => turnSettled ? presentationsForMessage(content) : [], [content, turnSettled]);
+  const compactMain = personalAssistant && assistantSurface && !assistantBot && !conversationScope;
+  const allTurnPresentations = useMemo(() => turnSettled ? presentationsForMessage(content) : [], [content, turnSettled]);
+  const turnPresentations = useMemo(() => compactMain
+    ? allTurnPresentations.flatMap(item => { const visible = assistantPresentation(item); return visible ? [visible] : []; })
+    : allTurnPresentations, [allTurnPresentations, compactMain]);
   // Only blocks the model authored came from a fence in this answer, so only that
   // many fences may be hidden from the rendered Markdown.
-  const publishedBlocks = useMemo(() => modelBlockSources(turnPresentations), [turnPresentations]);
-  const controlSummary = personalAssistant && !assistantBot && !hasVideoGeneration &&
-    !conversationScope && !turnArtifacts.length && !turnPresentations.length
+  const publishedBlocks = useMemo(() => modelBlockSources(allTurnPresentations), [allTurnPresentations]);
+  const controlSummary = compactMain && !hasVideoGeneration && !turnArtifacts.length && !turnPresentations.length
     ? assistantControlSummary(terminalActivity) : null;
   const activeInputMessage = useAuiState(state => latestConversationInput(state.thread.messages)?.messageId);
   const showingInputCard = activeInputMessage === messageId && !conversationScope?.composerAccessory;
-  const displayedText = controlSummary ? redact(controlSummary) : showingInputCard ? conversationInputIntro(copyText) : copyText;
-  const actionText = showingInputCard ? conversationInputDisplay(copyText) : displayedText;
+  const displayCandidate = controlSummary ? redact(controlSummary) : showingInputCard ? conversationInputIntro(copyText) : copyText;
+  const displayedText = compactMain
+    ? (isNotice ? compactAssistantProgress : assistantCopy)(stripHarnessUiFences(displayCandidate, publishedBlocks))
+    : displayCandidate;
+  const actionText = showingInputCard ? (compactMain ? assistantCopy(conversationInputDisplay(copyText)) : conversationInputDisplay(copyText)) : displayedText;
   const draftScope = useContext(ComposerDraftContext);
   const runPresentationAction: PresentationActionHandler | undefined = threadRuntime && !conversationScope ? submitUiAction : undefined;
   const actionHistory = useMemo(() => draftScope ? createThreadHistoryAdapter(draftScope.threadId) : null, [draftScope]);
@@ -1631,6 +1640,7 @@ export function HarnessAssistantMessage() {
       data-turn-answer={displayedText.replace(/\s+/g, " ").slice(0, 360)}
       data-direct-stream={directStream ? "true" : "false"}
     >
+      {isNotice && <AssistantNoticeSource parts={content} />}
       {!hasVideoGeneration ? <TurnActivity
         hasDurableProjection={hasRunActivityToolCall(content)}
         messageId={messageId}
@@ -1662,7 +1672,7 @@ export function HarnessAssistantMessage() {
               text={actionText}
             />
             <MessageReplyButton className="assistant-message-copy" label="回复这条回答"
-              excerptOverride={controlSummary || showingInputCard ? actionText : undefined} />
+              excerptOverride={compactMain || controlSummary || showingInputCard ? actionText : undefined} />
             {!assistantSurface && (
               <>
                 <MessageFeedbackButtons runId={feedbackRun} />

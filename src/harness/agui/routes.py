@@ -1147,9 +1147,13 @@ async def get_agui_thread_history(
             raise HTTPException(status_code=400, detail="invalid history cursor") from error
     notices: list[AssistantInboxItem] = []
     notice_total = 0
+    notice_sources: dict[str, dict[str, str]] = {}
     if thread_id == PERSONAL_ASSISTANT_THREAD and container.assistant is not None:
         notices, notice_total = await container.assistant.repository.conversation_notices(
             identity.tenant_id, identity.user_id, before=cursor, limit=limit + 1,
+        )
+        notice_sources = await container.assistant.repository.conversation_notice_sources(
+            identity.tenant_id, identity.user_id, notices,
         )
     entries: list[tuple[datetime, str, Run | AssistantInboxItem]] = [
         (run.created_at, run.run_id, run) for run in runs
@@ -1179,9 +1183,21 @@ async def get_agui_thread_history(
         if isinstance(item, Run):
             messages.extend(run_messages[item.run_id])
         else:
+            source = notice_sources.get(item.item_id)
+            source_id = f"source-{item.item_id}"
             messages.append(AguiHistoryMessage(
                 id=notice_message_id(item), role="assistant", content=notice_text(item),
+                tool_calls=[AguiHistoryToolCall(
+                    id=source_id, function=AguiHistoryFunction(
+                        name="harness_notice_source", arguments=json.dumps(source),
+                    ),
+                )] if source else None,
             ))
+            if source:
+                messages.append(AguiHistoryMessage(
+                    id=f"source-result-{item.item_id}", role="tool",
+                    content='{"status":"ready"}', tool_call_id=source_id,
+                ))
     replies: dict[str, AguiReplyReference] = {}
     for run in page_runs:
         raw_object: object = run.input.get("reply_to")

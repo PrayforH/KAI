@@ -1211,6 +1211,46 @@ class PostgresAssistantRepository:
                 update={"read_at": row.read_at}
             ) if row else None
 
+    async def conversation_notice_sources(
+        self, tenant_id: str, user_id: str, notices: list[AssistantInboxItem],
+    ) -> dict[str, dict[str, str]]:
+        """Resolve source names in two bounded owner-scoped reads, not per row."""
+        from harness.assistant.chat_notices import notice_href
+
+        if not notices:
+            return {}
+        async with self._context() as session:
+            objectives = list(await session.scalars(select(ObjectiveRow).where(
+                ObjectiveRow.tenant_id == tenant_id, ObjectiveRow.user_id == user_id,
+                ObjectiveRow.objective_id.in_({n.objective_id for n in notices}),
+            )))
+            by_objective = {o.objective_id: o.payload for o in objectives}
+            ids = {n.thread_id.removeprefix("assistant_") for n in notices
+                   if n.thread_id and n.thread_id.startswith("assistant_specialist_")}
+            ids.update(str(o.payload["specialistId"]) for o in objectives
+                       if o.payload.get("specialistId"))
+            bots = list(await session.scalars(select(SpecialistRow).where(
+                SpecialistRow.tenant_id == tenant_id, SpecialistRow.user_id == user_id,
+                SpecialistRow.specialist_id.in_(ids),
+            ))) if ids else []
+            by_bot = {b.specialist_id: Specialist.model_validate(b.payload) for b in bots}
+            result: dict[str, dict[str, str]] = {}
+            for notice in notices:
+                href = notice_href(notice)
+                if not href:
+                    continue
+                objective = by_objective.get(notice.objective_id, {})
+                sid = (notice.thread_id or "").removeprefix("assistant_")
+                bot = by_bot.get(sid) or by_bot.get(str(objective.get("specialistId", "")))
+                source = {"name": bot.name if bot else str(objective.get("title") or notice.title),
+                          "href": href}
+                appearance = bot.config.get("appearance") if bot else None
+                if isinstance(appearance, dict):
+                    source.update({key: value for key, value in appearance.items()
+                                   if key in {"avatar", "color"} and isinstance(value, str)})
+                result[notice.item_id] = source
+            return result
+
     async def read_notice(
         self, tenant_id: str, user_id: str, item_id: str, now: datetime,
         *, expected_source_sequence: int | None = None,

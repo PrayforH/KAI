@@ -20,6 +20,13 @@ import {
   subscribeReplyReferences,
 } from "../lib/reply-references";
 import type { ReplyReference } from "../lib/reply-references";
+import { assistantCopy } from "../lib/assistant-copy";
+
+function quoteLabel(text: string | null | undefined, threadId: string) {
+  return threadId === PERSONAL_ASSISTANT_THREAD
+    ? assistantCopy((text ?? "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1"))
+    : text;
+}
 
 export type { ReplyReference };
 
@@ -125,8 +132,8 @@ export function ReplyComposerBar() {
     <>
       <div className="composer-reply-bar">
         <ReplyGlyph />
-        <span className="composer-reply-excerpt" title={reply.excerpt ?? undefined}>
-          {reply.excerpt || "引用原消息"}
+        <span className="composer-reply-excerpt" title={quoteLabel(reply.excerpt, controller.threadId) ?? undefined}>
+          {quoteLabel(reply.excerpt, controller.threadId) || "引用原消息"}
         </span>
         <button
           type="button"
@@ -180,12 +187,12 @@ export function UserReplyHeader({ isLatestUserMessage }: { isLatestUserMessage: 
       >
         <ReplyGlyph />
         <span className="user-reply-excerpt">
-          {unavailable ? "原消息不可用" : reply.excerpt || "引用原消息"}
+          {unavailable ? "原消息不可用" : quoteLabel(reply.excerpt, controller.threadId) || "引用原消息"}
         </span>
       </button>
       {original ? (
         <div className="user-reply-original" role="note">
-          {original}
+          {quoteLabel(original, controller.threadId)}
         </div>
       ) : null}
     </>

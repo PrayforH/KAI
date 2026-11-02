@@ -23,11 +23,15 @@ def notice_message_id(notice: AssistantInboxItem) -> str:
 
 
 def notice_text(notice: AssistantInboxItem) -> str:
-    # Titles are plain text, not a place for model-authored Markdown links.
-    title = notice.title.translate(str.maketrans({c: "\\" + c for c in r"\`*_{}[]<>"}))
-    text = f"{title}：{_STATUS.get(notice.kind, '有新进展')}。"
-    if notice.content.strip():
-        text += "\n\n" + notice.content.strip()
+    # Source identity belongs to the light attribution row, not a body link.
+    # A successful Run is not proof that its business objective is complete.
+    content = notice.content.strip()
+    if notice.kind in _FAILURES | {"cancelled", "pending", "running"}:
+        return _STATUS[notice.kind] + "。" + ("\n\n" + content if content else "")
+    return content or "本次处理已结束。"
+
+
+def notice_href(notice: AssistantInboxItem) -> str | None:
     if notice.thread_id:
         bot = notice.thread_id.startswith("assistant_specialist_")
         params = {"bot": notice.thread_id.removeprefix("assistant_")} if bot else {
@@ -40,6 +44,5 @@ def notice_text(notice: AssistantInboxItem) -> str:
             if notice.execution_id:
                 params["checkpoint"] = "checkpoint_" + notice.execution_id
         path = "/assistant" if bot else "/"
-        label = "查看失败原因" if notice.kind in _FAILURES else "回到原对话"
-        text += f"\n\n[{label}]({path}?{urlencode(params)})"
-    return text
+        return f"{path}?{urlencode(params)}"
+    return None
