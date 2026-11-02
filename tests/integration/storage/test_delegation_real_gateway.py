@@ -2068,3 +2068,169 @@ async def test_desktop_acquire_keeps_non_desktop_callers_outside_the_fifo_head(
         now=NOW + timedelta(seconds=20),
     )
     assert head_turn is not None
+
+
+@pytest.mark.asyncio
+async def test_desktop_queue_orders_by_priority_then_fifo_without_preemption(
+    database: DatabaseFixture,
+) -> None:
+    """优先级只决定空闲时的放行顺序：同优先级仍 FIFO，活 holder 永不被打断。"""
+    from datetime import UTC, timedelta
+
+    service = make_service(database)
+    low_first = await service.create(
+        "tenant-a", "user-a",
+        brief(**{"title": "低优在先", "projectId": "proj-a",
+                 "budget": {"requiresDesktop": True, "desktopPriority": 0, "maxRunsPerDay": 10}}),
+    )
+    high_later = await service.create(
+        "tenant-a", "user-a",
+        brief(**{"title": "高优在后", "projectId": "proj-a",
+                 "budget": {"requiresDesktop": True, "desktopPriority": 5, "maxRunsPerDay": 10}}),
+    )
+    same_high = await service.create(
+        "tenant-a", "user-a",
+        brief(**{"title": "同高优更晚", "projectId": "proj-a",
+                 "budget": {"requiresDesktop": True, "desktopPriority": 5, "maxRunsPerDay": 10}}),
+    )
+    await service.repository.schedule_due(
+        datetime.now(UTC) + timedelta(minutes=61), unviewed_pause_hours=None
+    )
+    low_execs = await service.repository.executions("tenant-a", "user-a", low_first.objective_id)
+    high_execs = await service.repository.executions("tenant-a", "user-a", high_later.objective_id)
+    same_execs = await service.repository.executions("tenant-a", "user-a", same_high.objective_id)
+    assert low_execs and high_execs and same_execs
+
+    # 空闲时高优先级越过更早的低优先级；同优先级仍按创建序（高优在先 → 同高优在后）。
+    assert (
+        await service.repository.acquire_desktop_turn(
+            tenant_id="tenant-a", user_id="user-a",
+            objective_id=low_first.objective_id,
+            execution_id=low_execs[0].execution_id,
+            now=NOW,
+        )
+        is None
+    )
+    head_turn = await service.repository.acquire_desktop_turn(
+        tenant_id="tenant-a", user_id="user-a",
+        objective_id=high_later.objective_id,
+        execution_id=high_execs[0].execution_id,
+        now=NOW,
+    )
+    assert head_turn is not None
+    # 活 holder 在位：更高优先级的 waiting 也不能抢（同高优更晚者此时是队头候补，仍返回 None）。
+    assert (
+        await service.repository.acquire_desktop_turn(
+            tenant_id="tenant-a", user_id="user-a",
+            objective_id=same_high.objective_id,
+            execution_id=same_execs[0].execution_id,
+            now=NOW + timedelta(seconds=1),
+        )
+        is None
+    )
+    # occupancy 顺序与放行规则一致：高优（holder 自身）不在 waiting，位次 1 = 同高优更晚者。
+    occupancy = await service.desktop_occupancy(
+        "tenant-a", "user-a", now=NOW + timedelta(seconds=2)
+    )
+    positions = {item["objective_id"]: (item["position"], item["desktop_priority"])
+                 for item in occupancy["waiting"]}
+    assert positions[same_high.objective_id][0] == 1
+    assert positions[same_high.objective_id][1] == 5
+    assert positions[low_first.objective_id][0] == 2
+    assert positions[low_first.objective_id][1] == 0
+    # 队头按生产顺序离队（RUNNING 离开 pending 队列）并释放 → 新队头 = 同高优更晚者。
+    # claim 按租约序返回任一可领取执行，循环直到领到队头执行本身的租约。
+    token = None
+    for _ in range(10):
+        claimed = await service.repository.claim(NOW)
+        if claimed is None:
+            break
+        claimed_execution, claimed_token = claimed
+        if claimed_execution.execution_id == high_execs[0].execution_id:
+            token = claimed_token
+            break
+    assert token is not None, "the head execution must be claimable"
+    assert await service.repository.save_execution(
+        high_execs[0].model_copy(
+            update={"status": ObjectiveExecutionStatus.RUNNING, "run_id": "run-prio-1"}
+        ),
+        token,
+        NOW,
+    )
+    await service.repository.release_desktop_turn(
+        tenant_id="tenant-a", user_id="user-a",
+        execution_id=high_execs[0].execution_id,
+        now=NOW + timedelta(seconds=30),
+    )
+    next_turn = await service.repository.acquire_desktop_turn(
+        tenant_id="tenant-a", user_id="user-a",
+        objective_id=same_high.objective_id,
+        execution_id=same_execs[0].execution_id,
+        now=NOW + timedelta(seconds=60),
+    )
+    assert next_turn is not None
+    # 低优先级仍然排在同高优之后。
+    assert (
+        await service.repository.acquire_desktop_turn(
+            tenant_id="tenant-a", user_id="user-a",
+            objective_id=low_first.objective_id,
+            execution_id=low_execs[0].execution_id,
+            now=NOW + timedelta(seconds=61),
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_desktop_ttl_expiry_lets_priority_head_take_over(
+    database: DatabaseFixture,
+) -> None:
+    """TTL 过期释放后，高优先级成为新队头可 acquire；活 holder 过期前不可抢。"""
+    from datetime import UTC, timedelta
+
+    service = make_service(database)
+    stale = await service.create(
+        "tenant-a", "user-a",
+        brief(**{"title": "过期低优", "budget": {"requiresDesktop": True, "maxRunsPerDay": 10}}),
+    )
+    await service.repository.schedule_due(
+        datetime.now(UTC) + timedelta(minutes=61), unviewed_pause_hours=None
+    )
+    stale_execs = await service.repository.executions("tenant-a", "user-a", stale.objective_id)
+    assert stale_execs
+    # 低优先取到（此刻它是唯一桌面 pending）。
+    first_turn = await service.repository.acquire_desktop_turn(
+        tenant_id="tenant-a", user_id="user-a",
+        objective_id=stale.objective_id,
+        execution_id=stale_execs[0].execution_id,
+        now=NOW, ttl_seconds=120,
+    )
+    assert first_turn is not None
+    # 高优稍后才创建并入队：holder 未过期 → 不能抢。
+    urgent = await service.create(
+        "tenant-a", "user-a",
+        brief(**{"title": "高优紧急", "budget": {"requiresDesktop": True, "desktopPriority": 9,
+                                                "maxRunsPerDay": 10}}),
+    )
+    await service.repository.schedule_due(
+        datetime.now(UTC) + timedelta(minutes=122), unviewed_pause_hours=None
+    )
+    urgent_execs = await service.repository.executions("tenant-a", "user-a", urgent.objective_id)
+    assert urgent_execs, "the urgent duty must gain a pending execution"
+    assert (
+        await service.repository.acquire_desktop_turn(
+            tenant_id="tenant-a", user_id="user-a",
+            objective_id=urgent.objective_id,
+            execution_id=urgent_execs[-1].execution_id,
+            now=NOW + timedelta(seconds=60),
+        )
+        is None
+    )
+    # TTL 过期 → 旧持有被释放；高优是队头 → acquire 成功（这是等过期，不是抢占）。
+    expired_turn = await service.repository.acquire_desktop_turn(
+        tenant_id="tenant-a", user_id="user-a",
+        objective_id=urgent.objective_id,
+        execution_id=urgent_execs[-1].execution_id,
+        now=NOW + timedelta(seconds=180),
+    )
+    assert expired_turn is not None
