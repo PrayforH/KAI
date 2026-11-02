@@ -88,3 +88,57 @@
 - 174。
 - 任何 IM 通道（暂缓）。
 - 用户真实 Vault、真实 Bot 资料与消息；本轮全部用合成账号与合成数据。
+
+---
+
+# 补充：79 发布与 79 真实接口验收（01:16 恢复连接后）
+
+## 8.1 79 当前状态核对（发布前）
+
+- 容器：`api`/`worker` = `kai/superagent-api:20261102-842adcfd`（旧首段任务 01:00 前后发布），`web` = `kai/superagent-web:20261102-0db1e0b7`，schema `0064`。
+- **并发**：切换前 `active_runs=0`、`active_objectives=0`（两次切换都核对过）。
+- **其他 Agent 提交**：`842adcfd`（make the model speak before its first tool）与 `ef9710a6`（发布记录）在本分支基线之上，已 `merge`（`67ef9304`，无冲突），未覆盖对方提交。
+- 私有 compose 备份：`/data/kai-79-20261013/compose.private.before-kai-bot-20261103.json`；回滚＝按该文件逐服务改回旧镜像。
+
+## 8.2 发布记录
+
+| 批 | 镜像 | 内容 | 结果 |
+| --- | --- | --- | --- |
+| 1 | api/worker `kai/superagent-api:20261103-8546636d`、web `kai/superagent-web:20261103-67ef9304` | P13/P14/P15 + 合并 `842adcfd` + ADD-2 | 迁移 `0064→0065` 成功；三服务 healthy |
+| 2 | api/worker `kai/superagent-api:20261103-0025afa8` | 修掉「撤销授权没真正移除 credential_ref」 | 重新滚动成功；healthy |
+
+- 证据目录：`/data/kai-bot-vault-20261103-67ef9304/`（`api-build*.log`、`web-build.log`、`rollout*.log`、`release-result.json`）。
+- API 镜像在**现网运行镜像**上叠加（`FROM kai/superagent-api:20261102-842adcfd`），依赖集与现网一致；web 用干净 `node:22-alpine` 两段构建（9 层），不继承旧 bundle。
+
+## 8.3 79 真实接口验收（合成账户，接口级）
+
+用产品正常注册流程创建的合成账户 `zcode-accept-1103@local.test`（显示名「ZCode验收1103」，tenant `local`，role `member`）；未使用、也未伪造本人账户的登录态。
+
+| 项 | 结果 |
+| --- | --- |
+| 取色表接口 `GET /specialists/appearance/palette` | 12 色 / 14 形 |
+| 新建 Bot 随机外观 | 两个新 Bot 分别得到 `#7442d1/rounded-triangle`、`#0d9381/star`，互不相同、且都不是默认的 `#126fd4/blob` |
+| 三项资料 `POST /specialists/{id}/profile` | 名称/标题/描述均按提交落库 |
+| @ 投递回执 `POST /specialists/{id}/messages` | 生成 handover；**同一把 `Idempotency-Key` 重复提交只留一条**（handover 计数 1） |
+| Vault 列表 | 只返回标题/分类/末四位/是否已保存，**响应与列表里都没有值** |
+| Vault 卡片类 | 传 `cvv` → 422 拒绝；末四位可存 |
+| Vault 授权 / 撤销 | 授权写入 `credential_ref:<标题>`；撤销后该引用从响应与回读里都消失（第一批发现的缺陷，已修并复验） |
+| Vault 删除 | 标题不一致 → 409；一致 → 删除成功 |
+| 存储层 | 凭据表里没有明文（`plaintext_secret_rows=0`）；Vault 行只属于合成账户 |
+
+## 8.4 ADD-2：助理默认跟随平台联网（79 实测）
+
+- **发布前实测**：79 上全部子助理（行业快报监控、编码协同、天气提醒、休息提醒）都跑 `archive-assistant-agent 0.1.1`，其 manifest 与**已发布工具目录**里都没有 `WebSearch/WebFetch`——平台联网开关是开的，但这些 Bot 实际搜不了；只有主助理的 `lead-agent` 能。
+- **改动**：运行时新增 `assistant_scope` 标记（助理会话与助理例行执行），平台联网可用且本人没关闭时，助理自动获得平台内置搜索/抓取工具；复用既有 `WebConfigurationService` 与密钥，未新增第二套联网引擎；任务/项目面不继承，用户关闭立即生效。
+- **79 证据**：
+  - 部署镜像内 `claude_sdk.py` 已含 `assistant_scope` 分支 ✓；
+  - 合成账户的真实助理运行 `run_eb90902e…`（`assistant_scope=true`、`conversation_surface=assistant`、状态 `succeeded`）的工具请求包含 `WebSearch`、`WebFetch` ✓；
+  - 决定性用例（智能体自身**不声明**联网工具、且带已发布工具目录）由集成测试 `tests/integration/runtime/test_assistant_web_inheritance.py` 覆盖：注入后目录校验不失败、联网工具照样装配；任务面不继承；用户关闭时不装配。
+  - 说明：该决定性用例**未在 79 上跑成真实运行**——合成账户的目录里只有 `lead-agent`（自带联网工具），`archive-assistant-agent` 不在平台目录里，走 `/v1/agui` 直接 404；其另一分支 `general-analyst` 的模型路由 `deepseek-v4-pro` 在该账户不可用（与本次改动无关）。因此「不带联网工具的智能体在 79 上真实联网」这一条**仍是接口/测试级证据，不是 79 实跑证据**。
+
+## 8.5 79 真实页面验收：未完成（需要本人接管）
+
+- 内嵌浏览器打开 `https://172.20.105.79:3543/assistant` 报 `ERR_CERT_AUTHORITY_INVALID`（自签证书）。按约束**不关闭证书校验、不越过安全警告**。
+- 退到纯 HTTP `http://172.20.105.79:3501/assistant` 可加载，但 79 的 `AUTH_COOKIE_SECURE=true`，会话 Cookie 带 `Secure`，浏览器在 http 下不存储 → 无法登录。
+- 也**未**自行签发/伪造既有用户 token、注入会话或改认证库来冒充既有登录态。
+- 因此 **79 真实页面（页头三项资料、随机外观、@ 候选与回执、Vault 分类与脱敏）在 79 上未做实页验证**；本机同提交的实页证据见第 6 节。需要本人用自己的浏览器登录 79（或提供受信任的 HTTPS 入口）后补这一项。
