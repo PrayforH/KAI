@@ -5,8 +5,10 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 from ag_ui.core import ActivityDeltaEvent, ActivitySnapshotEvent, BaseEvent
+from pydantic import ValidationError
 
 from harness.agui.failure import failure_message
+from harness.assistant.receipts import AssistantControlReceipt
 from harness.core.events import RunEvent
 from harness.runtime.audit_redaction import redact_text, redact_tool_arguments
 from harness.runtime.input_redaction import redact_internal_agent_asset_events
@@ -243,6 +245,16 @@ def _item(
 
 
 def _activity_item(event: RunEvent) -> dict[str, Any] | None:
+    if event.type == "ui.assistant_control":
+        try:
+            receipt = AssistantControlReceipt.model_validate(event.payload)
+        except ValidationError:
+            return None
+        return _item(
+            event, kind="result", status="succeeded", title="助理设置回执",
+            summary=receipt.summary,
+            metadata={"assistant_control": receipt.model_dump(mode="json")},
+        )
     payload = event.payload
     if event.type == "run.queued":
         return _item(

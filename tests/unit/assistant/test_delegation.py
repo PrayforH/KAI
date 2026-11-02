@@ -235,6 +235,7 @@ def overlay(
     *,
     coordinator_thread: bool = True,
     emit: Any = None,
+    emit_receipt: Any = None,
 ) -> Any:
     run = Run(
         run_id="run-1",
@@ -261,6 +262,7 @@ def overlay(
         session,
         coordinator_thread=coordinator_thread,
         emit=emit,
+        emit_receipt=emit_receipt,
     )
 
 

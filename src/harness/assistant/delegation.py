@@ -27,6 +27,7 @@ from harness.assistant.models import (
     ObjectiveSchedule,
     ObjectiveStatus,
 )
+from harness.assistant.receipts import notification_receipt
 from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
 from harness.core.models import Run, Session
 from harness.runtime.platform_tools import PlatformTool, PlatformToolOverlay
@@ -160,6 +161,7 @@ def assistant_delegation_overlay(
     read_only: bool = False,
     parent_objective_id: str | None = None,
     emit: "Callable[[dict[str, Any]], Awaitable[None]] | None" = None,
+    emit_receipt: "Callable[[dict[str, Any]], Awaitable[None]] | None" = None,
 ) -> PlatformToolOverlay:
     if not coordinator_thread:
         # Background objective executions and unrelated agents never delegate;
@@ -553,6 +555,12 @@ def assistant_delegation_overlay(
             status = await gateway.managed_status(tenant_id, user_id, objective_id)
         except (ConflictError, NotFoundError, PermissionDeniedError, ValueError) as error:
             return _text(f"关注状态未能确认：{error}；请重新查询，不要据此宣称修改成功。")
+        receipt = notification_receipt(status, changed=changing)
+        if emit_receipt is not None and receipt is not None:
+            try:
+                await emit_receipt(receipt.model_dump(mode="json"))
+            except Exception:  # noqa: BLE001 - the confirmed business result remains available
+                pass
         prefix = (
             "关注设置已保存；仅影响结果通知，不启动或停止原任务。\n"
             if changing else "原任务关注状态（只读，不启动执行）：\n"

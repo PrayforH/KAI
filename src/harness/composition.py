@@ -1637,6 +1637,12 @@ def build_production_container(
                         payload=payload,
                     )
 
+                async def emit_control_receipt(payload: dict[str, object]) -> None:
+                    await events.append(
+                        tenant_id=run_tenant, run_id=run_id, session_id=run.session_id,
+                        event_type="ui.assistant_control", payload=payload,
+                    )
+
                 delegation_overlay = assistant_delegation_overlay(
                     AssistantDelegationGateway(container.assistant),
                     run,
@@ -1651,6 +1657,7 @@ def build_production_container(
                         else None
                     ),
                     emit=emit_handover,
+                    emit_receipt=emit_control_receipt,
                 )
         memory_overlay = PlatformToolOverlay()
         specialist = (

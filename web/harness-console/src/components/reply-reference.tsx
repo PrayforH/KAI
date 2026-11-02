@@ -87,7 +87,9 @@ function focusComposerInput() {
 }
 
 /** Reply action for message action bars; quotes the message it renders on. */
-export function MessageReplyButton({ className, label }: { className?: string; label: string }) {
+export function MessageReplyButton({ className, label, excerptOverride }: {
+  className?: string; label: string; excerptOverride?: string;
+}) {
   const controller = useComposerReply();
   const messageId = useAuiState((state) => state.message.id);
   const text = useAuiState((state) =>
@@ -97,7 +99,7 @@ export function MessageReplyButton({ className, label }: { className?: string; l
       .join("\n"),
   );
   if (!controller) return null;
-  const excerpt = text.trim().replace(/\s+/g, " ").slice(0, 160);
+  const excerpt = (excerptOverride ?? text).trim().replace(/\s+/g, " ").slice(0, 160);
   return (
     <button
       type="button"

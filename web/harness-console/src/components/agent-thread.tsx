@@ -80,6 +80,8 @@ import { TaskAgentSwitcher } from "./task-agent-switcher";
 import { ApprovalCard, type ApprovalDetails } from "./approval-card";
 import { ArtifactCard, isImageArtifact, type ArtifactDetails } from "./artifact-list";
 import { AssistantResults } from "./assistant-results";
+import { AssistantControlDetails } from "./assistant-control-details";
+import { assistantControlSummary } from "../lib/assistant-control-receipt";
 import { usePersonalAssistantEntry } from "./personal-assistant-context";
 import { replyWebImages } from "../lib/reply-web-images";
 import { ReplyWebImages } from "./reply-web-images";
@@ -1597,6 +1599,10 @@ export function HarnessAssistantMessage() {
   // Only blocks the model authored came from a fence in this answer, so only that
   // many fences may be hidden from the rendered Markdown.
   const publishedBlocks = useMemo(() => modelBlockSources(turnPresentations), [turnPresentations]);
+  const controlSummary = personalAssistant && !assistantBot && !hasVideoGeneration &&
+    !conversationScope && !turnArtifacts.length && !turnPresentations.length
+    ? assistantControlSummary(terminalActivity) : null;
+  const displayedText = controlSummary ? redact(controlSummary) : copyText;
   const draftScope = useContext(ComposerDraftContext);
   const runPresentationAction: PresentationActionHandler | undefined = threadRuntime && !conversationScope ? submitUiAction : undefined;
   const actionHistory = useMemo(() => draftScope ? createThreadHistoryAdapter(draftScope.threadId) : null, [draftScope]);
@@ -1610,14 +1616,14 @@ export function HarnessAssistantMessage() {
   }, [actionHistory, threadRuntime]);
   const actionBusy = ["running", "queued", "waiting_approval"].includes(runView?.phase ?? "");
   // 历史/重试偶尔把同一条回答写成相邻两条 assistant；只保留第一条。
-  if (duplicateAssistantReply) return null;
+  if (duplicateAssistantReply && !controlSummary) return null;
   return (
     <AnswerCitationProvider citations={answerCitations}>
     <PublishedBlocksProvider sources={publishedBlocks}>
     <AssistantMessage.Root
       className="harness-assistant-message"
       data-test-run={conversationScope && messageId.startsWith("assistant-") ? messageId.replace(/^assistant-/, "") : undefined}
-      data-turn-answer={copyText.replace(/\s+/g, " ").slice(0, 360)}
+      data-turn-answer={displayedText.replace(/\s+/g, " ").slice(0, 360)}
       data-direct-stream={directStream ? "true" : "false"}
     >
       {!hasVideoGeneration ? <TurnActivity
@@ -1638,7 +1644,7 @@ export function HarnessAssistantMessage() {
       />
       {/* 回答与操作栏同一行：按钮贴在气泡右下角，而不是飘到面板边缘 */}
       <div className="assistant-answer-row">
-      <AssistantResponse key={messageId} text={copyText} streaming={directStream ? live.status === "streaming" && !live.textComplete : messageStatus?.type === "running"} />
+      <AssistantResponse key={messageId} text={displayedText} streaming={!controlSummary && (directStream ? live.status === "streaming" && !live.textComplete : messageStatus?.type === "running")} />
       {!hasVideoGeneration ? (
       <div className="assistant-message-controls">
           <AssistantActionBar.Root
@@ -1648,9 +1654,10 @@ export function HarnessAssistantMessage() {
             <MessageCopyButton
               className="assistant-message-copy"
               label="复制回答"
-              text={copyText}
+              text={displayedText}
             />
-            <MessageReplyButton className="assistant-message-copy" label="回复这条回答" />
+            <MessageReplyButton className="assistant-message-copy" label="回复这条回答"
+              excerptOverride={controlSummary ? displayedText : undefined} />
             {!assistantSurface && (
               <>
                 <MessageFeedbackButtons runId={feedbackRun} />
@@ -1661,9 +1668,14 @@ export function HarnessAssistantMessage() {
         </div>
       ) : null}
       </div>
+      {controlSummary && copyText.trim() && copyText.trim() !== displayedText.trim() && (
+        <AssistantControlDetails>
+          <AssistantResponse text={copyText} streaming={messageStatus?.type === "running"} />
+        </AssistantControlDetails>
+      )}
       <div className="followup-input-anchor" data-followup-for={messageId} />
       {!hasVideoGeneration && <TerminalResponseNotice activity={terminalActivity}
-        hasResponse={Boolean(copyText.trim()) || turnPresentations.length > 0 || turnArtifacts.length > 0} />}
+        hasResponse={Boolean(displayedText.trim()) || turnPresentations.length > 0 || turnArtifacts.length > 0} />}
       {turnPresentations.length > 0 ? (
         <div className="intelligent-ui-blocks">
           {turnPresentations.map((presentation) => (

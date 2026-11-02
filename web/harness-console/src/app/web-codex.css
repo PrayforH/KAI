@@ -3553,6 +3553,17 @@ body.codex-theme-v1:has(.console-shell) .assistant-progress-strip li > button {
   cursor: pointer;
 }
 
+body.codex-theme-v1:has(.console-shell) .assistant-control-details {
+  margin: 6px 0 12px;
+}
+
+body.codex-theme-v1:has(.console-shell) .assistant-control-details > summary {
+  cursor: pointer;
+  color: #999;
+  font-size: 12px;
+  padding: 4px 0;
+}
+
 
 body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .aui-thread-viewport {
   padding-top: 12px;
