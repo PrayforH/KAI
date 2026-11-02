@@ -231,3 +231,14 @@ Ruff/diff通过。测试库仅127.0.0.1:15483/harness_test。
 随后遵照新指令中止旧页面流程。事件关注/关闭/刷新实页验收尚未完成，后续通过主助理对话继续，
 不能把代码/46项存储回归/healthy当作该流程已通过。正在只发布本批移除页面的Web补丁。
 完整要求覆盖见docs/plans/2026-11-02-superagent-acceptance.md；Goal仍active，IM仍暂缓。
+
+## 本批最终部署与页面移除核验
+
+79 API/Worker保留4538be77，Web最终更新为1da55716（image e97d12780734）。
+4538批有新私有业务库备份并通过pg_restore目录读取；本批Web切换前后无活跃Run/职责，
+schema0064无迁移，非目标服务Compose配置逐项不变，Web运行健康。
+旧/studio/assistant在路由层返回HTTP307、Location=/assistant，主助理HTTP200；
+真实Chrome刷新原持续事项标签后，地址和页面标题均进入/assistant“我的助理”。
+没有继续提交旧管理表单；只读核对未生成原验收职责。原任务、配置、历史和业务API保留。
+删除页面后22项保留前端测试、next typegen与tsc及生产构建通过。
+原任务事件关注/关闭/刷新闭环尚待在主助理对话内验收，不恢复独立管理页；IM仍暂缓，Goal active。
