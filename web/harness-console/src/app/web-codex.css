@@ -3388,7 +3388,7 @@ body.codex-theme-v1:has(.console-shell) .aui-thread-root .aui-thread-viewport {
 
 /* Background receipts live behind a header entry, outside the message flow. */
 body.codex-theme-v1:has(.console-shell) .assistant-progress-strip {
-  position: relative;
+  position: static;
   flex: 0 1 auto;
   min-width: 0;
   padding: 0;
