@@ -75,8 +75,9 @@ describe("bot rail refreshes as soon as viewed clears the pause", () => {
     });
     await act(async () => {});
 
-    expect(host.querySelector('.bot-rail-item[data-paused="true"]')).not.toBeNull();
-    expect(host.textContent ?? "").toContain("已暂停 · 无人查看");
+    const pausedRow = host.querySelector('.bot-rail-item[data-paused="true"]');
+    expect(pausedRow).not.toBeNull();
+    expect(pausedRow?.getAttribute("title")).toBe("已暂停 · 无人查看");
 
     await act(async () => {
       window.dispatchEvent(
@@ -89,8 +90,12 @@ describe("bot rail refreshes as soon as viewed clears the pause", () => {
 
     expect(host.querySelector('.bot-rail-item[data-paused="true"]')).toBeNull();
     expect(host.textContent ?? "").not.toContain("已暂停");
-    // 重拉后恢复原描述，而不是留一条空的暂停行。
-    expect(host.textContent ?? "").toContain("职责说明");
+    // 侧栏只显示名称：重拉后不留暂停标记，也不把旧描述塞回来。
+    const botLabel = [...host.querySelectorAll(".bot-rail-item")].find((node) =>
+      (node.textContent ?? "").includes("休息提醒"),
+    );
+    expect(botLabel?.querySelector(".bot-rail-label")?.textContent).toBe("休息提醒");
+    expect(host.textContent ?? "").not.toContain("职责说明");
   });
 
   it("keeps the old list (and stops listening) on unmount", async () => {

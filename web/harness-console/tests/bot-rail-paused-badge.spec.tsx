@@ -88,17 +88,21 @@ describe("isUnviewedPaused", () => {
 });
 
 describe("bot rail paused badge", () => {
-  it("marks every unviewed-paused bot in both groups and shows the reason", async () => {
+  it("marks every unviewed-paused bot in both groups without adding a second line", async () => {
     await mount([pausedActive, normalActive, pausedPending, otherReason]);
 
     const paused = [...host.querySelectorAll('.bot-rail-item[data-paused="true"]')];
     expect(paused).toHaveLength(2);
-    const pausedText = paused.map((node) => node.textContent ?? "").join(" | ");
-    expect(pausedText).toContain("休息提醒");
-    expect(pausedText).toContain("天气提醒");
-    expect(pausedText).toContain("已暂停 · 无人查看");
-    // 读屏可直接听到暂停原因。
-    for (const node of paused) expect(node.textContent ?? "").toContain("已暂停");
+    const pausedNames = paused.map(
+      (node) => node.querySelector(".bot-rail-label strong")?.textContent,
+    );
+    expect(pausedNames).toEqual(["休息提醒", "天气提醒"]);
+    for (const node of paused) {
+      // 侧栏只显示名称；暂停提示走 title，不占副行。
+      expect(node.querySelector(".bot-rail-label small")).toBeNull();
+      expect(node.getAttribute("title")).toBe("已暂停 · 无人查看");
+      expect(node.textContent ?? "").not.toContain("已暂停");
+    }
   });
 
   it("leaves normal bots and non-unviewed reasons unmarked", async () => {
@@ -110,12 +114,12 @@ describe("bot rail paused badge", () => {
       ) ?? null;
     const normal = byName("行业快报监控");
     expect(normal?.getAttribute("data-paused")).toBeNull();
-    expect(normal?.textContent).not.toContain("已暂停");
-    expect(normal?.textContent).toContain("职责说明");
+    expect(normal?.getAttribute("title")).toBeNull();
+    expect(normal?.querySelector(".bot-rail-label")?.textContent).toBe("行业快报监控");
 
     const other = byName("示例 Bot");
     expect(other?.getAttribute("data-paused")).toBeNull();
-    expect(other?.textContent).not.toContain("已暂停");
+    expect(other?.querySelector(".bot-rail-label")?.textContent).toBe("示例 Bot");
   });
 
   it("never marks the main assistant entry", async () => {
@@ -123,7 +127,7 @@ describe("bot rail paused badge", () => {
     const main = host.querySelector('.bot-rail-item[href="/assistant"]');
     expect(main).not.toBeNull();
     expect(main?.getAttribute("data-paused")).toBeNull();
-    expect(main?.textContent).toContain("主助理");
+    expect(main?.querySelector(".bot-rail-label")?.textContent).toBe("主助理");
     expect(main?.textContent).not.toContain("已暂停");
   });
 });

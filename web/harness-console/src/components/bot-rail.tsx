@@ -184,7 +184,6 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
             <BotRailAvatar letter="K" tone={BOT_ACCENTS[0]!} />
             <span className="bot-rail-label">
               <strong>主助理</strong>
-              <small>统一接活、跟进与交付</small>
             </span>
           </Link>
         </li>
@@ -195,6 +194,7 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
               className="bot-rail-item"
               data-active={activeBot === item.specialistId ? "true" : undefined}
               data-paused={isUnviewedPaused(item) ? "true" : undefined}
+              title={isUnviewedPaused(item) ? "已暂停 · 无人查看" : undefined}
               href={`/assistant?bot=${encodeURIComponent(item.specialistId)}`}
               onClick={(event) => openBot(event, item.specialistId)}
             >
@@ -204,10 +204,6 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
               />
               <span className="bot-rail-label">
                 <strong>{item.name}</strong>
-                {/* 暂停时用状态文案替换描述：列表里一眼可见，且不会被省略号截掉。 */}
-                <small>
-                  {isUnviewedPaused(item) ? "已暂停 · 无人查看" : item.description || item.agentName}
-                </small>
               </span>
             </Link>
           </li>
@@ -221,6 +217,7 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
               className="bot-rail-item"
               data-active={activeBot === item.specialistId ? "true" : undefined}
               data-paused={isUnviewedPaused(item) ? "true" : undefined}
+              title={isUnviewedPaused(item) ? "已暂停 · 无人查看" : undefined}
               href={`/assistant?bot=${encodeURIComponent(item.specialistId)}`}
               onClick={(event) => openBot(event, item.specialistId)}
             >
@@ -230,10 +227,6 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
               />
               <span className="bot-rail-label">
                 <strong>{item.name}</strong>
-                {/* 暂停时用状态文案替换描述：列表里一眼可见，且不会被省略号截掉。 */}
-                <small>
-                  {isUnviewedPaused(item) ? "已暂停 · 无人查看" : item.description || item.agentName}
-                </small>
               </span>
             </Link>
           </li>
