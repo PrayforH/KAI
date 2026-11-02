@@ -18,7 +18,7 @@ export function AssistantResults({ artifacts }: { artifacts: ArtifactDetails[] }
   });
   if (!files.length) return null;
   return (
-    <section className={styles.results} aria-label="交付文件">
+    <section className={styles.results} aria-label="交付文件" data-preview-open={Boolean(selected)}>
       <div className={styles.files}>
         {files.map(file => {
           const name = file.name || "未命名文件";
@@ -28,6 +28,7 @@ export function AssistantResults({ artifacts }: { artifacts: ArtifactDetails[] }
             <article className={styles.file} key={file.artifact_id}>
               <button type="button" className={styles.open}
                 aria-label={`预览 ${name}`}
+                aria-expanded={selected?.artifact_id === file.artifact_id}
                 onClick={() => setSelected({ ...file, name, media_type: file.media_type || "application/octet-stream" })}>
                 <span className={styles.mark} aria-hidden="true">{name.includes(".") ? name.split(".").at(-1)?.slice(0, 5).toUpperCase() : "FILE"}</span>
                 <span className={styles.copy}><strong>{name}</strong><small>{formatBytes(file.size_bytes)} · 预览</small></span>

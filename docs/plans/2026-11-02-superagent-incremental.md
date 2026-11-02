@@ -117,3 +117,13 @@ Goal 保持 active，后续首先网页主/子助理、配置、引用、原任�
 保留首个真实预览下载目标，不删除历史 Artifact 或改写发送记录。
 本地验证：Worker 全文件 68 passed（含新增 5 项），成果组件 10 passed，tsc/Ruff/diff 通过。
 该去重回修尚待发布和新真实页面复核；d78a8d5a 的旧测试不能替代它的上线验收。
+
+去重 eeab0194 已只更新 79 Worker 与 Web，API/control/渠道仍为 d78a8d5a，
+无新迁移。切换前后活跃 Run/职责执行均为 0；Worker/Web healthy 且源码 hash 一致。
+真实页面刷新后，SA79-1102-A 四份历史条目已收成 TXT/HTML 两份，
+HTML 仍可预览，下载 URL 保留首个已核验 Artifact。
+
+视觉检查再发现：展开的 HTML 预览被文件卡的 fit-content/420px 上限压窄。
+本批局部修整仅在预览打开时使用会话可用宽度；文件列表保持紧凑，
+补齐预览按钮的 aria-expanded；关闭或刷新回到文件卡，不改下载与认证逻辑。
+仍待本批发布后的真实桌面/窄屏复核。
