@@ -74,6 +74,8 @@
 - **04:30** 发现并修掉既有缺陷：`_default_agent` 调用不存在的 `AgentService.list_for_user`，导致主助理资料记录永远建不出来（基线同样存在）。
 - **05:30–07:30** 本机真实页面验收（生产容器 + 全新 Postgres 库 + 全新账号）：页头/随机外观/@ 提及与回执/Vault/白色外观五项均取得截图证据。
 - **07:35** 结果文档 `docs/results/2026-11-03-kai-bot-vault-79.md` 落盘；79 发布与 79 实页验收因缺凭据明确标为未完成。
+- **07:50** 飞书同步：追加本轮进展，回读 revision 83（历史内容未被覆盖）。
+- **07:55** 79 发布脚本备好：`/Users/xiaokai/.codex/visualizations/2026/11/02/kai-superagent-plan/deploy-kai-bot-79.sh`（`SSHPASS=… bash deploy-kai-bot-79.sh`）。
 
 ## 4. 与合同的差异说明
 
