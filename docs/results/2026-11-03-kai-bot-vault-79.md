@@ -160,11 +160,17 @@
 | ① `8546636d` | `kai/superagent-api:20261103-8546636d` | `kai/superagent-web:20261103-67ef9304` | 0064→0065 | healthy |
 | ② `0025afa8` | `kai/superagent-api:20261103-0025afa8` | 同上 | 0065 | healthy |
 | ③ `12a3d523` | `kai/superagent-api:20261103-12a3d523` | `kai/superagent-web:20261103-12a3d523` | 0065 | healthy |
+| ④ `24212a54` | `kai/superagent-api:20261103-24212a54` | 同上 | 0065 | healthy（收回授权时容忍并发编辑） |
 
 - 三批均在切换前核对 `active_runs=0`、`active_objectives=0` 与 schema；失败即按 `compose.private.before-kai-bot-20261103.json` 逐服务回滚。
 - 79 现网前端产物已确认含新代码（静态 chunk 中可检出「助理资料库」「外观由服务端随机分配」「已发送消息给」）。
 
-## 8.8 需要本人处理的一项（不冒充已完成）
+## 8.8 79 最终状态（04 批发布后）
+
+- `api`/`worker` = `kai/superagent-api:20261103-24212a54`，`web` = `kai/superagent-web:20261103-12a3d523`，schema `0065`，三服务 healthy。
+- 最后一轮复验（合成账户，接口级）：暂停态 Bot 投递 409 且不留回执；授权 → 删除 → 回读确认引用已收回；凭据表无明文、Vault 行已清空 ✓。
+
+## 8.9 需要本人处理的一项（不冒充已完成）
 
 79 真实页面验收需要本人用自己的浏览器处理自签证书并正常登录后完成；本轮未添加证书信任、未关闭校验、未伪造登录态、未改认证配置，也未用接口验收冒充实页。核对清单（页面 https://172.20.105.79:3543/assistant）：
 
