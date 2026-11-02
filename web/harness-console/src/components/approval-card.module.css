@@ -31,3 +31,13 @@
 .error { margin: 0; font-size: 13px; color: var(--codex-error, #e58080); overflow-wrap: anywhere; }
 @media (max-width: 520px) { .actions { width: 100%; flex-direction: column; align-items: stretch; } .actions button { width: 100%; } }
 @media (prefers-reduced-motion: reduce) { .actions button { transition: none; } }
+
+/* Match Bot question cards without reducing the visible consent scope. */
+:global(.chat-stage[data-surface="assistant"]) .card { width: min(640px, 100%); box-sizing: border-box; margin: 8px 0 10px; border-radius: 22px; background: transparent; }
+:global(.chat-stage[data-surface="assistant"]) .body { padding: 18px; gap: 12px; }
+:global(.chat-stage[data-surface="assistant"]) .card h3 { font-weight: 600; }
+:global(.chat-stage[data-surface="assistant"]) .action pre { border: 0; padding: 10px 12px; background: var(--codex-surface-hover); }
+:global(.chat-stage[data-surface="assistant"]) .footer { padding: 0 18px 16px; }
+:global(.chat-stage[data-surface="assistant"]) .actions { width: auto; flex-direction: row; }
+:global(.chat-stage[data-surface="assistant"]) .actions button { width: auto; min-height: 36px; padding: 8px 16px; border-radius: 999px; }
+:global(.chat-stage[data-surface="assistant"]) .deny { border-color: transparent; color: var(--codex-muted); }

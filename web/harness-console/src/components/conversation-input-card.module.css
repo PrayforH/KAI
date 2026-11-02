@@ -57,3 +57,33 @@
 .actions { display: flex; align-items: center; gap: 8px; }
 .skip { border: 0; border-radius: 16px; padding: 6px 12px; min-height: 32px; background: transparent; color: var(--codex-muted); font: inherit; cursor: pointer; }
 .skip:hover:not(:disabled) { background: var(--codex-surface-hover); }
+
+/* Bot conversations use the same quiet question card in the main and child chat. */
+:global(.chat-stage[data-surface="assistant"]) .card {
+  box-sizing: border-box;
+  width: min(640px, 100%);
+  margin: 8px 0 10px;
+  border-radius: 22px;
+  background: transparent;
+  font-size: 14px;
+  line-height: 1.55;
+  text-align: left;
+}
+:global(.chat-stage[data-surface="assistant"]) .header { padding: 16px 18px 8px; }
+:global(.chat-stage[data-surface="assistant"]) .body { padding: 0 12px 14px; }
+:global(.chat-stage[data-surface="assistant"]) .body legend { padding: 0 6px; margin-bottom: 10px; font-weight: 600; }
+:global(.chat-stage[data-surface="assistant"]) .options { gap: 6px; max-height: 360px; }
+:global(.chat-stage[data-surface="assistant"]) .option { gap: 12px; min-height: 46px; padding: 10px 12px; border-radius: 12px; }
+:global(.chat-stage[data-surface="assistant"]) .marker { width: 24px; height: 24px; flex-basis: 24px; border-radius: 8px; font-weight: 400; }
+:global(.chat-stage[data-surface="assistant"]) .option:has(input:checked) .marker { border-color: var(--codex-line-strong); background: var(--codex-surface-raised); color: var(--codex-muted); }
+:global(.chat-stage[data-surface="assistant"]) .optionText { flex: 1; }
+:global(.chat-stage[data-surface="assistant"]) .optionText > span:first-child { font-weight: 400; }
+:global(.chat-stage[data-surface="assistant"]) .recommended { display: none; }
+.selectedCheck { width: 18px; height: 18px; flex: 0 0 18px; fill: currentColor; stroke: none; }
+:global(.chat-stage[data-surface="assistant"]) .freeform { margin-top: 12px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--codex-line); border-radius: 12px; }
+:global(.chat-stage[data-surface="assistant"]) .footer { padding: 12px 6px 0; }
+:global(.chat-stage[data-surface="assistant"]) :is(.submit, .skip) { min-height: 36px; border-radius: 999px; padding: 8px 16px; }
+@media (max-width: 480px) {
+  :global(.chat-stage[data-surface="assistant"]) .header { padding: 12px 14px 8px; }
+  :global(.chat-stage[data-surface="assistant"]) .body { padding: 0 8px 12px; }
+}

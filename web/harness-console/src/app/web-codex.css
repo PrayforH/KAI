@@ -4261,3 +4261,22 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] :i
   font-size: 13px;
   color: var(--muted-ink);
 }
+
+/* Setup and local consent share the Bot question-card frame and actions. */
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] :is(.specialist-setup-card, .handover-local-tool-permission-card, .handover-credential-card) {
+  box-sizing: border-box;
+  width: min(640px, 100%);
+  margin: 8px 0 10px;
+  padding: 18px;
+  border: 1px solid var(--codex-line);
+  border-radius: 22px;
+  background: transparent;
+  color: var(--codex-ink);
+  text-align: left;
+}
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-list { color: var(--codex-ink); font-size: 14px; gap: 8px; }
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-actions { justify-content: flex-end; margin-top: 16px; }
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] :is(.handover-local-tool-actions button, .specialist-setup-submit) { min-height: 36px; padding: 8px 16px; border: 0; border-radius: 999px; font: inherit; font-size: 13px; }
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-actions button { background: transparent; color: var(--codex-muted); }
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] :is(.handover-local-tool-actions button[data-action="allow"], .specialist-setup-submit) { background: var(--codex-ink); color: var(--codex-surface); }
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .specialist-setup-submit { justify-self: end; }
