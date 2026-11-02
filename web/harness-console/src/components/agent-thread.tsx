@@ -83,7 +83,6 @@ import { AssistantResults } from "./assistant-results";
 import { assistantControlSummary } from "../lib/assistant-control-receipt";
 import { assistantCopy, assistantPresentation, compactAssistantProgress, compactAssistantReceipt } from "../lib/assistant-copy";
 import { AssistantNoticeSource } from "./assistant-notice-source";
-import { usePersonalAssistantEntry } from "./personal-assistant-context";
 import { replyWebImages } from "../lib/reply-web-images";
 import { ReplyWebImages } from "./reply-web-images";
 import { ReplyArtifactImages } from "./reply-artifact-images";
@@ -1250,8 +1249,8 @@ function HarnessArtifactPart() {
 }
 
 const ReasoningPart: ReasoningMessagePartComponent = ({ text, status }) => {
-  const personalAssistant = usePersonalAssistantEntry();
-  return <details className="reasoning-card" data-active={status.type === "running"} open={!personalAssistant && status.type === "running"}>
+  const assistantSurface = useAssistantSurface();
+  return <details className="reasoning-card" data-active={status.type === "running"} open={!assistantSurface && status.type === "running"}>
     <summary>
       <span className="reasoning-mark" aria-hidden="true" />
       <span>{status.type === "running" ? "正在思考" : "已思考"}</span>
@@ -1518,7 +1517,6 @@ export function HarnessAssistantMessage() {
   const redact = useConversationRedactor();
   const assistantSurface = useAssistantSurface();
   const assistantBot = useAssistantBot();
-  const personalAssistant = usePersonalAssistantEntry();
   const conversationScope = useConversationScope();
   const live = useLiveResponse();
   const isLast = useAuiState((state) => state.message.isLast);
@@ -1598,7 +1596,7 @@ export function HarnessAssistantMessage() {
   );
   // Interactive answer blocks arrive on the same tool-call channel artifacts do,
   // so they are present live and after a reload without a second code path.
-  const compactMain = personalAssistant && assistantSurface && !assistantBot && !conversationScope;
+  const compactMain = assistantSurface && !assistantBot && !conversationScope;
   const allTurnPresentations = useMemo(() => turnSettled ? presentationsForMessage(content) : [], [content, turnSettled]);
   const turnPresentations = useMemo(() => compactMain
     ? allTurnPresentations.flatMap(item => { const visible = assistantPresentation(item); return visible ? [visible] : []; })
@@ -1632,6 +1630,22 @@ export function HarnessAssistantMessage() {
   const actionBusy = ["running", "queued", "waiting_approval"].includes(runView?.phase ?? "");
   // 历史/重试偶尔把同一条回答写成相邻两条 assistant；只保留第一条。
   if (duplicateAssistantReply && !isNotice && !controlSummary && !showingInputCard) return null;
+  const responseActions = !hasVideoGeneration ? (
+    <div className="assistant-message-controls">
+      <AssistantActionBar.Root className="assistant-feedback-actions" hideWhenRunning>
+        <MessageCopyButton className="assistant-message-copy" label="复制回答" text={actionText} />
+        {assistantSurface ? (
+          <MessageReplyButton className="assistant-message-copy" label="回复这条回答"
+            excerptOverride={compactMain || controlSummary || showingInputCard ? actionText : undefined} />
+        ) : (
+          <>
+            <MessageFeedbackButtons runId={feedbackRun} />
+            <TurnCompletion />
+          </>
+        )}
+      </AssistantActionBar.Root>
+    </div>
+  ) : null;
   return (
     <AnswerCitationProvider citations={answerCitations}>
     <PublishedBlocksProvider sources={publishedBlocks}>
@@ -1643,7 +1657,7 @@ export function HarnessAssistantMessage() {
       data-turn-answer={displayedText.replace(/\s+/g, " ").slice(0, 360)}
       data-direct-stream={directStream ? "true" : "false"}
     >
-      {isNotice && <AssistantNoticeSource parts={content} />}
+      {assistantSurface && isNotice && <AssistantNoticeSource parts={content} />}
       {!hasVideoGeneration ? <TurnActivity
         hasDurableProjection={hasRunActivityToolCall(content)}
         messageId={messageId}
@@ -1660,31 +1674,10 @@ export function HarnessAssistantMessage() {
           },
         }}
       />
-      {/* 回答与操作栏同一行：按钮贴在气泡右下角，而不是飘到面板边缘 */}
-      <div className="assistant-answer-row">
+      {/* Bot controls sit beside the bubble; task controls stay below deliverables. */}
+      <div className={assistantSurface ? "assistant-answer-row" : "task-answer-row"}>
       <AssistantResponse key={messageId} text={displayedText} streaming={!controlSummary && (directStream ? live.status === "streaming" && !live.textComplete : messageStatus?.type === "running")} />
-      {!hasVideoGeneration ? (
-      <div className="assistant-message-controls">
-          <AssistantActionBar.Root
-            className="assistant-feedback-actions"
-            hideWhenRunning
-          >
-            <MessageCopyButton
-              className="assistant-message-copy"
-              label="复制回答"
-              text={actionText}
-            />
-            <MessageReplyButton className="assistant-message-copy" label="回复这条回答"
-              excerptOverride={compactMain || controlSummary || showingInputCard ? actionText : undefined} />
-            {!assistantSurface && (
-              <>
-                <MessageFeedbackButtons runId={feedbackRun} />
-                <TurnCompletion />
-              </>
-            )}
-          </AssistantActionBar.Root>
-        </div>
-      ) : null}
+      {assistantSurface && responseActions}
       </div>
       <div className="followup-input-anchor" data-followup-for={messageId} />
       {!hasVideoGeneration && <TerminalResponseNotice activity={terminalActivity}
@@ -1727,12 +1720,13 @@ export function HarnessAssistantMessage() {
       {!hasVideoGeneration ? (
         <>
         <div className="artifact-summary-line">
-          {personalAssistant || conversationScope?.compactComposer ? <AssistantResults artifacts={turnArtifacts} /> : <ArtifactSummaryRow artifacts={turnArtifacts} />}
+          {assistantSurface || conversationScope?.compactComposer ? <AssistantResults artifacts={turnArtifacts} /> : <ArtifactSummaryRow artifacts={turnArtifacts} />}
         </div>
         </>
       ) : null}
+      {!assistantSurface && responseActions}
       {conversationScope?.afterMessage(messageId)}
-      {shouldShowHandoverRows(personalAssistant, assistantSurface, Boolean(assistantBot)) ? <HandoverInlineRows messageId={messageId} liveRunId={isLast ? runView?.runId : undefined} /> : null}
+      {shouldShowHandoverRows(assistantSurface, Boolean(assistantBot)) ? <HandoverInlineRows messageId={messageId} liveRunId={isLast ? runView?.runId : undefined} /> : null}
     </AssistantMessage.Root>
     </PublishedBlocksProvider>
     </AnswerCitationProvider>
@@ -1878,6 +1872,18 @@ function HarnessUserMessage() {
       ? activity
       : undefined;
 
+  const messageContent = <SentUserContent key={message.id} text={sensitive ? displayText : undefined} />;
+  const messageActions = (
+    <ActionBarPrimitive.Root className="harness-user-action-bar" autohide="never">
+      <MessageCopyButton className="user-message-action" label="复制消息" text={displayText} />
+      {assistantSurface && <MessageReplyButton label="回复消息" />}
+      {!assistantSurface && isLatestUserMessage && !threadRunning && !sensitive ? (
+        <button className="user-message-action" type="button" aria-label="编辑消息" title="编辑消息" onClick={beginEdit}>
+          <EditMessageIcon />
+        </button>
+      ) : null}
+    </ActionBarPrimitive.Root>
+  );
   return (
     <>
       <UserMessage.Root className="harness-user-message" data-turn-id={message.id} data-turn-label={(displayText || message.attachments?.map(item => item.name).join("、") || "附件消息").replace(/\s+/g, " ").slice(0, 180)} tabIndex={-1}>
@@ -1908,35 +1914,16 @@ function HarnessUserMessage() {
                 </div>
               </form>
             </div>
-          ) : (
-            <>
-              {/* 操作栏与气泡同一行：按钮贴在气泡左侧，而不是按整行定位跑到窗格边缘 */}
+          ) : assistantSurface ? (
               <div className="harness-user-answer-row">
-              <ActionBarPrimitive.Root
-                className="harness-user-action-bar"
-                autohide="never"
-              >
-                <MessageCopyButton
-                  className="user-message-action"
-                  label="复制消息"
-                  text={displayText}
-                />
-                <MessageReplyButton label="回复消息" />
-                {!assistantSurface && isLatestUserMessage && !threadRunning && !sensitive ? (
-                  <button
-                    className="user-message-action"
-                    type="button"
-                    aria-label="编辑消息"
-                    title="编辑消息"
-                    onClick={beginEdit}
-                  >
-                    <EditMessageIcon />
-                  </button>
-                ) : null}
-              </ActionBarPrimitive.Root>
-              <SentUserContent key={message.id} text={sensitive ? displayText : undefined} />
+                {messageActions}
+                {messageContent}
               </div>
-            </>
+            ) : (
+              <>
+                {messageContent}
+                {messageActions}
+              </>
           )}
         </MessagePrimitive.If>
       </UserMessage.Root>

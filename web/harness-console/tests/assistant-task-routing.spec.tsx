@@ -2,6 +2,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { useAssistantSurface } from "../src/components/assistant-bot-context";
 import Home from "../src/app/page";
 import { PersonalAssistantEntry, PERSONAL_ASSISTANT_THREAD } from "../src/components/personal-assistant-context";
 import { createUserScopedStorage, loadOrCreateThread, selectThread } from "../src/lib/thread-store";
@@ -9,7 +10,7 @@ import { createUserScopedStorage, loadOrCreateThread, selectThread } from "../sr
 const state = vi.hoisted(() => {
   const agent = { name: "agent", version: "1", ownerUserId: "user", scope: "personal", domain: "test" };
   return { router: { push: vi.fn(), replace: vi.fn() }, agent, projects: [],
-    task: { thread_id: "old-thread", title: "原历史任务", run_id: "old-run", agent_name: "agent", agent_version: "1", agent_owner_user_id: "user", status: "succeeded" } };
+    task: { project_id: null as string | null, thread_id: "old-thread", title: "原历史任务", run_id: "old-run", agent_name: "agent", agent_version: "1", agent_owner_user_id: "user", status: "succeeded" } };
 });
 vi.mock("next/navigation", () => ({ useRouter: () => state.router }));
 vi.mock("../src/components/auth-provider", () => ({ AuthProvider: ({ children }: { children: ReactNode }) => children, useAuth: () => ({ user: { user_id: "user" } }) }));
@@ -21,7 +22,7 @@ vi.mock("../src/lib/activity-store", () => ({ useRunActivity: () => null, useRun
 vi.mock("../src/lib/run-stream-store", () => ({ useRunStream: () => ({ status: "idle" }) }));
 vi.mock("../src/lib/assistant-client", () => ({ assistantRequest: async () => ({ specialist: { specialistId: "bot-a", name: "子助理A", agentName: "agent", agentVersion: "1", config: {} }, threadId: "bot-original", primaryObjectiveId: null }) }));
 vi.mock("../src/components/task-sidebar", () => ({ TaskSidebar: ({ onSelect, onNewTask }: { onSelect: (task: unknown) => void; onNewTask: () => void }) => <nav><button onClick={() => onSelect(state.task)}>打开历史任务</button><button onClick={onNewTask}>新建任务</button></nav> }));
-vi.mock("../src/components/agent-thread", () => ({ AgentThread: ({ threadId }: { threadId: string }) => <p data-thread={threadId}>{threadId}</p> }));
+vi.mock("../src/components/agent-thread", () => ({ AgentThread: ({ threadId }: { threadId: string }) => <p data-thread={threadId} data-assistant-surface={useAssistantSurface()}>{threadId}</p> }));
 vi.mock("../src/components/assistant-runtime-shell", () => ({ AssistantRuntimeShell: ({ children }: { children: ReactNode }) => children }));
 vi.mock("../src/components/assistant-computer-pane", () => ({ AssistantComputerPane: ({ children }: { children: ReactNode }) => children }));
 vi.mock("../src/components/assistant-channel-status", () => ({ AssistantChannelStatus: () => null }));
@@ -40,6 +41,7 @@ beforeEach(() => {
   vi.stubGlobal("localStorage", { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) });
   window.history.replaceState(null, "", "/assistant");
   vi.clearAllMocks();
+  state.task.project_id = null;
   vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   selectThread(createUserScopedStorage(window.localStorage, "user"), "old-thread");
@@ -64,9 +66,12 @@ it.each([
   await mount(false);
   expect(host.querySelector("[data-thread]")?.getAttribute("data-thread")).toBe("old-thread");
   expect(host.querySelector('[data-surface="task"]')).not.toBeNull();
+  expect(host.querySelector("[data-thread]")?.getAttribute("data-assistant-surface")).toBe("false");
+  expect(host.querySelector("main")?.getAttribute("data-conversation-surface")).toBe("task");
   window.history.replaceState(null, "", "/assistant");
   await mount(true);
   expect(host.querySelector("[data-thread]")?.getAttribute("data-thread")).toBe(PERSONAL_ASSISTANT_THREAD);
+  expect(host.querySelector("[data-thread]")?.getAttribute("data-assistant-surface")).toBe("true");
 });
 it("does not reuse an empty assistant thread when starting an ordinary task", async () => {
   await mount(true);
@@ -75,6 +80,7 @@ it("does not reuse an empty assistant thread when starting an ordinary task", as
   expect(href).toMatch(/^\/\?thread=/);
   expect(new URL(href, "https://kai.test").searchParams.get("thread")).not.toBe(PERSONAL_ASSISTANT_THREAD);
   expect(host.querySelector("[data-thread]")?.getAttribute("data-thread")).toBe(PERSONAL_ASSISTANT_THREAD);
+  expect(host.querySelector("[data-thread]")?.getAttribute("data-assistant-surface")).toBe("true");
 });
 it("moves a legacy assistant task URL to the original task page, retaining its focused run", async () => {
   window.history.replaceState(null, "", "/assistant?thread=old-thread&run=old-run");
@@ -88,4 +94,22 @@ it("normalizes an old main-assistant link without leaving the same page empty", 
   await mount(true);
   expect(state.router.replace).toHaveBeenCalledWith("/assistant");
   expect(host.querySelector("[data-thread]")?.getAttribute("data-thread")).toBe(PERSONAL_ASSISTANT_THREAD);
+  expect(host.querySelector("[data-thread]")?.getAttribute("data-assistant-surface")).toBe("true");
+});
+
+
+it("keeps project-linked tasks in the workbench surface, including browser navigation back from a Bot", async () => {
+  state.task.project_id = "project-audit";
+  window.history.replaceState(null, "", "/?thread=old-thread");
+  await mount(false);
+  expect(host.querySelector("main")?.getAttribute("data-project-task")).toBe("true");
+  expect(host.querySelector("main")?.getAttribute("data-conversation-surface")).toBe("task");
+  expect(host.querySelector("[data-thread]")?.getAttribute("data-assistant-surface")).toBe("false");
+  window.history.replaceState(null, "", "/assistant?bot=bot-a");
+  await mount(true);
+  expect(host.querySelector("[data-thread]")?.getAttribute("data-assistant-surface")).toBe("true");
+  window.history.replaceState(null, "", "/?thread=old-thread");
+  await mount(false);
+  expect(host.querySelector("main")?.getAttribute("data-project-task")).toBe("true");
+  expect(host.querySelector("[data-thread]")?.getAttribute("data-assistant-surface")).toBe("false");
 });

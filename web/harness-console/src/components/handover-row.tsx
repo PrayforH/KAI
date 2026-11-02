@@ -19,15 +19,13 @@ import { AssistantEventLine } from "./assistant-event-line";
 
 /**
  * 转交回执属于主助理会话，而不是当前打开的任何任务线程。
- * /assistant 入口会给整页包上 PersonalAssistantEntry；任务面切回来时它仍为
- * true，所以还要结合助理面和 bot 绑定，避免回执落进历史任务消息流。
+ * 使用当前会话界面与 Bot 绑定，避免入口路由状态渗入历史任务消息流。
  */
 export function shouldShowHandoverRows(
-  personalAssistant: boolean,
   assistantSurface: boolean,
   hasBot: boolean,
 ): boolean {
-  return personalAssistant && assistantSurface && !hasBot;
+  return assistantSurface && !hasBot;
 }
 
 /**

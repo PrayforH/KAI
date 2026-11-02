@@ -30,18 +30,18 @@ describe("handover inline rows", () => {
     // Each receipt stays inside its originating assistant message.
     expect(agentSource).toContain("<HandoverInlineRows messageId={messageId}");
     expect(agentSource).not.toContain("HandoverStrip");
-    const css = readFileSync(join(process.cwd(), "src/app/web-codex.css"), "utf8");
+    const css = readFileSync(join(process.cwd(), "src/app/assistant-conversation.css"), "utf8");
     expect(css).not.toMatch(/\.handover-inline[^-][^}]*position:\s*(sticky|fixed)/);
   });
 
   it("only mounts in the main assistant conversation, not task or bot threads", () => {
-    expect(shouldShowHandoverRows(true, true, false)).toBe(true);
+    expect(shouldShowHandoverRows(true, false)).toBe(true);
     // /assistant 下打开旧任务：入口仍为 true，但 data-surface 已是 task。
-    expect(shouldShowHandoverRows(true, false, false)).toBe(false);
+    expect(shouldShowHandoverRows(false, false)).toBe(false);
     // 子助理自己的会话不承接主助理的转交回执。
-    expect(shouldShowHandoverRows(true, true, true)).toBe(false);
+    expect(shouldShowHandoverRows(true, true)).toBe(false);
     // 普通任务入口（非 /assistant）永远不显示。
-    expect(shouldShowHandoverRows(false, false, false)).toBe(false);
+    expect(shouldShowHandoverRows(false, false)).toBe(false);
   });
 
   it("maps statuses to Chinese leads and dedupes per bot", () => {

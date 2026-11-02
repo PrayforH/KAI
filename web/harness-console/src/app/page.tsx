@@ -23,7 +23,7 @@ import { AssistantChannelStatus } from "../components/assistant-channel-status";
 import { assistantRequest } from "../lib/assistant-client";
 import {
   AssistantBotProvider,
-  AssistantSurfaceProvider,
+  ConversationSurfaceProvider,
   type AssistantBot,
 } from "../components/assistant-bot-context";
 import { AssistantHeaderAvatar, BOT_ACCENTS, botAccent } from "../components/bot-rail";
@@ -266,8 +266,10 @@ function AuthenticatedHome() {
   // 只有「主助理线程 / 某个 bot 的会话」才是助理面。
   // 在助理路由下点侧栏的普通任务时，线程会被换成任务线程，但路由仍是 /assistant；
   // 这时必须切回任务面，否则旧任务会被套上助理头部与聊天气泡。
-  const assistantView = assistantEntry &&
-    (!threadId || threadId === PERSONAL_ASSISTANT_THREAD || botParam !== null);
+  const conversationSurface = assistantEntry &&
+    (!threadId || threadId === PERSONAL_ASSISTANT_THREAD || botParam !== null)
+    ? "assistant" : "task";
+  const assistantView = conversationSurface === "assistant";
 
   useEffect(() => {
     if (!assistantEntry) { botViewedRef.current = null; return; }
@@ -860,6 +862,7 @@ function AuthenticatedHome() {
     <main
       className={`console-shell${taskRailOpen ? " is-rail-open" : ""}${taskRailOpen && railExpanded ? " is-rail-expanded" : ""}`}
       id="main-content"
+      data-conversation-surface={conversationSurface}
       data-task-thread-state={currentThreadState}
       data-project-task={activeProjectId ? "true" : undefined}
     >
@@ -985,7 +988,7 @@ function AuthenticatedHome() {
           <AssistantComputerPane open={personalAssistant && computerOpen} onClose={() => showComputer(false)}>
           <section
             className="chat-stage"
-            data-surface={assistantView ? "assistant" : "task"}
+            data-surface={conversationSurface}
             style={{ ["--kai-bot-accent" as string]: bot ? (bot.appearance?.color ?? botAccent(bot.specialistId)) : BOT_ACCENTS[0] }}
             aria-label={personalAssistant ? "我的助理对话" : "Agent 任务对话"}
           >
@@ -1002,7 +1005,7 @@ function AuthenticatedHome() {
               />
             ) : (
             <div className="chat-surface">
-              <AssistantSurfaceProvider value={assistantView}>
+              <ConversationSurfaceProvider surface={conversationSurface}>
               <AssistantBotProvider bot={bot}>
               {bot && botEditOpen && (
                 <BotEditDialog
@@ -1093,7 +1096,7 @@ function AuthenticatedHome() {
                 </div>
               )}
               </AssistantBotProvider>
-              </AssistantSurfaceProvider>
+              </ConversationSurfaceProvider>
             </div>
             )}
           </section>

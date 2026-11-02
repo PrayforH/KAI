@@ -128,7 +128,7 @@ export function ConversationInputCard({ input, disabled, onSubmit, modelRoute = 
     }
   }
 
-  return <section ref={card} className={styles.card} aria-label="待补充的信息" tabIndex={0} onKeyDown={onKeyDown}
+  return <section ref={card} className={`${styles.card}${botSurface ? ` ${styles.botCard}` : ""}`} aria-label="待补充的信息" tabIndex={0} onKeyDown={onKeyDown}
     onPointerDownCapture={touch} onKeyDownCapture={touch} onFocusCapture={touch} onInputCapture={touch}>
     <header className={styles.header}>
       <button className={styles.heading} type="button" aria-expanded={!collapsed} disabled={voiceActive} onClick={() => setCollapsed(!collapsed)}>

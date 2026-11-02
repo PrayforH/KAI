@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { useAssistantSurface } from "./assistant-bot-context";
 import styles from "./approval-card.module.css";
 import type { ApprovalDecision } from "../lib/harness-server";
 
@@ -74,6 +75,7 @@ export function ApprovalCard({ details, complete, onDecision }: {
   complete: boolean;
   onDecision: (value: ApprovalDecision) => Promise<void>;
 }) {
+  const botSurface = useAssistantSurface();
   const titleId = useId();
   const [pending, setPending] = useState<ApprovalDecision | null>(null);
   const [decision, setDecision] = useState<ApprovalDecision | null>(null);
@@ -122,7 +124,7 @@ export function ApprovalCard({ details, complete, onDecision }: {
     : decision === "rejected" ? "已拒绝本次操作"
     : expired && !complete ? "审批已过期" : "审批已处理";
   return (
-    <section className={styles.card} aria-labelledby={titleId} data-approval-surface="codex">
+    <section className={`${styles.card}${botSurface ? ` ${styles.botCard}` : ""}`} aria-labelledby={titleId} data-approval-surface="codex">
       <div className={styles.body}>
         <div className={styles.header}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 7v5c0 5 8 9 8 9s8-4 8-9V7l-8-4Z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>

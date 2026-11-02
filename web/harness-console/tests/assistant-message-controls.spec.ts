@@ -1,42 +1,25 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import postcss from "postcss";
 import { expect, it } from "vitest";
 
-const css = readFileSync(join(process.cwd(), "src/app/web-codex.css"), "utf8");
-const agentSource = readFileSync(join(process.cwd(), "src/components/agent-thread.tsx"), "utf8");
+const read = (file: string) => readFileSync(join(process.cwd(), "src/app", file), "utf8");
+const assistant = read("assistant-conversation.css");
 
-it("keeps the answer and its controls in one bottom-aligned flex row on every surface", () => {
-  expect(css).toMatch(
-    /\.chat-stage \.assistant-answer-row \{[^}]*display:\s*flex;[^}]*align-items:\s*flex-end;/,
-  );
-  expect(css).not.toContain('.chat-stage[data-surface="assistant"] .assistant-answer-row');
-  expect(css).toMatch(
-    /\.chat-stage \.assistant-message-controls \{[^}]*position:\s*static;[^}]*flex:\s*0 0 auto;/,
-  );
+it("bounds every Bot presentation rule to the assistant shell", () => {
+  const rules: string[] = [];
+  postcss.parse(assistant).walkRules(rule => {
+    if (rule.parent?.type === "atrule" && rule.parent.name === "keyframes") return;
+    rules.push(rule.selector);
+    expect(rule.selectors.every(selector => selector.includes('.console-shell[data-conversation-surface="assistant"]'))).toBe(true);
+    expect(rule.selector).not.toContain('body.codex-theme-v1:has');
+  });
+  expect(rules.length).toBeGreaterThan(30);
+  expect(read("web-codex.css")).not.toContain('[data-surface="assistant"]');
 });
 
-it("shrinks task answers to their content so the controls hug the bubble", () => {
-  expect(css).toMatch(
-    /\.chat-stage:not\(\[data-surface="assistant"\]\) \.harness-assistant-message \.assistant-answer \{[^}]*width:\s*fit-content;[^}]*max-width:\s*min\(640px, 92%\);/,
-  );
-});
-
-it("keeps the composer centered inside the reading column instead of bleeding sideways", () => {
-  expect(css).toMatch(
-    /\.aui-thread-viewport-footer \{[^}]*box-sizing:\s*border-box;[^}]*margin-inline:\s*auto;/,
-  );
-  expect(css).toMatch(
-    /\.harness-composer-shell \{[^}]*margin-inline:\s*auto;/,
-  );
-});
-
-it("wraps the answer and action bar before any sibling blocks", () => {
-  const row = agentSource.indexOf('className="assistant-answer-row"');
-  const answer = agentSource.indexOf("<AssistantResponse", row);
-  const controls = agentSource.indexOf('className="assistant-message-controls"', row);
-  const followup = agentSource.indexOf('className="followup-input-anchor"', row);
-  expect(row).toBeGreaterThan(-1);
-  expect(answer).toBeGreaterThan(row);
-  expect(controls).toBeGreaterThan(answer);
-  expect(followup).toBeGreaterThan(controls);
+it("keeps Bot reply geometry out of task and project replies", () => {
+  expect(assistant).toMatch(/\.chat-stage\[data-surface="assistant"\] \.assistant-answer-row \{[^}]*display:\s*flex;/);
+  expect(read("web-codex.css")).not.toContain('.chat-stage:not([data-surface="assistant"]) .harness-assistant-message .assistant-answer');
+  expect(read("codex-theme.css")).toMatch(/\.assistant-answer \{[^}]*width:\s*100%;/);
 });

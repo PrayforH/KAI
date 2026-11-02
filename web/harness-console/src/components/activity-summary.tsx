@@ -1,7 +1,7 @@
 "use client";
 import { useConversationRedactor } from "./conversation-redaction";
 import { useConversationScope } from "../lib/conversation-scope";
-import { usePersonalAssistantEntry } from "./personal-assistant-context";
+import { useAssistantSurface } from "./assistant-bot-context";
 import { hasPendingProcessProse } from "../lib/process-response";
 import { isProgressNoise } from "../lib/message-text";
 
@@ -717,8 +717,8 @@ export function ActivitySummary({
   progressText?: string;
 }) {
   const detailed = useDetailedProcess();
-  const personalAssistant = usePersonalAssistantEntry();
-  const compact = (Boolean(useConversationScope()?.compactComposer) || personalAssistant) && !detailed;
+  const assistantSurface = useAssistantSurface();
+  const compact = (Boolean(useConversationScope()?.compactComposer) || assistantSurface) && !detailed;
   const observed = useRunViewModel();
   const durableView = useMemo(() => reduceRunViewModel(undefined, activity), [activity]);
   const view = observed?.runId === activity.run_id ? observed : durableView;

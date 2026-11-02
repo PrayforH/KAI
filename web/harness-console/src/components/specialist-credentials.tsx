@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { saveSpecialistCredential, type Specialist } from "../lib/assistant-client";
 import { SecretInput } from "./secret-input";
+import { useAssistantSurface } from "./assistant-bot-context";
 import styles from "./specialist-credentials.module.css";
 
 export function requiredCredentialNames(specialist: Specialist): string[] {
@@ -46,6 +47,7 @@ export function SpecialistCredentials({
   /** 必填凭据（来自 config.required_credentials 的未满足项）：只允许逐个填写这些名称。 */
   requiredNames?: string[];
 }) {
+  const botSurface = useAssistantSurface();
   const [name, setName] = useState(requiredNames?.[0] ?? "");
   const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState(false);
@@ -93,7 +95,7 @@ export function SpecialistCredentials({
   }
 
   return (
-    <section className={compact ? styles.credentialsCompact : styles.credentials} aria-label="子助理凭据">
+    <section className={`${compact ? styles.credentialsCompact : styles.credentials}${botSurface ? ` ${styles.botCard}` : ""}`} aria-label="子助理凭据">
       <p className={styles.title}>{requiredNames?.length ? "必填凭据" : "凭据"}</p>
       {requiredNames?.length ? (
         <p className={styles.pending} role="status">

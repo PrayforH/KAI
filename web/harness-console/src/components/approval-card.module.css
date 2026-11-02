@@ -33,11 +33,11 @@
 @media (prefers-reduced-motion: reduce) { .actions button { transition: none; } }
 
 /* Match Bot question cards without reducing the visible consent scope. */
-:global(.chat-stage[data-surface="assistant"]) .card { width: min(640px, 100%); box-sizing: border-box; margin: 8px 0 10px; border-radius: 22px; background: transparent; }
-:global(.chat-stage[data-surface="assistant"]) .body { padding: 18px; gap: 12px; }
-:global(.chat-stage[data-surface="assistant"]) .card h3 { font-weight: 600; }
-:global(.chat-stage[data-surface="assistant"]) .action pre { border: 0; padding: 10px 12px; background: var(--codex-surface-hover); }
-:global(.chat-stage[data-surface="assistant"]) .footer { padding: 0 18px 16px; }
-:global(.chat-stage[data-surface="assistant"]) .actions { width: auto; flex-direction: row; }
-:global(.chat-stage[data-surface="assistant"]) .actions button { width: auto; min-height: 36px; padding: 8px 16px; border-radius: 999px; }
-:global(.chat-stage[data-surface="assistant"]) .deny { border-color: transparent; color: var(--codex-muted); }
+.botCard { width: min(640px, 100%); box-sizing: border-box; margin: 8px 0 10px; border-radius: 22px; background: transparent; }
+.botCard .body { padding: 18px; gap: 12px; }
+.botCard h3 { font-weight: 600; }
+.botCard .action pre { border: 0; padding: 10px 12px; background: var(--codex-surface-hover); }
+.botCard .footer { padding: 0 18px 16px; }
+.botCard .actions { width: auto; flex-direction: row; }
+.botCard .actions button { width: auto; min-height: 36px; padding: 8px 16px; border-radius: 999px; }
+.botCard .deny { border-color: transparent; color: var(--codex-muted); }

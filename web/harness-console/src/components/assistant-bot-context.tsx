@@ -31,21 +31,20 @@ export function useAssistantBot() {
   return useContext(AssistantBotContext);
 }
 
-const AssistantSurfaceContext = createContext(false);
+export type ConversationSurface = "task" | "assistant";
+const ConversationSurfaceContext = createContext<ConversationSurface>("task");
 
-/** 是否处在"聊天形态"的助理面（任务页为 false，保留其完整工具条）。 */
-export function AssistantSurfaceProvider({
-  value,
+/** Presentation belongs to the current conversation, never its entry route. */
+export function ConversationSurfaceProvider({
+  surface,
   children,
 }: {
-  value: boolean;
+  surface: ConversationSurface;
   children: ReactNode;
 }) {
-  return (
-    <AssistantSurfaceContext.Provider value={value}>{children}</AssistantSurfaceContext.Provider>
-  );
+  return <ConversationSurfaceContext.Provider value={surface}>{children}</ConversationSurfaceContext.Provider>;
 }
 
 export function useAssistantSurface() {
-  return useContext(AssistantSurfaceContext);
+  return useContext(ConversationSurfaceContext) === "assistant";
 }
