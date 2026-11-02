@@ -1,233 +1,99 @@
 // @vitest-environment jsdom
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  ChatActivitySteps,
-  GrokActivityRow,
-  activitySteps,
-  progressPhrase,
-  shouldShowChatActivityRow,
-  shouldShowChatActivitySteps,
-  trimConclusion,
-  type ActivityLike,
-} from "../src/components/grok-activity";
+import { createRoot } from "react-dom/client";
+import { afterEach, expect, it, vi } from "vitest";
+import { activitySteps, modelWaitingSince, progressPhrase, shouldShowChatActivityRow, type ActivityLike } from "../src/lib/assistant-progress";
+import { AssistantProgress } from "../src/components/assistant-progress";
+import { GrokActivityRow } from "../src/components/grok-activity";
+import { runActivitySchema } from "../src/lib/activity-schema";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
+const note = "已经确认原任务仍在运行，接下来核对它生成的文件。";
+const request = (id: string, name: string): ActivityLike => ({id, event_type: "tool.request", metadata: {tool_call_id: id, name, arguments: {token: "PRIVATE_TOOL_ARGUMENT"}}});
+const result = (id: string, status = "succeeded"): ActivityLike => ({event_type: "tool.result", status, metadata: {tool_call_id: id, result_preview: "PRIVATE_TOOL_RESULT", result_summary: "返回 12 行"}});
 
-function item(event_type: string, fields: Partial<ActivityLike> = {}): ActivityLike {
-  return { event_type, title: "", summary: null, status: "succeeded", metadata: {}, ...fields };
-}
-
-const progressNote = item("message.delta", {
-  id: "n1",
-  title: "进展说明",
-  summary: "收到快捷操作：目标改为 8 公里。先确认参数。",
-});
-const appliedNote = item("message.delta", {
-  id: "n2",
-  title: "进展说明",
-  summary: "参数已确认：当前目标 8 公里，现在改目标距离为 8000 米。",
-});
-const finalAnswer = item("message.delta", {
-  id: "final",
-  title: "进展说明",
-  summary: "已改好。".repeat(80), // 远超单条结论上限，代表终答
-});
-const toolRequest = item("tool.request", {
-  id: "t1",
-  title: "调用 Bash",
-  status: "running",
-  metadata: { name: "Bash" },
-});
-const toolResult = item("tool.result", {
-  id: "t2",
-  title: "工具调用完成",
-  metadata: { result_summary: "返回 12 行 · 340 字符" },
+it("keeps long public intermediate summaries, excluding final prose and private reasoning", () => {
+  const items = [
+    {event_type: "reasoning.delta", summary: "PRIVATE_REASONING"},
+    {event_type: "message.delta", summary: note.repeat(10)},
+    request("t1", "Read"), result("t1"),
+    {event_type: "message.delta", summary: "FINAL_ANSWER_ONLY"},
+  ];
+  const steps = activitySteps({items});
+  expect(steps[0].text).toContain("已经确认原任务仍在运行");
+  expect(steps[0].text.length).toBeGreaterThan(10);
+  expect(steps[0].text.length).toBeLessThanOrEqual(96);
+  expect(JSON.stringify(steps)).not.toMatch(/PRIVATE_|FINAL_ANSWER/);
 });
 
-describe("progressPhrase prefers business conclusions", () => {
-  it("uses the latest intermediate message.delta as the phrase", () => {
-    const activity = { items: [progressNote, toolRequest, toolResult] };
-    // 活动行只留极短结论（≤10 汉字宽），停在从句边界。
-    expect(progressPhrase(activity)).toBe("收到快捷操作：");
-  });
-
-  it("takes the newest conclusion when there are several between tools", () => {
-    const activity = { items: [progressNote, toolRequest, appliedNote, toolResult] };
-    expect(progressPhrase(activity)).toBe("参数已确认：");
-  });
-
-  it("never uses the final answer that follows the last tool", () => {
-    const activity = { items: [progressNote, toolRequest, appliedNote, toolResult, finalAnswer] };
-    expect(progressPhrase(activity)).toBe("参数已确认：");
-  });
-
-  it("does not treat tool guidance as the main phrase", () => {
-    const activity = {
-      items: [
-        toolRequest,
-        item("runtime.system", { title: "工具能力", summary: "14 项工具可用" }),
-        item("runtime.system", { title: "运行环境", summary: "运行环境已就绪" }),
-      ],
-    };
-    expect(progressPhrase(activity)).toBe("");
-  });
-
-  it("falls back to one non-guidance tool result when no conclusion exists", () => {
-    const activity = { items: [toolRequest, toolResult] };
-    expect(progressPhrase(activity)).toBe("返回 12 行 · 340…");
-  });
-
-  it("keeps the waiting phrase only as a fallback while nothing better is known", () => {
-    const activity = {
-      items: [item("runtime.system", { summary: "正在等待本轮模型结果", status: "running" })],
-    };
-    expect(progressPhrase(activity)).toBe("正在等待本轮模型结果");
-    expect(progressPhrase(activity, { allowTransient: false })).toBe("");
-  });
+it("accepts the explicit public summary channel before the first tool", () => {
+  expect(progressPhrase({items: [{event_type: "reasoning.summary.delta", summary: note}]})).toBe(note);
+  expect(progressPhrase({items: [{event_type: "message.delta", summary: "最终答案"}]})).toBe("");
 });
 
-describe("assistant activity steps list conclusions, not tool logs", () => {
-  const activity = { items: [progressNote, toolRequest, appliedNote, toolResult] };
-
-  it("lists the older conclusions and drops the phrase duplicate", () => {
-    const phrase = progressPhrase(activity);
-    const steps = activitySteps(activity, { excludeText: phrase });
-    expect(steps.map((step) => step.text)).toEqual(["收到快捷操作："]);
-    expect(steps.every((step) => !step.text.startsWith("调用"))).toBe(true);
-    expect(steps.every((step) => step.text !== "工具调用完成")).toBe(true);
-  });
-
-  it("caps at five conclusions and dedupes identical text", () => {
-    const notes = Array.from({ length: 8 }, (_, index) =>
-      item("message.delta", { id: `n${index}`, summary: `第 ${index} 步结论。` }),
-    );
-    const steps = activitySteps({ items: [...notes, toolResult] });
-    expect(steps).toHaveLength(5);
-    expect(steps.map((step) => step.text)).toEqual([
-      "第 3 步结论。",
-      "第 4 步结论。",
-      "第 5 步结论。",
-      "第 6 步结论。",
-      "第 7 步结论。",
-    ]);
-  });
-
-  it("shows while running and hides once the turn is terminal", () => {
-    expect(shouldShowChatActivitySteps("running", activity)).toBe(true);
-    expect(shouldShowChatActivitySteps("waiting_approval", activity)).toBe(true);
-    expect(shouldShowChatActivitySteps("completed", activity)).toBe(false);
-    expect(shouldShowChatActivitySteps("succeeded", activity)).toBe(false);
-    expect(shouldShowChatActivitySteps("failed", activity)).toBe(false);
-    // 0ee6fffd 的规则不回退：终态活动行本身也不渲染。
-    expect(shouldShowChatActivityRow("succeeded", activity)).toBe(false);
-  });
-
-  it("has no steps when the turn only produced tool logs", () => {
-    const toolsOnly = { items: [toolRequest, toolResult] };
-    expect(activitySteps(toolsOnly)).toEqual([]);
-    expect(shouldShowChatActivitySteps("running", toolsOnly)).toBe(false);
-  });
+it.each([
+  ["WebSearch", "正在检索相关资料。"], ["Read", "正在读取所需文件。"],
+  ["Bash", "正在执行所需命令。"], ["mcp__computer__screenshot", "正在操作云电脑。"],
+  ["mcp__harness-builder__assistant_delegate_to_specialist", "正在联系子助理。"],
+  ["mcp__harness-builder__assistant_task_status", "正在核对子助理和原任务。"],
+])("uses actual pending operations instead of a fixed wait (%s)", (name, expected) => {
+  expect(progressPhrase({items: [request("t1", name)]})).toBe(expected);
 });
 
-function displayWidth(text: string): number {
-  return [...text].reduce((sum, ch) => sum + (/^[\x00-\x7F]$/.test(ch) ? 0.5 : 1), 0);
-}
-
-describe("conclusion trimming stays inside ten hanzi", () => {
-  it("keeps a short conclusion intact", () => {
-    expect(trimConclusion("参数已确认。")).toBe("参数已确认。");
-  });
-
-  it("stops long Chinese at a clause boundary inside the budget", () => {
-    expect(trimConclusion("收到快捷操作：目标改为 8 公里。先确认参数。")).toBe("收到快捷操作：");
-    expect(trimConclusion("第一句结论。".repeat(20))).toBe("第一句结论。");
-  });
-
-  it("hard-trims to nine hanzi plus an ellipsis when no boundary fits", () => {
-    const trimmed = trimConclusion("很长的进展说明文字".repeat(5));
-    expect(trimmed.endsWith("…")).toBe(true);
-    expect(displayWidth(trimmed)).toBeLessThanOrEqual(10);
-    expect([...trimmed]).toHaveLength(10); // 9 个汉字 + 省略号
-  });
-
-  it("allows roughly twenty ASCII characters for the same budget", () => {
-    const trimmed = trimConclusion("Reading the two source files carefully");
-    expect(trimmed.endsWith("…")).toBe(true);
-    expect(trimmed.length).toBeLessThanOrEqual(20);
-  });
-
-  it("never returns a long paragraph as a conclusion", () => {
-    const long = "我先盘点工作区里的文件，确认这次检查需要核对哪些材料。".repeat(4);
-    expect(displayWidth(trimConclusion(long))).toBeLessThanOrEqual(10);
-  });
+it("does not mistake one parallel result or an authorization for all operations completing", () => {
+  const items = [request("read", "Read"), request("search", "WebSearch"), result("search")];
+  expect(progressPhrase({items})).toBe("正在读取所需文件。");
+  expect(progressPhrase({items: [...items, {event_type: "tool.allowed", metadata: {tool_call_id: "read"}}]})).toBe("正在读取所需文件。");
+  expect(progressPhrase({items: [...items, result("read")]})).toBe("文件内容已返回，正在整理。");
 });
 
-describe("ChatActivitySteps rendering", () => {
-  let root: Root | undefined;
-  let host: HTMLDivElement;
-
-  beforeEach(() => {
-    host = document.createElement("div");
-    document.body.append(host);
-    root = createRoot(host);
-  });
-
-  afterEach(async () => {
-    if (root) await act(async () => root!.unmount());
-    root = undefined;
-    host.remove();
-  });
-
-  it("renders conclusion lines only (no tool names)", async () => {
-    const activity = { items: [progressNote, toolRequest, appliedNote, toolResult] };
-    await act(async () => {
-      root!.render(
-        <ChatActivitySteps
-          activity={activity}
-          phrase={progressPhrase(activity)}
-        />,
-      );
-    });
-    const rows = [...host.querySelectorAll(".chat-activity-steps li")].map((n) => n.textContent);
-    expect(rows).toEqual(["收到快捷操作："]);
-    expect(host.textContent ?? "").not.toContain("调用 Bash");
-    expect(host.querySelector(".execution-ribbon")).toBeNull();
-  });
-
-  it("caps the row phrase itself even if a caller passes a paragraph", async () => {
-    await act(async () => {
-      root!.render(
-        <GrokActivityRow phrase={"这是一段很长的进展说明".repeat(6)} state="working" />,
-      );
-    });
-    const text = host.querySelector(".grok-phrase")?.textContent ?? "";
-    expect(displayWidth(text)).toBeLessThanOrEqual(10);
-  });
-
-  it("renders nothing when there is only a tool log", async () => {
-    await act(async () => {
-      root!.render(
-        <ChatActivitySteps
-          activity={{ items: [toolRequest, toolResult] }}
-          phrase={progressPhrase({ items: [toolRequest, toolResult] })}
-        />,
-      );
-    });
-    expect(host.querySelector(".chat-activity-steps")).toBeNull();
-  });
+it("distinguishes the delivered handover receipt from a completed task", () => {
+  const text = progressPhrase({items: [request("h", "assistant_delegate_to_specialist"), result("h")]});
+  expect(text).toBe("已收到交办回执，正在核对。");
+  expect(text).not.toContain("已完成");
 });
 
-describe("assistant thread wiring", () => {
-  it("renders the step list in both assistant activity branches", () => {
-    const thread = readFileSync(
-      join(process.cwd(), "src/components/agent-thread.tsx"),
-      "utf8",
-    );
-    const matches = thread.match(/<ChatActivitySteps/g) ?? [];
-    expect(matches).toHaveLength(2);
-  });
+it("keeps pending consent and real failures ahead of older summaries", () => {
+  const items = [{event_type: "reasoning.summary.delta", summary: note}, request("t", "Bash")];
+  expect(progressPhrase({items: [...items, {event_type: "approval.requested", metadata: {approval_id: "a"}}]})).toBe("需要你确认后才能继续。");
+  expect(progressPhrase({items: [...items, {event_type: "tool.result", status: "failed", summary: "检索超时", metadata: {tool_call_id: "t"}}]})).toContain("检索超时");
+  expect(progressPhrase({items: [...items, {event_type: "approval.rejected"}]})).toContain("未获允许");
+});
+
+it("keeps at most three recent distinct summaries and no duplicate main phrase", () => {
+  const items = Array.from({length: 8}, (_, i) => ({event_type: "reasoning.summary.delta", summary: `已核对第 ${i} 项信息。`}));
+  expect(activitySteps({items}, {excludeText: "已核对第 7 项信息。"}).map(step => step.text)).toEqual(["已核对第 4 项信息。", "已核对第 5 项信息。", "已核对第 6 项信息。"]);
+});
+
+it("does not leave progress in completed history", () => {
+  for (const status of ["completed", "succeeded", "failed", "cancelled", "timed_out"]) {
+    expect(shouldShowChatActivityRow(status, {items: [request("t", "Read")]})).toBe(false);
+  }
+});
+
+let cleanup: (() => Promise<void>) | undefined;
+afterEach(async () => { await cleanup?.(); cleanup = undefined; vi.useRealTimers(); });
+it("shows a full updated summary immediately without replaying a synthetic typing delay", async () => {
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  cleanup = async () => { await act(async () => root.unmount()); host.remove(); };
+  await act(async () => root.render(<GrokActivityRow phrase="正在处理你的请求。" state="working" />));
+  await act(async () => root.render(<GrokActivityRow phrase={note} state="working" />));
+  expect(host.textContent).toBe(note);
+});
+
+it("reports real elapsed model waiting, then clears it on a new operation or completion", async () => {
+  vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-02T10:00:00Z"));
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  cleanup = async () => { await act(async () => root.unmount()); host.remove(); };
+  const activity = runActivitySchema.parse({run_id: "progress-run", status: "running", started_at: "2026-11-02T10:00:00Z", items: [{id: "wait", event_type: "runtime.system", title: "模型正在处理", kind: "analysis", status: "running", timestamp: "2026-11-02T10:00:00Z", sequence: 1, summary: "正在等待本轮模型结果", metadata: {}}]});
+  await act(async () => root.render(<AssistantProgress activity={activity} />));
+  expect(host.textContent).toBe("正在处理你的请求。");
+  await act(async () => vi.advanceTimersByTime(31000));
+  expect(host.textContent).toContain("已等待 31 秒");
+  const toolActivity = runActivitySchema.parse({...activity, items: [...activity.items, {...activity.items[0], ...request("read", "Read"), sequence: 2}]});
+  expect(modelWaitingSince(toolActivity)).toBeUndefined();
+  await act(async () => root.render(<AssistantProgress activity={toolActivity} />));
+  expect(host.textContent).toBe("正在读取所需文件。");
+  await act(async () => root.render(<AssistantProgress activity={{...toolActivity, status: "succeeded"}} />));
+  expect(host.textContent).toBe("");
 });

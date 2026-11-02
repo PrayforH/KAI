@@ -130,12 +130,10 @@ describe("ActivityPhrase keeps word-by-word reveal for English", () => {
   });
 });
 
-describe("ten-hanzi display cap stays in force", () => {
-  it("still trims long conclusions to ten hanzi before they reach the phrase", () => {
-    const phraseText = trimConclusion("我先盘点工作区里的文件，确认这次检查需要核对哪些材料。");
-    expect(phraseText).toBe("我先盘点工作区里的…");
-    expect([...phraseText]).toHaveLength(10);
-    // 短语本身也只会逐字画这 10 个单位。
-    expect(phraseUnits(phraseText)).toHaveLength(10);
+describe("progress summaries retain enough context", () => {
+  it("keeps a complete readable sentence instead of ten characters", () => {
+    const text = "我先盘点工作区里的文件，确认这次检查需要核对哪些材料。";
+    expect(trimConclusion(text)).toBe(text);
+    expect(phraseUnits(trimConclusion(text)).length).toBeGreaterThan(10);
   });
 });

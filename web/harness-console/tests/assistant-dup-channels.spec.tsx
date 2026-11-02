@@ -18,7 +18,7 @@ describe("activity phrase never repeats the answer", () => {
         { event_type: "message.completed", summary: longAnswer },
       ],
     };
-    expect(progressPhrase(activity)).toBe("正在生成回复");
+    expect(progressPhrase(activity)).toBe("正在处理你的请求。");
   });
 
   it("returns empty when the turn only has prose (no genuine progress)", () => {
@@ -41,10 +41,11 @@ describe("activity phrase never repeats the answer", () => {
     expect(progressPhrase(activity)).toBe("已读取文件");
   });
 
-  it("caps the phrase so a long summary cannot fill the row", () => {
-    const source = read("src/components/grok-activity.tsx");
-    expect(source).toContain("MAX_PHRASE_CHARS");
-    expect(source).toContain("phrase.slice(0, MAX_PHRASE_CHARS)");
+  it("caps a public summary without discarding its business context", () => {
+    const activity = {items: [{event_type: "reasoning.summary.delta", summary: "正在核对原任务的执行结果与文件交付。".repeat(30)}]};
+    const text = progressPhrase(activity);
+    expect(text).toContain("正在核对原任务");
+    expect(Array.from(text).length).toBeLessThanOrEqual(96);
   });
 });
 

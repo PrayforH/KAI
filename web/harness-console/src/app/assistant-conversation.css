@@ -261,7 +261,7 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
 /* ── 活动行：脸 + 渐现短语（对齐客户端 GrokBotMark + activityPhraseDraw） ── */
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .grok-activity-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   padding: 6px 0;
   max-width: min(640px, 92%);
@@ -386,9 +386,8 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
   display: flex;
   gap: 6px;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .chat-activity-steps li::before {
@@ -664,3 +663,18 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .handover-local-tool-actions button { background: transparent; color: var(--codex-muted); }
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] :is(.handover-local-tool-actions button[data-action="allow"], .specialist-setup-submit) { background: var(--codex-ink); color: var(--codex-surface); }
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .specialist-setup-submit { justify-self: end; }
+
+/* Progress is readable prose, updated directly from public execution events. */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .grok-phrase {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-progress-wait {
+  margin: 4px 0 8px 32px;
+  color: var(--codex-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}

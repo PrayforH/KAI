@@ -29,7 +29,7 @@ describe("terminal turns never keep a waiting row", () => {
   it("treats the waiting phrase as transient and can drop it entirely", () => {
     expect(isTransientProgress("正在等待本轮模型结果")).toBe(true);
     expect(isTransientProgress("已读取工作区文件")).toBe(false);
-    expect(progressPhrase(waiting)).toBe("正在等待本轮模型结果");
+    expect(progressPhrase(waiting)).toBe("正在处理你的请求。");
     expect(progressPhrase(waiting, { allowTransient: false })).toBe("");
     // 真实进展在终态过滤下仍然保留（用于正常进行中的行）。
     expect(progressPhrase(tool, { allowTransient: false })).toBe("已读取工作区文件");
@@ -38,7 +38,7 @@ describe("terminal turns never keep a waiting row", () => {
   it("both chat-form activity rows are gated by the predicate", () => {
     expect(thread).toContain("if (!shouldShowChatActivityRow(displayed.status, displayed)) return null;");
     expect(thread).toContain(
-      "shouldShowChatActivityRow(preResponseActivity.status, preResponseActivity) ? (",
+      "<AssistantProgress activity={preResponseActivity}",
     );
   });
 
