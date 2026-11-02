@@ -7,7 +7,7 @@ const problem = /失败|未成功|未完成|尚未|未启动|缺少|待补|需�
 export function assistantCopy(text: string): string {
   // Destinations stay usable, but never become visible metadata in the copy.
   const urls: string[] = [];
-  let value = text.replace(/\]\(([^\n]*)\)/g, (_, url: string) => `](\uE000${urls.push(url)-1}\uE001)`);
+  let value = text.replace(/\]\(([^)\n]*)\)/g, (_, url: string) => `](\uE000${urls.push(url)-1}\uE001)`);
   value = value.split("\n").filter(line => {
     if (problem.test(line)) return true;
     return !((internalId().test(line) || technical.test(line)) &&

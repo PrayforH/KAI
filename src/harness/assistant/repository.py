@@ -1244,6 +1244,8 @@ class PostgresAssistantRepository:
                 bot = by_bot.get(sid) or by_bot.get(str(objective.get("specialistId", "")))
                 source = {"name": bot.name if bot else str(objective.get("title") or notice.title),
                           "href": href}
+                if bot:
+                    source["botId"] = bot.specialist_id
                 appearance = bot.config.get("appearance") if bot else None
                 if isinstance(appearance, dict):
                     source.update({key: value for key, value in appearance.items()

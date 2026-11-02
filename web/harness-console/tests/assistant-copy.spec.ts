@@ -31,3 +31,10 @@ describe("main assistant conversational copy", () => {
     expect(value.data.items[0].value).toContain(id);
   });
 });
+
+it("cleans labels of multiple links without changing their destinations", () => {
+ const text=`[${id}](/?thread=${id}) [${id}](/?thread=${id})`;
+ const copy=assistantCopy(text);
+ expect(copy.match(new RegExp(id,"g"))).toHaveLength(2);
+ expect(copy).toBe(`[](/?thread=${id}) [](/?thread=${id})`);
+});
