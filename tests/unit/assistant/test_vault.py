@@ -216,6 +216,8 @@ async def test_revoking_a_grant_retries_after_a_concurrent_edit() -> None:
 
     repo.update_specialist.side_effect = _flaky
     repo.get_specialist.side_effect = None
-    repo.get_specialist.return_value = _specialist({"credential_ref:行情网站": "vault_abc", "title": "研究"})
+    repo.get_specialist.return_value = _specialist(
+        {"credential_ref:行情网站": "vault_abc", "title": "研究"}
+    )
     await service.delete_vault_item("t", "u", "vault_item_1", confirm_title="行情网站")
     assert len(calls) == 2
