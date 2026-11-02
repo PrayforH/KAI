@@ -66,6 +66,7 @@ from harness.runtime.artifact_tools import (
     artifact_execution_context,
     create_artifact_mcp_server,
 )
+from harness.runtime.assistant_preface import AssistantPreface
 from harness.runtime.base import (
     RuntimeContext,
     RuntimeEvent,
@@ -744,7 +745,11 @@ class ClaudeSdkRuntime:
                     )
 
     async def _options(
-        self, context: RuntimeContext, route: ModelRoute
+        self,
+        context: RuntimeContext,
+        route: ModelRoute,
+        *,
+        preface: AssistantPreface | None = None,
     ) -> tuple[ClaudeAgentOptions, ResolvedTools]:
         manifest = self._snapshot.manifest
         permission_mode = permission_mode_for_route(route)
@@ -1138,6 +1143,7 @@ class ClaudeSdkRuntime:
                     },
                     result_trust_by_tool=resolved_tools.result_trust,
                     delegate_allowed_to_sdk_permissions=(permission_mode == "auto"),
+                    preface=preface,
                 )
                 if self._tool_gate is not None
                 else None
@@ -1272,7 +1278,13 @@ class ClaudeSdkRuntime:
                 "harness.tool.exposure_mode": (self._snapshot.manifest.spec.tool_exposure_mode),
             },
         ):
-            options, resolved_tools = await self._options(context, decision.route)
+            preface = AssistantPreface(
+                enabled=context.run.input.get("conversation_surface") == "assistant"
+                and not context.run.input.get("studio_builder")
+            )
+            options, resolved_tools = await self._options(
+                context, decision.route, preface=preface
+            )
             if self._observability is not None:
                 self._observability.annotate_current_span(
                     {
@@ -1575,6 +1587,27 @@ class ClaudeSdkRuntime:
                         ]
                     if self._tool_gate is not None:
                         mapped = [event for event in mapped if event.type != "tool.request"]
+                    for event in mapped:
+                        # Public model text means the user already has a visible
+                        # sentence, so the preface nudge is no longer needed.
+                        if event.type == "message.delta" and str(
+                            event.payload.get("text", "")
+                        ).strip():
+                            preface.note_public_text()
+                    if preface.nudged:
+                        # The withheld call was not a real step. Keep its result
+                        # out of the durable log and the live projection so the
+                        # user never sees a failed step for a nudge.
+                        mapped = [
+                            event
+                            for event in mapped
+                            if not (
+                                event.type == "tool.result"
+                                and preface.is_nudged_tool(
+                                    str(event.payload.get("tool_call_id", ""))
+                                )
+                            )
+                        ]
                     if isinstance(message, StreamEvent):
                         for event in mapped:
                             if event.type == "reasoning.delta":
