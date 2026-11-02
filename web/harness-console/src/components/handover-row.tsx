@@ -355,6 +355,7 @@ export function HandoverInlineRows({ messageId, liveRunId }: { messageId: string
             <SpecialistSetupCard
               specialistId={notice.specialistId}
               objectiveId={notice.objectiveId}
+              includeCredentials={false}
               onReady={settled}
               onAlreadyActive={settled}
             />

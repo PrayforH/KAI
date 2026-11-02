@@ -23,12 +23,14 @@ export function SpecialistSetupCard({
   onReady,
   objectiveId,
   onAlreadyActive,
+  includeCredentials = true,
 }: {
   specialistId: string;
   onReady?: () => void;
   objectiveId?: string | null;
   /** Only a real execution, never Bot availability alone, settles a handover. */
   onAlreadyActive?: () => void;
+  includeCredentials?: boolean;
 }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [busy, setBusy] = useState(false);
@@ -139,7 +141,7 @@ export function SpecialistSetupCard({
       >
         {busy ? "正在安排…" : "开始这次交办"}
       </button>
-      <details className="specialist-setup-credentials">
+      {includeCredentials && <details className="specialist-setup-credentials">
         <summary>可选：为这个 Bot 添加凭据</summary>
         <SpecialistCredentials
           specialistId={specialistId}
@@ -147,7 +149,7 @@ export function SpecialistSetupCard({
           onUpdated={() => void load()}
           compact
         />
-      </details>
+      </details>}
     </div>
   );
 }

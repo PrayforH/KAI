@@ -4459,7 +4459,7 @@ body.codex-theme-v1:has(.console-shell) .specialist-setup-submit:disabled {
 }
 /* Settled handovers keep their receipt without occupying the conversation. */
 
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] :is(.handover-ask-card, .handover-approval-card) {
+body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] :is(.handover-ask-card, .handover-approval-card, .handover-credential-card) {
   border: 0;
   padding: 0;
   background: transparent;

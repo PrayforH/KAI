@@ -35,6 +35,7 @@ async function mount() {
 it("keeps a genuine confirmation and starts only that one-off handover after the click", async () => {
   await mount();
   expect(host.querySelector('[aria-label="补齐子助理配置"]')).not.toBeNull();
+  expect(host.querySelector(".specialist-setup-credentials")).toBeNull();
   expect(request.mock.calls.some(([path]) => path.endsWith("/executions"))).toBe(false);
   await act(async () => host.querySelector<HTMLButtonElement>(".specialist-setup-submit")!.click());
   const mutations = request.mock.calls.filter(([, method]) => method === "POST");
