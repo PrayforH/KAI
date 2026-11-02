@@ -1631,6 +1631,8 @@ class PostgresAssistantRepository:
             )
             holder: dict[str, object] | None = None
             holder_execution_id: str | None = None
+            holder_title = ""
+            holder_project: str | None = None
             if holder_row is not None:
                 holder_execution_id = holder_row.execution_id
                 objective_row = await session.scalar(
@@ -1640,13 +1642,14 @@ class PostgresAssistantRepository:
                         ObjectiveRow.user_id == user_id,
                     )
                 )
-                title = (
-                    str(objective_row.payload.get("title", "")) if objective_row is not None else ""
-                )
+                if objective_row is not None:
+                    holder_title = str(objective_row.payload.get("title", ""))
+                    raw_project = objective_row.payload.get("projectId")
+                    holder_project = raw_project if isinstance(raw_project, str) else None
                 holder = {
                     "objective_id": holder_row.objective_id,
                     "execution_id": holder_row.execution_id,
-                    "objective_title": title,
+                    "objective_title": holder_title,
                     "acquired_at": holder_row.acquired_at.isoformat(),
                     "expires_at": holder_row.expires_at.isoformat(),
                 }
@@ -1677,17 +1680,26 @@ class PostgresAssistantRepository:
                     and execution_row.execution_id == holder_execution_id
                 ):
                     continue
+                wait_reason = (
+                    "单执行者占用中（另一项职责正在使用共享桌面）"
+                    if holder_row is not None
+                    else "等待桌面就绪"
+                )
+                if holder_row is not None:
+                    # 跨项目排队要一眼可读：project_id 不同（一侧为空另一侧非空也算）
+                    # 时点名跨项目并带上持有人职责标题；缺字段安全回退，不伪造项目名。
+                    raw_project = objective_row.payload.get("projectId")
+                    waiting_project = raw_project if isinstance(raw_project, str) else None
+                    if waiting_project != holder_project:
+                        occupant = f"「{holder_title}」" if holder_title else "其他职责"
+                        wait_reason = f"跨项目等待：桌面正被{occupant}占用"
                 waiting.append(
                     {
                         "objective_id": execution_row.objective_id,
                         "execution_id": execution_row.execution_id,
                         "objective_title": str(objective_row.payload.get("title", "")),
                         "position": len(waiting) + 1,
-                        "wait_reason": (
-                            "单执行者占用中（另一项职责正在使用共享桌面）"
-                            if holder_row is not None
-                            else "等待桌面就绪"
-                        ),
+                        "wait_reason": wait_reason,
                     }
                 )
             return {"holder": holder, "waiting": waiting}

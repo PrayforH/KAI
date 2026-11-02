@@ -1849,3 +1849,88 @@ async def test_legacy_bot_preserves_its_duty_thread_until_standalone_chat_exists
     assert standalone["threadId"] == f"assistant_{bot.specialist_id}"
     assert await service.repository.get_specialist("tenant-a", "user-a", bot.specialist_id) == bot
     assert not await service.repository.executions("tenant-a", "user-a", duty.objective_id)
+
+
+@pytest.mark.asyncio
+async def test_desktop_occupancy_marks_cross_project_waiting_and_keeps_same_project(
+    database: DatabaseFixture,
+) -> None:
+    """跨项目排队一眼可读；同项目与缺字段回退保持既有文案。"""
+    from datetime import UTC, timedelta
+
+    service = make_service(database)
+    # 持有人：proj-alpha 的桌面职责，真实入队后取桌面执行权。
+    holder_brief = brief(
+        **{
+            "title": "甲项目截图巡检",
+            "projectId": "proj-alpha",
+            "budget": {"requiresDesktop": True, "maxRunsPerDay": 10},
+        }
+    )
+    holder_duty = await service.create("tenant-a", "user-a", holder_brief)
+    same_brief = brief(
+        **{
+            "title": "甲项目复检",
+            "projectId": "proj-alpha",
+            "budget": {"requiresDesktop": True, "maxRunsPerDay": 10},
+        }
+    )
+    same_duty = await service.create("tenant-a", "user-a", same_brief)
+    cross_brief = brief(
+        **{
+            "title": "乙项目巡检",
+            "projectId": "proj-beta",
+            "budget": {"requiresDesktop": True, "maxRunsPerDay": 10},
+        }
+    )
+    cross_duty = await service.create("tenant-a", "user-a", cross_brief)
+    # 缺 projectId 的旧载荷职责：一侧为空另一侧非空也算跨项目。
+    legacy_brief = brief(
+        **{"title": "旧载荷桌面职责", "budget": {"requiresDesktop": True, "maxRunsPerDay": 10}}
+    )
+    legacy_duty = await service.create("tenant-a", "user-a", legacy_brief)
+    await service.repository.schedule_due(
+        datetime.now(UTC) + timedelta(minutes=61), unviewed_pause_hours=None
+    )
+
+    holder_execs = await service.repository.executions(
+        "tenant-a", "user-a", holder_duty.objective_id
+    )
+    assert holder_execs, "the holder duty must have a pending desktop execution"
+    holder_execution = holder_execs[0]
+    acquired = await service.repository.acquire_desktop_turn(
+        tenant_id="tenant-a",
+        user_id="user-a",
+        objective_id=holder_duty.objective_id,
+        execution_id=holder_execution.execution_id,
+        now=NOW,
+    )
+    assert acquired is not None
+
+    occupancy = await service.desktop_occupancy(
+        "tenant-a", "user-a", now=NOW + timedelta(seconds=60)
+    )
+    reasons = {
+        item["objective_id"]: item["wait_reason"] for item in occupancy["waiting"]
+    }
+    # 跨项目：点名跨项目并带上持有人职责标题。
+    assert "跨项目" in reasons[cross_duty.objective_id]
+    assert "甲项目截图巡检" in reasons[cross_duty.objective_id]
+    # 一侧为空另一侧非空也算跨项目，但holder标题缺失/存在都不得伪造项目名。
+    assert "跨项目" in reasons[legacy_duty.objective_id]
+    # 同项目：保持既有文案，不无故加「跨项目」。
+    assert reasons[same_duty.objective_id] == "单执行者占用中（另一项职责正在使用共享桌面）"
+    # 无 holder 时与 project 无关，保持「等待桌面就绪」。
+    await service.repository.release_desktop_turn(
+        tenant_id="tenant-a",
+        user_id="user-a",
+        execution_id=holder_execution.execution_id,
+        now=NOW + timedelta(seconds=30),
+    )
+    released = await service.desktop_occupancy(
+        "tenant-a", "user-a", now=NOW + timedelta(seconds=60)
+    )
+    released_reasons = {
+        item["objective_id"]: item["wait_reason"] for item in released["waiting"]
+    }
+    assert released_reasons[cross_duty.objective_id] == "等待桌面就绪"
