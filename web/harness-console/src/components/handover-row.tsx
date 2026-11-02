@@ -321,7 +321,8 @@ export function HandoverInlineRows() {
         };
         return (
         <div className="handover-inline-item" key={notice.specialistId}>
-          <p className="handover-inline-line">
+        <details open={notice.status !== "applied"}>
+          <summary className="handover-inline-line">
             {/* 与 bot-rail 同判：软导航不重挂载页面，旧线程会盖住新 bot。 */}
             <a
               href={`/assistant?bot=${encodeURIComponent(notice.specialistId)}`}
@@ -333,7 +334,11 @@ export function HandoverInlineRows() {
               {statusLead(notice.status)}
               <span className="handover-inline-target">「{notice.specialistName}」</span>
             </a>
-          </p>
+            {notice.status === "applied" && <span className="handover-receipt-hint">查看回执</span>}
+          </summary>
+          <p className="handover-receipt-detail">已登记转交；实际执行和成果以原任务记录为准。</p>
+        </details>
+          {/* Actionable cards stay outside the quiet receipt, including a later revocation. */}
           <HandoverLocalToolPermissionCard
             specialistId={notice.specialistId}
             specialistName={notice.specialistName}

@@ -111,6 +111,8 @@ describe("main session local tool permission card", () => {
     await mountWithHandover();
     const card = host.querySelector(".handover-local-tool-permission-card");
     expect(card).not.toBeNull();
+    // Even a settled receipt must not collapse a new permission request.
+    expect(card?.closest("details")).toBeNull();
     expect(card?.textContent).toContain("待你授权本地能力");
     expect(card?.textContent).toContain("允许「休息提醒」在共享电脑上运行命令吗？");
 

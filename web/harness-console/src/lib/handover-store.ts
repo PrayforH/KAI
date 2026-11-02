@@ -29,10 +29,13 @@ function emitChange() {
 
 /** 一次快照去重：同一 bot 只保留最新一条。 */
 function upsert(notice: HandoverNotice) {
+  const current = entries.find((item) => item.specialistId === notice.specialistId);
+  // A slow history response must not replace a live receipt or a newer config result.
+  if (current && current.at > notice.at) return;
   entries = [
     notice,
     ...entries.filter((item) => item.specialistId !== notice.specialistId),
-  ].slice(0, LIMIT);
+  ].sort((a, b) => b.at - a.at).slice(0, LIMIT);
   emitChange();
 }
 
@@ -58,18 +61,18 @@ export const handoverStore = {
     try {
       const { assistantRequest } = await import("./assistant-client");
       const handovers = await assistantRequest<
-        Array<{ specialistId: string; status: string; createdAt: string }>
+        Array<{ specialistId: string; status: string; createdAt: string; updatedAt?: string }>
       >("handovers");
       const specialists = await assistantRequest<
         Array<{ specialistId: string; name: string }>
       >("specialists");
       const names = new Map(specialists.map((item) => [item.specialistId, item.name]));
-      for (const handover of handovers.slice(0, LIMIT)) {
+      for (const handover of handovers) {
         upsert({
           specialistId: handover.specialistId,
           specialistName: names.get(handover.specialistId) ?? "专职子助理",
           status: handover.status,
-          at: new Date(handover.createdAt).getTime(),
+          at: Date.parse(handover.updatedAt ?? handover.createdAt) || 0,
         });
       }
     } catch {

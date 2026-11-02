@@ -35,6 +35,7 @@ from harness.assistant.models import (
     SpecialistHandover,
     SpecialistStatus,
 )
+from harness.assistant.permissions import pending_local_tools, require_local_tools
 from harness.assistant.repository import PostgresAssistantRepository
 from harness.auth.service import AuthService
 from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
@@ -549,6 +550,23 @@ class AssistantService:
         else:
             await self.validate(execution.tenant_id, execution.user_id, execution.brief)
             if run is None:
+                # Recheck after queueing: a user may revoke a declaration's grant
+                # while this intent waits for a worker. Never restart an existing Run.
+                if objective.specialist_id:
+                    specialist = await self.repository.get_specialist(
+                        execution.tenant_id, execution.user_id, objective.specialist_id
+                    )
+                    try:
+                        require_local_tools(specialist.config)
+                    except ConflictError as error:
+                        return execution.model_copy(
+                            update={
+                                "status": ObjectiveExecutionStatus.FAILED,
+                                "error_code": "LocalToolPermissionRequired",
+                                "summary": str(error),
+                                "finished_at": now,
+                            }
+                        )
                 budget = objective.budget
                 if budget is not None and budget.requires_desktop:
                     turn = await self.repository.acquire_desktop_turn(
@@ -792,6 +810,7 @@ class AssistantService:
         """配置命令落为带 revision 的结构化更新；保存后按完整集重新判定状态。"""
         if not config:
             raise ConflictError("empty specialist configuration")
+        pending_local_tools(config)
         schedule = config.get("schedule_minutes")
         if schedule is not None and (
             not isinstance(schedule, int) or not 15 <= schedule <= 525_600
@@ -1162,7 +1181,7 @@ def _specialist_missing_config(config: dict[str, object]) -> list[str]:
         key
         for key in SPECIALIST_REQUIRED_CONFIG
         if not isinstance(config.get(key), (str, int)) or config.get(key) == ""
-    ]
+    ] + [f"local_tool_permissions:{key}" for key in pending_local_tools(config)]
 
 
 def hash_suffix(fingerprint: str | None) -> str:

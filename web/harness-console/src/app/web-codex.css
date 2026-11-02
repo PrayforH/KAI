@@ -4441,3 +4441,7 @@ body.codex-theme-v1:has(.console-shell) .specialist-setup-submit:disabled {
   opacity: 0.6;
   cursor: default;
 }
+/* Settled handovers keep their receipt without occupying the conversation. */
+summary.handover-inline-line { cursor: pointer; list-style: none; }
+summary.handover-inline-line::-webkit-details-marker { display: none; }
+.handover-receipt-hint { margin-inline-start: 8px; opacity: .65; font-size: 11px; }

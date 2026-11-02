@@ -31,6 +31,7 @@ from harness.assistant.models import (
     SpecialistHandover,
     SpecialistStatus,
 )
+from harness.assistant.permissions import require_local_tools
 from harness.assistant.storage import (
     AssistantInboxRow,
     DesktopTurnRow,
@@ -305,6 +306,17 @@ class PostgresAssistantRepository:
             raise ConflictError("A follow-only objective does not start executions")
         if objective.ends_at is not None and objective.ends_at <= now:
             raise ConflictError("The objective's execution period has ended")
+        if objective.specialist_id:
+            specialist_row = await session.scalar(
+                select(SpecialistRow).where(
+                    SpecialistRow.tenant_id == objective.tenant_id,
+                    SpecialistRow.user_id == objective.user_id,
+                    SpecialistRow.specialist_id == objective.specialist_id,
+                )
+            )
+            if specialist_row is None:
+                raise ConflictError("The objective's specialist no longer exists")
+            require_local_tools(Specialist.model_validate(specialist_row.payload).config)
         if await session.scalar(
             select(ObjectiveExecutionRow.execution_id)
             .where(
