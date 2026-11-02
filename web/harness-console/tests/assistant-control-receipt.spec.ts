@@ -39,6 +39,7 @@ describe("confirmed assistant control receipts", () => {
       { ...item("tool.result", 3), kind: "tool", status: "failed" },
       { ...item("artifact.ready", 4), kind: "artifact" },
       { ...item("tool.request", 1, { name: "mcp__harness-builder__assistant_create_task" }), kind: "tool" },
+      { ...item("tool.request", 1, { name: "mcp__harness-builder__assistant_task_status" }), kind: "tool" },
     ] as ActivityItem[]) {
       expect(assistantControlSummary(activity([...activity().items, extra]))).toBeNull();
     }

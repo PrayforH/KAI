@@ -10,8 +10,7 @@ const receiptSchema = z.object({
 }).strict();
 
 const routineTools = new Set([
-  "assistant_resolve_target", "assistant_task_status", "assistant_specialist_status",
-  "assistant_work_notifications",
+  "assistant_resolve_target", "assistant_work_notifications",
 ].map((name) => `mcp__harness-builder__${name}`));
 
 /** Same durable Run activity feeds live replies and history. No prose is rewritten. */
