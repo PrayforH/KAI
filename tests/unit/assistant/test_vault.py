@@ -68,9 +68,14 @@ def _service(rows=None, specialist=None):
     repo.get_specialist.side_effect = NotFoundError("missing") if specialist is None else None
     if specialist is not None:
         repo.get_specialist.return_value = specialist
-    repo.update_specialist.side_effect = lambda tenant, user, specialist_id, **kwargs: _specialist(
-        kwargs.get("config") or {}
-    )
+
+    def _apply(tenant, user, specialist_id, **kwargs):
+        config = dict(kwargs.get("config") or {})
+        for key in kwargs.get("config_remove") or ():
+            config.pop(key, None)
+        return _specialist(config)
+
+    repo.update_specialist.side_effect = _apply
     auth.profile.return_value = (SimpleNamespace(disabled=False), SimpleNamespace(role="member"))
     agui.get_binding.return_value = SimpleNamespace(session_id="session")
     service = AssistantService(
@@ -108,7 +113,7 @@ async def test_vault_item_encrypts_the_value_and_lists_only_metadata() -> None:
     assert "hunter2" not in item.model_dump_json()
     assert set(item.model_dump()) == {
         "item_id", "category", "title", "reference",
-        "has_secret", "last4", "revision", "created_at", "updated_at",
+        "has_secret", "last4", "revision", "created_at", "updated_at", "grants",
     }
 
 
@@ -150,6 +155,8 @@ async def test_granting_writes_a_credential_ref_and_revoking_removes_it() -> Non
     await service.grant_vault_item(
         "t", "u", "specialist_a", item_id="vault_item_1", granted=False, expected_revision=1
     )
+    # 撤销必须真正移除引用：合并语义不会删键，得显式移除。
+    assert repo.update_specialist.await_args.kwargs["config_remove"] == ("credential_ref:行情网站",)
     config = repo.update_specialist.await_args.kwargs["config"]
     assert "credential_ref:行情网站" not in config
 
@@ -176,3 +183,123 @@ def test_delete_request_requires_a_confirmation_title() -> None:
     assert body.confirm_title == "行情网站"
     with pytest.raises(ValidationError):
         VaultDeleteRequest.model_validate({})
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_vault_item_revokes_the_bot_grants() -> None:
+    """删除即失效：已经授权给 Bot 的 credential_ref 也要收回。"""
+    granted = _specialist({"credential_ref:行情网站": "vault_abc"})
+    service, repo = _service(rows=[_vault_row()], specialist=granted)
+    repo.list_specialists.return_value = [granted]
+    deleted = await service.delete_vault_item(
+        "t", "u", "vault_item_1", confirm_title="行情网站"
+    )
+    assert deleted is True
+    repo.delete_credential_blob.assert_awaited_once_with("t", "u", "vault_abc")
+    # 引用被显式移除：Bot 手里不再留着指向已删资料的引用。
+    assert repo.update_specialist.await_args.kwargs["config_remove"] == ("credential_ref:行情网站",)
+
+
+@pytest.mark.asyncio
+async def test_revoking_a_grant_retries_after_a_concurrent_edit() -> None:
+    """Bot 的资料同时被改过时，按最新 revision 重试，不把「删除即失效」做成半截。"""
+    granted = _specialist({"credential_ref:行情网站": "vault_abc"})
+    service, repo = _service(rows=[_vault_row()], specialist=granted)
+    repo.list_specialists.return_value = [granted]
+    calls: list[int] = []
+
+    def _flaky(tenant, user, specialist_id, **kwargs):
+        calls.append(kwargs["expected_revision"])
+        if len(calls) == 1:
+            raise ConflictError("Specialist changed; reload before applying this change")
+        return _specialist({})
+
+    repo.update_specialist.side_effect = _flaky
+    repo.get_specialist.side_effect = None
+    repo.get_specialist.return_value = _specialist(
+        {"credential_ref:行情网站": "vault_abc", "title": "研究"}
+    )
+    await service.delete_vault_item("t", "u", "vault_item_1", confirm_title="行情网站")
+    assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_authorized_credential_resolves_for_the_bot_that_was_granted() -> None:
+    """授权后按引用解析：值只在进程内给到要用它的工具，不经过接口。"""
+    from pydantic import SecretStr
+
+    from harness.studio.mcp_credential_store import McpCredentialCipher
+
+    cipher = McpCredentialCipher(SecretStr("test-key"))
+    service, repo = _service(rows=[_vault_row()], specialist=_specialist(
+        {"credential_ref:行情网站": "vault_abc"}))
+    service.set_cipher(cipher)
+    reference = "vault_abc"
+    ciphertext = cipher.encrypt("t", "u", reference, {"secret": SecretStr("s3cret-value")})
+    repo.get_credential_blob.return_value = SimpleNamespace(
+        reference=reference, ciphertext=ciphertext, created_at=datetime(2026, 11, 3, tzinfo=UTC))
+    value = await service.resolve_specialist_credential(
+        "t", "u", "specialist_a", name="行情网站")
+    assert value == "s3cret-value"
+
+
+@pytest.mark.asyncio
+async def test_resolving_a_revoked_or_deleted_credential_is_refused() -> None:
+    """撤销或资料被删后立刻拒用；旧引用给出明确原因而不是崩溃。"""
+    service, repo = _service(rows=[_vault_row()], specialist=_specialist({}))
+    with pytest.raises(ConflictError):
+        await service.resolve_specialist_credential("t", "u", "specialist_a", name="行情网站")
+    repo.get_credential_blob.assert_not_called()
+
+    service, repo = _service(rows=[_vault_row()], specialist=_specialist(
+        {"credential_ref:行情网站": "vault_abc"}))
+    repo.get_credential_blob.return_value = None
+    with pytest.raises(ConflictError):
+        await service.resolve_specialist_credential("t", "u", "specialist_a", name="行情网站")
+
+
+@pytest.mark.asyncio
+async def test_renaming_a_granted_item_moves_the_bot_reference() -> None:
+    """授权按名称记账：改名必须把 Bot 侧的引用键一起改掉。"""
+    granted = _specialist({"credential_ref:行情网站": "vault_abc"})
+    service, repo = _service(rows=[_vault_row()], specialist=granted)
+    repo.list_specialists.return_value = [granted]
+    repo.get_specialist.side_effect = None
+    repo.get_specialist.return_value = granted
+    await service.update_vault_item(
+        "t", "u", "vault_item_1", expected_revision=1, title="行情与资讯"
+    )
+    # 旧键被移除、新键写入同一个引用：授权没有因为改名而丢失或错配。
+    assert repo.update_specialist.await_args.kwargs["config"] == {
+        "credential_ref:行情与资讯": "vault_abc"
+    }
+    assert repo.update_specialist.await_args.kwargs["config_remove"] == (
+        "credential_ref:行情网站",
+    )
+
+
+@pytest.mark.asyncio
+async def test_revoking_after_a_rename_removes_the_current_key() -> None:
+    """改名后按新名称撤销，必须真的撤掉——否则授权变成收不回的残留。"""
+    renamed = _specialist({"credential_ref:行情与资讯": "vault_abc"})
+    service, repo = _service(rows=[_vault_row(title="行情与资讯")], specialist=renamed)
+    repo.list_specialists.return_value = [renamed]
+    repo.get_specialist.side_effect = None
+    repo.get_specialist.return_value = renamed
+    await service.grant_vault_item(
+        "t", "u", "specialist_a", item_id="vault_item_1", granted=False, expected_revision=1
+    )
+    assert repo.update_specialist.await_args.kwargs["config_remove"] == (
+        "credential_ref:行情与资讯",
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_new_item_with_the_same_title_starts_ungranted() -> None:
+    """同名条目重建后不继承旧授权：删除时授权已收回。"""
+    service, repo = _service(rows=[_vault_row()], specialist=_specialist({}))
+    repo.list_specialists.return_value = []
+    granted = await service.grant_vault_item(
+        "t", "u", "specialist_a", item_id="vault_item_1", granted=True, expected_revision=1
+    )
+    assert granted.config["credential_ref:行情网站"] == "vault_abc"

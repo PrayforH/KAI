@@ -27,6 +27,14 @@ VAULT_CATEGORY_LABELS: dict[str, str] = {
 }
 
 
+class VaultGrant(StudioModel):
+    """一条资料在某个 Bot 上的授权状态；只说状态，不带值。"""
+
+    specialist_id: str = Field(alias="specialistId")
+    specialist_name: str = Field(alias="specialistName")
+    status: str  # ok | missing | unresolved
+
+
 class VaultItem(StudioModel):
     """列表里出现的全部内容：没有敏感值，只有脱敏元数据。"""
 
@@ -39,6 +47,7 @@ class VaultItem(StudioModel):
     revision: int
     created_at: datetime = Field(alias="createdAt")
     updated_at: datetime = Field(alias="updatedAt")
+    grants: list[VaultGrant] = Field(default_factory=list)
 
 
 class VaultItemWrite(StudioModel):

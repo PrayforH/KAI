@@ -47,7 +47,7 @@ from harness.assistant.models import (
 from harness.assistant.permissions import pending_local_tools, require_local_tools
 from harness.assistant.repository import MANAGED_PROGRESS_EVENTS, PostgresAssistantRepository
 from harness.assistant.storage import VaultItemRow
-from harness.assistant.vault import VaultCategory, VaultItem
+from harness.assistant.vault import VaultCategory, VaultGrant, VaultItem
 from harness.auth.service import AuthService
 from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
 from harness.core.events import RunEvent
@@ -444,6 +444,8 @@ class AssistantService:
         specialist = await self.repository.get_specialist(tenant_id, user_id, specialist_id)
         if specialist.status is SpecialistStatus.ARCHIVED:
             raise ConflictError("这个 Bot 已归档，收不到新消息")
+        if specialist.status is SpecialistStatus.PAUSED:
+            raise ConflictError("这个 Bot 已暂停接单，先恢复再发消息")
         message_id = f"mention-specialist:{idempotency_key}:{specialist_id}"
         for item in await self.repository.handovers(
             tenant_id, user_id, specialist_id=specialist_id
@@ -1113,9 +1115,42 @@ class AssistantService:
         )
 
     async def vault_items(self, tenant_id: str, user_id: str) -> list[VaultItem]:
-        """本人资料库条目：跨用户看不见别人的条目。"""
+        """本人资料库条目：跨用户看不见别人的条目。
+
+        每条附带它在各 Bot 上的授权状态（只说状态，不带值）：
+        ok＝授权有效；missing＝资料已删或已收回；unresolved＝解析器不可用。
+        """
         rows = await self.repository.list_vault_items(tenant_id, user_id)
-        return [self._vault_item(row) for row in rows]
+        specialists = await self.repository.list_specialists(tenant_id, user_id)
+        items = []
+        for row in rows:
+            grants = []
+            for specialist in specialists:
+                if f"credential_ref:{row.title}" not in specialist.config:
+                    continue
+                grants.append(VaultGrant(
+                    specialistId=specialist.specialist_id,
+                    specialistName=specialist.name,
+                    status=await self._credential_grant_status(
+                        tenant_id, user_id, specialist.specialist_id, row.title
+                    ),
+                ))
+            items.append(self._vault_item(row).model_copy(update={"grants": grants}))
+        return items
+
+    async def _credential_grant_status(
+        self, tenant_id: str, user_id: str, specialist_id: str, title: str
+    ) -> str:
+        """授权是否还解析得到：只返回状态，不返回任何值。"""
+        try:
+            await self.resolve_specialist_credential(
+                tenant_id, user_id, specialist_id, name=title
+            )
+        except ConflictError as error:
+            return "missing" if "请重新授权" in str(error) else "unresolved"
+        except Exception:  # noqa: BLE001 - 状态判断失败不应影响列表
+            return "unresolved"
+        return "ok"
 
     async def create_vault_item(
         self, tenant_id: str, user_id: str, *,
@@ -1180,17 +1215,122 @@ class AssistantService:
             tenant_id, user_id, item_id,
             expected_revision=expected_revision, changes=changes, now=now,
         )
+        if title is not None and title[:120] != row.title:
+            # 授权按名称记账：改名必须把 Bot 侧的引用一起改，否则 Bot 手里留着
+            # 旧名称的引用，之后按新名称撤销就撤不掉——授权会变成收不回的残留。
+            await self._rename_vault_references(
+                tenant_id, user_id, row.title, title[:120]
+            )
         return self._vault_item(updated)
 
     async def delete_vault_item(
         self, tenant_id: str, user_id: str, item_id: str, *, confirm_title: str
     ) -> bool:
-        """删除条目：必须确认标题，密文一起删掉，不留孤儿。"""
+        """删除条目：必须确认标题，密文一起删掉，不留孤儿。
+
+        删除即失效：已经授权给某个 Bot 的引用也要收回，否则 Bot 手里还留着
+        一条指向已删资料的 credential_ref。
+        """
         row = await self.repository.get_vault_item(tenant_id, user_id, item_id)
         if confirm_title.strip() != row.title:
             raise ConflictError("确认标题与这条资料不一致，未删除")
         await self.repository.delete_credential_blob(tenant_id, user_id, row.reference)
-        return await self.repository.delete_vault_item(tenant_id, user_id, item_id)
+        deleted = await self.repository.delete_vault_item(tenant_id, user_id, item_id)
+        if deleted:
+            await self._revoke_vault_references(tenant_id, user_id, row.title)
+        return deleted
+
+    async def _revoke_vault_references(self, tenant_id: str, user_id: str, title: str) -> None:
+        """把引用了这条资料的 Bot 的 credential_ref 收回。"""
+        await self._rewrite_vault_references(
+            tenant_id, user_id, {}, (f"credential_ref:{title}",)
+        )
+
+    async def _rename_vault_references(
+        self, tenant_id: str, user_id: str, old_title: str, new_title: str
+    ) -> None:
+        """改名时把 Bot 侧的引用键一起改掉。
+
+        授权按名称记账：只改条目标题、Bot 侧仍留着旧名称的引用，
+        之后按新名称撤销就撤不掉——授权会变成收不回的残留。
+        改名不改变引用指向的密文：值随引用一起搬过去。
+        """
+        await self._rewrite_vault_references(
+            tenant_id, user_id, {f"credential_ref:{old_title}": f"credential_ref:{new_title}"}, ()
+        )
+
+    async def _rewrite_vault_references(
+        self,
+        tenant_id: str,
+        user_id: str,
+        renames: dict[str, str],
+        removals: tuple[str, ...],
+    ) -> None:
+        """按键改写 Bot 的授权引用：renames 改键、removals 删键。
+
+        Bot 的资料可能同时被改过：冲突时按最新 revision 重试一次，
+        不因为一次并发编辑就把「删除即失效」变成半截。
+        """
+        for specialist in await self.repository.list_specialists(tenant_id, user_id):
+            touched = tuple(key for key in (*renames, *removals) if key in specialist.config)
+            if not touched:
+                continue
+            for attempt in range(2):
+                config = {
+                    new_key: specialist.config[old_key]
+                    for old_key, new_key in renames.items()
+                    if old_key in specialist.config
+                }
+                try:
+                    await self.repository.update_specialist(
+                        tenant_id, user_id, specialist.specialist_id,
+                        expected_revision=specialist.revision,
+                        config=config,
+                        config_remove=touched,
+                        now=datetime.now(UTC),
+                    )
+                    break
+                except ConflictError:
+                    if attempt:
+                        raise
+                    specialist = await self.repository.get_specialist(
+                        tenant_id, user_id, specialist.specialist_id
+                    )
+
+    async def resolve_specialist_credential(
+        self, tenant_id: str, user_id: str, specialist_id: str, *, name: str
+    ) -> str:
+        """按授权解析一条凭据：只在进程内交给要用它的工具。
+
+        授权来自 `specialist.config` 的 `credential_ref:<名称>`。撤销或资料被删后
+        这里立刻拒用：引用指向的密文不存在时给出「请重新授权」，而不是让运行崩掉。
+        值不会出现在任何 API 响应、模型上下文、RunEvent 或日志里。
+        """
+        from harness.studio.mcp_credential_store import StoredMcpCredential
+
+        specialist = await self.repository.get_specialist(tenant_id, user_id, specialist_id)
+        reference = specialist.config.get(f"credential_ref:{name}")
+        if not isinstance(reference, str) or not reference:
+            raise ConflictError(f"「{name}」还没有授权给这个 Bot")
+        row = await self.repository.get_credential_blob(tenant_id, user_id, reference)
+        if row is None:
+            raise ConflictError(f"「{name}」的资料已被删除或收回，请重新授权")
+        if self._cipher is None:
+            raise ConflictError("凭据存储未配置")
+        values = self._cipher.decrypt(StoredMcpCredential(
+            tenant_id=tenant_id,
+            owner_user_id=user_id,
+            reference=reference,
+            revision=1,
+            key_names=("secret",),
+            ciphertext=row.ciphertext,
+            updated_by=user_id,
+            updated_at=row.created_at,
+        ))
+        secret = values.get("secret")
+        if secret is None:
+            raise ConflictError(f"「{name}」的资料已不可用，请重新授权")
+        return secret.get_secret_value()
 
     async def grant_vault_item(
         self, tenant_id: str, user_id: str, specialist_id: str, *,
@@ -1211,6 +1351,8 @@ class AssistantService:
         return await self.repository.update_specialist(
             tenant_id, user_id, specialist_id,
             expected_revision=expected_revision, config=config,
+            # 撤销时必须真正移除引用，否则 Bot 仍然拿得到这条资料。
+            config_remove=() if granted else (key,),
             now=datetime.now(UTC),
         )
 

@@ -50,3 +50,35 @@ export function mentionIdempotencyKey(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
   return `mention-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
+
+/** 一次 @ 多个助理的投递结果：成功与失败分开记账，互不阻断。 */
+export type MentionDeliveryResult = {
+  delivered: string[];
+  failed: Array<{ specialistId: string; name: string; reason: string }>;
+};
+
+/**
+ * 逐个投递：某个目标失败不阻断其余目标。
+ * 失败的目标留在提及里可以重试，已送达的照常发回执。
+ */
+export async function deliverMentions(
+  mentions: readonly MentionedAssistant[],
+  text: string,
+  deliver: (bot: MentionedAssistant, text: string) => Promise<void>,
+): Promise<MentionDeliveryResult> {
+  const delivered: string[] = [];
+  const failed: MentionDeliveryResult["failed"] = [];
+  for (const bot of mentions) {
+    try {
+      await deliver(bot, text);
+      delivered.push(bot.specialistId);
+    } catch (error) {
+      failed.push({
+        specialistId: bot.specialistId,
+        name: bot.name,
+        reason: error instanceof Error ? error.message : "发送失败",
+      });
+    }
+  }
+  return { delivered, failed };
+}
