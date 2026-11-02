@@ -4,7 +4,7 @@ import { sendComposerWithRecovery } from "../lib/composer-send";
 import { TerminalResponseNotice } from "./terminal-response-notice";
 import { TurnCompletionControl } from "./turn-completion";
 import { FollowupInputPlacement } from "./followup-input-placement";
-import { latestConversationInput } from "../lib/conversation-input";
+import { conversationInputDisplay, conversationInputIntro, latestConversationInput } from "../lib/conversation-input";
 import { useConversationScope } from "../lib/conversation-scope";
 import { type TaskSummary, createThreadHistoryAdapter, useAutoLoadEarlierMessages, useThreadHistoryPagination } from "../lib/task-history";
 import { startSteeringPolling } from "../lib/steering-poller";
@@ -1602,7 +1602,10 @@ export function HarnessAssistantMessage() {
   const controlSummary = personalAssistant && !assistantBot && !hasVideoGeneration &&
     !conversationScope && !turnArtifacts.length && !turnPresentations.length
     ? assistantControlSummary(terminalActivity) : null;
-  const displayedText = controlSummary ? redact(controlSummary) : copyText;
+  const activeInputMessage = useAuiState(state => latestConversationInput(state.thread.messages)?.messageId);
+  const showingInputCard = activeInputMessage === messageId && !conversationScope?.composerAccessory;
+  const displayedText = controlSummary ? redact(controlSummary) : showingInputCard ? conversationInputIntro(copyText) : copyText;
+  const actionText = showingInputCard ? conversationInputDisplay(copyText) : displayedText;
   const draftScope = useContext(ComposerDraftContext);
   const runPresentationAction: PresentationActionHandler | undefined = threadRuntime && !conversationScope ? submitUiAction : undefined;
   const actionHistory = useMemo(() => draftScope ? createThreadHistoryAdapter(draftScope.threadId) : null, [draftScope]);
@@ -1616,7 +1619,7 @@ export function HarnessAssistantMessage() {
   }, [actionHistory, threadRuntime]);
   const actionBusy = ["running", "queued", "waiting_approval"].includes(runView?.phase ?? "");
   // 历史/重试偶尔把同一条回答写成相邻两条 assistant；只保留第一条。
-  if (duplicateAssistantReply && !controlSummary) return null;
+  if (duplicateAssistantReply && !controlSummary && !showingInputCard) return null;
   return (
     <AnswerCitationProvider citations={answerCitations}>
     <PublishedBlocksProvider sources={publishedBlocks}>
@@ -1654,10 +1657,10 @@ export function HarnessAssistantMessage() {
             <MessageCopyButton
               className="assistant-message-copy"
               label="复制回答"
-              text={displayedText}
+              text={actionText}
             />
             <MessageReplyButton className="assistant-message-copy" label="回复这条回答"
-              excerptOverride={controlSummary ? displayedText : undefined} />
+              excerptOverride={controlSummary || showingInputCard ? actionText : undefined} />
             {!assistantSurface && (
               <>
                 <MessageFeedbackButtons runId={feedbackRun} />
@@ -1675,7 +1678,7 @@ export function HarnessAssistantMessage() {
       )}
       <div className="followup-input-anchor" data-followup-for={messageId} />
       {!hasVideoGeneration && <TerminalResponseNotice activity={terminalActivity}
-        hasResponse={Boolean(displayedText.trim()) || turnPresentations.length > 0 || turnArtifacts.length > 0} />}
+        hasResponse={Boolean(displayedText.trim()) || showingInputCard || turnPresentations.length > 0 || turnArtifacts.length > 0} />}
       {turnPresentations.length > 0 ? (
         <div className="intelligent-ui-blocks">
           {turnPresentations.map((presentation) => (

@@ -75,6 +75,12 @@ function inputBlock(text: string): InputBlock | null {
 export function parseConversationInput(text: string): ConversationInput | null {
   return inputBlock(text)?.input ?? null;
 }
+/** The active card already owns its question and choices; keep surrounding prose only. */
+export function conversationInputIntro(text: string): string {
+  const block = inputBlock(text);
+  return block ? [text.slice(0, block.start), text.slice(block.end)].filter(x => x.trim()).join("\n\n").trim() : text;
+}
+
 export function conversationInputDisplay(text: string, streaming = false): string {
   const block = inputBlock(text);
   if (block) return text.slice(0, block.start) + [block.input.title, ...block.input.questions.map(q => `${q.label}${q.options.length ? `（${q.options.join(" / ")}）` : ""}`)].join("\n\n") + text.slice(block.end);
