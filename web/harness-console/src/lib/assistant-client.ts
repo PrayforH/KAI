@@ -78,27 +78,3 @@ export async function assistantRequest<T>(path: string, method = "GET", body?: u
   }
   return response.status === 204 ? undefined as T : response.json();
 }
-
-export type ManagedProgress = {
-  thread_id: string; title: string; status: string; summary: string; active: boolean;
-  run_id?: string | null; duration_seconds?: number | null;
-  checkpoint_id?: string | null; checkpoint_summary?: string | null;
-  metrics?: {
-    tokens: number | null;
-    costUsd: number | null;
-    unknownUsage: boolean;
-    skippedNoModel?: boolean;
-  } | null;
-};
-export type ManagedPanel = {
-  objectiveId: string;
-  revision: number;
-  budget: Record<string, unknown> | null;
-  managed: Array<{
-    managedId?: string; notifyOnProgress?: boolean; notificationError?: string | null;
-    threadId: string; role: "execute" | "observe"; projectId: string | null;
-    dependsOnObjectiveId: string | null; progress: ManagedProgress | null;
-  }>;
-  overview: ManagedProgress[];
-  aggregate: string;
-};
