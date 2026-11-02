@@ -8,7 +8,14 @@ import styles from "./assistant-results.module.css";
 /** Durable artifacts from the conversation, with local preview state only. */
 export function AssistantResults({ artifacts }: { artifacts: ArtifactDetails[] }) {
   const [selected, setSelected] = useState<PreviewTarget | null>(null);
-  const files = [...new Map(artifacts.map(file => [file.artifact_id, file])).values()];
+  const seen = new Set<string>();
+  const files = [...new Map(artifacts.map(file => [file.artifact_id, file])).values()].filter(file => {
+    if (!file.name || !file.media_type || !/^[a-f0-9]{64}$/i.test(file.sha256 || "")) return true;
+    const key = JSON.stringify([file.run_id, file.thread_id, file.name, file.media_type, file.sha256]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   if (!files.length) return null;
   return (
     <section className={styles.results} aria-label="交付文件">

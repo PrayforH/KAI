@@ -34,3 +34,30 @@ it("keeps assistant process collapsed while allowing explicit inspection", () =>
   act(() => (host.querySelector("button.execution-disclosure") as HTMLButtonElement).click());
   expect(host.querySelector("section")?.getAttribute("data-open")).toBe("true");
 });
+
+it("merges identical historical publications and preserves the first preview target on refresh", () => {
+  const first = { ...files[0], sha256: "a".repeat(64) };
+  const duplicate = { ...first, artifact_id: "artifact-collected-copy" };
+  act(() => root.render(<AssistantResults artifacts={[first, duplicate]} />));
+  expect(host.querySelectorAll("article")).toHaveLength(1);
+  expect(host.querySelector("a")?.getAttribute("href")).toContain("/artifact-a?");
+  act(() => root.render(<AssistantResults key="refresh" artifacts={[first, duplicate]} />));
+  expect(host.querySelectorAll("article")).toHaveLength(1);
+  expect(host.querySelector("a")?.getAttribute("href")).toContain("/artifact-a?");
+});
+
+it.each([
+  { sha256: "b".repeat(64) },
+  { sha256: undefined },
+  { sha256: "not-a-hash" },
+  { name: "另一份报告.html" },
+  { media_type: "text/plain" },
+  { run_id: "another-run" },
+  { thread_id: "another-thread" },
+])("keeps different or unverifiable deliverables visible: %j", (difference) => {
+  const first = { ...files[0], sha256: "a".repeat(64) };
+  act(() => root.render(<AssistantResults artifacts={[
+    first, { ...first, ...difference, artifact_id: "artifact-other" },
+  ]} />));
+  expect(host.querySelectorAll("article")).toHaveLength(2);
+});

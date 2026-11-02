@@ -594,6 +594,15 @@ class RunOrchestrator:
             for event in prior_events
             if event.type == "artifact.ready" and isinstance(event.payload.get("source_path"), str)
         }
+        published_contents = {
+            (
+                event.payload.get("name"),
+                event.payload.get("media_type"),
+                event.payload.get("sha256"),
+            )
+            for event in prior_events
+            if event.type == "artifact.ready"
+        }
         remaining = self._output_artifact_max_bytes
         published_count = 0
         skipped_count = 0
@@ -617,14 +626,22 @@ class RunOrchestrator:
                 relative,
                 max_bytes=remaining,
             )
+            name = relative.removeprefix("outputs/")
+            media_type = mimetypes.guess_type(resolved.name)[0] or "application/octet-stream"
+            fingerprint = (name, media_type, hashlib.sha256(content).hexdigest())
+            # A declared root file can also be copied into outputs/. Reuse the
+            # existing publication so Web and channel delivery see one artifact.
+            if fingerprint in published_contents:
+                continue
             remaining -= len(content)
             artifact = await self._artifacts.upload(
                 tenant_id=tenant_id,
                 run_id=run.run_id,
-                name=relative.removeprefix("outputs/"),
-                media_type=(mimetypes.guess_type(resolved.name)[0] or "application/octet-stream"),
+                name=name,
+                media_type=media_type,
                 content=content,
             )
+            published_contents.add(fingerprint)
             payload = artifact.model_dump(mode="json")
             payload["source"] = source
             payload["source_path"] = relative

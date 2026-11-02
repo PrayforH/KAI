@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
@@ -1076,6 +1077,69 @@ async def test_workspace_outputs_skip_paths_already_published_by_runtime(
     assert completed.status is RunStatus.SUCCEEDED
     assert len(artifact_events) == 1
     assert artifact_events[0].payload["artifact_id"] == "artifact-runtime"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("published_name", "published_content", "published_media_type", "expected_count"),
+    [
+        ("report.md", b"verified output", "text/markdown", 1),
+        ("other.md", b"verified output", "text/markdown", 2),
+        ("report.md", b"previous version", "text/markdown", 2),
+        ("report.md", b"verified output", "text/plain", 2),
+    ],
+)
+async def test_collected_copy_reuses_only_the_same_named_typed_content(
+    tmp_path: Path,
+    published_name: str,
+    published_content: bytes,
+    published_media_type: str,
+    expected_count: int,
+) -> None:
+    orchestrator, _, _, events = await arrange(
+        tmp_path, runtime_override=WorkspaceOutputRuntime(), enable_artifacts=True,
+    )
+    await orchestrator._events.append(
+        tenant_id="tenant-a", run_id="run-1", session_id="session-1",
+        event_type="artifact.ready",
+        payload={
+            "artifact_id": "artifact-explicit",
+            "name": published_name,
+            "media_type": published_media_type,
+            "sha256": hashlib.sha256(published_content).hexdigest(),
+            "source_path": "report.md",
+        },
+    )
+
+    completed = await orchestrator.execute("tenant-a", "run-1")
+    recorded = await events.list_after("tenant-a", "run-1", 0)
+
+    assert completed.status is RunStatus.SUCCEEDED
+    assert len([event for event in recorded if event.type == "artifact.ready"]) == expected_count
+
+
+@pytest.mark.asyncio
+async def test_root_and_outputs_copies_publish_one_deliverable(tmp_path: Path) -> None:
+    class CopiedOutputRuntime(FakeRuntime):
+        async def execute(self, context: RuntimeContext) -> AsyncIterator[RuntimeEvent]:
+            output = context.workspace / "outputs"
+            output.mkdir()
+            (output / "report.md").write_text("same deliverable")
+            (context.workspace / "report.md").write_text("same deliverable")
+            yield RuntimeEvent(type="message.start")
+            yield RuntimeEvent(type="message.delta", payload={"text": "结果：`report.md`"})
+            yield RuntimeEvent(type="message.completed")
+
+    orchestrator, _, _, events = await arrange(
+        tmp_path, runtime_override=CopiedOutputRuntime(), enable_artifacts=True,
+    )
+    completed = await orchestrator.execute("tenant-a", "run-1")
+    recorded = await events.list_after("tenant-a", "run-1", 0)
+    artifacts = [event for event in recorded if event.type == "artifact.ready"]
+
+    assert completed.status is RunStatus.SUCCEEDED
+    assert len(artifacts) == 1
+    assert artifacts[0].payload["source_path"] == "report.md"
 
 
 @pytest.mark.asyncio

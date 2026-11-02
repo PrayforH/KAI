@@ -86,3 +86,34 @@ RunService 状态查询、AG-UI activity 和前端历史回放贯通 unknown；
 前端3文件28项通过，包含完成后历史回放仍显示不确定原文；
 TypeScript、Ruff、diff检查通过。未部署79或真实跨端验证。
 后续仍需完善显式重试意图、统一输入信封、事件订阅与业务检查点；Goal保持active。
+
+## 79 发布与网页优先（2026-11-02）
+
+用户提供现有部署认证后，SSH 已恢复。d78a8d5a 已部署到 79：
+api/worker/computer-control、web、飞书/微信接收器使用
+`kai/superagent-{api,web,feishu,weixin}:20261102-d78a8d5a`；数据库为 0064。
+切换前两次核对均无活跃 Run/职责执行；切换后既有职责正常产生新执行。
+Compose、157 MiB 业务库备份保存在服务器私有发布目录
+`/data/kai-superagent-20261102-d78a8d5a`，备份已恢复到独立验证库并完成
+0063→0064；旧文件回执的新列保持 NULL。没有修改基础设施、Viewer 或 VM。
+后端镜像保留 10001:10001；Computer host broker 保留现有 Compose 的 0:0。
+首轮 `compose --wait` 对没有 healthcheck 的接收器报错并回退；确认旧服务健康后，
+改为仅对已有 healthcheck 检查 healthy、其他服务检查 running，第二轮发布成功。
+实际容器源文件 hash 与发布源一致；接收器 running 不等同于真实收发通过。
+
+真实已登录 Chrome 页面验证：安静的可展开转交回执、折叠外的配置卡、引用条出现和取消。
+飞书 SA79-1102-A 入站产生 run_cfa6500b2e2b4bec87b5ea5a255891bd 并成功；
+其 TXT（38 B）和 HTML（1495 B）在网页真实预览、浏览器下载并校验 hash，刷新后成果仍在。
+原生飞书文件引用产生 run_abe45c5c1ab74d529682b035b3df99d6；
+与原 Run session 相同，持久 reply_to 指向原回答。未据此宣称任意原任务跨端全部完成。
+
+**最新用户范围调整：IM 通道先不用管，优先完成网页助理核心。**
+已停止新增 IM 验收动作，不再等待或催促微信输入；保留已完成证据，不将微信计为通过。
+Goal 保持 active，后续首先网页主/子助理、配置、引用、原任务托管及成果体验。
+
+网页实测发现同名同内容被显式发布和最终回答收集各发布一次（root/outputs 副本）。
+本批回修在 Worker 收集阶段按同 Run 中名称、类型和 SHA-256 去重，
+不减少不同名称、不同内容或不同类型成果；网页对有完整哈希的历史同轮重复成果合并显示，
+保留首个真实预览下载目标，不删除历史 Artifact 或改写发送记录。
+本地验证：Worker 全文件 68 passed（含新增 5 项），成果组件 10 passed，tsc/Ruff/diff 通过。
+该去重回修尚待发布和新真实页面复核；d78a8d5a 的旧测试不能替代它的上线验收。
