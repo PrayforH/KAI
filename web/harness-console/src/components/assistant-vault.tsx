@@ -8,6 +8,13 @@ import styles from "./assistant-vault.module.css";
 
 type VaultCategory = "login" | "card" | "contact";
 
+type VaultGrant = {
+  specialistId: string;
+  specialistName: string;
+  /** ok＝授权有效；missing＝资料已删或已收回，需重新授权；unresolved＝暂时无法确认。 */
+  status: "ok" | "missing" | "unresolved";
+};
+
 type VaultItem = {
   itemId: string;
   category: VaultCategory;
@@ -18,6 +25,7 @@ type VaultItem = {
   revision: number;
   createdAt: string;
   updatedAt: string;
+  grants: VaultGrant[];
 };
 
 const CATEGORIES: Array<{ id: "all" | VaultCategory; label: string }> = [
@@ -154,6 +162,10 @@ export function AssistantVault() {
         </button>
       </div>
       {error && <p className={styles.error} role="alert">{error}</p>}
+      <p className={styles.scope}>
+        资料加密保存在你名下，只有授权的 Bot 才有引用。当前平台还没有把它交给工具的通道
+        （浏览器的敏感填充也未支持），所以这些资料暂时不会被自动使用。
+      </p>
       {loading ? (
         <p className={styles.empty}>正在读取资料库…</p>
       ) : visible.length === 0 ? (
@@ -171,6 +183,19 @@ export function AssistantVault() {
                 ) : (
                   <span className={styles.badge} data-muted="true">只有标题</span>
                 )}
+                {item.grants.map((grant) => (
+                  <span
+                    key={grant.specialistId}
+                    className={styles.badge}
+                    data-muted={grant.status === "ok" ? undefined : "true"}
+                  >
+                    {grant.status === "ok"
+                      ? `已授权 ${grant.specialistName}`
+                      : grant.status === "missing"
+                        ? `${grant.specialistName} 需重新授权`
+                        : `${grant.specialistName} 授权待确认`}
+                  </span>
+                ))}
               </div>
               <div className={styles.grants}>
                 {specialists.length === 0 ? (
@@ -306,6 +331,10 @@ function VaultEditor({
           </label>
         )}
         {error && <p className={styles.error} role="alert">{error}</p>}
+      <p className={styles.scope}>
+        资料加密保存在你名下，只有授权的 Bot 才有引用。当前平台还没有把它交给工具的通道
+        （浏览器的敏感填充也未支持），所以这些资料暂时不会被自动使用。
+      </p>
         <button type="button" className={styles.primary} disabled={busy} onClick={() => void save()}>
           {busy ? "保存中…" : "保存"}
         </button>

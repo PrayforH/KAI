@@ -25,6 +25,7 @@ const VAULT = [
     revision: 1,
     createdAt: "2026-11-03T00:00:00Z",
     updatedAt: "2026-11-03T00:00:00Z",
+    grants: [],
   },
   {
     itemId: "vault_item_2",
@@ -36,6 +37,7 @@ const VAULT = [
     revision: 1,
     createdAt: "2026-11-03T00:00:00Z",
     updatedAt: "2026-11-03T00:00:00Z",
+    grants: [],
   },
 ];
 
@@ -52,6 +54,7 @@ const SPECIALISTS = [
     config: {},
     createdAt: "2026-11-03T00:00:00Z",
     updatedAt: "2026-11-03T00:00:00Z",
+    grants: [],
   },
 ];
 
@@ -149,6 +152,33 @@ describe("assistant vault", () => {
     const call = assistantRequest.mock.calls.find(([, method]) => method === "DELETE");
     expect(call).toBeTruthy();
     expect(call![2]).toEqual({ confirmTitle: "行情网站" });
+  });
+
+  it("states the current scope: stored and authorised, not yet handed to a tool", async () => {
+    await mount();
+    expect(host.textContent).toContain("加密保存在你名下");
+    expect(host.textContent).toContain("还没有把它交给工具的通道");
+  });
+
+  it("shows the grant state per bot without leaking the value", async () => {
+    assistantRequest.mockImplementation(async (path: string, method = "GET") => {
+      if (path === "vault" && method === "GET") {
+        return [
+          {
+            ...VAULT[0],
+            grants: [
+              { specialistId: "specialist_a", specialistName: "资料 Bot", status: "ok" },
+              { specialistId: "specialist_b", specialistName: "旧 Bot", status: "missing" },
+            ],
+          },
+        ];
+      }
+      if (path === "specialists" && method === "GET") return SPECIALISTS;
+      return {};
+    });
+    await mount();
+    expect(host.textContent).toContain("已授权 资料 Bot");
+    expect(host.textContent).toContain("旧 Bot 需重新授权");
   });
 
   it("offers per-bot authorisation instead of sharing everything", async () => {

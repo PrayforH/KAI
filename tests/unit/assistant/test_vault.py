@@ -113,7 +113,7 @@ async def test_vault_item_encrypts_the_value_and_lists_only_metadata() -> None:
     assert "hunter2" not in item.model_dump_json()
     assert set(item.model_dump()) == {
         "item_id", "category", "title", "reference",
-        "has_secret", "last4", "revision", "created_at", "updated_at",
+        "has_secret", "last4", "revision", "created_at", "updated_at", "grants",
     }
 
 
@@ -256,3 +256,50 @@ async def test_resolving_a_revoked_or_deleted_credential_is_refused() -> None:
     repo.get_credential_blob.return_value = None
     with pytest.raises(ConflictError):
         await service.resolve_specialist_credential("t", "u", "specialist_a", name="行情网站")
+
+
+@pytest.mark.asyncio
+async def test_renaming_a_granted_item_moves_the_bot_reference() -> None:
+    """授权按名称记账：改名必须把 Bot 侧的引用键一起改掉。"""
+    granted = _specialist({"credential_ref:行情网站": "vault_abc"})
+    service, repo = _service(rows=[_vault_row()], specialist=granted)
+    repo.list_specialists.return_value = [granted]
+    repo.get_specialist.side_effect = None
+    repo.get_specialist.return_value = granted
+    await service.update_vault_item(
+        "t", "u", "vault_item_1", expected_revision=1, title="行情与资讯"
+    )
+    # 旧键被移除、新键写入同一个引用：授权没有因为改名而丢失或错配。
+    assert repo.update_specialist.await_args.kwargs["config"] == {
+        "credential_ref:行情与资讯": "vault_abc"
+    }
+    assert repo.update_specialist.await_args.kwargs["config_remove"] == (
+        "credential_ref:行情网站",
+    )
+
+
+@pytest.mark.asyncio
+async def test_revoking_after_a_rename_removes_the_current_key() -> None:
+    """改名后按新名称撤销，必须真的撤掉——否则授权变成收不回的残留。"""
+    renamed = _specialist({"credential_ref:行情与资讯": "vault_abc"})
+    service, repo = _service(rows=[_vault_row(title="行情与资讯")], specialist=renamed)
+    repo.list_specialists.return_value = [renamed]
+    repo.get_specialist.side_effect = None
+    repo.get_specialist.return_value = renamed
+    await service.grant_vault_item(
+        "t", "u", "specialist_a", item_id="vault_item_1", granted=False, expected_revision=1
+    )
+    assert repo.update_specialist.await_args.kwargs["config_remove"] == (
+        "credential_ref:行情与资讯",
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_new_item_with_the_same_title_starts_ungranted() -> None:
+    """同名条目重建后不继承旧授权：删除时授权已收回。"""
+    service, repo = _service(rows=[_vault_row()], specialist=_specialist({}))
+    repo.list_specialists.return_value = []
+    granted = await service.grant_vault_item(
+        "t", "u", "specialist_a", item_id="vault_item_1", granted=True, expected_revision=1
+    )
+    assert granted.config["credential_ref:行情网站"] == "vault_abc"
