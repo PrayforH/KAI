@@ -57,7 +57,8 @@
 | 后端单测（助理） | `uv run python -m pytest tests/unit/assistant -q` | 177 passed |
 | 后端新增单测 | `pytest tests/unit/assistant/test_appearance.py tests/unit/assistant/test_mention_message.py tests/unit/assistant/test_vault.py` | 18 passed |
 | 后端整树收集 | `uv run python -m pytest tests/unit -q` | 3 个收集错误（`test_lifecycle.py`/`test_memory_tools.py`/`test_service.py`）**与基线完全相同**（同名测试文件的老问题，基线工作树同样报这 3 个） |
-| 前端全量 | `cd web/harness-console && npx vitest run` | 1599 passed / 7 failed —— 7 条失败与基线**同一组**（account-settings 1、agent-thread-config 2、assistant-message-controls 1、bot-rail-paused-badge 3），均为既有失败，本轮未新增失败 |
+| 后端全量（最终提交 `fae4e37e`） | 同上，忽略那 3 个既有收集错误 | **2341 passed / 1 failed**——唯一失败是既有的 `test_mcp_credential_store.py::test_cryptography_vex_...`，基线工作树同样失败（它扫描全仓的 cryptography 导入，与本轮改动无关） |
+| 前端全量（最终提交 `fae4e37e`） | `cd web/harness-console && npx vitest run` | **1599 passed / 7 failed** —— 7 条失败与基线**同一组**（account-settings 1、agent-thread-config 2、assistant-message-controls 1、bot-rail-paused-badge 3），均为既有失败，本轮未新增失败 |
 | 类型检查 | `npx tsc --noEmit` | 通过 |
 | 后端 lint | `uv run ruff check src tests` | 通过 |
 | 迁移 | 本机 Postgres 实际建表 `assistant_vault_items`（11 列，与模型一致） | 通过 |
