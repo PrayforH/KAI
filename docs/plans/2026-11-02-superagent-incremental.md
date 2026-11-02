@@ -408,3 +408,7 @@ assistant-quiet-receipts-79.png、assistant-confirmation-card-79-final.png及con
 本地验证：AG-UI/助理及历史/引用 256 passed；新增来源/失败消息呈现 3 passed；隔离 Postgres 113 条收件记录跨100条边界、同时间分页、已读保留与账号隔离及现有职责测试 12 passed；前端类型检查、生产构建和相关测试通过。待79部署及真实页面确认后补记证据。
 
 79实页验收完成：三服务20261102-2e63917a，schema0064；已读测试进展真实入流，引用回复Run成功且无工具或后台执行。刷新、原消息定位、同Bot回跳通过，既有关闭通知状态不变。详情见本轮results与acceptance记录；飞书10.20 revision22已同步回读。原大Goal继续暂停。
+
+### 本轮结束：主助理去内部信息与Bot来源行
+
+按最新截图用既有身份头像／名称来源行替代正文回跳链接，并收敛主助理的元数据、协调回执、复制与引用。79 Web ba4712a4／API、Worker 879287ae完成真实刷新、来源跳转和历史保留核对；前端40、后台260、隔离SQL13及生产构建通过。飞书10.21 revision23已回读；具体边界、版本、未完成项与证据见本轮results／acceptance。未恢复暂停的大Goal，未启动IM验收。
