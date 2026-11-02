@@ -369,13 +369,13 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
 }
 
 /* 过程摘录：活动行下方的一行一条小列表（最近 ≤5 条工具/运行步骤）。
-   只在进行中渲染；左侧缩进对齐短语文本（脸 22px + gap 10px）。 */
+   只在进行中渲染；与纯文字状态对齐，不附加符号。 */
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .chat-activity-steps {
   display: grid;
   gap: 2px;
-  margin: 2px 0 0 32px;
+  margin: 2px 0 0;
   padding: 0;
-  max-width: min(640px, calc(92% - 32px));
+  max-width: min(640px, 92%);
   list-style: none;
   color: var(--codex-muted, #8a8a8a);
   font-size: 12px;
@@ -391,9 +391,7 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
 }
 
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .chat-activity-steps li::before {
-  content: "·";
-  flex: 0 0 auto;
-  opacity: 0.6;
+  content: none;
 }
 
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .chat-activity-steps li[data-tone="failed"] {
