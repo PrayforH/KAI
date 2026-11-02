@@ -41,6 +41,7 @@ from harness.policy.runtime import ResolvedPolicy
 from harness.quota.models import QuotaResource, ReplaceQuotaPolicyRequest
 from harness.quota.repositories import InMemoryQuotaRepository
 from harness.quota.service import QuotaService
+from harness.runtime.assistant_preface import PREFACE_NUDGE_REASON, AssistantPreface
 from harness.runtime.base import RuntimeContext
 from harness.runtime.input_redaction import INTERNAL_AGENT_ASSET_MARKER
 from harness.runtime.sdk_tool_gate import SdkToolGate
@@ -511,6 +512,110 @@ async def test_allows_read_before_tool_execution_and_emits_ordered_events(tmp_pa
     emitted = await events.list_after("tenant-a", "run-sdk", 0)
     assert [event.type for event in emitted] == ["tool.request", "tool.allowed"]
     assert emitted[-1].payload["permission_stage"] == "harness-final"
+
+
+@pytest.mark.asyncio
+async def test_assistant_preface_withholds_the_first_tool_once(tmp_path: Path) -> None:
+    gate, _, _, events, context = await _arrange(tmp_path)
+    preface = AssistantPreface(enabled=True)
+    matcher = gate.hooks(context, preface=preface)["PreToolUse"][0]
+
+    output = cast(
+        SyncHookJSONOutput,
+        await matcher.hooks[0](
+            _input("Glob", {"pattern": "**/*.md"}, "tool-preface"),
+            "tool-preface",
+            {"signal": None},
+        ),
+    )
+
+    assert _decision(output) == "deny"
+    specific = cast(dict[str, object], output.get("hookSpecificOutput", {}))
+    assert specific["permissionDecisionReason"] == PREFACE_NUDGE_REASON
+    assert preface.is_nudged_tool("tool-preface")
+    # The withheld call is not a step, so it produces no tool request.
+    emitted = await events.list_after("tenant-a", "run-sdk", 0)
+    assert [event.type for event in emitted] == ["assistant.preface.nudge"]
+    assert emitted[0].payload["tool"] == "Glob"
+
+    # The retry is authorized normally.
+    retry = cast(
+        SyncHookJSONOutput,
+        await matcher.hooks[0](
+            _input("Glob", {"pattern": "**/*.md"}, "tool-retry"),
+            "tool-retry",
+            {"signal": None},
+        ),
+    )
+
+    assert _decision(retry) == "allow"
+    emitted = await events.list_after("tenant-a", "run-sdk", 0)
+    assert [event.type for event in emitted] == [
+        "assistant.preface.nudge",
+        "tool.request",
+        "tool.allowed",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_assistant_preface_is_skipped_after_public_text(tmp_path: Path) -> None:
+    gate, _, _, events, context = await _arrange(tmp_path)
+    preface = AssistantPreface(enabled=True)
+    preface.note_public_text()
+    matcher = gate.hooks(context, preface=preface)["PreToolUse"][0]
+
+    output = cast(
+        SyncHookJSONOutput,
+        await matcher.hooks[0](
+            _input("Glob", {"pattern": "**/*.md"}, "tool-after-text"),
+            "tool-after-text",
+            {"signal": None},
+        ),
+    )
+
+    assert _decision(output) == "allow"
+    emitted = await events.list_after("tenant-a", "run-sdk", 0)
+    assert [event.type for event in emitted] == ["tool.request", "tool.allowed"]
+
+
+@pytest.mark.asyncio
+async def test_assistant_preface_never_withholds_a_subagent_tool(tmp_path: Path) -> None:
+    gate, _, _, events, context = await _arrange(tmp_path)
+    preface = AssistantPreface(enabled=True)
+    matcher = gate.hooks(context, preface=preface)["PreToolUse"][0]
+
+    output = cast(
+        SyncHookJSONOutput,
+        await matcher.hooks[0](
+            _input("Read", {"file_path": "a.txt"}, "tool-subagent", agent_type="worker"),
+            "tool-subagent",
+            {"signal": None},
+        ),
+    )
+
+    assert _decision(output) != "deny"
+    assert not preface.nudged
+    assert await events.list_after("tenant-a", "run-sdk", 0) != []
+
+
+@pytest.mark.asyncio
+async def test_a_disabled_preface_keeps_the_first_tool(tmp_path: Path) -> None:
+    gate, _, _, events, context = await _arrange(tmp_path)
+    preface = AssistantPreface(enabled=False)
+    matcher = gate.hooks(context, preface=preface)["PreToolUse"][0]
+
+    output = cast(
+        SyncHookJSONOutput,
+        await matcher.hooks[0](
+            _input("Glob", {"pattern": "**/*.md"}, "tool-plain"),
+            "tool-plain",
+            {"signal": None},
+        ),
+    )
+
+    assert _decision(output) == "allow"
+    emitted = await events.list_after("tenant-a", "run-sdk", 0)
+    assert [event.type for event in emitted] == ["tool.request", "tool.allowed"]
 
 
 @pytest.mark.asyncio

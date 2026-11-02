@@ -39,6 +39,7 @@ from harness.quota.models import QuotaResource
 from harness.quota.repositories import QuotaExceededError
 from harness.quota.service import QuotaService
 from harness.runtime.approval_review import approval_argument_summary, approval_risk
+from harness.runtime.assistant_preface import PREFACE_NUDGE_REASON, AssistantPreface
 from harness.runtime.audit_redaction import redact_text, redact_tool_arguments
 from harness.runtime.base import RuntimeContext
 from harness.runtime.file_capabilities import RunFileCapabilities
@@ -61,9 +62,10 @@ class ToolGate(Protocol):
         policy_id: str | None = None,
         subagent_policy_ids: Mapping[str, str] | None = None,
         skill_names: Collection[str] = (),
-        subagent_skill_names: Mapping[str, Collection[str]] | None = None,
+        subagent_skill_names: Mapping[str, Collection[str]] = frozenset(),
         result_trust_by_tool: Mapping[str, ContextTrust] | None = None,
         delegate_allowed_to_sdk_permissions: bool = False,
+        preface: AssistantPreface | None = None,
     ) -> dict[HookEvent, list[HookMatcher]]: ...
 
 
@@ -212,9 +214,10 @@ class SdkToolGate:
         policy_id: str | None = None,
         subagent_policy_ids: Mapping[str, str] | None = None,
         skill_names: Collection[str] = (),
-        subagent_skill_names: Mapping[str, Collection[str]] | None = None,
+        subagent_skill_names: Mapping[str, Collection[str]] = frozenset(),
         result_trust_by_tool: Mapping[str, ContextTrust] | None = None,
         delegate_allowed_to_sdk_permissions: bool = False,
+        preface: AssistantPreface | None = None,
     ) -> dict[HookEvent, list[HookMatcher]]:
         active_policy_id = (
             context.resolved_policy.policy_id
@@ -378,6 +381,27 @@ class SdkToolGate:
                 ),
                 selected_policy_id,
             )
+            if (
+                preface is not None
+                and not typed_input.get("agent_id")
+                and not typed_input.get("agent_type")
+                and preface.should_nudge()
+            ):
+                # Ask the model for one public sentence before its first tool.
+                # The model writes the sentence; the gate only withholds the
+                # tool, and the withheld call never becomes a public step.
+                preface.note_nudge(str(typed_input["tool_use_id"]))
+                await self._events.append(
+                    tenant_id=context.run.tenant_id,
+                    run_id=context.run.run_id,
+                    session_id=context.run.session_id,
+                    event_type="assistant.preface.nudge",
+                    payload={
+                        "tool": canonical_name,
+                        "tool_call_id": str(typed_input["tool_use_id"]),
+                    },
+                )
+                return _hook_output("deny", PREFACE_NUDGE_REASON)
             context_trust = await load_context_trust()
             output = await self._authorize(
                 context,
