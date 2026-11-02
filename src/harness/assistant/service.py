@@ -978,7 +978,7 @@ class AssistantService:
         for specialist in await self.repository.list_specialists(tenant_id, user_id):
             if specialist.agent_name and specialist.agent_version:
                 return specialist.agent_name, specialist.agent_version
-        published = await self._agents.list_for_user(tenant_id, user_id)
+        published = await self._agents.list_published(tenant_id, user_id)
         for version in published:
             if version.name and version.version:
                 return version.name, version.version
