@@ -1691,3 +1691,38 @@ api 未动，仍 r24；compose 备份 `compose.private.before-r61.json`。
 
 未验证：真实 Bot 声明 `required_local_tools` 后在主会话授权的完整链路（现网没有该配置，需改真实 config）；
 键推导、POST body 与卡收起由 DOM + 注入式实机验收覆盖。
+
+## 侧栏机器人只显示名称（2026-11-02，web r62，marker kai-rail-name-only）
+
+缺口：左侧机器人列表每项还有第二行副文案——主助理「统一接活、跟进与交付」，
+子助理 `description` 或回落的 `archive-assistant-agent`；用户要求侧栏只用名称。
+
+- `bot-rail.tsx`：主助理与在岗/待启用项都去掉 `<small>`，`bot-rail-label` 只剩 `<strong>` 名称。
+  「无人查看暂停」不再占副行：保留 `data-paused="true"`，名称染琥珀色（`.bot-rail-item[data-paused="true"]
+  .bot-rail-label strong`），并把「已暂停 · 无人查看」放到行的 `title`（悬浮提示，不影响布局/读屏名称）。
+- CSS：删除 `.bot-rail-label small` 与旧 paused 小字规则，未改列表间距/头像/分组。
+- 未动 api（仍 r24）、未碰 vault/sign-in、飞书微信、右侧面板。
+
+**测试**
+
+```
+cd web/harness-console
+npx tsc --noEmit                                            # clean
+npx vitest run tests/bot-rail-name-only.spec.tsx            # 2 passed（新增）
+npx vitest run tests/bot-rail-paused-badge.spec.tsx   tests/bot-rail-avatar.spec.tsx tests/bot-rail-groups.spec.tsx   tests/bot-rail-refresh-after-viewed.spec.tsx              # 11 passed
+npx vitest run                                              # 1532 passed / 1 skipped / 1 既有失败
+```
+
+DOM 断言：四个 rail 项的 label 文本分别等于名称（主助理/行业快报监控/休息提醒/天气提醒），
+`small` 数量为 0，页面不含「统一接活」/「archive-assistant-agent」/描述；暂停项无副行、
+`data-paused="true"` 且 `title="已暂停 · 无人查看"`；viewed 后暂停标记消失且不把描述塞回。
+既有失败仍是 account-settings（无关）。
+
+**79 部署与只读验收**：web `kai/assistant-web:20261030-managed-r62` 已滚（healthy，`/assistant` = 200）；
+ctx `web-src-r62`，`bot-rail.tsx` sha256 `88d06eb4…`、`web-codex.css` `f23f1f81…` 与本地一致；
+r61 的 chunk 含「统一接活、跟进与交付」，r62 全部 chunk 不再包含。
+页面探针：rail 5 项 label 均为纯名称（主助理 / 行业快报监控 / 天气提醒 / 休息提醒 / 编码协同）、
+`small=0`、`hasSecondaryCopy=false`。截图 `/tmp/kai79-accept/185-r62-rail-names.png`。
+
+**遗留**：同一批指令里还有 `kai-assistant-vault-signin`（主会话投影 vault/sign-in P0），
+但本任务明确「不碰 vault/sign-in」，两处冲突，本片未实现该 P0，待确认后再排期。
