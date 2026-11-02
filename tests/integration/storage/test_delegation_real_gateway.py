@@ -1934,3 +1934,137 @@ async def test_desktop_occupancy_marks_cross_project_waiting_and_keeps_same_proj
         item["objective_id"]: item["wait_reason"] for item in released["waiting"]
     }
     assert released_reasons[cross_duty.objective_id] == "等待桌面就绪"
+
+
+@pytest.mark.asyncio
+async def test_desktop_acquire_follows_the_fifo_head_of_desktop_waiters(
+    database: DatabaseFixture,
+) -> None:
+    """桌面空闲时只有 FIFO 队头可 acquire；释放后下一队头接续；不涉及抢占。"""
+    from datetime import UTC, timedelta
+
+    service = make_service(database)
+    head_duty = await service.create(
+        "tenant-a", "user-a",
+        brief(**{"title": "队头巡检", "budget": {"requiresDesktop": True, "maxRunsPerDay": 10}}),
+    )
+    later_duty = await service.create(
+        "tenant-a", "user-a",
+        brief(**{"title": "后来巡检", "budget": {"requiresDesktop": True, "maxRunsPerDay": 10}}),
+    )
+    plain_duty = await service.create(
+        "tenant-a", "user-a",
+        brief(**{"title": "非桌面职责", "budget": {"maxRunsPerDay": 10}}),
+    )
+    await service.repository.schedule_due(
+        datetime.now(UTC) + timedelta(minutes=61), unviewed_pause_hours=None
+    )
+    head_execs = await service.repository.executions("tenant-a", "user-a", head_duty.objective_id)
+    later_execs = await service.repository.executions("tenant-a", "user-a", later_duty.objective_id)
+    plain_execs = await service.repository.executions("tenant-a", "user-a", plain_duty.objective_id)
+    assert head_execs and later_execs and plain_execs
+
+    # 空闲时：后创建的桌面 pending 不得越过队头。
+    assert (
+        await service.repository.acquire_desktop_turn(
+            tenant_id="tenant-a", user_id="user-a",
+            objective_id=later_duty.objective_id,
+            execution_id=later_execs[0].execution_id,
+            now=NOW,
+        )
+        is None
+    )
+    # 队头成功。
+    head_turn = await service.repository.acquire_desktop_turn(
+        tenant_id="tenant-a", user_id="user-a",
+        objective_id=head_duty.objective_id,
+        execution_id=head_execs[0].execution_id,
+        now=NOW,
+    )
+    assert head_turn is not None
+    # 同一执行重复领取幂等复用；holder 在位时其他任何人（含队头外）返回 None。
+    again = await service.repository.acquire_desktop_turn(
+        tenant_id="tenant-a", user_id="user-a",
+        objective_id=head_duty.objective_id,
+        execution_id=head_execs[0].execution_id,
+        now=NOW + timedelta(seconds=1),
+    )
+    assert again is not None and again.execution_id == head_execs[0].execution_id
+    assert (
+        await service.repository.acquire_desktop_turn(
+            tenant_id="tenant-a", user_id="user-a",
+            objective_id=later_duty.objective_id,
+            execution_id=later_execs[0].execution_id,
+            now=NOW + timedelta(seconds=2),
+        )
+        is None
+    )
+    # 队头按生产顺序离队：领取租约并进入 RUNNING（运行开始即离开 pending 队列），
+    # 随后释放桌面——释放不改变 pending 队列，离队只由执行状态决定。
+    claim = await service.repository.claim(NOW)
+    assert claim is not None
+    assert await service.repository.save_execution(
+        head_execs[0].model_copy(
+            update={"status": ObjectiveExecutionStatus.RUNNING, "run_id": "run-fifo-1"}
+        ),
+        claim[1],
+        NOW,
+    )
+    await service.repository.release_desktop_turn(
+        tenant_id="tenant-a", user_id="user-a",
+        execution_id=head_execs[0].execution_id,
+        now=NOW + timedelta(seconds=30),
+    )
+    # 释放后：新的队头（后来者）可 acquire。
+    next_turn = await service.repository.acquire_desktop_turn(
+        tenant_id="tenant-a", user_id="user-a",
+        objective_id=later_duty.objective_id,
+        execution_id=later_execs[0].execution_id,
+        now=NOW + timedelta(seconds=60),
+    )
+    assert next_turn is not None
+
+
+@pytest.mark.asyncio
+async def test_desktop_acquire_keeps_non_desktop_callers_outside_the_fifo_head(
+    database: DatabaseFixture,
+) -> None:
+    """非桌面职责不在桌面队列里，不受 FIFO 队头约束（其调用方本就不会 acquire，防御性保留）。"""
+    from datetime import UTC, timedelta
+
+    service = make_service(database)
+    head_duty = await service.create(
+        "tenant-a", "user-a",
+        brief(**{"title": "桌面队头", "budget": {"requiresDesktop": True, "maxRunsPerDay": 10}}),
+    )
+    plain_duty = await service.create(
+        "tenant-a", "user-a",
+        brief(**{"title": "普通职责", "budget": {"maxRunsPerDay": 10}}),
+    )
+    await service.repository.schedule_due(
+        datetime.now(UTC) + timedelta(minutes=61), unviewed_pause_hours=None
+    )
+    head_execs = await service.repository.executions("tenant-a", "user-a", head_duty.objective_id)
+    plain_execs = await service.repository.executions("tenant-a", "user-a", plain_duty.objective_id)
+    assert head_execs and plain_execs
+    # 桌面队头存在且未 acquire：非桌面执行不排队，仍可直接 acquire（不伪造桌面语义）。
+    turn = await service.repository.acquire_desktop_turn(
+        tenant_id="tenant-a", user_id="user-a",
+        objective_id=plain_duty.objective_id,
+        execution_id=plain_execs[0].execution_id,
+        now=NOW,
+    )
+    assert turn is not None
+    await service.repository.release_desktop_turn(
+        tenant_id="tenant-a", user_id="user-a",
+        execution_id=plain_execs[0].execution_id,
+        now=NOW + timedelta(seconds=10),
+    )
+    # 桌面队头不受影响，仍可正常 acquire。
+    head_turn = await service.repository.acquire_desktop_turn(
+        tenant_id="tenant-a", user_id="user-a",
+        objective_id=head_duty.objective_id,
+        execution_id=head_execs[0].execution_id,
+        now=NOW + timedelta(seconds=20),
+    )
+    assert head_turn is not None

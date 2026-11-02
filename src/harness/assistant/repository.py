@@ -1668,7 +1668,12 @@ class PostgresAssistantRepository:
                     ObjectiveExecutionRow.user_id == user_id,
                     ObjectiveExecutionRow.status == ObjectiveExecutionStatus.PENDING.value,
                 )
-                .order_by(ObjectiveExecutionRow.created_at)
+                # 与 acquire 的 FIFO 队头同序：位置投影不能与实际放行顺序矛盾。
+                .order_by(
+                    ObjectiveRow.created_at,
+                    ObjectiveExecutionRow.created_at,
+                    ObjectiveExecutionRow.execution_id,
+                )
             )
             waiting: list[dict[str, object]] = []
             for execution_row, objective_row in rows:
@@ -1717,7 +1722,10 @@ class PostgresAssistantRepository:
         """获取共享桌面的一次执行权；已有他人持有则返回 None（排队等待）。
 
         过期的持有先释放，避免崩溃残留永久堵住桌面。同一用户同一时刻只有
-        一个执行者，这个约束由部分唯一索引在数据库层兜底。
+        一个执行者，这个约束由部分唯一索引在数据库层兜底。桌面空闲时只允许
+        FIFO 队头（最早的 pending 桌面执行，created_at+execution_id 稳定排序）
+        acquire，后创建的 pending 不得越过更早的桌面等待者；不涉及抢占活
+        holder，也不引入优先级分数。
         """
         async with self._context(write=True) as session:
             active = await session.scalar(
@@ -1745,6 +1753,38 @@ class PostgresAssistantRepository:
                 if active.expires_at > now:
                     return None
                 active.released_at = now
+            queue = await session.execute(
+                select(ObjectiveExecutionRow, ObjectiveRow)
+                .join(
+                    ObjectiveRow,
+                    and_(
+                        ObjectiveRow.objective_id == ObjectiveExecutionRow.objective_id,
+                        ObjectiveRow.tenant_id == ObjectiveExecutionRow.tenant_id,
+                        ObjectiveRow.user_id == ObjectiveExecutionRow.user_id,
+                    ),
+                )
+                .where(
+                    ObjectiveExecutionRow.tenant_id == tenant_id,
+                    ObjectiveExecutionRow.user_id == user_id,
+                    ObjectiveExecutionRow.status == ObjectiveExecutionStatus.PENDING.value,
+                )
+                # 稳定 FIFO：职责创建序 → 执行创建序 → id 兜底。
+                # schedule_due 同批入队的 created_at 相同，仅按执行 id 排序会变成随机队头。
+                .order_by(
+                    ObjectiveRow.created_at,
+                    ObjectiveExecutionRow.created_at,
+                    ObjectiveExecutionRow.execution_id,
+                )
+            )
+            desktop_queue: list[str] = [
+                execution_row.execution_id
+                for execution_row, objective_row in queue
+                if (objective_row.payload.get("budget") or {}).get("requiresDesktop") is True
+            ]
+            if desktop_queue and execution_id in desktop_queue:
+                # FIFO 队头才可 acquire；队列外的调用（非桌面职责等）不受此约束。
+                if desktop_queue[0] != execution_id:
+                    return None
             turn = DesktopTurn(
                 desktopTurnId=f"desktop_turn_{uuid4().hex}",
                 objectiveId=objective_id,
