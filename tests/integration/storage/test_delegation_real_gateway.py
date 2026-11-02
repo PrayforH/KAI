@@ -2182,55 +2182,190 @@ async def test_desktop_queue_orders_by_priority_then_fifo_without_preemption(
 
 
 @pytest.mark.asyncio
-async def test_desktop_ttl_expiry_lets_priority_head_take_over(
+async def test_soft_preemption_clamps_holder_ttl_for_a_higher_priority_waiter(
     database: DatabaseFixture,
 ) -> None:
-    """TTL 过期释放后，高优先级成为新队头可 acquire；活 holder 过期前不可抢。"""
+    """软抢占：高优排队把低优 holder 的剩余 TTL 钳到优雅窗口；acquire 仍不打断。"""
     from datetime import UTC, timedelta
 
     service = make_service(database)
-    stale = await service.create(
+    low = await service.create(
         "tenant-a", "user-a",
-        brief(**{"title": "过期低优", "budget": {"requiresDesktop": True, "maxRunsPerDay": 10}}),
+        brief(**{"title": "低优长跑", "budget": {"requiresDesktop": True, "maxRunsPerDay": 10}}),
     )
     await service.repository.schedule_due(
         datetime.now(UTC) + timedelta(minutes=61), unviewed_pause_hours=None
     )
-    stale_execs = await service.repository.executions("tenant-a", "user-a", stale.objective_id)
-    assert stale_execs
-    # 低优先取到（此刻它是唯一桌面 pending）。
+    low_execs = await service.repository.executions("tenant-a", "user-a", low.objective_id)
+    assert low_execs
     first_turn = await service.repository.acquire_desktop_turn(
         tenant_id="tenant-a", user_id="user-a",
-        objective_id=stale.objective_id,
-        execution_id=stale_execs[0].execution_id,
-        now=NOW, ttl_seconds=120,
+        objective_id=low.objective_id,
+        execution_id=low_execs[0].execution_id,
+        now=NOW, ttl_seconds=600,
     )
     assert first_turn is not None
-    # 高优稍后才创建并入队：holder 未过期 → 不能抢。
+    assert first_turn.expires_at == NOW + timedelta(seconds=600)
+
+    # 高优入队（repo.enqueue，固定时钟帧），随后 clamp 生效。
     urgent = await service.create(
         "tenant-a", "user-a",
-        brief(**{"title": "高优紧急", "budget": {"requiresDesktop": True, "desktopPriority": 9,
+        brief(**{"title": "高优插前", "budget": {"requiresDesktop": True, "desktopPriority": 9,
                                                 "maxRunsPerDay": 10}}),
     )
-    await service.repository.schedule_due(
-        datetime.now(UTC) + timedelta(minutes=122), unviewed_pause_hours=None
+    urgent_execution = await service.repository.enqueue(
+        "tenant-a", "user-a", urgent.objective_id, trigger_key="soft-1", now=NOW
     )
-    urgent_execs = await service.repository.executions("tenant-a", "user-a", urgent.objective_id)
-    assert urgent_execs, "the urgent duty must gain a pending execution"
     assert (
         await service.repository.acquire_desktop_turn(
             tenant_id="tenant-a", user_id="user-a",
             objective_id=urgent.objective_id,
-            execution_id=urgent_execs[-1].execution_id,
-            now=NOW + timedelta(seconds=60),
+            execution_id=urgent_execution.execution_id,
+            now=NOW + timedelta(seconds=1),
+        )
+        is None
+    ), "acquire must never hard-preempt the live holder"
+    assert await service.repository.clamp_desktop_turn_for_priority(
+        tenant_id="tenant-a", user_id="user-a", now=NOW
+    )
+    clamped = await service.repository.active_desktop_turn("tenant-a", "user-a")
+    assert clamped is not None
+    assert abs((clamped.expires_at - (NOW + timedelta(seconds=30))).total_seconds()) <= 2
+
+    # 幂等：更晚的 clamp 只会得到更晚的 now+grace，min() 拒绝拉长——
+    # 否则等待者反复触发会把窗口无限后推（滚动窗口饿死交接）。
+    assert not await service.repository.clamp_desktop_turn_for_priority(
+        tenant_id="tenant-a", user_id="user-a", now=NOW + timedelta(seconds=5)
+    )
+    still = await service.repository.active_desktop_turn("tenant-a", "user-a")
+    assert still is not None
+    assert abs((still.expires_at - (NOW + timedelta(seconds=30))).total_seconds()) <= 2
+
+    # 优雅窗口内 holder 仍然有效；窗口过后高优走既有 TTL 过期路径接手。
+    assert (
+        await service.repository.acquire_desktop_turn(
+            tenant_id="tenant-a", user_id="user-a",
+            objective_id=urgent.objective_id,
+            execution_id=urgent_execution.execution_id,
+            now=NOW + timedelta(seconds=10),
         )
         is None
     )
-    # TTL 过期 → 旧持有被释放；高优是队头 → acquire 成功（这是等过期，不是抢占）。
-    expired_turn = await service.repository.acquire_desktop_turn(
+    handover = await service.repository.acquire_desktop_turn(
         tenant_id="tenant-a", user_id="user-a",
         objective_id=urgent.objective_id,
-        execution_id=urgent_execs[-1].execution_id,
-        now=NOW + timedelta(seconds=180),
+        execution_id=urgent_execution.execution_id,
+        now=NOW + timedelta(seconds=35),
     )
-    assert expired_turn is not None
+    assert handover is not None
+
+
+@pytest.mark.asyncio
+async def test_soft_preemption_ignores_equal_or_lower_priority_and_missing_fields(
+    database: DatabaseFixture,
+) -> None:
+    """同优/更低优/无等待者零行为变化；缺 desktopPriority 的旧载荷按 0。"""
+    from datetime import UTC, timedelta
+
+    service = make_service(database)
+    holder_duty = await service.create(
+        "tenant-a", "user-a",
+        brief(**{"title": "五优持有", "budget": {"requiresDesktop": True, "desktopPriority": 5,
+                                                "maxRunsPerDay": 10}}),
+    )
+    await service.repository.schedule_due(
+        datetime.now(UTC) + timedelta(minutes=61), unviewed_pause_hours=None
+    )
+    holder_execs = await service.repository.executions(
+        "tenant-a", "user-a", holder_duty.objective_id
+    )
+    assert holder_execs
+    holder_turn = await service.repository.acquire_desktop_turn(
+        tenant_id="tenant-a", user_id="user-a",
+        objective_id=holder_duty.objective_id,
+        execution_id=holder_execs[0].execution_id,
+        now=NOW, ttl_seconds=600,
+    )
+    assert holder_turn is not None
+
+    equal = await service.create(
+        "tenant-a", "user-a",
+        brief(**{"title": "同优排队", "budget": {"requiresDesktop": True, "desktopPriority": 5,
+                                                "maxRunsPerDay": 10}}),
+    )
+    lower = await service.create(
+        "tenant-a", "user-a",
+        brief(**{"title": "低优排队", "budget": {"requiresDesktop": True, "desktopPriority": 2,
+                                                "maxRunsPerDay": 10}}),
+    )
+    legacy = await service.create(
+        "tenant-a", "user-a",
+        brief(**{
+            "title": "旧载荷无优先级",
+            "budget": {"requiresDesktop": True, "maxRunsPerDay": 10},
+        }),
+    )
+    for duty, key in ((equal, "eq"), (lower, "lo"), (legacy, "lg")):
+        execution = await service.repository.enqueue(
+            "tenant-a", "user-a", duty.objective_id, trigger_key=f"soft-{key}", now=NOW
+        )
+        assert execution is not None
+
+    # 三种等待者都不高于 holder（同 5 / 低 2 / 缺省 0）→ clamp 全部拒绝，TTL 原样。
+    for _ in range(3):
+        assert not await service.repository.clamp_desktop_turn_for_priority(
+            tenant_id="tenant-a", user_id="user-a", now=NOW
+        )
+    turn = await service.repository.active_desktop_turn("tenant-a", "user-a")
+    assert turn is not None
+    assert turn.expires_at == NOW + timedelta(seconds=600)
+
+
+@pytest.mark.asyncio
+async def test_schedule_due_clamps_when_a_higher_priority_waiter_enqueues(
+    database: DatabaseFixture,
+) -> None:
+    """入队触发：高优经 schedule_due 入队即评估软抢占（真实时钟一致帧）。"""
+    from datetime import UTC, timedelta
+
+    service = make_service(database)
+    low = await service.create(
+        "tenant-a", "user-a",
+        brief(**{"title": "低优持桌", "budget": {"requiresDesktop": True, "maxRunsPerDay": 10}}),
+    )
+    await service.repository.schedule_due(
+        datetime.now(UTC) + timedelta(minutes=61), unviewed_pause_hours=None
+    )
+    low_execs = await service.repository.executions("tenant-a", "user-a", low.objective_id)
+    assert low_execs
+    # 本测全部帧使用同一真实时钟：模块 NOW 是固定常量，与 schedule_due 的
+    # 真实时钟混用会让 clamp 把 holder 误判为已过期。
+    realnow = datetime.now(UTC)
+    first_turn = await service.repository.acquire_desktop_turn(
+        tenant_id="tenant-a", user_id="user-a",
+        objective_id=low.objective_id,
+        execution_id=low_execs[0].execution_id,
+        now=realnow, ttl_seconds=14400,
+    )
+    assert first_turn is not None
+
+    urgent = await service.create(
+        "tenant-a", "user-a",
+        brief(**{"title": "高优到点", "budget": {"requiresDesktop": True, "desktopPriority": 9,
+                                                "maxRunsPerDay": 10}}),
+    )
+    # 下一个调度周期把高优入队 → 软抢占评估随之发生（clamp 在 schedule_due 内触发）。
+    schedule_frame = realnow + timedelta(minutes=122)
+    await service.repository.schedule_due(schedule_frame, unviewed_pause_hours=None)
+    urgent_execs = await service.repository.executions(
+        "tenant-a", "user-a", urgent.objective_id
+    )
+    assert urgent_execs, "the higher priority waiter must enqueue on this cycle"
+    clamped = await service.repository.active_desktop_turn("tenant-a", "user-a")
+    assert clamped is not None
+    assert clamped.expires_at < realnow + timedelta(seconds=14400), (
+        "schedule_due must clamp the low-priority holder once a higher waiter enqueues"
+    )
+    assert abs(
+        (clamped.expires_at - (schedule_frame + timedelta(seconds=30))).total_seconds()
+    ) <= 60
