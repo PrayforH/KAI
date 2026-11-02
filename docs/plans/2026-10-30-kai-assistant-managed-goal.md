@@ -99,7 +99,7 @@ ruff 全过；pyright 剖面与基线一致（2449/1160/234）。
 | 4.1 | ObjectiveBudget（maxRunsPerDay/maxTotalRuns）：入队事务内原子计数，达到即拒派（含次日恢复/总量永久两路径测试）；token/费用上限需计量对接，未开放 | 已实现+已测试 |
 | 4.2 | 暂停 vs 立即停止语义：pause 停调度不停在途（既有），stop 经 _reconcile 取消绑定 Run（既有）；预算/截止/缺项拒派语义与 4.1 共闸门 | 已实现+已测试（既有部分） |
 | 4.3 | 项目托管核心：ManagedTask.dependsOnObjectiveId（迁移 0058，绑定服务端无环校验+深度上限）；assistant_manage_work 多线程纳管（observe 角色收集到同一职责）；协调执行线程只读状态工具（无委派权，递归保持关闭）；跨项目纳管需该项目授权 | 已实现+已测试+已部署(79 r2)；新建任务范围/成果汇总/项目面板未实现 |
-| 4.4 | Computer 多任务排队仲裁与跨项目隔离增强（现有：共享桌面单执行者、接管 ACK、恢复重观察已在 79 验证过） | 单执行者 + occupancy 位次/原因 + 顶栏 chip 已落地；跨项目等待文案已增强（84439439：project_id 不同即点名「跨项目」并带 holder 职责标题，缺字段安全回退）；FIFO 队头 acquire 已落地（753f6d93：桌面空闲时仅最早 pending 桌面执行可取，位置投影与放行同序，不抢占活 holder、不改 TTL/唯一索引）；两笔（84439439+753f6d93）已随 869febf5 部署 79 并容器内核对；抢占与优先级权重仍未做 |
+| 4.4 | Computer 多任务排队仲裁与跨项目隔离增强（现有：共享桌面单执行者、接管 ACK、恢复重观察已在 79 验证过） | 单执行者 + occupancy 位次/原因 + 顶栏 chip 已落地；跨项目等待文案已增强（84439439：project_id 不同即点名「跨项目」并带 holder 职责标题，缺字段安全回退）；FIFO 队头 acquire 已落地（753f6d93：桌面空闲时仅最早 pending 桌面执行可取，位置投影与放行同序，不抢占活 holder、不改 TTL/唯一索引）；两笔（84439439+753f6d93）已随 869febf5 部署 79 并容器内核对；可选优先级权重已落地（af0b4edf：budget.desktopPriority 整数缺省 0 走 payload 无迁移，队列=优先级降序+FIFO，occupancy 同序并只读透出 desktop_priority；**对活 holder 仍不抢占**）；抢占活 holder 仍未做 |
 | 4.5 | 事件驱动持续运营（无变化不唤起模型）、消息去重升级、成本耗时指标、故障回放 | skipUnchanged（无变化不唤起，R5）、检查点计量（R4 tokens/cost，未计量显式说明）、失败回放（浮标失败卡深链 thread+trace+run+checkpoint）已落地；「消息去重升级」已落地（4aaedddf：important 去重改为结构化实质指纹——kind/objective 状态/run·execution·事件序号/成果名+类型+内容哈希，正文措辞不再参与；单测+渠道集成测过；未做渠道真发验收） |
 
 ## 阶段 5：79 渐进部署与真实验收（8.8）
