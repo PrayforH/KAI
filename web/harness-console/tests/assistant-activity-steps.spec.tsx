@@ -78,7 +78,8 @@ it("shows a full updated summary immediately without replaying a synthetic typin
   cleanup = async () => { await act(async () => root.unmount()); host.remove(); };
   await act(async () => root.render(<GrokActivityRow phrase="正在处理你的请求。" state="working" />));
   await act(async () => root.render(<GrokActivityRow phrase={note} state="working" />));
-  expect(host.textContent).toBe(note);
+  // 状态行去掉句末标点，只留短阶段。
+  expect(host.textContent).toBe("已经确认原任务仍在运行，接下来核对它生成的文件");
 });
 
 it("reports real elapsed model waiting, then clears it on a new operation or completion", async () => {
@@ -87,13 +88,13 @@ it("reports real elapsed model waiting, then clears it on a new operation or com
   cleanup = async () => { await act(async () => root.unmount()); host.remove(); };
   const activity = runActivitySchema.parse({run_id: "progress-run", status: "running", started_at: "2026-11-02T10:00:00Z", items: [{id: "wait", event_type: "runtime.system", title: "模型正在处理", kind: "analysis", status: "running", timestamp: "2026-11-02T10:00:00Z", sequence: 1, summary: "正在等待本轮模型结果", metadata: {}}]});
   await act(async () => root.render(<AssistantProgress activity={activity} />));
-  expect(host.textContent).toBe("正在处理你的请求。");
+  expect(host.textContent).toBe("正在处理你的请求");
   await act(async () => vi.advanceTimersByTime(31000));
   expect(host.textContent).toContain("已等待 31 秒");
   const toolActivity = runActivitySchema.parse({...activity, items: [...activity.items, {...activity.items[0], ...request("read", "Read"), sequence: 2}]});
   expect(modelWaitingSince(toolActivity)).toBeUndefined();
   await act(async () => root.render(<AssistantProgress activity={toolActivity} />));
-  expect(host.textContent).toBe("正在读取所需文件。");
+  expect(host.textContent).toBe("正在读取所需文件");
   await act(async () => root.render(<AssistantProgress activity={{...toolActivity, status: "succeeded"}} />));
   expect(host.textContent).toBe("");
 });
@@ -104,8 +105,10 @@ it("shows receipt and preparation from real lifecycle facts without waiting for 
   const host = document.createElement("div"), root = createRoot(host); document.body.append(host);
   try {
     await act(async () => root.render(<AssistantProgress activity={activity} />));
-    expect(host.querySelector('[aria-label="处理进展"]')?.textContent).toBe("已开始处理，正在准备回复。");
-    expect(host.querySelector(".grok-face")).toBeNull();
+    // 不再是固定文案：短真实阶段，没有句末标点。
+    expect(host.querySelector('[aria-label="处理进展"]')?.textContent).toBe("正在思考");
+    // 状态行带当前 Bot 的图标（主/子助理同一套外观）。
+    expect(host.querySelector(".grok-face")).not.toBeNull();
     await act(async () => root.render(<AssistantProgress activity={{...activity, status: "failed"}} />));
     expect(host.textContent).toBe("");
   } finally { await act(async () => root.unmount()); host.remove(); }

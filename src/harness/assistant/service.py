@@ -7,6 +7,7 @@ import hashlib
 import logging
 import re
 import unicodedata
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
@@ -19,6 +20,11 @@ from harness.agui.response import final_response_text
 from harness.agui.service import AguiRunService
 from harness.application.agents import AgentService
 from harness.application.runs import RunService
+from harness.assistant.appearance import (
+    APPEARANCE_COLORS,
+    APPEARANCE_SHAPES,
+    choose_appearance,
+)
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD, primary_specialist_id
 from harness.assistant.lifecycle import next_check
 from harness.assistant.models import (
@@ -40,6 +46,8 @@ from harness.assistant.models import (
 )
 from harness.assistant.permissions import pending_local_tools, require_local_tools
 from harness.assistant.repository import MANAGED_PROGRESS_EVENTS, PostgresAssistantRepository
+from harness.assistant.storage import VaultItemRow
+from harness.assistant.vault import VaultCategory, VaultItem
 from harness.auth.service import AuthService
 from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
 from harness.core.events import RunEvent
@@ -421,6 +429,40 @@ class AssistantService:
             expected_revision=expected_revision,
             config={f"credential_ref:{name}": reference},
             now=datetime.now(UTC),
+        )
+
+    async def record_mention_handover(
+        self, tenant_id: str, user_id: str, specialist_id: str, *,
+        text: str, idempotency_key: str,
+    ) -> SpecialistHandover:
+        """用户明确 @某个 Bot 时的持久回执。
+
+        只登记「发给了谁、原话是什么」，不新建职责、不建定时任务：
+        真正的投递走既有 AG-UI 通道（同任务/项目对话），
+        幂等键保证重复提交不会多出回执。
+        """
+        specialist = await self.repository.get_specialist(tenant_id, user_id, specialist_id)
+        if specialist.status is SpecialistStatus.ARCHIVED:
+            raise ConflictError("这个 Bot 已归档，收不到新消息")
+        message_id = f"mention-specialist:{idempotency_key}:{specialist_id}"
+        for item in await self.repository.handovers(
+            tenant_id, user_id, specialist_id=specialist_id
+        ):
+            if item.message_id == message_id:
+                return item
+        now = datetime.now(UTC)
+        return await self.repository.record_handover(
+            SpecialistHandover(
+                handoverId=f"handover_{uuid4().hex}",
+                tenantId=tenant_id,
+                userId=user_id,
+                specialistId=specialist.specialist_id,
+                messageId=message_id,
+                summary=text[:400],
+                status=HandoverStatus.SENT,
+                createdAt=now,
+                updatedAt=now,
+            )
         )
 
     async def specialist_thread(
@@ -892,7 +934,8 @@ class AssistantService:
                         messages=[UserMessage(id=execution.execution_id, content=prompt)],
                         tools=[],
                         context=[],
-                        forwarded_props={},
+                        # 助理的例行执行属于助理范围：平台联网配好时默认跟随。
+                        forwarded_props={"assistantScope": True},
                     ),
                 )
                 run = creation.run
@@ -936,7 +979,7 @@ class AssistantService:
         for specialist in await self.repository.list_specialists(tenant_id, user_id):
             if specialist.agent_name and specialist.agent_version:
                 return specialist.agent_name, specialist.agent_version
-        published = await self._agents.list_for_user(tenant_id, user_id)
+        published = await self._agents.list_published(tenant_id, user_id)
         for version in published:
             if version.name and version.version:
                 return version.name, version.version
@@ -999,7 +1042,8 @@ class AssistantService:
         # 名字（slug）是去重键：已有 Bot 直接复用它已验证的绑定，
         # 不再重查注册表——调用方给的版本可能是幻觉，旧绑定永远可用。
         slug = _specialist_slug(name)
-        for item in await self.repository.list_specialists(tenant_id, user_id):
+        siblings = await self.repository.list_specialists(tenant_id, user_id)
+        for item in siblings:
             if item.slug == slug:
                 return item, False
         # 新建 Bot 不强制用户挑执行智能体：先沿用本人已有 Bot 用过的那个，
@@ -1009,6 +1053,9 @@ class AssistantService:
         await self._agents.get_published(tenant_id, user_id, agent_name, agent_version)
         now = datetime.now(UTC)
         specialist_id = f"specialist_{uuid4().hex}"
+        # 外观只影响呈现，不参与运行判定；存 config 便于跨设备一致。
+        # 没指定就由服务端从「还没人用过」的外观里随机取一次，取完即固化。
+        chosen = dict(appearance) if appearance else self._random_appearance(siblings)
         specialist = Specialist(
             specialistId=specialist_id,
             tenantId=tenant_id,
@@ -1019,10 +1066,9 @@ class AssistantService:
             agentName=agent_name,
             agentVersion=agent_version,
             status=SpecialistStatus.READY,
-            # 外观只影响呈现，不参与运行判定；存 config 便于跨设备一致。
             config={
                 "conversation_thread_id": f"assistant_{specialist_id}",
-                **({"appearance": dict(appearance)} if appearance else {}),
+                "appearance": chosen,
             },
             # 记录创建时的查看时间；以后明确配置周期时复用同一查看闸门。
             lastViewedAt=now,
@@ -1031,6 +1077,142 @@ class AssistantService:
         )
         stored = await self.repository.create_specialist(specialist)
         return stored, stored.specialist_id == specialist.specialist_id
+
+    def appearance_palette(self) -> dict[str, list[str]]:
+        """外观清单由服务端给出，前端不再各写一份取色表。"""
+        return {
+            "colors": list(APPEARANCE_COLORS),
+            "avatars": list(APPEARANCE_SHAPES),
+        }
+
+    @staticmethod
+    def _random_appearance(siblings: Sequence[Specialist]) -> dict[str, str]:
+        """给新 Bot 随机一套没人用过的外观；只调用一次，之后随资料一起固化。"""
+        used: list[dict[str, str]] = []
+        for item in siblings:
+            raw = item.config.get("appearance")
+            if isinstance(raw, dict):
+                used.append({key: str(value) for key, value in raw.items()})
+        return choose_appearance(used)
+
+    # ---- 助理资料库（Vault） ---------------------------------------------
+
+    @staticmethod
+    def _vault_item(row) -> VaultItem:
+        """列表投影：只有脱敏元数据，值与密文都不在这里。"""
+        return VaultItem(
+            itemId=row.item_id,
+            category=VaultCategory(row.category),
+            title=row.title,
+            reference=row.reference,
+            hasSecret=bool(row.has_value),
+            last4=row.last4,
+            revision=row.revision,
+            createdAt=row.created_at,
+            updatedAt=row.updated_at,
+        )
+
+    async def vault_items(self, tenant_id: str, user_id: str) -> list[VaultItem]:
+        """本人资料库条目：跨用户看不见别人的条目。"""
+        rows = await self.repository.list_vault_items(tenant_id, user_id)
+        return [self._vault_item(row) for row in rows]
+
+    async def create_vault_item(
+        self, tenant_id: str, user_id: str, *,
+        category: VaultCategory, title: str, value: str | None = None,
+        last4: str | None = None,
+    ) -> VaultItem:
+        """新建一条资料：值进既有加密凭据表，这里只留脱敏元数据。"""
+        if self._cipher is None:
+            raise ConflictError("凭据存储未配置")
+        now = datetime.now(UTC)
+        reference = f"vault_{uuid4().hex}"
+        if value:
+            ciphertext = self._cipher.encrypt(
+                tenant_id, user_id, reference, {"secret": SecretStr(value)}
+            )
+            await self.repository.save_credential_blob(
+                tenant_id, user_id, reference, ciphertext, now=now
+            )
+        row = VaultItemRow(
+            item_id=f"vault_item_{uuid4().hex}",
+            tenant_id=tenant_id,
+            user_id=user_id,
+            category=category.value,
+            title=title[:120],
+            reference=reference,
+            last4=last4,
+            has_value=bool(value),
+            revision=1,
+            created_at=now,
+            updated_at=now,
+        )
+        await self.repository.create_vault_item(row)
+        return self._vault_item(row)
+
+    async def update_vault_item(
+        self, tenant_id: str, user_id: str, item_id: str, *,
+        expected_revision: int, title: str | None = None,
+        value: str | None = None, last4: str | None = None,
+    ) -> VaultItem:
+        row = await self.repository.get_vault_item(tenant_id, user_id, item_id)
+        now = datetime.now(UTC)
+        changes: dict[str, object] = {}
+        if title is not None:
+            changes["title"] = title[:120]
+        if last4 is not None:
+            changes["last4"] = last4
+        if value:
+            if self._cipher is None:
+                raise ConflictError("凭据存储未配置")
+            # 覆盖同一个 reference 的密文：先删旧的，再写新的。
+            await self.repository.delete_credential_blob(
+                tenant_id, user_id, row.reference
+            )
+            ciphertext = self._cipher.encrypt(
+                tenant_id, user_id, row.reference, {"secret": SecretStr(value)}
+            )
+            await self.repository.save_credential_blob(
+                tenant_id, user_id, row.reference, ciphertext, now=now
+            )
+            changes["has_value"] = True
+        updated = await self.repository.update_vault_item(
+            tenant_id, user_id, item_id,
+            expected_revision=expected_revision, changes=changes, now=now,
+        )
+        return self._vault_item(updated)
+
+    async def delete_vault_item(
+        self, tenant_id: str, user_id: str, item_id: str, *, confirm_title: str
+    ) -> bool:
+        """删除条目：必须确认标题，密文一起删掉，不留孤儿。"""
+        row = await self.repository.get_vault_item(tenant_id, user_id, item_id)
+        if confirm_title.strip() != row.title:
+            raise ConflictError("确认标题与这条资料不一致，未删除")
+        await self.repository.delete_credential_blob(tenant_id, user_id, row.reference)
+        return await self.repository.delete_vault_item(tenant_id, user_id, item_id)
+
+    async def grant_vault_item(
+        self, tenant_id: str, user_id: str, specialist_id: str, *,
+        item_id: str, granted: bool, expected_revision: int,
+    ) -> Specialist:
+        """把资料授权给某个 Bot：写 credential_ref；撤销时移除。
+
+        默认不共享：没有授权就没有引用，Bot 侧拿不到这条资料。
+        """
+        row = await self.repository.get_vault_item(tenant_id, user_id, item_id)
+        specialist = await self.repository.get_specialist(tenant_id, user_id, specialist_id)
+        key = f"credential_ref:{row.title}"
+        config = dict(specialist.config)
+        if granted:
+            config[key] = row.reference
+        else:
+            config.pop(key, None)
+        return await self.repository.update_specialist(
+            tenant_id, user_id, specialist_id,
+            expected_revision=expected_revision, config=config,
+            now=datetime.now(UTC),
+        )
 
     async def update_specialist_profile(
         self,

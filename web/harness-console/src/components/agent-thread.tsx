@@ -62,6 +62,16 @@ import { useAssistantBot, useAssistantSurface } from "./assistant-bot-context";
 import { AssistantProgress } from "./assistant-progress";
 import { shouldShowChatActivityRow } from "../lib/assistant-progress";
 import { HandoverInlineRows, shouldShowHandoverRows } from "./handover-row";
+import { AssistantMentionReceipts, MentionChips } from "./assistant-mention-bar";
+import {
+  MENTION_PREFIX,
+  mentionIdempotencyKey,
+  useMentionableAssistants,
+  type MentionedAssistant,
+} from "../lib/bot-mentions";
+import { handoverStore } from "../lib/handover-store";
+import { submitThreadAnswer } from "../lib/thread-answer";
+import { assistantRequest } from "../lib/assistant-client";
 import {
   ComposerReplyProvider,
   MessageReplyButton,
@@ -443,6 +453,9 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const voiceComposer = useDictationComposer(inputRef, () => aui.composer().getState().text,
     (text) => aui.composer().setText(text), composingRef);
   const knowledge = useTaskKnowledge();
+  // @ 候选只出现在助理面：普通任务与项目任务保持原来的输入行为。
+  const mentionableAssistants = useMentionableAssistants(assistantSurface);
+  const [mentions, setMentions] = useState<MentionedAssistant[]>([]);
   const [wikiSlug, setWikiSlug] = useState<string | null>(null);
   useEffect(() => {
     const onOpenWiki = (event: Event) => {
@@ -455,7 +468,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const options = dismissedText === composerText ? [] : composerOptions(
     composerText,
     caret,
-    agentSelection.agents,
+    assistantSurface ? mentionableAssistants : [],
     agentSelection.selected?.skills,
     conversationScope ? [] : knowledge.available,
     knowledge.selected,
@@ -516,6 +529,21 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     const trigger = composerTrigger(composerText, caret);
     if (!trigger) return;
     if (option.id.startsWith("/")) { command(option.id); return; }
+    // `@` 先选助理：按稳定 ID 记住选择，只是选中，不提交。
+    if (trigger.symbol === "@" && option.id.startsWith(MENTION_PREFIX)) {
+      const specialistId = option.id.slice(MENTION_PREFIX.length);
+      const bot = mentionableAssistants.find((item) => item.specialistId === specialistId);
+      if (!bot || busy) return;
+      setMentions((current) =>
+        current.some((item) => item.specialistId === specialistId) ? current : [...current, bot],
+      );
+      const next = composerText.slice(0, trigger.start) + composerText.slice(trigger.end);
+      aui.composer().setText(next);
+      setDismissedText(null);
+      setCaret(trigger.start);
+      inputRef.current?.focus();
+      return;
+    }
     // `@` selects knowledge bases for this thread; the mention text is removed
     // and the picker stays open so several bases can be toggled in a row.
     if (trigger.symbol === "@") {
@@ -654,11 +682,61 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     setPendingReply(replyScope.threadId, replyScope.reply);
     replyScope.cancelReply();
   }
+  const mentionKeyRef = useRef<string | null>(null);
+  /** 投递给被 @ 的助理：既有 AG-UI 通道负责送达，这里只补一条幂等回执。 */
+  async function sendMentions() {
+    if (composerSendLock.current) return;
+    composerSendLock.current = true;
+    setInputError("");
+    const key = mentionKeyRef.current ?? mentionIdempotencyKey();
+    mentionKeyRef.current = key;
+    const text = composerText.trim();
+    try {
+      for (const bot of mentions) {
+        const detail = await assistantRequest<{
+          specialist: { name: string };
+          threadId: string | null;
+          agentName: string;
+          agentVersion: string;
+        }>(`specialists/${encodeURIComponent(bot.specialistId)}`);
+        if (!detail.threadId) throw new Error(`${bot.name} 还没有可接收消息的会话`);
+        await submitThreadAnswer({
+          threadId: detail.threadId,
+          agentName: detail.agentName,
+          agentVersion: detail.agentVersion,
+          text,
+        });
+        const receipt = await assistantRequest<{ handoverId: string }>(
+          `specialists/${encodeURIComponent(bot.specialistId)}/messages`,
+          "POST",
+          { text },
+          key,
+        );
+        handoverStore.ingestMention({
+          handoverId: receipt.handoverId,
+          specialistId: bot.specialistId,
+          specialistName: detail.specialist.name || bot.name,
+        });
+      }
+      mentionKeyRef.current = null;
+      setMentions([]);
+      aui.composer().setText("");
+      onSubmitted?.();
+    } catch (error) {
+      setInputError(error instanceof Error ? error.message : "发送失败，请重试。");
+    } finally { composerSendLock.current = false; }
+  }
+
   async function submitComposer(alternate = false) {
     if (voiceActive || followupVoiceActive) return;
     if (projectLaunchScope) consumeProjectTaskLaunch(projectLaunchScope.userId, projectLaunchScope.threadId);
     if (command(composerText.trim())) return;
     if (videoRoute) { void generateVideo(); return; }
+    // 明确 @了某个助理：点发送才投递给它（消息或工作），当前会话不重复收这份消息。
+    if (assistantSurface && mentions.length) {
+      await sendMentions();
+      return;
+    }
     if (busy || queue.length) {
       const steer = alternate ? followUpBehavior !== "steer" : followUpBehavior === "steer";
       void enqueue(busy && steer); return;
@@ -868,6 +946,13 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       {inputError && <p className="composer-input-error" role="alert">{inputError}</p>}
       {!conversationScope?.compactComposer && <TaskKnowledgeSelection disabled={busy || Boolean(conversationScope)} />}
       <ReplyComposerBar />
+      {assistantSurface && <>
+        <MentionChips
+          mentions={mentions}
+          onRemove={(specialistId) => setMentions((current) => current.filter((item) => item.specialistId !== specialistId))}
+        />
+        <AssistantMentionReceipts />
+      </>}
       <Composer.Root onSubmitCapture={(event: FormEvent) => { event.preventDefault(); event.stopPropagation(); if (!composingRef.current) submitComposer(); }}>
         <ComposerAssist options={options} index={suggestionIndex} onChoose={chooseSuggestion} />
         {wikiSlug ? (
@@ -880,7 +965,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
         ) : null}
         {helpOpen && <div className="composer-assist composer-help-popover" role="dialog" aria-label="输入帮助">
           <button type="button" onClick={() => setHelpOpen(false)}>关闭</button>
-          <p>/ 执行命令 · @ 选择知识库（可多选） · $ 引用技能</p>
+          <p>/ 执行命令 · @ 提及助理或选择知识库（可多选） · $ 引用技能</p>
           <p>运行中 Enter {followUpBehavior === "steer" ? "补充说明" : "加入队列"}，Alt Enter 使用另一种方式，Shift Enter 换行。可在个人设置的配置中更改默认行为。</p>
         </div>}
         {activeSkillLaunch && selectedSkill && (

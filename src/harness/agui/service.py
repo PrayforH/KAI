@@ -484,6 +484,15 @@ class AguiRunService:
                     and request.forwarded_props.get("conversationSurface") == "assistant"
                     and binding.project_id is None
                 ) else {}),
+                # 助理范围（主助理会话、子助理会话与它们的例行执行）：
+                # 平台联网配好时默认跟随，不要求逐个 Bot 另行配置。
+                **({"assistant_scope": True} if (
+                    isinstance(request.forwarded_props, dict)
+                    and (
+                        request.forwarded_props.get("assistantScope") is True
+                        or request.forwarded_props.get("conversationSurface") == "assistant"
+                    )
+                ) else {}),
                 **({"quoted_message_context": quoted_message_context}
                    if quoted_message_context else {}),
                 "conversation_prompts": conversation_prompts,

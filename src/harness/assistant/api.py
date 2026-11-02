@@ -25,6 +25,13 @@ from harness.assistant.models import (
     UpdateObjectiveRequest,
 )
 from harness.assistant.service import AssistantService
+from harness.assistant.vault import (
+    VaultDeleteRequest,
+    VaultGrantRequest,
+    VaultItem,
+    VaultItemUpdate,
+    VaultItemWrite,
+)
 from harness.core.errors import NotFoundError
 from harness.studio.models import StudioModel
 
@@ -238,6 +245,12 @@ async def list_specialists(identity: Reader, assistant: Service) -> list[Special
     return await assistant.repository.list_specialists(identity.tenant_id, identity.user_id)
 
 
+@router.get("/specialists/appearance/palette")
+async def appearance_palette(identity: Reader, assistant: Service) -> dict[str, list[str]]:
+    """外观清单由服务端给出：前端不再各写一份取色表，新建时也不会漏项。"""
+    return assistant.appearance_palette()
+
+
 class SpecialistAppearance(StudioModel):
     """Bot 的外观选择（对齐客户端的新建 Bot 弹窗）：只影响呈现。"""
 
@@ -355,6 +368,106 @@ class SpecialistProfileRequest(StudioModel):
     appearance: SpecialistAppearance | None = None
     sidebar: SpecialistSidebar | None = None
     expected_revision: int = Field(alias="expectedRevision", ge=1)
+
+
+class SpecialistMessageRequest(StudioModel):
+    """给某个 Bot 发一句话：只提交正文，目标与线程由服务端解析。"""
+
+    text: str = Field(min_length=1, max_length=20_000)
+
+
+@router.get("/vault")
+async def list_vault_items(identity: Reader, assistant: Service) -> list[VaultItem]:
+    """助理资料库：只回脱敏元数据，敏感值不进接口。"""
+    return await assistant.vault_items(identity.tenant_id, identity.user_id)
+
+
+@router.post("/vault", status_code=201)
+async def create_vault_item(
+    body: VaultItemWrite, identity: Writer, assistant: Service
+) -> VaultItem:
+    """新建一条资料：值进加密存储，列表只见标题与末四位。"""
+    return await assistant.create_vault_item(
+        identity.tenant_id,
+        identity.user_id,
+        category=body.category,
+        title=body.title,
+        value=body.value,
+        last4=body.last4,
+    )
+
+
+@router.put("/vault/{item_id}")
+async def update_vault_item(
+    item_id: str, body: VaultItemUpdate, identity: Writer, assistant: Service
+) -> VaultItem:
+    return await assistant.update_vault_item(
+        identity.tenant_id,
+        identity.user_id,
+        item_id,
+        expected_revision=body.expected_revision,
+        title=body.title,
+        value=body.value,
+        last4=body.last4,
+    )
+
+
+@router.delete("/vault/{item_id}")
+async def delete_vault_item(
+    item_id: str, body: VaultDeleteRequest, identity: Writer, assistant: Service
+) -> dict[str, object]:
+    """删除一条资料：必须带标题确认，密文一起清掉。"""
+    deleted = await assistant.delete_vault_item(
+        identity.tenant_id, identity.user_id, item_id, confirm_title=body.confirm_title
+    )
+    if not deleted:
+        raise HTTPException(404, "资料不存在")
+    return {"itemId": item_id, "deleted": True}
+
+
+@router.post("/vault/{item_id}/grant")
+async def grant_vault_item(
+    item_id: str, body: VaultGrantRequest, identity: Writer, assistant: Service
+) -> Specialist:
+    """把资料授权给某个 Bot：写 credential_ref；撤销时移除。"""
+    return await assistant.grant_vault_item(
+        identity.tenant_id,
+        identity.user_id,
+        body.specialist_id,
+        item_id=item_id,
+        granted=body.granted,
+        expected_revision=body.expected_revision,
+    )
+
+
+@router.post("/specialists/{specialist_id}/messages", status_code=202)
+async def send_specialist_message(
+    specialist_id: str,
+    body: SpecialistMessageRequest,
+    identity: Writer,
+    assistant: Service,
+    idempotency_key: Annotated[str, Header(min_length=8, max_length=128)],
+) -> dict[str, object]:
+    """登记一次「已发送消息给 X」的回执。
+
+    投递本身走既有 AG-UI 通道（目标 Bot 的原会话），这里只落一条幂等的
+    Handover：重复提交同一把钥匙不会多出回执，也不会新建定时任务。
+    """
+    handover = await assistant.record_mention_handover(
+        identity.tenant_id,
+        identity.user_id,
+        specialist_id,
+        text=body.text,
+        idempotency_key=idempotency_key,
+    )
+    return {
+        "handoverId": handover.handover_id,
+        "specialistId": handover.specialist_id,
+        "messageId": handover.message_id,
+        "status": handover.status.value,
+        "summary": handover.summary,
+        "createdAt": handover.created_at.isoformat(),
+    }
 
 
 @router.post("/specialists/{specialist_id}/profile")

@@ -16,6 +16,7 @@ import {
 } from "../../components/product-icon";
 import { SecretInput } from "../../components/secret-input";
 import { RemoteChannels } from "../../components/agent-studio/remote-channels";
+import { AssistantVault } from "../../components/assistant-vault";
 import { ThemeSelector } from "../../components/theme-toggle";
 import { ProcessDisplaySettings } from "../../components/process-display-settings";
 import { useFollowUpPreference, useInternalAgentsPreference } from "../../lib/interface-preferences";
@@ -41,6 +42,7 @@ type SettingsSectionId =
   | "api"
   | "configuration"
   | "assistant"
+  | "vault"
   | "appearance"
   | "security"
   | "data"
@@ -78,6 +80,8 @@ const SETTINGS_NAV: ReadonlyArray<{
   },
   { id: "assistant", href: "#assistant", label: "助理", icon: "agent",
     description: "" },
+  { id: "vault", href: "#vault", label: "助理资料库", icon: "security",
+    description: "登录密钥、卡片与联系信息都归你所有，按 Bot 授权后才可用。" },
   {
     id: "configuration",
     href: "#configuration",
@@ -426,6 +430,9 @@ function SettingsContent() {
 
             <section className="settings-section" id="assistant" hidden={activeSection !== "assistant"}>
               {activeSection === "assistant" && <RemoteChannels />}
+            </section>
+            <section className="settings-section" id="vault" hidden={activeSection !== "vault"}>
+              {activeSection === "vault" && <AssistantVault />}
             </section>
             <section className="settings-section" id="configuration" hidden={activeSection !== "configuration"}>
               <div className="settings-form settings-configuration">

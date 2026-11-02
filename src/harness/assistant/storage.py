@@ -203,6 +203,33 @@ class SpecialistCredentialRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class VaultItemRow(Base):
+    """助理资料库条目：只存脱敏元数据，密文另存既有凭据表。
+
+    条目归本人所有；按 Bot/用途授权时，才把 credential_ref 写进该 Bot 的 config。
+    """
+
+    __tablename__ = "assistant_vault_items"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "user_id", "title", name="uq_assistant_vault_title"),
+        Index("ix_assistant_vault_owner", "tenant_id", "user_id", "updated_at"),
+    )
+
+    item_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(128))
+    user_id: Mapped[str] = mapped_column(String(128))
+    category: Mapped[str] = mapped_column(String(32))
+    title: Mapped[str] = mapped_column(String(120))
+    # 指向既有加密凭据表里的那一条；值本身不落在这张表。
+    reference: Mapped[str] = mapped_column(String(128))
+    last4: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    # 是否真的存了值：只有标题的条目不必让人以为里面有凭据。
+    has_value: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    revision: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class DesktopTurnRow(Base):
     """共享桌面执行权；释放前其它职责只能排队。"""
 

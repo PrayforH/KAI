@@ -12,7 +12,12 @@ export type HandoverNotice = {
   status: string;
   at: number;
   createdAt: number;
+  /** 用户明确 @某个 Bot 发出的消息：不挂在某条助手回复下，单独成行。 */
+  mention?: boolean;
 };
+
+/** 用户 @ 某个 Bot 的持久回执前缀；与派活工具的键空间分开。 */
+export const MENTION_MESSAGE_PREFIX = "mention-specialist:";
 
 const STATUS_TEXT: Record<string, string> = {
   sent: "已发送消息给",
@@ -95,6 +100,28 @@ export const handoverStore = {
       createdAt,
     });
   },
+  /** 用户 @某个 Bot 后的即时回执；刷新后由 seed() 从持久 handover 还原。 */
+  ingestMention(payload: {
+    handoverId: string;
+    specialistId: string;
+    specialistName: string;
+    createdAt?: string;
+  }) {
+    if (!payload.handoverId || !payload.specialistId) return;
+    const createdAt = receiptTime(payload.createdAt, Date.now());
+    upsert({
+      handoverId: payload.handoverId,
+      sourceRunId: null,
+      specialistId: payload.specialistId,
+      specialistName: payload.specialistName,
+      appearance: identities.get(payload.specialistId)?.appearance,
+      objectiveId: null,
+      status: "sent",
+      at: createdAt,
+      createdAt,
+      mention: true,
+    });
+  },
   /** 页面加载的一次性投影：把持久 handovers 落成状态行（无轮询）。 */
   async seed() {
     if (seeded) return;
@@ -110,9 +137,10 @@ export const handoverStore = {
       handoverStore.updateSpecialists(specialists);
       const names = new Map(specialists.map((item) => [item.specialistId, item.name]));
       for (const handover of handovers) {
+        const mention = handover.messageId.startsWith(MENTION_MESSAGE_PREFIX);
         upsert({
           handoverId: handover.handoverId,
-          sourceRunId: sourceRunId(handover.messageId),
+          sourceRunId: mention ? null : sourceRunId(handover.messageId),
           specialistId: handover.specialistId,
           objectiveId: handover.objectiveId,
           specialistName: names.get(handover.specialistId) ?? "专职子助理",
@@ -120,6 +148,7 @@ export const handoverStore = {
           status: handover.status,
           at: receiptTime(handover.updatedAt, receiptTime(handover.createdAt, 0)),
           createdAt: receiptTime(handover.createdAt, 0),
+          mention,
         });
       }
     } catch {

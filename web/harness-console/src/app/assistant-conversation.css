@@ -1,7 +1,59 @@
 /* Assistant presentation only. Task and project conversations keep the workbench UI.
    Every rule is bounded by the current shell surface; never scope from body :has(). */
+
+/* 浅色本体（白/浅灰）的中性底板与气泡色：深浅主题各给一套，
+   白底白字的白外观因此不会消失。具体取值由 --kai-bot-* 变量带进来。 */
+:root {
+  --kai-bot-neutral-bubble: #3a3a3c;
+  --kai-bot-neutral-bubble-ink: #f2f2f7;
+}
+
+html[data-color-mode="light"] {
+  --kai-bot-neutral-bubble: #e8e8ec;
+  --kai-bot-neutral-bubble-ink: #1c1c1e;
+}
+
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .aui-thread-viewport {
   padding-top: 12px;
+}
+
+/* @ 提及：选中的助理与已发送回执（只出现在助理面，任务/项目面不变）。 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-mention-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0 2px;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-mention-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--codex-ink, #ededed);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-mention-chip button {
+  padding: 0 5px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-mention-chip button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-mention-receipts {
+  display: grid;
 }
 
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message {
@@ -35,8 +87,8 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
   padding: 10px 14px;
   border: 0;
   border-radius: 18px;
-  background: var(--kai-bot-accent, #126fd4);
-  color: #fff;
+  background: var(--kai-bot-bubble, #126fd4);
+  color: var(--kai-bot-bubble-ink, #fff);
   box-shadow: none;
 }
 
@@ -271,6 +323,9 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
   flex: 0 0 auto;
   display: grid;
   place-items: center;
+  /* 浅色本体坐在中性灰底板上（像 Grok 的白色外观），否则白底白脸看不见。 */
+  border-radius: 8px;
+  background: var(--kai-bot-surface, transparent);
 }
 
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .grok-face svg {
@@ -284,7 +339,7 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
 }
 
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .grok-face-eye {
-  fill: rgba(255, 255, 255, 0.92);
+  fill: var(--kai-bot-ink, rgba(255, 255, 255, 0.92));
   transform-box: fill-box;
   transform-origin: center;
 }
@@ -358,7 +413,7 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
   height: 14px;
   margin-left: 3px;
   border-radius: 2px;
-  background: var(--kai-bot-accent, #126fd4);
+  background: var(--kai-bot-text, var(--kai-bot-accent, #126fd4));
   animation: kai-caret 0.9s ease-in-out infinite;
   vertical-align: -2px;
 }

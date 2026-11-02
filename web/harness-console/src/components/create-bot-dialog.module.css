@@ -46,6 +46,39 @@
 
 .avatar svg { width: 80px; height: 80px; }
 
+/* 随机外观的占位：不假装已经选好了。 */
+.autoPreview {
+  display: grid;
+  place-items: center;
+  width: 80px;
+  height: 80px;
+  border: 1px dashed #3a3a3a;
+  border-radius: 50%;
+  color: #6a6a6a;
+  font-size: 30px;
+}
+
+.hint {
+  margin: 0;
+  color: #9a9a9a;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.autoButton {
+  justify-self: center;
+  padding: 6px 12px;
+  border: 1px solid #3a3a3a;
+  border-radius: 999px;
+  background: transparent;
+  color: #9a9a9a;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.autoButton:hover { color: #ededed; }
+
 .name {
   width: 100%;
   padding: 12px 16px;

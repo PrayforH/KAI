@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { assistantRequest, type Specialist } from "../lib/assistant-client";
 import { CreateBotDialog } from "./create-bot-dialog";
-import { BOT_SHAPES } from "../lib/bot-appearance";
+import { BOT_SHAPES, botAppearanceTokens, botAppearanceVars } from "../lib/bot-appearance";
 import { BotGlyph } from "./bot-glyph";
 import { SidebarIcon } from "./sidebar-icon";
 import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
@@ -76,35 +76,17 @@ export function BotRailAvatar({
     );
   }
   const glyph = botShape(shape);
+  // 浅色本体（白/浅灰）坐在中性灰底板上，眼睛用深墨；深色本体保持透明底与白眼睛。
+  const tokens = botAppearanceTokens(tone);
   return (
     <span
       className="bot-rail-avatar"
       data-avatar="shape"
       data-shape={glyph.id}
-      style={{ background: "transparent" }}
+      style={{ background: tokens.surface, ...botAppearanceVars(tone) } as React.CSSProperties}
       aria-hidden="true"
     >
-      <BotGlyph shape={glyph.id} color={tone} />
-    </span>
-  );
-}
-
-/**
- * 助理面顶栏的身份标记：与 rail 同源——子助理用保存的色+形（未知/缺失回退 blob），
- * 主助理固定「K」字母，不会被子助理外形污染。
- */
-export function AssistantHeaderAvatar({
-  bot,
-}: {
-  bot: { specialistId: string; appearance?: { color?: string; avatar?: string } } | null;
-}) {
-  return (
-    <span className="task-context-bot-avatar">
-      <BotRailAvatar
-        tone={bot ? (bot.appearance?.color ?? botAccent(bot.specialistId)) : BOT_ACCENTS[0]!}
-        shape={bot ? bot.appearance?.avatar : undefined}
-        letter={bot ? undefined : "K"}
-      />
+      <BotGlyph shape={glyph.id} color={tokens.accent} />
     </span>
   );
 }

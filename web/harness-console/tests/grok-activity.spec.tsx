@@ -11,7 +11,8 @@ describe("GrokActivityRow", () => {
       <GrokActivityRow phrase="探索本机部署状态" state="working" />,
     );
     expect(html).toContain('data-state="working"');
-    expect(html).not.toContain("grok-face");
+    // 状态行带当前 Bot 的图标：主助理与子助理同一套外观。
+    expect(html).toContain("grok-face");
     expect(html).toContain('role="status"');
     expect(plainText(html)).toContain("探索本机部署状态");
   });
