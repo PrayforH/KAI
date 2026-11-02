@@ -934,7 +934,8 @@ class AssistantService:
                         messages=[UserMessage(id=execution.execution_id, content=prompt)],
                         tools=[],
                         context=[],
-                        forwarded_props={},
+                        # 助理的例行执行属于助理范围：平台联网配好时默认跟随。
+                        forwarded_props={"assistantScope": True},
                     ),
                 )
                 run = creation.run

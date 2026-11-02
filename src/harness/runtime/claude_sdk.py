@@ -953,6 +953,12 @@ class ClaudeSdkRuntime:
                 for tool in snapshot.manifest.spec.tools
                 if tool.builtin in WEB_BUILTINS
             )
+        if context.run.input.get("assistant_scope") and not web_builtins:
+            # 助理默认跟随平台联网：平台配好联网、本人没关闭时，
+            # 主助理与子助理都能搜索/抓取，不必逐个 Bot 重新发布带联网工具的智能体。
+            # 密钥与开关仍是平台那一份；关掉即不装配，任务/项目面不受影响。
+            if await self._tool_resolver.web_allowed(context.identity):
+                web_builtins.update(WEB_BUILTINS)
         if web_builtins and not await self._tool_resolver.web_allowed(context.identity):
             web_builtins.clear()
             builtin_tools = [name for name in builtin_tools if name not in WEB_BUILTINS]
