@@ -11,6 +11,9 @@ const { loadTasks, markTaskRead, setTaskPinned } = vi.hoisted(() => ({ loadTasks
 vi.mock("../src/lib/task-history", () => ({ loadTasks, markTaskRead, isTaskRead: (task: TaskSummary) => Boolean(task.last_read_at && Date.parse(task.last_read_at) >= Date.parse(task.updated_at)), prefetchThreadHistory: vi.fn().mockResolvedValue(undefined), setTaskArchived: vi.fn(), setTaskPinned, setTaskTitle: vi.fn(), forkTask: vi.fn(), peekCachedTasks: vi.fn(() => null), notifyTaskListChanged: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("../src/components/auth-provider", () => ({ useAuth: () => ({ user: { user_id: "test" } }) }));
+vi.mock("../src/lib/assistant-client", () => ({ assistantRequest: async () => [
+  { specialistId: "specialist-routing-test", name: "路由验收子助理", status: "ready", config: {} },
+] }));
 vi.mock("../src/components/account-menu", () => ({ AccountMenu: () => null }));
 vi.mock("../src/components/workspace-navigation", () => ({ WorkspaceNavigation: () => null }));
 vi.mock("../src/components/product-brand", () => ({ ProductBrandMark: () => null, ProductWordmark: () => <strong>KAI</strong>, PRODUCT_NAME: "KAI" }));
@@ -302,5 +305,30 @@ it("restores five rows after collapsing a project, a section, or the whole sideb
     await act(async () => root.render(<TaskSidebar {...props} collapsed />));
     await act(async () => root.render(<TaskSidebar {...props} />));
     expect(container.querySelectorAll(".task-list-row")).toHaveLength(10);
+  } finally { await act(async () => root.unmount()); container.remove(); }
+});
+
+
+it("keeps main and specialist contacts reachable after selecting a historical task", async () => {
+  loadTasks.mockResolvedValue([task("succeeded", "historical")]);
+  const container = document.createElement("div"); document.body.appendChild(container);
+  const root = createRoot(container);
+  const select = vi.fn();
+  const render = (thread: string, activeNav: "assistant" | "tasks") => root.render(
+    <TaskSidebar activeNav={activeNav} currentThreadId={thread} collapsed={false}
+      onToggle={() => {}} onSelect={select} onNewTask={() => {}} />,
+  );
+  try {
+    await act(async () => render("kai-personal-assistant-v1", "assistant"));
+    expect(container.querySelector('.bot-rail a[href="/assistant"]')).not.toBeNull();
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label^="任务 historical，"]')!.click());
+    expect(select).toHaveBeenCalledWith(expect.objectContaining({ thread_id: "historical" }));
+    await act(async () => render("historical", "tasks"));
+    expect(container.querySelector('.bot-rail a[href="/assistant"]')).not.toBeNull();
+    expect(container.querySelector('.bot-rail a[href="/assistant?bot=specialist-routing-test"]')?.textContent).toContain("路由验收子助理");
+    expect(container.querySelector('.bot-rail [data-active="true"]')).toBeNull();
+    await act(async () => root.render(<div />));
+    await act(async () => render("historical", "tasks"));
+    expect(container.querySelector('.bot-rail a[href="/assistant"]')).not.toBeNull();
   } finally { await act(async () => root.unmount()); container.remove(); }
 });

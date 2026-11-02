@@ -1,5 +1,7 @@
 "use client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { canonicalConversationHref, taskThreadHref } from "../lib/conversation-navigation";
 import { PERSONAL_ASSISTANT_THREAD, usePersonalAssistantEntry } from "../components/personal-assistant-context";
 import { loadTaskSummary, projectHref } from "../lib/project-space";
 import { agentDisplayName } from "../lib/agent-display-name";
@@ -209,6 +211,12 @@ export default function Home() {
 
 function AuthenticatedHome() {
   const assistantEntry = usePersonalAssistantEntry();
+  const router = useRouter();
+  const leaveAssistantForTask = useCallback((nextThreadId: string) => {
+    if (!assistantEntry) return false;
+    router.push(taskThreadHref(nextThreadId));
+    return true;
+  }, [assistantEntry, router]);
   const { user } = useAuth();
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
@@ -423,10 +431,16 @@ function AuthenticatedHome() {
     const selectionRevision = taskSelectionRevision.current;
     const initialSearch = new URLSearchParams(window.location.search);
     const requestedSkillLaunch = parseSkillCreatorLaunch(initialSearch);
+    const canonicalHref = canonicalConversationHref(assistantEntry, initialSearch);
+    if (canonicalHref) {
+      router.replace(canonicalHref);
+      if (assistantEntry !== canonicalHref.startsWith("/assistant")) return;
+    }
     const requestedThreadId = assistantEntry ? PERSONAL_ASSISTANT_THREAD : initialSearch.get("thread");
-    const initialThreadId = requestedThreadId
+    // Opening an assistant must not overwrite the last ordinary task selection.
+    const initialThreadId = assistantEntry ? PERSONAL_ASSISTANT_THREAD : requestedThreadId
       ? selectThread(storage, requestedThreadId)
-      : storedThreadId;
+      : storedThreadId === PERSONAL_ASSISTANT_THREAD ? createNewThread(storage) : storedThreadId;
     const hasRequestedAgent = Boolean(
       initialSearch.get("agent") &&
       initialSearch.get("version") &&
@@ -598,7 +612,7 @@ function AuthenticatedHome() {
     return () => {
       active = false;
     };
-  }, [catalogRefreshKey, user.user_id, showInternalAgents, assistantEntry]);
+  }, [catalogRefreshKey, user.user_id, showInternalAgents, assistantEntry, router]);
 
   const refreshingCatalog = useRef(false);
   const refreshAgentCatalog = useCallback(async () => {
@@ -653,9 +667,10 @@ function AuthenticatedHome() {
     taskSelectionRevision.current += 1;
     const storage = createUserScopedStorage(window.localStorage, user.user_id);
     const nextThreadId = createNewThread(storage);
-    window.history.replaceState(window.history.state, "", `/?thread=${encodeURIComponent(nextThreadId)}`);
     rememberNewTaskDraft(window.localStorage, user.user_id, nextThreadId);
     bindThreadAgent(storage, nextThreadId, nextAgent);
+    if (leaveAssistantForTask(nextThreadId)) return;
+    window.history.replaceState(window.history.state, "", taskThreadHref(nextThreadId));
     setSelectedAgent(nextAgent);
     setLocalThreadId(nextThreadId);
     setThreadId(nextThreadId);
@@ -665,7 +680,7 @@ function AuthenticatedHome() {
     setModelRouteOverride(null);
     setActiveSkillLaunch(null);
     closeCompactTaskSidebar();
-  }, [closeCompactTaskSidebar, user.user_id]);
+  }, [closeCompactTaskSidebar, user.user_id, leaveAssistantForTask]);
 
   const startTaskWithAgent = useCallback(async (nextAgent: TaskAgent) => {
     if (currentTask?.project_id) {
@@ -685,7 +700,7 @@ function AuthenticatedHome() {
       return;
     }
     const launchMode = resolveTaskLaunchMode(currentThreadState, "select-agent");
-    if (launchMode === "reuse-current") {
+    if (!assistantEntry && launchMode === "reuse-current") {
       const storage = createUserScopedStorage(window.localStorage, user.user_id);
       bindThreadAgent(storage, threadId, nextAgent);
       setSelectedAgent(nextAgent);
@@ -694,7 +709,7 @@ function AuthenticatedHome() {
       return;
     }
     createTaskWithAgent(nextAgent);
-  }, [createTaskWithAgent, currentTask?.project_id, currentThreadState, focusTaskComposer, threadId, user.user_id, taskAgents, modelRoutes]);
+  }, [createTaskWithAgent, currentTask?.project_id, currentThreadState, focusTaskComposer, threadId, user.user_id, taskAgents, modelRoutes, assistantEntry]);
 
   // Keep the header's task context (title + details popover data) synced with
   // the durable task list: on thread switches, run phase changes, and after
@@ -733,7 +748,7 @@ function AuthenticatedHome() {
       : taskAgents[0];
     const nextAgent = currentSystemAssistant(candidate ?? null, systemAssistant);
     if (!nextAgent) return;
-    if (currentThreadState === "empty") {
+    if (!assistantEntry && currentThreadState === "empty") {
       if (selectedAgent && nextAgent.version !== selectedAgent.version) {
         bindThreadAgent(taskStorage(), threadId, nextAgent);
         setSelectedAgent(nextAgent);
@@ -748,7 +763,8 @@ function AuthenticatedHome() {
         const draftAgent = findTaskAgent(taskAgents, storedAgent);
         if (draftAgent) {
           taskSelectionRevision.current += 1;
-          window.history.replaceState(window.history.state, "", `/?thread=${encodeURIComponent(pendingThreadId)}`);
+          if (leaveAssistantForTask(pendingThreadId)) return;
+          window.history.replaceState(window.history.state, "", taskThreadHref(pendingThreadId));
           setSelectedAgent(draftAgent);
           setLocalThreadId(pendingThreadId);
           setThreadId(selectThread(taskStorage(), pendingThreadId));
@@ -759,11 +775,12 @@ function AuthenticatedHome() {
       }
     }
     createTaskWithAgent(nextAgent);
-  }, [createTaskWithAgent, currentThreadState, focusTaskComposer, selectedAgent, taskAgents, systemAssistant, threadId]);
+  }, [createTaskWithAgent, currentThreadState, focusTaskComposer, selectedAgent, taskAgents, systemAssistant, threadId, assistantEntry, leaveAssistantForTask]);
 
   function switchTask(task: TaskSummary) {
     taskSelectionRevision.current += 1;
-    window.history.replaceState(window.history.state, "", `/?thread=${encodeURIComponent(task.thread_id)}`);
+    if (leaveAssistantForTask(task.thread_id)) return;
+    window.history.replaceState(window.history.state, "", taskThreadHref(task.thread_id));
     const nextAgent =
       taskAgents.find(
         (agent) =>
@@ -802,14 +819,6 @@ function AuthenticatedHome() {
     setLocalThreadId(null);
     const resolvedThreadId = selectThread(storage, task.thread_id);
     setThreadId(resolvedThreadId);
-    // 从助理路由切到普通任务时把地址也换成任务地址，避免地址栏与视图说法不一。
-    if (assistantEntry && window.location.pathname !== "/") {
-      window.history.replaceState(
-        window.history.state,
-        "",
-        `/?thread=${encodeURIComponent(resolvedThreadId)}`,
-      );
-    }
     closeCompactTaskSidebar();
   }
 

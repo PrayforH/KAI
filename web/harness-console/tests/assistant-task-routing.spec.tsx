@@ -1,0 +1,91 @@
+// @vitest-environment jsdom
+import { act, type ReactNode } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import Home from "../src/app/page";
+import { PersonalAssistantEntry, PERSONAL_ASSISTANT_THREAD } from "../src/components/personal-assistant-context";
+import { createUserScopedStorage, loadOrCreateThread, selectThread } from "../src/lib/thread-store";
+
+const state = vi.hoisted(() => {
+  const agent = { name: "agent", version: "1", ownerUserId: "user", scope: "personal", domain: "test" };
+  return { router: { push: vi.fn(), replace: vi.fn() }, agent, projects: [],
+    task: { thread_id: "old-thread", title: "原历史任务", run_id: "old-run", agent_name: "agent", agent_version: "1", agent_owner_user_id: "user", status: "succeeded" } };
+});
+vi.mock("next/navigation", () => ({ useRouter: () => state.router }));
+vi.mock("../src/components/auth-provider", () => ({ AuthProvider: ({ children }: { children: ReactNode }) => children, useAuth: () => ({ user: { user_id: "user" } }) }));
+vi.mock("../src/lib/project-space", () => ({ loadTaskSummary: async (id: string) => id === "old-thread" ? state.task : null, projectHref: (id: string) => `/studio/projects/${id}` }));
+vi.mock("../src/lib/task-agent-catalog", async importOriginal => ({ ...await importOriginal<object>(), loadTaskAgentCatalog: async () => ({ agents: [state.agent], defaultAgent: state.agent }) }));
+vi.mock("../src/lib/task-model-catalog", async importOriginal => ({ ...await importOriginal<object>(), loadTaskModelRoutes: async () => [] }));
+vi.mock("../src/lib/sidebar-state", () => ({ useSidebarProjects: () => [state.projects, vi.fn()] }));
+vi.mock("../src/lib/activity-store", () => ({ useRunActivity: () => null, useRunViewModel: () => null }));
+vi.mock("../src/lib/run-stream-store", () => ({ useRunStream: () => ({ status: "idle" }) }));
+vi.mock("../src/lib/assistant-client", () => ({ assistantRequest: async () => ({ specialist: { specialistId: "bot-a", name: "子助理A", agentName: "agent", agentVersion: "1", config: {} }, threadId: "bot-original", primaryObjectiveId: null }) }));
+vi.mock("../src/components/task-sidebar", () => ({ TaskSidebar: ({ onSelect, onNewTask }: { onSelect: (task: unknown) => void; onNewTask: () => void }) => <nav><button onClick={() => onSelect(state.task)}>打开历史任务</button><button onClick={onNewTask}>新建任务</button></nav> }));
+vi.mock("../src/components/agent-thread", () => ({ AgentThread: ({ threadId }: { threadId: string }) => <p data-thread={threadId}>{threadId}</p> }));
+vi.mock("../src/components/assistant-runtime-shell", () => ({ AssistantRuntimeShell: ({ children }: { children: ReactNode }) => children }));
+vi.mock("../src/components/assistant-computer-pane", () => ({ AssistantComputerPane: ({ children }: { children: ReactNode }) => children }));
+vi.mock("../src/components/assistant-channel-status", () => ({ AssistantChannelStatus: () => null }));
+vi.mock("../src/components/assistant-progress-strip", () => ({ AssistantProgressStrip: () => null }));
+vi.mock("../src/components/desktop-occupancy-chip", () => ({ DesktopOccupancyChip: () => null }));
+vi.mock("../src/components/assistant-computer-link", () => ({ AssistantComputerLink: () => null }));
+vi.mock("../src/components/workbench-rail", () => ({ WorkbenchRail: () => null }));
+vi.mock("../src/components/productivity-command-center", () => ({ ProductivityCommandCenter: () => null }));
+vi.mock("../src/components/specialist-setup-card", () => ({ SpecialistSetupCard: () => null }));
+vi.mock("../src/components/task-header-actions", () => ({ TaskDetailsPopover: () => null, TaskHeaderActions: () => null }));
+(globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
+let host: HTMLDivElement;
+let root: Root;
+beforeEach(() => {
+  const values = new Map<string, string>();
+  vi.stubGlobal("localStorage", { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) });
+  window.history.replaceState(null, "", "/assistant");
+  vi.clearAllMocks();
+  vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+  host = document.createElement("div"); document.body.append(host); root = createRoot(host);
+  selectThread(createUserScopedStorage(window.localStorage, "user"), "old-thread");
+});
+afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
+const mount = async (assistant: boolean) => {
+  await act(async () => root.render(assistant ? <PersonalAssistantEntry><Home /></PersonalAssistantEntry> : <Home />));
+};
+it.each([
+  ["/assistant", PERSONAL_ASSISTANT_THREAD],
+  ["/assistant?bot=bot-a", "bot-original"],
+])("navigates from %s to a historical task without relabeling its runtime", async (url, originalThread) => {
+  window.history.replaceState(null, "", url);
+  await mount(true);
+  expect(host.querySelector("[data-thread]")?.getAttribute("data-thread")).toBe(originalThread);
+  expect(loadOrCreateThread(createUserScopedStorage(window.localStorage, "user"))).toBe("old-thread");
+  await act(async () => host.querySelector<HTMLButtonElement>("nav button")!.click());
+  expect(state.router.push).toHaveBeenCalledWith("/?thread=old-thread");
+  expect(window.location.pathname).toBe("/assistant");
+  expect(host.querySelector("[data-thread]")?.getAttribute("data-thread")).toBe(originalThread);
+  window.history.replaceState(null, "", "/?thread=old-thread");
+  await mount(false);
+  expect(host.querySelector("[data-thread]")?.getAttribute("data-thread")).toBe("old-thread");
+  expect(host.querySelector('[data-surface="task"]')).not.toBeNull();
+  window.history.replaceState(null, "", "/assistant");
+  await mount(true);
+  expect(host.querySelector("[data-thread]")?.getAttribute("data-thread")).toBe(PERSONAL_ASSISTANT_THREAD);
+});
+it("does not reuse an empty assistant thread when starting an ordinary task", async () => {
+  await mount(true);
+  await act(async () => host.querySelectorAll<HTMLButtonElement>("nav button")[1]!.click());
+  const href = state.router.push.mock.calls[0]?.[0];
+  expect(href).toMatch(/^\/\?thread=/);
+  expect(new URL(href, "https://kai.test").searchParams.get("thread")).not.toBe(PERSONAL_ASSISTANT_THREAD);
+  expect(host.querySelector("[data-thread]")?.getAttribute("data-thread")).toBe(PERSONAL_ASSISTANT_THREAD);
+});
+it("moves a legacy assistant task URL to the original task page, retaining its focused run", async () => {
+  window.history.replaceState(null, "", "/assistant?thread=old-thread&run=old-run");
+  await mount(true);
+  expect(state.router.replace).toHaveBeenCalledWith("/?thread=old-thread&run=old-run");
+  expect(host.querySelector("[data-thread]")).toBeNull();
+});
+
+it("normalizes an old main-assistant link without leaving the same page empty", async () => {
+  window.history.replaceState(null, "", "/assistant?thread=kai-personal-assistant-v1");
+  await mount(true);
+  expect(state.router.replace).toHaveBeenCalledWith("/assistant");
+  expect(host.querySelector("[data-thread]")?.getAttribute("data-thread")).toBe(PERSONAL_ASSISTANT_THREAD);
+});

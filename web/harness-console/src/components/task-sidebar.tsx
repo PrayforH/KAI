@@ -568,7 +568,7 @@ export function TaskSidebar({
               visible={["knowledge", "agents", "automation", "skills"]}
             />
           </div>
-          {activeNav === "assistant" && <BotRail currentThreadId={currentThreadId} />}
+          {(activeNav === "assistant" || activeNav === "tasks") && <BotRail currentThreadId={currentThreadId} />}
           <div className="task-list-toolbar task-project-toolbar">
             <div className="task-list-heading">
               <button type="button" className="task-section-toggle"
