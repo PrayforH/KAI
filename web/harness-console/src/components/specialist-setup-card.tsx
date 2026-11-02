@@ -4,39 +4,35 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { assistantRequest, type Specialist } from "../lib/assistant-client";
 import { SpecialistCredentials } from "./specialist-credentials";
 
-const FREQUENCIES = [
-  { minutes: 60, label: "每小时" },
-  { minutes: 360, label: "每 6 小时" },
-  { minutes: 1440, label: "每天" },
-] as const;
-
 type Detail = {
   specialist: Specialist;
   threadId: string | null;
   primaryObjectiveId: string | null;
+  duties?: { objectiveId: string; hasExecutions: boolean }[];
 };
 
-const SETUP_STATUSES = new Set(["draft", "needs_input", "validating", "ready", "blocked"]);
+const SETUP_STATUSES = new Set(["draft", "needs_input", "validating", "ready", "blocked", "active"]);
 
 /**
  * 转交后缺配置的补齐卡（/assistant 子助理会话内）：
- * 检查频率 + 通知渠道 + 「保存并启用」→ 配置落库、状态置为 active、
- * 首个执行入队；成功后卡片变成「已启用，首次执行排队中」并刷新 bot 状态。
+ * 能力配置就绪后显式开始当前交办；不创建周期规则、不批量启动旧职责。
+ * 首个执行入队；成功后卡片变成「本次交办已安排」并刷新 bot 状态。
  */
 export function SpecialistSetupCard({
   specialistId,
   onReady,
+  objectiveId,
   onAlreadyActive,
 }: {
   specialistId: string;
   onReady?: () => void;
-  /** 打开时该 Bot 已经是 active（例如早前在 ?bot= 里启用过）：让调用方把行态同步成已安排。 */
+  objectiveId?: string | null;
+  /** Only a real execution, never Bot availability alone, settles a handover. */
   onAlreadyActive?: () => void;
 }) {
   const [detail, setDetail] = useState<Detail | null>(null);
-  const [frequency, setFrequency] = useState<number>(1440);
   const [busy, setBusy] = useState(false);
-  // 只在本次点击后显示「已启用，首次执行排队中」；刷新后 active 的 bot 直接不渲染，
+  // 只在本次点击后显示「本次交办已安排」；刷新后由真实执行记录判断，
   // 避免把一次性的成功回执变成常驻横幅（那时首跑可能早跑完了）。
   const [justEnabled, setJustEnabled] = useState(false);
   const [error, setError] = useState("");
@@ -50,9 +46,6 @@ export function SpecialistSetupCard({
         `specialists/${encodeURIComponent(specialistId)}`,
       );
       setDetail(data);
-      const stored = (data.specialist.config as { schedule_minutes?: number })
-        .schedule_minutes;
-      if (typeof stored === "number") setFrequency(stored);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "读取子助理配置失败");
     }
@@ -63,37 +56,45 @@ export function SpecialistSetupCard({
   }, [load]);
 
   useEffect(() => {
-    if (!detail || detail.specialist.status !== "active" || savingRef.current || announcedActiveRef.current) {
-      return;
-    }
+    const targetId = objectiveId || detail?.primaryObjectiveId;
+    if (!detail || savingRef.current || announcedActiveRef.current) return;
+    if (!detail.duties?.some(duty => duty.objectiveId === targetId && duty.hasExecutions)) return;
     announcedActiveRef.current = true;
     onAlreadyActive?.();
-  }, [detail, onAlreadyActive]);
+  }, [detail, objectiveId, onAlreadyActive]);
 
   async function saveAndEnable() {
     if (!detail || busy) return;
+    const targetId = objectiveId || detail.primaryObjectiveId;
+    if (!targetId || !detail.duties?.some(duty => duty.objectiveId === targetId)) {
+      setError("这项交办已变更，请刷新后重试。");
+      return;
+    }
     savingRef.current = true;
     setBusy(true);
     setError("");
     try {
-      // 1) 落配置：schedule_minutes + notify_channel（缺一不可）。
+      // Capability readiness does not create a trigger rule.
       const configured = await assistantRequest<Specialist>(
         `specialists/${encodeURIComponent(specialistId)}/config`,
         "POST",
         {
           config: {
             ...(detail.specialist.config as Record<string, unknown>),
-            schedule_minutes: frequency,
             notify_channel: "inbox",
           },
           expectedRevision: detail.specialist.revision,
         },
       );
-      // 2) 启用：服务端会为首个还没有执行的职责补一次入队。
-      await assistantRequest<Specialist>(
+      // Enable availability, then explicitly start only this handover once.
+      if (configured.status !== "active") await assistantRequest<Specialist>(
         `specialists/${encodeURIComponent(specialistId)}/status`,
         "POST",
         { status: "active", expectedRevision: configured.revision },
+      );
+      await assistantRequest(
+        `objectives/${encodeURIComponent(targetId)}/executions`, "POST", undefined,
+        `first-handover:${targetId}`,
       );
       setJustEnabled(true);
       await load();
@@ -101,6 +102,7 @@ export function SpecialistSetupCard({
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "保存失败，请稍后重试");
     } finally {
+      savingRef.current = false;
       setBusy(false);
     }
   }
@@ -116,9 +118,9 @@ export function SpecialistSetupCard({
   if (justEnabled) {
     return (
       <div className="specialist-setup-card" data-state="enabled">
-        <p className="specialist-setup-done">已启用，首次执行排队中</p>
+        <p className="specialist-setup-done">本次交办已安排</p>
         <p className="specialist-setup-hint">
-          结果会出现在这条会话里；也可以在「…」里随时改频率或暂停。
+          结果以该任务的执行记录为准；不会因此建立定时任务。
         </p>
       </div>
     );
@@ -126,12 +128,14 @@ export function SpecialistSetupCard({
 
   const status = detail.specialist.status;
   if (!SETUP_STATUSES.has(status)) return null;
+  if (detail.duties?.some(duty => duty.objectiveId === (objectiveId || detail.primaryObjectiveId) && duty.hasExecutions)) return null;
   if (!detail.primaryObjectiveId) {
+    if (status === "ready") return null;
     return (
       <div className="specialist-setup-card" data-state="no-duty">
-        <p className="specialist-setup-title">这个 Bot 还没有职责</p>
+        <p className="specialist-setup-title">可以直接和这个助理对话</p>
         <p className="specialist-setup-hint">
-          先让主助理给它派一件事，再回来设置频率并启用。
+          它会在收到消息或明确交办后工作；定时规则可以为具体任务单独设置。
         </p>
       </div>
     );
@@ -139,35 +143,10 @@ export function SpecialistSetupCard({
 
   return (
     <div className="specialist-setup-card" role="group" aria-label="补齐子助理配置">
-      <p className="specialist-setup-title">还差两步就能开始跑</p>
+      <p className="specialist-setup-title">开始这次交办</p>
       <p className="specialist-setup-hint">
-        交办已收下，但缺少检查频率和通知渠道；补上并启用后，第一次执行会立刻入队。
+        按需接单，只安排这一次交办；不会为其他任务创建或修改定时规则。
       </p>
-      <div className="specialist-setup-field">
-        <span>检查频率</span>
-        <div className="specialist-setup-options" role="radiogroup" aria-label="检查频率">
-          {FREQUENCIES.map((option) => (
-            <button
-              key={option.minutes}
-              type="button"
-              role="radio"
-              aria-checked={frequency === option.minutes}
-              data-selected={frequency === option.minutes ? "true" : undefined}
-              onClick={() => setFrequency(option.minutes)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="specialist-setup-field">
-        <span>通知渠道</span>
-        <div className="specialist-setup-options">
-          <button type="button" aria-checked="true" role="radio" data-selected="true" disabled>
-            站内消息
-          </button>
-        </div>
-      </div>
       {error && <p className="specialist-setup-error" role="alert">{error}</p>}
       <button
         type="button"
@@ -175,7 +154,7 @@ export function SpecialistSetupCard({
         disabled={busy}
         onClick={() => void saveAndEnable()}
       >
-        {busy ? "正在保存…" : "保存并启用"}
+        {busy ? "正在安排…" : "开始这次交办"}
       </button>
       <details className="specialist-setup-credentials">
         <summary>可选：为这个 Bot 添加凭据</summary>

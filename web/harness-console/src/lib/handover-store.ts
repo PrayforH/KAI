@@ -5,6 +5,7 @@ import { useSyncExternalStore } from "react";
 export type HandoverNotice = {
   specialistId: string;
   specialistName: string;
+  objectiveId?: string | null;
   status: string;
   at: number;
 };
@@ -50,6 +51,7 @@ export const handoverStore = {
     upsert({
       specialistId,
       specialistName,
+      objectiveId: typeof raw.objective_id === "string" ? raw.objective_id : null,
       status: typeof raw.status === "string" ? raw.status : "sent",
       at: Date.now(),
     });
@@ -61,7 +63,7 @@ export const handoverStore = {
     try {
       const { assistantRequest } = await import("./assistant-client");
       const handovers = await assistantRequest<
-        Array<{ specialistId: string; status: string; createdAt: string; updatedAt?: string }>
+        Array<{ specialistId: string; objectiveId?: string | null; status: string; createdAt: string; updatedAt?: string }>
       >("handovers");
       const specialists = await assistantRequest<
         Array<{ specialistId: string; name: string }>
@@ -70,6 +72,7 @@ export const handoverStore = {
       for (const handover of handovers) {
         upsert({
           specialistId: handover.specialistId,
+          objectiveId: handover.objectiveId,
           specialistName: names.get(handover.specialistId) ?? "专职子助理",
           status: handover.status,
           at: Date.parse(handover.updatedAt ?? handover.createdAt) || 0,

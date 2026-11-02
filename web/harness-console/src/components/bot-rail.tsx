@@ -152,9 +152,9 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
     };
   }, [load]);
 
-  // 按真实状态分组：已启用＝在岗承担职责；其余（新建/试运行/待启用）还没接活。
-  const active = specialists.filter((item) => item.status === "active");
-  const pending = specialists.filter((item) => item.status !== "active");
+  // 可接单状态不代表定时运行；暂停与待补充状态单独列出。
+  const active = specialists.filter((item) => ["active", "ready"].includes(item.status));
+  const pending = specialists.filter((item) => !["active", "ready"].includes(item.status));
   const collapsedLimit = 3;
   const visiblePending = expanded ? pending : pending.slice(0, collapsedLimit);
   const isAssistant = !activeBot && currentThreadId === PERSONAL_ASSISTANT_THREAD;
@@ -187,7 +187,7 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
             </span>
           </Link>
         </li>
-        {active.length > 0 && <li className="bot-rail-group">在岗</li>}
+        {active.length > 0 && <li className="bot-rail-group">可接单</li>}
         {active.map((item) => (
           <li key={item.specialistId}>
             <Link
@@ -209,7 +209,7 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
           </li>
         ))}
         {pending.length > 0 && (
-          <li className="bot-rail-group">{active.length ? "待启用" : "专职子助理"}</li>
+          <li className="bot-rail-group">{active.length ? "需要关注" : "专职子助理"}</li>
         )}
         {visiblePending.map((item) => (
           <li key={item.specialistId}>

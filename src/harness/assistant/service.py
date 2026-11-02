@@ -19,7 +19,6 @@ from harness.application.agents import AgentService
 from harness.application.runs import RunService
 from harness.assistant.lifecycle import next_check
 from harness.assistant.models import (
-    SPECIALIST_REQUIRED_CONFIG,
     DelegationMode,
     HandoverStatus,
     ManagedTask,
@@ -558,6 +557,15 @@ class AssistantService:
                     )
                     try:
                         require_local_tools(specialist.config)
+                        if specialist.status not in {
+                            SpecialistStatus.READY, SpecialistStatus.ACTIVE
+                        }:
+                            return execution.model_copy(update={
+                                "status": ObjectiveExecutionStatus.FAILED,
+                                "error_code": "SpecialistNotReady",
+                                "summary": "助理未就绪或已暂停，未提交新的运行。",
+                                "finished_at": now,
+                            })
                     except ConflictError as error:
                         return execution.model_copy(
                             update={
@@ -694,6 +702,17 @@ class AssistantService:
                 return version.name, version.version
         raise ConflictError("还没有可用的执行智能体，请先发布一个")
 
+    async def has_specialist_conversation(
+        self, tenant_id: str, user_id: str, specialist_id: str
+    ) -> bool:
+        try:
+            await self._agui.get_thread_record(
+                tenant_id=tenant_id, user_id=user_id, thread_id=f"assistant_{specialist_id}"
+            )
+        except NotFoundError:
+            return False
+        return True
+
     async def create_specialist(
         self,
         tenant_id: str,
@@ -717,8 +736,9 @@ class AssistantService:
             agent_name, agent_version = await self._default_agent(tenant_id, user_id)
         await self._agents.get_published(tenant_id, user_id, agent_name, agent_version)
         now = datetime.now(UTC)
+        specialist_id = f"specialist_{uuid4().hex}"
         specialist = Specialist(
-            specialistId=f"specialist_{uuid4().hex}",
+            specialistId=specialist_id,
             tenantId=tenant_id,
             userId=user_id,
             name=name[:80],
@@ -726,10 +746,13 @@ class AssistantService:
             description=description[:2_000],
             agentName=agent_name,
             agentVersion=agent_version,
-            status=SpecialistStatus.NEEDS_INPUT,
+            status=SpecialistStatus.READY,
             # 外观只影响呈现，不参与运行判定；存 config 便于跨设备一致。
-            config={"appearance": dict(appearance)} if appearance else {},
-            # 新建即视为"正在查看"：首次例行执行不被闸门拦下。
+            config={
+                "conversation_thread_id": f"assistant_{specialist_id}",
+                **({"appearance": dict(appearance)} if appearance else {}),
+            },
+            # 记录创建时的查看时间；以后明确配置周期时复用同一查看闸门。
             lastViewedAt=now,
             createdAt=now,
             updatedAt=now,
@@ -838,46 +861,10 @@ class AssistantService:
                 status=target,
                 now=now,
             )
-        # 频率是职责的调度属性：保存配置必须落到绑定职责，否则 due worker
-        # 永远看不到 next_check_at，界面显示"已配置"却不会跑。
-        interval = updated.config.get("schedule_minutes")
-        if isinstance(interval, int):
-            await self._sync_duty_schedule(
-                tenant_id, user_id, specialist_id, interval_minutes=interval, now=now
-            )
+        # Legacy schedule_minutes remains readable configuration metadata.
+        # Trigger rules are authoritative on each Objective, never fanned out
+        # from a Bot config edit to unrelated responsibilities.
         return updated
-
-    async def _sync_duty_schedule(
-        self,
-        tenant_id: str,
-        user_id: str,
-        specialist_id: str,
-        *,
-        interval_minutes: int,
-        now: datetime,
-    ) -> None:
-        """把 Bot 的运行频率同步到它承接的每个职责（幂等：同频率不写库）。"""
-        schedule = ObjectiveSchedule(intervalMinutes=interval_minutes)
-        for objective in await self.repository.list(tenant_id, user_id):
-            if objective.specialist_id != specialist_id:
-                continue
-            if (
-                objective.schedule is not None
-                and objective.schedule.interval_minutes == interval_minutes
-            ):
-                continue
-            brief = ObjectiveBrief.model_validate(
-                objective.model_dump(include=set(ObjectiveBrief.model_fields))
-                | {"schedule": schedule}
-            )
-            await self.repository.update(
-                tenant_id,
-                user_id,
-                objective.objective_id,
-                expected_revision=objective.revision,
-                now=now,
-                brief=brief,
-            )
 
     async def set_specialist_status(
         self,
@@ -893,17 +880,9 @@ class AssistantService:
             missing = _specialist_missing_config(current.config)
             if missing:
                 raise ConflictError(f"配置缺项，不能启用：{'、'.join(missing)}")
-            # paused 是用户显式暂停：恢复同样走激活，给还没有执行的职责补首跑。
+            # 恢复可接单状态本身不排入历史待执行职责。
             if current.status not in {SpecialistStatus.READY, SpecialistStatus.PAUSED}:
-                raise ConflictError("只有 ready 或 paused 状态可以启用持续运行")
-            bound = [
-                item
-                for item in await self.repository.list(tenant_id, user_id)
-                if item.specialist_id == current.specialist_id
-            ]
-            if not bound:
-                # 没有职责就没有调度对象：启用只会显示"运行中"却什么都不会跑。
-                raise ConflictError("该子助理还没有绑定职责，先转交一项职责再启用")
+                raise ConflictError("只有 ready 或 paused 状态可以启用助理")
         now = datetime.now(UTC)
         updated = await self.repository.update_specialist(
             tenant_id,
@@ -913,47 +892,9 @@ class AssistantService:
             status=status,
             now=now,
         )
-        if status is SpecialistStatus.ACTIVE:
-            # 转交时缺配置的职责从未入队；启用是用户明确的"开始持续运行"
-            # 信号，给还没有任何执行的职责补一次首次执行（有则原样保留）。
-            await self._start_duty_if_idle(tenant_id, user_id, specialist_id, now=now)
+        # Availability is not an execution trigger. Old pending handovers
+        # require an explicit per-objective start; never batch-start on enable.
         return updated
-
-    async def _start_duty_if_idle(
-        self,
-        tenant_id: str,
-        user_id: str,
-        specialist_id: str,
-        *,
-        now: datetime,
-    ) -> None:
-        """职责尚无任何执行时补一次入队；已有执行/只跟进/预算拒绝都不重复派发。"""
-        for objective in await self.repository.list(tenant_id, user_id):
-            if objective.specialist_id != specialist_id:
-                continue
-            if objective.mode != DelegationMode.AUTONOMOUS:
-                continue
-            if objective.status != ObjectiveStatus.ACTIVE:
-                continue
-            if await self.repository.executions(
-                tenant_id, user_id, objective.objective_id
-            ):
-                continue
-            try:
-                await self.repository.enqueue(
-                    tenant_id,
-                    user_id,
-                    objective.objective_id,
-                    trigger_key=f"activate:{specialist_id}:{objective.objective_id}",
-                    now=now,
-                )
-            except ConflictError as error:
-                # 预算/并发闸门拒绝时保持可观察：不伪装成已开始执行。
-                logger.warning(
-                    "specialist activation could not enqueue %s: %s",
-                    objective.objective_id,
-                    error,
-                )
 
     async def attach_duty(
         self,
@@ -999,7 +940,7 @@ class AssistantService:
         if missing:
             raise ConflictError(f"配置缺项，不能试运行：{'、'.join(missing)}")
         if specialist.status not in {SpecialistStatus.READY, SpecialistStatus.ACTIVE}:
-            raise ConflictError("只有待启用或运行中的子助理可以试运行")
+            raise ConflictError("只有可接单的子助理可以试运行")
         objectives = [
             item
             for item in await self.repository.list(tenant_id, user_id)
@@ -1035,6 +976,7 @@ class AssistantService:
         task: str,
         mode: DelegationMode,
         message_id: str,
+        schedule: ObjectiveSchedule | None = None,
     ) -> dict[str, object]:
         """创建或复用专职子助理并转交职责；回执分 sent/received/pending_input。"""
         now = datetime.now(UTC)
@@ -1081,6 +1023,7 @@ class AssistantService:
                 "agentName": agent_name,
                 "agentVersion": agent_version,
                 "completionCriteria": criteria,
+                "schedule": schedule,
             }
         )
         objective = await self.create(
@@ -1177,11 +1120,9 @@ def _specialist_slug(name: str) -> str:
 
 
 def _specialist_missing_config(config: dict[str, object]) -> list[str]:
-    return [
-        key
-        for key in SPECIALIST_REQUIRED_CONFIG
-        if not isinstance(config.get(key), (str, int)) or config.get(key) == ""
-    ] + [f"local_tool_permissions:{key}" for key in pending_local_tools(config)]
+    # Identity/capability readiness is separate from an Objective's trigger.
+    # Legacy bots do not become active or enqueue historical work on read.
+    return [f"local_tool_permissions:{key}" for key in pending_local_tools(config)]
 
 
 def hash_suffix(fingerprint: str | None) -> str:

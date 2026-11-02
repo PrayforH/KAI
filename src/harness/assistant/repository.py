@@ -316,7 +316,10 @@ class PostgresAssistantRepository:
             )
             if specialist_row is None:
                 raise ConflictError("The objective's specialist no longer exists")
-            require_local_tools(Specialist.model_validate(specialist_row.payload).config)
+            specialist = Specialist.model_validate(specialist_row.payload)
+            require_local_tools(specialist.config)
+            if specialist.status not in {SpecialistStatus.READY, SpecialistStatus.ACTIVE}:
+                raise ConflictError("子助理尚未就绪或已暂停，不能派发新执行")
         if await session.scalar(
             select(ObjectiveExecutionRow.execution_id)
             .where(

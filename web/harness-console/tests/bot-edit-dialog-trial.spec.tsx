@@ -34,7 +34,7 @@ function detail(status: string) {
     },
     threadId: "assistant_objective_1",
     primaryObjectiveId: "objective_1",
-    duties: [],
+    duties: [{objectiveId: "objective_1", title:"trial", status:"active", revision:1, schedule:null}],
   };
 }
 
@@ -87,7 +87,7 @@ describe("bot edit dialog first trial run", () => {
   it("runs one trial for a ready bot and shows the real execution", async () => {
     await mount("ready");
     expect(trialButton()).not.toBeNull();
-    expect(host.textContent).toContain("试运行不会启用持续运行");
+    expect(host.textContent).toContain("不会创建或修改周期规则");
 
     await act(async () => trialButton()!.click());
     await flush();

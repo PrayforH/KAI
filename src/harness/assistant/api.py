@@ -9,12 +9,15 @@ from pydantic import Field
 from harness.api.dependencies import Identity, ensure_permission, require_identity
 from harness.assistant.models import (
     AssistantInboxItem,
+    HandoverStatus,
     Objective,
     ObjectiveActionRequest,
     ObjectiveBrief,
     ObjectiveEvent,
     ObjectiveExecution,
+    ObjectiveExecutionStatus,
     ObjectiveNoteRequest,
+    ObjectiveSchedule,
     Specialist,
     SpecialistHandover,
     SpecialistStatus,
@@ -97,6 +100,26 @@ async def update_objective(
     )
 
 
+class ObjectiveScheduleRequest(StudioModel):
+    schedule: ObjectiveSchedule | None
+    expected_revision: int = Field(alias="expectedRevision", ge=1)
+
+
+@router.patch("/objectives/{objective_id}/schedule")
+async def update_objective_schedule(
+    objective_id: str, body: ObjectiveScheduleRequest, identity: Writer, assistant: Service
+) -> Objective:
+    current = await assistant.repository.get(identity.tenant_id, identity.user_id, objective_id)
+    brief = ObjectiveBrief.model_validate(
+        current.model_dump(include=set(ObjectiveBrief.model_fields)) | {"schedule": body.schedule}
+    )
+    await assistant.validate(identity.tenant_id, identity.user_id, brief)
+    return await assistant.repository.update(
+        identity.tenant_id, identity.user_id, objective_id,
+        expected_revision=body.expected_revision, now=datetime.now(UTC), brief=brief,
+    )
+
+
 @router.post("/objectives/{objective_id}/actions")
 async def action(
     objective_id: str, body: ObjectiveActionRequest, identity: Writer, assistant: Service
@@ -134,13 +157,27 @@ async def execute(
 ) -> ObjectiveExecution:
     objective = await assistant.repository.get(identity.tenant_id, identity.user_id, objective_id)
     await assistant.validate(identity.tenant_id, identity.user_id, objective)
-    return await assistant.repository.enqueue(
+    execution = await assistant.repository.enqueue(
         identity.tenant_id,
         identity.user_id,
         objective_id,
         trigger_key=f"manual:{idempotency_key}",
         now=datetime.now(UTC),
     )
+    if objective.specialist_id and execution.status in {
+        ObjectiveExecutionStatus.PENDING, ObjectiveExecutionStatus.RUNNING
+    }:
+        for handover in await assistant.repository.handovers(
+            identity.tenant_id, identity.user_id, specialist_id=objective.specialist_id
+        ):
+            if handover.objective_id == objective_id and handover.status in {
+                HandoverStatus.SENT, HandoverStatus.RECEIVED, HandoverStatus.PENDING_INPUT
+            }:
+                await assistant.repository.update_handover(
+                    identity.tenant_id, identity.user_id, handover.handover_id,
+                    status=HandoverStatus.APPLIED, now=datetime.now(UTC),
+                )
+    return execution
 
 
 @router.get("/objectives/{objective_id}/executions")
@@ -226,8 +263,12 @@ async def get_specialist(specialist_id: str, identity: Reader, assistant: Servic
         for item in await assistant.repository.list(identity.tenant_id, identity.user_id)
         if item.specialist_id == specialist_id
     ]
-    thread_id = None
-    if duties:
+    thread_id = f"assistant_{specialist_id}"
+    if specialist.config.get("conversation_thread_id") == f"assistant_{specialist_id}":
+        thread_id = f"assistant_{specialist_id}"
+    elif duties and not await assistant.has_specialist_conversation(
+        identity.tenant_id, identity.user_id, specialist_id
+    ):
         primary = duties[0]
         bindings = await assistant.repository.managed_bindings(
             identity.tenant_id, identity.user_id, objective_id=primary.objective_id
@@ -248,6 +289,10 @@ async def get_specialist(specialist_id: str, identity: Reader, assistant: Servic
                 "objectiveId": item.objective_id,
                 "title": item.title,
                 "status": item.status.value,
+                "revision": item.revision,
+                "hasExecutions": bool(await assistant.repository.executions(
+                    identity.tenant_id, identity.user_id, item.objective_id
+                )),
                 "schedule": item.schedule.model_dump(by_alias=True) if item.schedule else None,
             }
             for item in duties

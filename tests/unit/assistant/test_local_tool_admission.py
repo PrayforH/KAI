@@ -33,7 +33,7 @@ async def test_revocation_while_queued_prevents_model_submission():
     service, execution, repo, _, agui, runs, _ = setup()
     repo.get.return_value = repo.get.return_value.model_copy(update={"specialist_id": "bot"})
     repo.get_specialist.return_value = SimpleNamespace(
-        config={"required_local_tools": ["run_commands"]}
+        config={"required_local_tools": ["run_commands"]}, status="ready"
     )
     runs.find_by_idempotency_key.return_value = None
     result = await service._reconcile(execution)
@@ -95,3 +95,16 @@ async def test_enqueue_gate_rejects_before_writing_intent(missing_bot):
     with pytest.raises(ConflictError, match="exists|待授权"):
         await storage._enqueue(session, row, trigger_key="event", now=NOW)
     session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_paused_bot_does_not_submit_an_already_queued_execution():
+    service, execution, repo, _, agui, runs, _ = setup()
+    repo.get.return_value = repo.get.return_value.model_copy(update={"specialist_id": "bot"})
+    repo.get_specialist.return_value = SimpleNamespace(config={}, status="paused")
+    runs.find_by_idempotency_key.return_value = None
+    result = await service._reconcile(execution)
+    assert result.status.value == "failed"
+    assert result.error_code == "SpecialistNotReady"
+    agui.create_run_with_result.assert_not_awaited()
+    repo.acquire_desktop_turn.assert_not_awaited()

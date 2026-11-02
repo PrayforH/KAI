@@ -3,20 +3,14 @@
 import { useEffect, useState } from "react";
 import { assistantRequest, type Specialist } from "../lib/assistant-client";
 import { BOT_COLORS, BOT_SHAPES } from "./create-bot-dialog";
+import { DutyScheduleControl, type BotDuty } from "./duty-schedule-control";
 import { LocalToolPermissions } from "./local-tool-permissions";
 import { SpecialistCredentials } from "./specialist-credentials";
 import styles from "./bot-edit-dialog.module.css";
 
-type Duty = {
-  objectiveId: string;
-  title: string;
-  status: string;
-  schedule: { everyMinutes?: number; scheduleMinutes?: number } | null;
-};
-
 type Detail = {
   specialist: Specialist;
-  duties: Duty[];
+  duties: BotDuty[];
 };
 
 const STATUS_TEXT: Record<string, string> = {
@@ -27,8 +21,8 @@ const STATUS_TEXT: Record<string, string> = {
   ready: "待启用",
 };
 
-function scheduleCopy(duty: Duty): string {
-  const minutes = duty.schedule?.everyMinutes ?? duty.schedule?.scheduleMinutes;
+function scheduleCopy(duty: BotDuty): string {
+  const minutes = duty.schedule?.intervalMinutes;
   return minutes ? `每 ${minutes} 分钟` : "按需触发";
 }
 
@@ -119,8 +113,8 @@ export function BotEditDialog({
       setStatusMessage(
         next === "active"
           ? detail.specialist.status === "paused"
-            ? "已恢复持续运行"
-            : "已启用持续运行"
+            ? "已恢复接单"
+            : "已启用助理"
           : "已暂停",
       );
       window.dispatchEvent(
@@ -229,10 +223,11 @@ export function BotEditDialog({
           />
         </label>
         <section className={styles.routines}>
-          <p className={styles.routinesTitle}>例行程序</p>
+          <p className={styles.routinesTitle}>交办与执行方式</p>
           {detail?.duties.length ? (
             detail.duties.map((duty) => (
-              <div className={styles.routine} key={duty.objectiveId}>
+              <div key={duty.objectiveId}>
+              <div className={styles.routine}>
                 <span className={styles.routineIcon} aria-hidden="true">◷</span>
                 <span className={styles.routineCopy}>
                   <strong>{duty.title}</strong>
@@ -249,9 +244,16 @@ export function BotEditDialog({
                   {paused ? "已暂停" : STATUS_TEXT[duty.status] ?? duty.status}
                 </span>
               </div>
+              {!["completed", "cancelled"].includes(duty.status) && <DutyScheduleControl
+                duty={duty}
+                onSaved={updated => setDetail(current => current ? {
+                  ...current, duties: current.duties.map(item => item.objectiveId === updated.objectiveId ? updated : item),
+                } : current)}
+              />}
+              </div>
             ))
           ) : (
-            <p className={styles.routineEmpty}>还没有例行程序：去主助理那儿给它派一件事。</p>
+            <p className={styles.routineEmpty}>可以直接对话；有交办后，在这里为具体任务设置执行方式。</p>
           )}
         </section>
         {detail && ["ready", "active", "paused"].includes(detail.specialist.status) && (
@@ -264,7 +266,7 @@ export function BotEditDialog({
                 disabled={busy || trialBusy || statusBusy}
                 onClick={() => void changeStatus("active")}
               >
-                {statusBusy ? "正在启用…" : "启用持续运行"}
+                {statusBusy ? "正在启用…" : "启用助理"}
               </button>
             )}
             {detail.specialist.status === "active" && (
@@ -286,15 +288,15 @@ export function BotEditDialog({
                 disabled={busy || trialBusy || statusBusy}
                 onClick={() => void changeStatus("active")}
               >
-                {statusBusy ? "正在恢复…" : "恢复持续运行"}
+                {statusBusy ? "正在恢复…" : "恢复接单"}
               </button>
             )}
             <p className={styles.statusHint}>
               {detail.specialist.status === "ready"
-                ? "启用后按检查频率持续运行；试运行只是排一次检查。"
+                ? "启用后可接收交办；是否定时由每项任务的执行方式决定。"
                 : detail.specialist.status === "paused"
-                  ? "已暂停；点「恢复持续运行」会重新按频率检查。"
-                  : "暂停后不再按频率排入新的检查，可点恢复持续运行重新启用。"}
+                  ? "已暂停接单；恢复不会重跑以前的交办。"
+                  : "暂停后不再派发新执行；已有运行按原任务状态收尾。"}
             </p>
           </section>
         )}
@@ -306,7 +308,7 @@ export function BotEditDialog({
             {statusMessage}
           </p>
         )}
-        {detail && ["ready", "active"].includes(detail.specialist.status) && (
+        {detail && detail.duties.length > 0 && ["ready", "active"].includes(detail.specialist.status) && (
           <section className={styles.trial}>
             <button
               type="button"
@@ -317,7 +319,7 @@ export function BotEditDialog({
               {trialBusy ? "正在试运行…" : "首次试运行"}
             </button>
             <p className={styles.trialHint}>
-              只排一次检查并回报真实结果；试运行不会启用持续运行。
+              只安排一次执行；不会创建或修改周期规则。
             </p>
             {trialMessage && (
               <p

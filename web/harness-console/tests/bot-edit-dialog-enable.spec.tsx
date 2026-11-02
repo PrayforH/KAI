@@ -92,9 +92,9 @@ function action(name: "enable" | "pause" | "resume"): HTMLButtonElement | null {
 describe("bot edit dialog enable / pause", () => {
   it("enables a ready bot with the current revision and flips to pause", async () => {
     const cleanup = await mount("ready");
-    expect(action("enable")?.textContent).toContain("启用持续运行");
+    expect(action("enable")?.textContent).toContain("启用助理");
     expect(action("pause")).toBeNull();
-    expect(host.textContent).toContain("启用后按检查频率持续运行");
+    expect(host.textContent).toContain("启用后可接收交办");
 
     await act(async () => action("enable")!.click());
     await flush();
@@ -105,7 +105,7 @@ describe("bot edit dialog enable / pause", () => {
     expect(call).toBeTruthy();
     expect(call![1]).toBe("POST");
     expect(call![2]).toEqual({ status: "active", expectedRevision: 3 });
-    expect(host.textContent).toContain("已启用持续运行");
+    expect(host.textContent).toContain("已启用助理");
     // 服务端返回的 revision/状态生效：主按钮切成「暂停」。
     expect(action("pause")).not.toBeNull();
     expect(action("enable")).toBeNull();
@@ -138,10 +138,10 @@ describe("bot edit dialog enable / pause", () => {
 
   it("offers only resume for a paused bot", async () => {
     const cleanup = await mount("paused");
-    expect(action("resume")?.textContent).toContain("恢复持续运行");
+    expect(action("resume")?.textContent).toContain("恢复接单");
     expect(action("enable")).toBeNull();
     expect(action("pause")).toBeNull();
-    expect(host.textContent).toContain("已暂停；点「恢复持续运行」会重新按频率检查");
+    expect(host.textContent).toContain("已暂停接单；恢复不会重跑以前的交办");
     cleanup();
   });
 
@@ -154,7 +154,7 @@ describe("bot edit dialog enable / pause", () => {
       String(path).endsWith("/status"),
     );
     expect(call![2]).toEqual({ status: "active", expectedRevision: 3 });
-    expect(host.textContent).toContain("已恢复持续运行");
+    expect(host.textContent).toContain("已恢复接单");
     expect(action("pause")).not.toBeNull();
     expect(action("resume")).toBeNull();
     expect(events).toContain("kai:specialists-changed");
@@ -166,7 +166,7 @@ describe("bot edit dialog enable / pause", () => {
     assistantRequest.mockImplementation(async (path: string) => {
       if (path === "specialists/specialist_status") return specialist("paused");
       if (path === "specialists/specialist_status/status") {
-        throw new Error("只有 ready 或 paused 状态可以启用持续运行");
+        throw new Error("只有 ready 或 paused 状态可以启用助理");
       }
       throw new Error(`unexpected request ${path}`);
     });

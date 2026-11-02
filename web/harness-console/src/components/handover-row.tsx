@@ -358,6 +358,7 @@ export function HandoverInlineRows() {
             // 缺配置时不必跳进 ?bot=：同一张 SpecialistSetupCard 直接在主会话里补。
             <SpecialistSetupCard
               specialistId={notice.specialistId}
+              objectiveId={notice.objectiveId}
               onReady={settled}
               onAlreadyActive={settled}
             />

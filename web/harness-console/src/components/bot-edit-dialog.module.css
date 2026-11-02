@@ -250,3 +250,13 @@
   color: #8a8a8a;
   font-size: 12px;
 }
+
+.dutyTrigger { display: grid; gap: .5rem; padding: .5rem 0 .75rem; }
+.dutyTrigger label { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.dutyTrigger select { max-width: 65%; padding: .4rem .6rem; border: 1px solid var(--border, #8884); border-radius: .5rem; background: var(--card, #222); color: inherit; font: inherit; }
+.dutyTrigger small { color: #999; }
+.dutyTrigger button { justify-self: end; padding: .4rem .6rem; background: transparent; color: inherit; border: 1px solid #8884; border-radius: .5rem; cursor: pointer; }
+.dutyTrigger button:disabled { opacity: .5; cursor: default; }
+.dutyTrigger p { margin: 0; font-size: .8rem; }
+.dutyTrigger [role="alert"] { color: #ff7a7a; }
+.dutyTrigger select:focus-visible, .dutyTrigger button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }

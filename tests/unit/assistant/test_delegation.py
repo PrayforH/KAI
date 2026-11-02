@@ -15,6 +15,7 @@ from harness.assistant.models import (
     ObjectiveBrief,
     ObjectiveExecution,
     ObjectiveExecutionStatus,
+    ObjectiveSchedule,
     ObjectiveStatus,
 )
 from harness.core.errors import ConflictError, NotFoundError
@@ -156,9 +157,11 @@ class FakeGateway:
         task: str,
         mode: str,
         message_id: str,
+        schedule: ObjectiveSchedule | None = None,
     ) -> dict[str, Any]:
         self.delegate_calls.append(
-            {"name": name, "task": task, "mode": mode, "message_id": message_id}
+            {"name": name, "task": task, "mode": mode,
+             "message_id": message_id, "schedule": schedule}
         )
         return self.delegate_outcome
 
@@ -717,3 +720,61 @@ async def test_delegate_without_emit_still_succeeds():
         {"name": "行业快报监控", "task": "每天上午汇总", "mode": "autonomous"}
     )
     assert "转交回执" in text_of(result)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("interval", [None, 15, 1440])
+async def test_specialist_tool_defaults_to_one_off_and_only_schedules_explicit_intervals(interval):
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    args = {"name": "编码协同", "task": "检查改动"}
+    if interval is not None:
+        args["interval_minutes"] = interval
+    await tools["assistant_delegate_to_specialist"](args)
+    schedule = gateway.delegate_calls[0]["schedule"]
+    assert (schedule.interval_minutes if schedule else None) == interval
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("interval", [True, False, 1, 525601, "60", 60.1])
+async def test_specialist_tool_rejects_invalid_interval_before_creating_a_bot(interval):
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    result = await tools["assistant_delegate_to_specialist"](
+        {"name": "coding", "task": "check", "interval_minutes": interval}
+    )
+    assert "interval_minutes" in text_of(result)
+    assert not gateway.delegate_calls
+
+
+@pytest.mark.asyncio
+async def test_standalone_bot_conversation_uses_its_owned_profile_and_domain_memory():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from harness.assistant.delegation import specialist_instructions, specialist_memory_scope
+    from harness.assistant.models import Specialist
+    bot = Specialist(
+        specialistId="specialist_coding", tenantId="t", userId="u", name="编码协同",
+        slug="coding", description="按需检查代码，不自行定时", agentName="audit-agent",
+        agentVersion="1", createdAt=NOW, updatedAt=NOW,
+        config={"credential_ref:private": "internal-only"},
+    )
+    repo = SimpleNamespace(get_specialist=AsyncMock(return_value=bot), get=AsyncMock())
+    agui = SimpleNamespace(get_thread_record_for_session=AsyncMock(
+        return_value=SimpleNamespace(thread_id="assistant_specialist_coding")
+    ))
+    session = Session(
+        session_id="bot-chat", tenant_id="t", user_id="u", agent_name="audit-agent",
+        agent_version="1", created_at=NOW,
+    )
+    assert await specialist_memory_scope(SimpleNamespace(repository=repo), agui, session) == (
+        "specialist:coding"
+    )
+    repo.get.assert_not_awaited()
+    repo.get_specialist.assert_awaited_once_with("t", "u", "specialist_coding")
+    instructions = specialist_instructions(bot)
+    assert "编码协同" in instructions and "按需" in instructions
+    assert "internal-only" not in instructions
+    repo.get_specialist.side_effect = NotFoundError("not owned")
+    assert await specialist_memory_scope(SimpleNamespace(repository=repo), agui, session) is None

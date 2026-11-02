@@ -7,6 +7,8 @@ export type AssistantBot = {
   specialistId: string;
   name: string;
   description: string;
+  agentName?: string;
+  agentVersion?: string;
   status: string;
   threadId: string | null;
   objectiveId: string | null;

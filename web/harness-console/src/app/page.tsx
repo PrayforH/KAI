@@ -272,6 +272,8 @@ function AuthenticatedHome() {
         specialistId: string;
         name: string;
         description: string;
+        agentName: string;
+        agentVersion: string;
         status: string;
         config?: { appearance?: { color?: string; avatar?: string } };
       };
@@ -284,6 +286,8 @@ function AuthenticatedHome() {
           specialistId: data.specialist.specialistId,
           name: data.specialist.name,
           description: data.specialist.description,
+          agentName: data.specialist.agentName,
+          agentVersion: data.specialist.agentVersion,
           status: data.specialist.status,
           threadId: data.threadId,
           objectiveId: data.primaryObjectiveId,
@@ -319,6 +323,16 @@ function AuthenticatedHome() {
 
   const [taskAgents, setTaskAgents] = useState<TaskAgent[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<TaskAgent | null>(null);
+  useEffect(() => {
+    if (!bot?.agentName || !bot.agentVersion) return;
+    if (selectedAgent?.name === bot.agentName && selectedAgent.version === bot.agentVersion
+      && selectedAgent.ownerUserId === user.user_id && !selectedAgent.spaceId) return;
+    setSelectedAgent({
+      name: bot.agentName, version: bot.agentVersion, displayName: bot.name,
+      ownerUserId: user.user_id, scope: "personal", domain: "assistant",
+    });
+  }, [bot, selectedAgent, user.user_id]);
+
   const [systemAssistant, setSystemAssistant] = useState<TaskAgent | null>(null);
   const [modelRoutes, setModelRoutes] = useState<TaskModelRoute[]>([]);
   const [modelRouteOverride, setModelRouteOverride] = useState<string | null>(null);

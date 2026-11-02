@@ -337,7 +337,3 @@ class SpecialistHandover(StudioModel):
     status: HandoverStatus = HandoverStatus.SENT
     created_at: AwareDatetime = Field(alias="createdAt")
     updated_at: AwareDatetime = Field(alias="updatedAt")
-
-
-# 首次配置的最小完整集：缺任一项不得启用持续调度。
-SPECIALIST_REQUIRED_CONFIG = ("schedule_minutes", "notify_channel")

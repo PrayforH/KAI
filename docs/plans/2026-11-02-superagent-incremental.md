@@ -146,3 +146,24 @@ SpecialistSetupCard 只能填写检查频率，保存又同步到所有绑定职
 真实宽度复核标签刷新断开并随后不存在，尚不能标该视觉改动实页通过。
 编码协同现网只读核对为 needs_input，config.schedule_minutes=NULL，
 其 objective.schedule=NULL / next_check_at=NULL：不是已经运行的定时任务，而是被错误配置要求卡住。
+
+## 按需子助理与职责触发解耦（2026-11-02，本批待发布）
+
+已实现：新 Bot 默认 ready 且有独立对话线程；运行时注入用户配置的名称/职责，
+复用既有 Agent、领域记忆与授权工具。旧 Bot 无批量状态迁移；已有职责线程保留，
+曾建立独立对话的旧 Bot 不因附加职责而跳走。网页锁定该 Bot 自身 Agent。
+首次配置不再要求检查频率，启用仅恢复可接单；当前交办用稳定幂等键单独启动，
+只结清对应转交回执，不批量启动历史 pending_input。编码协同旧探查不自动重做。
+
+周期规则只存在具体 Objective：工具默认单次，仅明确周期要求才传 interval_minutes；
+编辑窗口按职责单独设置/清除 intervalMinutes，以 revision CAS 更新，无立即首跑，
+不修改兄弟职责。Legacy Bot schedule_minutes 仅保留元数据，保存时不再下发到所有职责。
+入队与新 Run 提交重查能力许可/助理可用性，paused 不创建新执行；预算、原任务与所有权闸门沿用。
+固定每日时刻及事件触发不冒充已实现；本批提供真实时间间隔周期。
+
+验证：助理/AG-UI/steering 单测170项；内存API引用/分页11项；前端61项及tsc；
+隔离PostgreSQL职责回归37项通过，补充旧会话兼容测试的fixture元数据清除写法修正后单独1项通过。
+Ruff/diff通过。测试仅用127.0.0.1:15483/harness_test，未连接业务库执行fixture。
+79 SSH已恢复，当前仍是API d78a8d5a / Worker eeab0194 / Web1fdc934d、schema0064；
+本批代码尚未部署，网页新流程尚未真实验收，浏览器扩展创建标签超时但原生Chrome可读。
+下一步仅发布API/Worker/Web，无迁移，不改Control/IM/VM；再次核对并发与Compose后切换。

@@ -414,69 +414,37 @@ async def test_reconcile_holds_pending_while_the_original_thread_is_busy(
 
 
 @pytest.mark.asyncio
-async def test_specialist_create_is_deduped_and_config_gates_status(
+async def test_specialist_identity_is_ready_without_a_schedule_and_permissions_still_gate(
     database: DatabaseFixture,
 ) -> None:
     from harness.assistant.models import SpecialistStatus
-
     service = make_service(database)
     first, created = await service.create_specialist(
-        "tenant-a",
-        "user-a",
-        name="费用监控",
-        description="长期关注账号花费",
-        agent_name="audit-agent",
-        agent_version="1.0.0",
+        "tenant-a", "user-a", name="编码协同", description="按需编码",
+        agent_name="audit-agent", agent_version="1.0.0",
     )
-    assert created and first.status is SpecialistStatus.NEEDS_INPUT
+    assert created and first.status is SpecialistStatus.READY
+    assert "schedule_minutes" not in first.config
     again, created_again = await service.create_specialist(
-        "tenant-a",
-        "user-a",
-        name="费用监控",
-        description="长期关注账号花费",
-        agent_name="audit-agent",
-        agent_version="1.0.0",
+        "tenant-a", "user-a", name="编码协同", description="重复",
+        agent_name="audit-agent", agent_version="1.0.0",
     )
     assert not created_again and again.specialist_id == first.specialist_id
-
-    # 保存不等于验证：缺项时保持 needs_input；补齐后转 ready。
-    updated = await service.configure_specialist(
-        "tenant-a",
-        "user-a",
-        first.specialist_id,
-        config={"schedule_minutes": 60},
-        expected_revision=first.revision,
+    pending = await service.configure_specialist(
+        "tenant-a", "user-a", first.specialist_id,
+        config={"required_local_tools": ["run_commands"]}, expected_revision=first.revision,
     )
-    assert updated.status is SpecialistStatus.NEEDS_INPUT
+    assert pending.status is SpecialistStatus.NEEDS_INPUT
+    with pytest.raises(ConflictError, match="run_commands"):
+        await service.set_specialist_status(
+            "tenant-a", "user-a", first.specialist_id,
+            status=SpecialistStatus.ACTIVE, expected_revision=pending.revision,
+        )
     ready = await service.configure_specialist(
-        "tenant-a",
-        "user-a",
-        first.specialist_id,
-        config={"notify_channel": "inbox"},
-        expected_revision=updated.revision,
+        "tenant-a", "user-a", first.specialist_id,
+        config={"local_tool_permissions": ["run_commands"]}, expected_revision=pending.revision,
     )
     assert ready.status is SpecialistStatus.READY
-
-    # 缺项不启用：新建的第二个实例在补齐配置前不能进入 active。
-    from harness.core.errors import ConflictError
-
-    second, second_created = await service.create_specialist(
-        "tenant-a",
-        "user-a",
-        name="project-patrol",
-        description="巡检项目状态",
-        agent_name="audit-agent",
-        agent_version="1.0.0",
-    )
-    assert second_created
-    with pytest.raises(ConflictError, match="缺项"):
-        await service.set_specialist_status(
-            "tenant-a",
-            "user-a",
-            second.specialist_id,
-            status=SpecialistStatus.ACTIVE,
-            expected_revision=second.revision,
-        )
 
 
 @pytest.mark.asyncio
@@ -496,20 +464,19 @@ async def test_delegate_to_specialist_creates_deduped_handover_and_objective(
         mode=cast(Any, 'autonomous'),
         message_id="delegate-specialist:run-1:费用监控",
     )
-    # 配置缺项：职责已登记但回执为 pending_input，不启动执行。
-    assert outcome["status"] == "pending_input"
-    assert outcome["missing"] == ["schedule_minutes", "notify_channel"]
+    # Default handover is one authorized execution, without a periodic trigger.
+    assert outcome["status"] == "applied"
+    assert outcome["missing"] == []
     specialist = await service.repository.get_specialist(
         "tenant-a", "user-a", str(outcome["specialist_id"])
     )
     objectives = await service.repository.list("tenant-a", "user-a")
     assert len(objectives) == 1 and objectives[0].specialist_id == specialist.specialist_id
-    assert (
-        await service.repository.executions(
-            "tenant-a", "user-a", objectives[0].objective_id
-        )
-        == []
+    assert objectives[0].schedule is None and objectives[0].next_check_at is None
+    executions = await service.repository.executions(
+        "tenant-a", "user-a", objectives[0].objective_id
     )
+    assert len(executions) == 1
 
     replay = await service.delegate_to_specialist(
         "tenant-a",
@@ -570,60 +537,53 @@ async def test_applied_delegate_enqueues_exactly_one_first_execution(
 
 
 @pytest.mark.asyncio
-async def test_completed_specialist_config_enables_first_execution(
+async def test_enable_does_not_restart_old_handovers_and_explicit_start_targets_one(
     database: DatabaseFixture,
 ) -> None:
-    from harness.assistant.models import SpecialistStatus
-
+    from harness.api.dependencies import Identity
+    from harness.assistant import api
+    from harness.assistant.models import HandoverStatus, SpecialistHandover, SpecialistStatus
     service = make_service(database)
-    service._agui = cast(Any, _StubAgui())  # pyright: ignore[reportPrivateUsage]
-    outcome = await service.delegate_to_specialist(
-        "tenant-a",
-        "user-a",
-        name="行业研究",
-        description="每日行业快报",
-        agent_name="audit-agent",
-        agent_version="1.0.0",
-        task="每天整理行业动态",
-        mode=cast(Any, 'autonomous'),
-        message_id="delegate-specialist:run-2:行业研究",
+    bot, _ = await service.create_specialist(
+        "tenant-a", "user-a", name="old-coding", description="existing blocked identity",
+        agent_name="audit-agent", agent_version="1.0.0",
     )
-    specialist = await service.repository.get_specialist(
-        "tenant-a", "user-a", str(outcome["specialist_id"])
+    pending = await service.repository.update_specialist(
+        "tenant-a", "user-a", bot.specialist_id, expected_revision=bot.revision,
+        status=SpecialistStatus.NEEDS_INPUT, now=NOW,
     )
-    objectives = await service.repository.list("tenant-a", "user-a")
-    assert objectives[0].schedule is None and objectives[0].next_check_at is None
+    duties = [await service.create(
+        "tenant-a", "user-a", brief(schedule=None, title=f"old task {i}"),
+        specialist_id=bot.specialist_id,
+    ) for i in range(2)]
+    receipts = [await service.repository.record_handover(SpecialistHandover(
+        handoverId=f"old-handover-{i}", tenantId="tenant-a", userId="user-a",
+        specialistId=bot.specialist_id, objectiveId=duty.objective_id,
+        messageId=f"old-message-{i}", status=HandoverStatus.PENDING_INPUT,
+        createdAt=NOW, updatedAt=NOW,
+    )) for i, duty in enumerate(duties)]
     configured = await service.configure_specialist(
-        "tenant-a",
-        "user-a",
-        specialist.specialist_id,
-        config={"schedule_minutes": 1440, "notify_channel": "inbox"},
-        expected_revision=specialist.revision,
+        "tenant-a", "user-a", bot.specialist_id,
+        config={"notify_channel": "inbox"}, expected_revision=pending.revision,
     )
-    assert configured.status is SpecialistStatus.READY
-    # 频率保存后必须落到职责：due worker 依赖 schedule/next_check_at。
-    scheduled = await service.repository.get("tenant-a", "user-a", objectives[0].objective_id)
-    assert scheduled.schedule is not None
-    assert scheduled.schedule.interval_minutes == 1440
-    assert scheduled.next_check_at is not None
-    assert await service.repository.executions(
-        "tenant-a", "user-a", scheduled.objective_id
-    ) == []
-    enabled = await service.set_specialist_status(
-        "tenant-a",
-        "user-a",
-        specialist.specialist_id,
-        status=SpecialistStatus.ACTIVE,
-        expected_revision=configured.revision,
+    await service.set_specialist_status(
+        "tenant-a", "user-a", bot.specialist_id,
+        status=SpecialistStatus.ACTIVE, expected_revision=configured.revision,
     )
-    assert enabled.status is SpecialistStatus.ACTIVE
-    # 缺配置时从未入队；启用补一次首次执行，且只有一条。
-    executions = await service.repository.executions(
-        "tenant-a", "user-a", scheduled.objective_id
-    )
-    assert len(executions) == 1
-    assert executions[0].status is ObjectiveExecutionStatus.PENDING
-    assert executions[0].trigger_key.startswith("activate:")
+    for duty in duties:
+        assert not await service.repository.executions("tenant-a", "user-a", duty.objective_id)
+    identity = Identity(tenant_id="tenant-a", user_id="user-a")
+    first = await api.execute(duties[0].objective_id, identity, service, "first-handover:one")
+    replay = await api.execute(duties[0].objective_id, identity, service, "first-handover:one")
+    assert replay.execution_id == first.execution_id
+    assert len(await service.repository.executions(
+        "tenant-a", "user-a", duties[0].objective_id
+    )) == 1
+    assert not await service.repository.executions("tenant-a", "user-a", duties[1].objective_id)
+    stored = await service.repository.handovers("tenant-a", "user-a")
+    states = {item.handover_id: item.status for item in stored}
+    assert states[receipts[0].handover_id] is HandoverStatus.APPLIED
+    assert states[receipts[1].handover_id] is HandoverStatus.PENDING_INPUT
 
 
 @pytest.mark.asyncio
@@ -892,7 +852,8 @@ async def test_managed_overview_projects_each_thread_and_renders_summary(
 
     agui.get_thread_record = get_thread_record  # type: ignore[method-assign]
 
-    from datetime import UTC as _UTC, datetime as _dt
+    from datetime import UTC as _UTC
+    from datetime import datetime as _dt
 
     stamp = _dt.now(_UTC)
 
@@ -1071,7 +1032,8 @@ async def test_unchanged_schedule_skips_the_model_call(database: DatabaseFixture
     async def get_thread_record(**kwargs: Any) -> Any:
         return registry[kwargs["thread_id"]]
 
-    from datetime import UTC as _UTC2, datetime as _dt2
+    from datetime import UTC as _UTC2
+    from datetime import datetime as _dt2
 
     async def list_runs(*_args: Any, **_kwargs: Any) -> list[Any]:
         stamp = _dt2.now(_UTC2)
@@ -1247,6 +1209,14 @@ async def test_specialist_trial_run_requires_complete_config_and_reports_schedul
 
     service = make_service(database)
     service._agui = cast(Any, _StubAgui())  # pyright: ignore[reportPrivateUsage]
+    prepared, _ = await service.create_specialist(
+        "tenant-a", "user-a", name="trial-duty", description="trial",
+        agent_name="audit-agent", agent_version="1.0.0",
+    )
+    await service.configure_specialist(
+        "tenant-a", "user-a", prepared.specialist_id,
+        config={"required_local_tools": ["run_commands"]}, expected_revision=prepared.revision,
+    )
     outcome = await service.delegate_to_specialist(
         "tenant-a",
         "user-a",
@@ -1270,7 +1240,7 @@ async def test_specialist_trial_run_requires_complete_config_and_reports_schedul
         "tenant-a",
         "user-a",
         specialist.specialist_id,
-        config={"schedule_minutes": 60, "notify_channel": "inbox"},
+        config={"local_tool_permissions": ["run_commands"]},
         expected_revision=specialist.revision,
     )
     assert configured.status is SpecialistStatus.READY
@@ -1290,8 +1260,10 @@ async def test_specialist_trial_run_requires_complete_config_and_reports_schedul
 
 
 @pytest.mark.asyncio
-async def test_specialist_without_a_duty_cannot_be_activated(database: DatabaseFixture) -> None:
-    """没有职责就没有调度对象：启用必须拒绝，并说明缺的是职责。"""
+async def test_specialist_can_be_available_without_inventing_a_duty(
+    database: DatabaseFixture,
+) -> None:
+    """Availability alone creates neither a duty nor an execution."""
     from harness.assistant.models import SpecialistStatus
 
     service = make_service(database)
@@ -1311,14 +1283,12 @@ async def test_specialist_without_a_duty_cannot_be_activated(database: DatabaseF
         expected_revision=specialist.revision,
     )
     assert configured.status is SpecialistStatus.READY
-    with pytest.raises(ConflictError, match="先转交一项职责"):
-        await service.set_specialist_status(
-            "tenant-a",
-            "user-a",
-            specialist.specialist_id,
-            status=SpecialistStatus.ACTIVE,
-            expected_revision=configured.revision,
-        )
+    enabled = await service.set_specialist_status(
+        "tenant-a", "user-a", specialist.specialist_id,
+        status=SpecialistStatus.ACTIVE, expected_revision=configured.revision,
+    )
+    assert enabled.status is SpecialistStatus.ACTIVE
+    assert await service.repository.list("tenant-a", "user-a") == []
 
 
 @pytest.mark.asyncio
@@ -1363,6 +1333,9 @@ async def test_paused_specialist_resumes_without_duplicate_first_run(
         expected_revision=configured.revision,
     )
     assert enabled.status is SpecialistStatus.ACTIVE
+    await service.trial_specialist(
+        "tenant-a", "user-a", specialist.specialist_id, expected_revision=enabled.revision,
+    )
     first_executions = await service.repository.executions(
         "tenant-a", "user-a", duty.objective_id
     )
@@ -1689,3 +1662,176 @@ async def test_desktop_occupancy_is_observable_and_waiting_reasons_are_readable(
         if item["objective_id"] == duty_desktop.objective_id
     ]
     assert desktop_waiters_after[0]["wait_reason"] == "等待桌面就绪"
+
+
+@pytest.mark.asyncio
+async def test_trigger_rules_are_owned_by_one_duty_not_the_bot(database: DatabaseFixture) -> None:
+    from harness.api.dependencies import Identity
+    from harness.assistant.api import ObjectiveScheduleRequest, update_objective_schedule
+    from harness.core.errors import NotFoundError
+
+    service = make_service(database)
+    bot, _ = await service.create_specialist(
+        "tenant-a", "user-a", name="coding-triggers", description="on demand",
+        agent_name="audit-agent", agent_version="1.0.0",
+    )
+    first = await service.create(
+        "tenant-a", "user-a", brief(schedule=None, title="first"), specialist_id=bot.specialist_id,
+    )
+    second = await service.create(
+        "tenant-a", "user-a", brief(title="second"), specialist_id=bot.specialist_id,
+    )
+    # A legacy Bot config edit must not change either duty's explicit trigger.
+    await service.configure_specialist(
+        "tenant-a", "user-a", bot.specialist_id,
+        config={"schedule_minutes": 1440}, expected_revision=bot.revision,
+    )
+    unchanged = await service.repository.get("tenant-a", "user-a", first.objective_id)
+    sibling = await service.repository.get("tenant-a", "user-a", second.objective_id)
+    assert unchanged.schedule is None and unchanged.next_check_at is None
+    assert sibling.schedule == second.schedule and sibling.revision == second.revision
+    identity = Identity(tenant_id="tenant-a", user_id="user-a")
+    request = ObjectiveScheduleRequest(schedule=ObjectiveSchedule(intervalMinutes=15),
+                                       expectedRevision=first.revision)
+    updated = await update_objective_schedule(first.objective_id, request, identity, service)
+    assert updated.schedule and updated.schedule.interval_minutes == 15
+    assert updated.next_check_at is not None
+    assert not await service.repository.executions("tenant-a", "user-a", first.objective_id)
+    with pytest.raises(ConflictError):
+        await update_objective_schedule(first.objective_id, request, identity, service)
+    with pytest.raises(NotFoundError):
+        await update_objective_schedule(
+            first.objective_id, request, Identity(tenant_id="tenant-a", user_id="other"), service,
+        )
+    cleared = await update_objective_schedule(
+        first.objective_id,
+        ObjectiveScheduleRequest(schedule=None, expectedRevision=updated.revision),
+        identity, service,
+    )
+    assert cleared.schedule is None and cleared.next_check_at is None
+    assert await service.repository.get("tenant-a", "user-a", second.objective_id) == sibling
+
+
+@pytest.mark.asyncio
+async def test_finished_on_demand_handover_never_becomes_a_periodic_job(
+    database: DatabaseFixture,
+) -> None:
+    service = make_service(database)
+    service._agui = cast(Any, _StubAgui())
+    outcome = await service.delegate_to_specialist(
+        "tenant-a", "user-a", name="coding-once", description="coding",
+        agent_name="audit-agent", agent_version="1.0.0", task="检查一次改动",
+        mode=cast(Any, "autonomous"), message_id="on-demand-once",
+    )
+    oid = str(outcome["objective_id"])
+    claim = await service.repository.claim(datetime.now(UTC))
+    assert claim is not None
+    finished = claim[0].model_copy(update={
+        "status": ObjectiveExecutionStatus.SUCCEEDED, "finished_at": datetime.now(UTC),
+    })
+    assert await service.repository.save_execution(finished, claim[1], datetime.now(UTC))
+    await service.repository.schedule_due(datetime.now(UTC) + timedelta(days=30))
+    assert len(await service.repository.executions("tenant-a", "user-a", oid)) == 1
+    objective = await service.repository.get("tenant-a", "user-a", oid)
+    assert objective.schedule is None and objective.next_check_at is None
+
+
+@pytest.mark.asyncio
+async def test_new_bot_conversation_exists_without_a_duty_and_does_not_move_on_handover(
+    database: DatabaseFixture,
+) -> None:
+    from harness.api.dependencies import Identity
+    from harness.assistant.api import get_specialist
+    service = make_service(database)
+    bot, _ = await service.create_specialist(
+        "tenant-a", "user-a", name="standalone-coding", description="coding",
+        agent_name="audit-agent", agent_version="1.0.0",
+    )
+    identity = Identity(tenant_id="tenant-a", user_id="user-a")
+    first = await get_specialist(bot.specialist_id, identity, service)
+    assert first["threadId"] == f"assistant_{bot.specialist_id}"
+    assert first["duties"] == []
+    duty = await service.create(
+        "tenant-a", "user-a", brief(schedule=None), specialist_id=bot.specialist_id,
+    )
+    second = await get_specialist(bot.specialist_id, identity, service)
+    assert second["threadId"] == first["threadId"]
+    assert second["duties"][0]["hasExecutions"] is False
+    assert second["duties"][0]["revision"] == duty.revision
+    assert second["duties"][0]["schedule"] is None
+
+
+@pytest.mark.asyncio
+async def test_explicit_periodic_handover_runs_again_and_respects_a_paused_bot(
+    database: DatabaseFixture,
+) -> None:
+    from harness.assistant.models import SpecialistStatus
+    service = make_service(database)
+    service._agui = cast(Any, _StubAgui())
+    result = await service.delegate_to_specialist(
+        "tenant-a", "user-a", name="periodic-proof", description="explicit checks",
+        agent_name="audit-agent", agent_version="1.0.0", task="每15分钟检查",
+        mode=cast(Any, "autonomous"), message_id="explicit-periodic-proof",
+        schedule=ObjectiveSchedule(intervalMinutes=15),
+    )
+    oid = str(result["objective_id"])
+    base = datetime.now(UTC)
+    async def finish(at: datetime) -> None:
+        claim = await service.repository.claim(at)
+        assert claim is not None
+        done = claim[0].model_copy(update={
+            "status": ObjectiveExecutionStatus.SUCCEEDED, "finished_at": at,
+        })
+        assert await service.repository.save_execution(done, claim[1], at)
+    await finish(base)
+    await service.repository.schedule_due(base + timedelta(minutes=16))
+    assert len(await service.repository.executions("tenant-a", "user-a", oid)) == 2
+    await finish(base + timedelta(minutes=16))
+    bot = await service.repository.get_specialist(
+        "tenant-a", "user-a", str(result["specialist_id"])
+    )
+    await service.set_specialist_status(
+        "tenant-a", "user-a", bot.specialist_id,
+        expected_revision=bot.revision, status=SpecialistStatus.PAUSED,
+    )
+    await service.repository.schedule_due(base + timedelta(minutes=35))
+    assert len(await service.repository.executions("tenant-a", "user-a", oid)) == 2
+
+
+@pytest.mark.asyncio
+async def test_legacy_bot_preserves_its_duty_thread_until_standalone_chat_exists(
+    database: DatabaseFixture,
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from harness.api.dependencies import Identity
+    from harness.assistant.api import get_specialist
+    from harness.core.errors import NotFoundError
+
+    service = make_service(database)
+    bot, _ = await service.create_specialist(
+        "tenant-a", "user-a", name="legacy-coding", description="coding",
+        agent_name="audit-agent", agent_version="1.0.0",
+    )
+    # Simulate a pre-existing Bot; GET must not migrate or activate it.
+    bot = await service.repository.update_specialist(
+        "tenant-a", "user-a", bot.specialist_id, expected_revision=bot.revision,
+        config={"conversation_thread_id": None}, now=NOW,
+    )
+    duty = await service.create(
+        "tenant-a", "user-a", brief(schedule=None), specialist_id=bot.specialist_id,
+    )
+    lookup = AsyncMock(side_effect=NotFoundError("not found"))
+    service._agui = cast(Any, SimpleNamespace(get_thread_record=lookup))
+    identity = Identity(tenant_id="tenant-a", user_id="user-a")
+    legacy = await get_specialist(bot.specialist_id, identity, service)
+    assert legacy["threadId"] == f"assistant_{duty.objective_id}"
+    lookup.assert_awaited_once_with(
+        tenant_id="tenant-a", user_id="user-a", thread_id=f"assistant_{bot.specialist_id}"
+    )
+    lookup.side_effect = None
+    lookup.return_value = SimpleNamespace(thread_id=f"assistant_{bot.specialist_id}")
+    standalone = await get_specialist(bot.specialist_id, identity, service)
+    assert standalone["threadId"] == f"assistant_{bot.specialist_id}"
+    assert await service.repository.get_specialist("tenant-a", "user-a", bot.specialist_id) == bot
+    assert not await service.repository.executions("tenant-a", "user-a", duty.objective_id)
