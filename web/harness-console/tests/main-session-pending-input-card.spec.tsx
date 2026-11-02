@@ -10,10 +10,11 @@ vi.mock("../src/lib/assistant-client", () => ({ assistantRequest: request }));
 let root: Root;
 let host: HTMLDivElement;
 let executed: boolean;
+let receipt = 0;
 const detail = () => ({ specialist: { specialistId: "pending", name: "按需协同", status: "ready", revision: 3, config: {} },
   threadId: "original", primaryObjectiveId: "objective-one", duties: [{ objectiveId: "objective-one", hasExecutions: executed }] });
 beforeEach(() => {
-  executed = false; request.mockReset();
+  executed = false; receipt += 1; request.mockReset();
   request.mockImplementation(async (path: string, method = "GET") => {
     if (path === "handovers" || path === "specialists") return [];
     if (path === "specialists/pending" && method === "GET") return detail();
@@ -28,7 +29,7 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
 async function mount() {
   await act(async () => {
-    emitHandover({ handover_id: "pending-handover", specialist_id: "pending", specialist_name: "按需协同", objective_id: "objective-one", status: "pending_input" });
+    emitHandover({ handover_id: `pending-handover-${receipt}`, specialist_id: "pending", specialist_name: "按需协同", objective_id: "objective-one", status: "pending_input", created_at: `2026-11-02T09:${String(receipt).padStart(2, "0")}:00Z`, updated_at: `2026-11-02T09:${String(receipt).padStart(2, "0")}:01Z` });
     root.render(<HandoverInlineRows messageId="assistant-run-ui-test" />);
   });
 }

@@ -1243,7 +1243,7 @@ class PostgresAssistantRepository:
                 sid = (notice.thread_id or "").removeprefix("assistant_")
                 bot = by_bot.get(sid) or by_bot.get(str(objective.get("specialistId", "")))
                 source = {"name": bot.name if bot else str(objective.get("title") or notice.title),
-                          "href": href}
+                          "href": href, "timestamp": notice.created_at.isoformat()}
                 if bot:
                     source["botId"] = bot.specialist_id
                 appearance = bot.config.get("appearance") if bot else None

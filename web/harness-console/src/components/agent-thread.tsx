@@ -1,4 +1,6 @@
 "use client";
+import { assistantChatReplies, publicChatText } from "../lib/assistant-chat";
+import { AssistantChatTime } from "./assistant-chat-time";
 import { responseTextForDisplay } from "../lib/process-response";
 import { sendComposerWithRecovery } from "../lib/composer-send";
 import { TerminalResponseNotice } from "./terminal-response-notice";
@@ -77,7 +79,7 @@ import { ArtifactCard, isImageArtifact, type ArtifactDetails } from "./artifact-
 import { AssistantResults } from "./assistant-results";
 import { assistantControlSummary } from "../lib/assistant-control-receipt";
 import { assistantCopy, assistantPresentation, compactAssistantProgress, compactAssistantReceipt } from "../lib/assistant-copy";
-import { AssistantNoticeSource } from "./assistant-notice-source";
+import { AssistantNoticeSource, noticeExchangeForMessage } from "./assistant-notice-source";
 import { replyWebImages } from "../lib/reply-web-images";
 import { ReplyWebImages } from "./reply-web-images";
 import { ReplyArtifactImages } from "./reply-artifact-images";
@@ -1306,9 +1308,11 @@ export function AssistantResponse({ text, streaming }: { text: string; streaming
 function TurnActivity({
   hasDurableProjection,
   messageId,
+  publicMessagesVisible = false,
 }: {
   hasDurableProjection: boolean;
   messageId: string;
+  publicMessagesVisible?: boolean;
 }) {
   const activity = useRunActivity();
   const runView = useRunViewModel();
@@ -1364,7 +1368,7 @@ function TurnActivity({
         className={`latest-activity ${displayed.status}`}
         data-activity-source={isLast ? "current-run" : "captured-turn"}
       >
-        <AssistantProgress activity={displayed} avatar={activityAvatar} />
+        <AssistantProgress activity={displayed} avatar={activityAvatar} publicMessagesVisible={publicMessagesVisible} />
       </div>
     );
   }
@@ -1530,6 +1534,7 @@ export function HarnessAssistantMessage() {
   const responseCandidate = responseTextForTurn(messageId, nativeText, directStream, live, capturedResponse, pendingLive);
   const feedbackRun = feedbackRunId(messageId, isLast, runView?.runId);
   const isNotice = messageId.startsWith("notice-");
+  const noticeExchange = useAuiState(state => isNotice ? noticeExchangeForMessage(state.thread.messages, messageId) : null);
   // Requirement: citations must be reachable from the reply itself, not only
   // from the collapsed execution summary. Deduplicate by chunk so repeated
   // retrieval in one run shows one chip per slice.
@@ -1540,6 +1545,11 @@ export function HarnessAssistantMessage() {
     ? currentActivity : undefined;
   const terminalActivity = ownedActivity && (!durable?.success || durable.data.run_id === ownedActivity.run_id)
     ? ownedActivity : durable?.success ? durable.data : undefined;
+  const capturedChatActivity = useRef<{ messageId: string; activity: RunActivity } | undefined>(undefined);
+  if (capturedChatActivity.current?.messageId !== messageId) capturedChatActivity.current = undefined;
+  if (terminalActivity) capturedChatActivity.current = { messageId, activity: terminalActivity };
+  const chatActivity = terminalActivity ?? capturedChatActivity.current?.activity;
+  const chatReplies = assistantSurface && !hasVideoGeneration ? assistantChatReplies(chatActivity) : [];
   const responseText = collapseRepeatedAssistantText(responseTextForDisplay(responseCandidate, terminalActivity));
   const copyText = redact(responseText);
   const previousAssistantText = useAuiState((state) => {
@@ -1600,6 +1610,9 @@ export function HarnessAssistantMessage() {
   const displayedText = compactMain
     ? (isNotice ? compactAssistantProgress : coordinationOnly && !showingInputCard ? compactAssistantReceipt : assistantCopy)(stripHarnessUiFences(displayCandidate, publishedBlocks))
     : displayCandidate;
+  const chatBubbles = chatReplies.map(reply => ({ ...reply,
+    text: assistantCopy(redact(publicChatText(stripHarnessUiFences(reply.text, publishedBlocks)))),
+  })).filter(reply => reply.text.trim());
   const actionText = showingInputCard ? (compactMain ? assistantCopy(conversationInputDisplay(copyText)) : conversationInputDisplay(copyText)) : displayedText;
   const draftScope = useContext(ComposerDraftContext);
   const runPresentationAction: PresentationActionHandler | undefined = threadRuntime && !conversationScope ? submitUiAction : undefined;
@@ -1642,10 +1655,10 @@ export function HarnessAssistantMessage() {
       data-turn-answer={displayedText.replace(/\s+/g, " ").slice(0, 360)}
       data-direct-stream={directStream ? "true" : "false"}
     >
-      {assistantSurface && isNotice && <AssistantNoticeSource parts={content} />}
-      {!hasVideoGeneration ? <TurnActivity
-        hasDurableProjection={hasRunActivityToolCall(content)}
-        messageId={messageId}
+      {assistantSurface && <AssistantChatTime activity={chatActivity} />}
+      {assistantSurface && isNotice && <AssistantNoticeSource parts={content} exchange={noticeExchange} />}
+      {!hasVideoGeneration && !assistantSurface ? <TurnActivity
+        hasDurableProjection={hasRunActivityToolCall(content)} messageId={messageId}
       /> : null}
       <AssistantMessage.Content
         components={{
@@ -1660,10 +1673,24 @@ export function HarnessAssistantMessage() {
         }}
       />
       {/* Bot controls sit beside the bubble; task controls stay below deliverables. */}
-      <div className={assistantSurface ? "assistant-answer-row" : "task-answer-row"}>
-      <AssistantResponse key={messageId} text={displayedText} streaming={!controlSummary && (directStream ? live.status === "streaming" && !live.textComplete : messageStatus?.type === "running")} />
-      {assistantSurface && responseActions}
-      </div>
+      {chatBubbles.length ? chatBubbles.map(reply => (
+        <div className="assistant-answer-row" key={reply.id} data-chat-message={reply.id}>
+          <AssistantResponse text={reply.text} streaming={reply.streaming} />
+          <div className="assistant-message-controls">
+            <AssistantActionBar.Root className="assistant-feedback-actions" hideWhenRunning>
+              <MessageCopyButton className="assistant-message-copy" label="复制回答" text={reply.text} />
+              <MessageReplyButton className="assistant-message-copy" label="回复这条回答" excerptOverride={reply.text} />
+            </AssistantActionBar.Root>
+          </div>
+        </div>
+      )) : <div className={assistantSurface ? "assistant-answer-row" : "task-answer-row"}>
+        <AssistantResponse key={messageId} text={displayedText} streaming={!controlSummary && (directStream ? live.status === "streaming" && !live.textComplete : messageStatus?.type === "running")} />
+        {assistantSurface && responseActions}
+      </div>}
+      {assistantSurface && !hasVideoGeneration ? <TurnActivity
+        hasDurableProjection={hasRunActivityToolCall(content)} messageId={messageId}
+        publicMessagesVisible={chatBubbles.length > 0}
+      /> : null}
       <div className="followup-input-anchor" data-followup-for={messageId} />
       {!hasVideoGeneration && <TerminalResponseNotice activity={terminalActivity}
         hasResponse={Boolean(displayedText.trim()) || showingInputCard || turnPresentations.length > 0 || turnArtifacts.length > 0} />}
@@ -1743,6 +1770,8 @@ function TurnCompletion() {
  */
 function LiveStreamingBubble() {
   const live = useLiveResponse();
+  const activity = useRunActivity();
+  const publicMessagesVisible = activity?.run_id === live.runId && assistantChatReplies(activity).length > 0;
   // 让位以 DOM 实况为准：页面上出现覆盖同等文本的正式气泡才算接管完成。
   // state 里 in-flight 消息挂载早于正文渲染，按 state 判断会让正文出现真空帧。
   const [handedOff, setHandedOff] = useState(false);
@@ -1761,7 +1790,7 @@ function LiveStreamingBubble() {
     }, 150);
     return () => window.clearInterval(timer);
   }, [live.visible, live.text]);
-  if (handedOff) return null;
+  if (handedOff || publicMessagesVisible) return null;
   if (!live.visible || live.status !== "streaming" || !live.text.trim()) return null;
   return (
     <div className="assistant-answer live-streaming-bubble" data-streaming="true" aria-live="polite">

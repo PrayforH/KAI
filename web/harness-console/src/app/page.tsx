@@ -17,7 +17,6 @@ import {
 } from "react";
 import { AgentThread } from "../components/agent-thread";
 import { BotEditDialog } from "../components/bot-edit-dialog";
-import { SpecialistSetupCard } from "../components/specialist-setup-card";
 import { AuthProvider, useAuth } from "../components/auth-provider";
 import { AssistantChannelStatus } from "../components/assistant-channel-status";
 import { assistantRequest } from "../lib/assistant-client";
@@ -1015,12 +1014,6 @@ function AuthenticatedHome() {
                     setBotEditOpen(false);
                     setBotRevision((current) => current + 1);
                   }}
-                />
-              )}
-              {bot && (
-                <SpecialistSetupCard
-                  specialistId={bot.specialistId}
-                  onReady={() => setBotRevision((current) => current + 1)}
                 />
               )}
               {versionSwitchError && <p role="alert">{versionSwitchError}</p>}

@@ -171,6 +171,7 @@ async def test_history_carries_source_identity_without_a_body_navigation_link():
     repo.conversation_notice_sources.return_value = {
         item.item_id: {
             "name": "编码协同",
+            "timestamp": item.created_at.isoformat(),
             "href": "/assistant?bot=specialist_report",
             "avatar": "blob",
             "color": "#f68b20",
@@ -186,5 +187,6 @@ async def test_history_carries_source_identity_without_a_body_navigation_link():
     import json
 
     assert json.loads(call["function"]["arguments"])["name"] == "编码协同"
+    assert json.loads(call["function"]["arguments"])["timestamp"] == item.created_at.isoformat()
     assert result["role"] == "tool" and result["toolCallId"] == call["id"]
     assert body["status"] == "idle" and "run_id" not in body

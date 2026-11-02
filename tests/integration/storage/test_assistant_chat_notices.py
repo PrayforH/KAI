@@ -80,6 +80,7 @@ async def test_notice_sources_resolve_owned_bot_name_and_avatar_instead_of_inter
     item = notice(threadId="assistant_specialist_source")
     source = (await repo.conversation_notice_sources("tenant-a", "user-a", [item]))[item.item_id]
     assert source["name"] == "编码协同"
+    assert source["timestamp"] == item.created_at.isoformat()
     assert source["color"] == "#f68b20" and source["avatar"] == "blob"
     assert source["href"].startswith("/assistant?bot=specialist_source")
     for tenant, user in (("tenant-a", "other"), ("other", "user-a")):
