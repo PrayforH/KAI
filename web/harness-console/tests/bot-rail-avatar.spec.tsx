@@ -92,7 +92,7 @@ describe("BotRailAvatar renders saved appearance shapes", () => {
   });
 
   it("falls back to blob for an unknown avatar id instead of a letter", async () => {
-    await render(<BotRailAvatar tone="#7442d1" shape="hexagon" />);
+    await render(<BotRailAvatar tone="#7442d1" shape="unknown-shape" />);
     expect(host.querySelector("path")?.getAttribute("d")).toBe(shapePath("blob"));
     expect(host.textContent).toBe("");
   });
@@ -114,8 +114,8 @@ describe("BotRail uses the shape avatars for every bot group", () => {
     expect(mainAvatar?.querySelector("svg")).toBeNull();
 
     const text = host.textContent ?? "";
-    expect(text).toContain("在岗");
-    expect(text).toContain("待启用");
+    expect(text).toContain("可接单");
+    expect(text).toContain("需要关注");
     expect(text).toContain("主助理");
   });
 

@@ -34,3 +34,14 @@ def test_title_cannot_inject_a_link_or_html():
     text = notice_text(notice(title="[click](https://example.com) <script>"))
     assert "click" not in text and "<script>" not in text
     assert notice_text(notice(kind="succeeded", content="")) == "本次处理已结束。"
+
+
+def test_main_bot_gets_a_brief_excerpt_while_late_blockers_are_preserved():
+    report = ("侧栏功能已实现。\n\n" + "实现细节说明。" * 100
+              + "\n真实页面尚未验证，需要你完成登录。")
+    item = notice(kind="succeeded", content=report)
+    text = notice_text(item)
+    assert len(text) < 425
+    assert "侧栏功能已实现。" in text and "尚未验证" in text and "需要你" in text
+    assert item.content == report
+    assert "已完成" not in text

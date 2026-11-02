@@ -3596,3 +3596,19 @@ body.codex-theme-v1:has(.console-shell) .task-context-bot-more:hover {
   background: rgba(255, 255, 255, 0.08);
   color: #ededed;
 }
+
+/* Bot navigation owns its avatar sizes and menu; task/project rows are unaffected. */
+body.codex-theme-v1:has(.console-shell) .bot-rail .bot-rail-item { flex: 1; min-width: 0; min-height: 48px; gap: 10px; padding: 6px 8px; }
+body.codex-theme-v1:has(.console-shell) .bot-rail .bot-rail-item .bot-rail-avatar { width: 40px; height: 40px; font-size: 18px; border-radius: 13px; }
+body.codex-theme-v1:has(.console-shell) .bot-rail .bot-rail-item .bot-rail-avatar svg { width: 40px; height: 40px; }
+body.codex-theme-v1:has(.console-shell) .bot-rail-row { display: flex; align-items: center; position: relative; }
+body.codex-theme-v1:has(.console-shell) .bot-rail-menu-trigger { flex: 0 0 26px; width: 26px; height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: #aaa; opacity: 0; cursor: pointer; font-size: 18px; }
+body.codex-theme-v1:has(.console-shell) .bot-rail-row:hover .bot-rail-menu-trigger,
+body.codex-theme-v1:has(.console-shell) .bot-rail-row:focus-within .bot-rail-menu-trigger,
+body.codex-theme-v1:has(.console-shell) .bot-rail-menu-trigger[aria-expanded="true"] { opacity: 1; }
+body.codex-theme-v1:has(.console-shell) .bot-rail-menu-trigger:hover { background: #ffffff12; }
+body.codex-theme-v1:has(.console-shell) .bot-rail-menu-trigger:focus-visible { outline: 2px solid #aaa; }
+body.codex-theme-v1:has(.console-shell) .bot-rail-unread { flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%; background: #5b9ee9; }
+body.codex-theme-v1:has(.console-shell) .bot-rail-recover { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 7px; color: #aaa; font-size: 12px; }
+body.codex-theme-v1:has(.console-shell) .bot-rail-recover button { border: 1px solid #ffffff22; border-radius: 14px; padding: 4px 8px; background: transparent; color: inherit; cursor: pointer; }
+@media (hover: none) { body.codex-theme-v1:has(.console-shell) .bot-rail-menu-trigger { opacity: 1; } }

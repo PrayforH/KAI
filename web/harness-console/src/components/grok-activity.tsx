@@ -178,11 +178,10 @@ function sharedPrefixLength(before: readonly string[], after: readonly string[])
   return count;
 }
 
-/** 状态行：脸 + 渐现短语，占对话流里的一行（客户端的活动行形态）。 */
+/** Live status stays text-only; the avatar belongs to conversation identity. */
 export function GrokActivityRow({
   phrase,
   state,
-  avatar,
 }: {
   phrase: string;
   state: GrokFaceState;
@@ -190,8 +189,7 @@ export function GrokActivityRow({
 }) {
   const short = trimConclusion(phrase);
   return (
-    <div className="grok-activity-row" data-state={state} aria-live="polite">
-      <GrokFace state={state} avatar={avatar} />
+    <div className="grok-activity-row" data-state={state} role="status" aria-label="处理进展">
       <ActivityPhrase text={short} instant />
     </div>
   );

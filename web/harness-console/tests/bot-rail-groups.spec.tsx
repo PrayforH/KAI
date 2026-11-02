@@ -4,12 +4,12 @@ import { expect, it } from "vitest";
 
 const source = readFileSync(join(process.cwd(), "src/components/bot-rail.tsx"), "utf8");
 
-it("groups bots by real status instead of a pinning concept", () => {
-  // 「置顶」是误传的产品语义：分区只区分可接单（已启用）与需要关注，不提供置顶。
+it("keeps availability groups separate from user pinning", () => {
+  // User pinning now organizes the rail; availability still comes from real status.
   expect(source).toContain('["active", "ready"].includes(item.status)');
   expect(source).toContain("可接单");
   expect(source).toContain("需要关注");
-  expect(source).not.toContain("已置顶");
+  expect(source).toContain("已置顶");
   expect(source).not.toContain("未分配");
 });
 

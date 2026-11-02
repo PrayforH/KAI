@@ -83,7 +83,44 @@ async def test_notice_sources_resolve_owned_bot_name_and_avatar_instead_of_inter
     assert source["timestamp"] == item.created_at.isoformat()
     assert source["color"] == "#f68b20" and source["avatar"] == "blob"
     assert source["href"].startswith("/assistant?bot=specialist_source")
+    background = item.model_copy(update={"thread_id": "assistant_objective-a"})
+    linked = (await repo.conversation_notice_sources("tenant-a", "user-a", [background]))
+    assert linked[item.item_id]["href"] == "/assistant?bot=specialist_source"
     for tenant, user in (("tenant-a", "other"), ("other", "user-a")):
         other = await repo.conversation_notice_sources(tenant, user, [item])
         assert other[item.item_id]["name"] != "编码协同"
         assert "avatar" not in other[item.item_id]
+
+
+@pytest.mark.asyncio
+async def test_sidebar_profile_is_owner_scoped_and_never_changes_execution_config(database):
+    from harness.assistant.models import Specialist, SpecialistStatus
+    from harness.core.errors import ConflictError, NotFoundError
+
+    repo = PostgresAssistantRepository(database[1])
+    bot = await repo.create_specialist(Specialist(
+        specialistId="specialist_sidebar", tenantId="tenant-a", userId="user-a", slug="sidebar",
+        name="测试 Bot", agentName="audit-agent", agentVersion="1.0.0",
+        status=SpecialistStatus.NEEDS_INPUT, createdAt=NOW, updatedAt=NOW,
+        config={"required_local_tools": ["read_files"], "schedule_minutes": 60},
+    ))
+    sidebar = {"pinned": True, "group": "工作", "hidden": True, "unread": True}
+    updated = await repo.update_specialist("tenant-a", "user-a", bot.specialist_id,
+        expected_revision=bot.revision, profile={"sidebar": sidebar}, now=NOW)
+    assert updated.status is SpecialistStatus.NEEDS_INPUT
+    assert updated.config == {**bot.config, "sidebar": sidebar}
+    loaded = await repo.get_specialist("tenant-a", "user-a", bot.specialist_id)
+    assert loaded.config == updated.config
+    with pytest.raises(ConflictError):
+        await repo.update_specialist("tenant-a", "user-a", bot.specialist_id,
+            expected_revision=bot.revision, profile={"sidebar": {"hidden": False}}, now=NOW)
+    for tenant, user in (("tenant-a", "other"), ("other", "user-a")):
+        with pytest.raises(NotFoundError):
+            await repo.update_specialist(tenant, user, bot.specialist_id,
+                expected_revision=updated.revision, profile={"sidebar": sidebar}, now=NOW)
+
+    assert await repo.touch_specialist_viewed("tenant-a", "user-a", bot.specialist_id, now=NOW)
+    viewed = await repo.get_specialist("tenant-a", "user-a", bot.specialist_id)
+    assert viewed.revision == updated.revision
+    assert viewed.status is bot.status
+    assert viewed.config == {**updated.config, "sidebar": {**sidebar, "unread": False}}

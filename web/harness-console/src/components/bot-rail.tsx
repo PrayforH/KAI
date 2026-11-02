@@ -3,9 +3,14 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { assistantRequest, type Specialist } from "../lib/assistant-client";
-import { BOT_SHAPES, CreateBotDialog } from "./create-bot-dialog";
+import { CreateBotDialog } from "./create-bot-dialog";
+import { BOT_SHAPES } from "../lib/bot-appearance";
+import { BotGlyph } from "./bot-glyph";
 import { SidebarIcon } from "./sidebar-icon";
 import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
+import { BotRailMenu } from "./bot-rail-menu";
+import { BotEditDialog } from "./bot-edit-dialog";
+import { botSidebar, type BotSidebar } from "../lib/bot-sidebar";
 import { handoverStore } from "../lib/handover-store";
 
 // 取自客户端调色板（sand-fill-*-bubble-user）：每个 bot 一个稳定强调色，
@@ -76,9 +81,7 @@ export function BotRailAvatar({
       style={{ background: "transparent" }}
       aria-hidden="true"
     >
-      <svg viewBox="0 0 64 64" focusable="false">
-        <path d={glyph.path} fill={tone} />
-      </svg>
+      <BotGlyph shape={glyph.id} color={tone} />
     </span>
   );
 }
@@ -119,6 +122,10 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
   const [specialists, setSpecialists] = useState<Specialist[]>([]);
   const [expanded, setExpanded] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [showHidden, setShowHidden] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [railError, setRailError] = useState("");
 
   function openBot(event: React.MouseEvent, specialistId: string | null) {
     // 同一路由只改查询参数时页面不会重挂载，旧线程会盖住新 bot：
@@ -133,7 +140,7 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
     try {
       const list = await assistantRequest<Specialist[]>("specialists");
       handoverStore.updateSpecialists(list);
-      setSpecialists(list.filter((item) => item.status !== "archived"));
+      setSpecialists(list);
     } catch {
       // 机器人列表是导航增强；读不到时保留主助理入口即可。
     }
@@ -154,13 +161,48 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
     };
   }, [load]);
 
-  // 可接单状态不代表定时运行；暂停与待补充状态单独列出。
-  const active = specialists.filter((item) => ["active", "ready"].includes(item.status));
-  const pending = specialists.filter((item) => !["active", "ready"].includes(item.status));
+  async function saveSidebar(item: Specialist, patch: Partial<BotSidebar>) {
+    const latest = await assistantRequest<{specialist: Specialist}>(`specialists/${encodeURIComponent(item.specialistId)}`);
+    const updated = await assistantRequest<Specialist>(`specialists/${encodeURIComponent(item.specialistId)}/profile`, "POST", {
+      sidebar: {...botSidebar(latest.specialist), ...patch}, expectedRevision: latest.specialist.revision,
+    });
+    setSpecialists(items => items.map(bot => bot.specialistId === updated.specialistId ? updated : bot));
+    window.dispatchEvent(new CustomEvent("kai:specialists-changed"));
+  }
+  async function changeArchive(item: Specialist, status: "archived" | "paused") {
+    setRailError("");
+    const latest = await assistantRequest<{specialist: Specialist}>(`specialists/${encodeURIComponent(item.specialistId)}`);
+    await assistantRequest(`specialists/${encodeURIComponent(item.specialistId)}/status`, "POST", {status, expectedRevision: latest.specialist.revision});
+    await load(); window.dispatchEvent(new CustomEvent("kai:specialists-changed"));
+  }
+  const available = specialists.filter(item => item.status !== "archived" && !botSidebar(item).hidden);
+  const pinned = available.filter(item => botSidebar(item).pinned);
+  const unpinned = available.filter(item => !botSidebar(item).pinned);
+  const groups = [...new Set(specialists.map(item => botSidebar(item).group).filter(Boolean))];
+  const grouped = groups.map(name => ({name, items: unpinned.filter(item => botSidebar(item).group === name)})).filter(group => group.items.length);
+  // Availability and organization are orthogonal; pinning never enables a Bot.
+  const ungrouped = unpinned.filter(item => !botSidebar(item).group);
+  const active = ungrouped.filter((item) => ["active", "ready"].includes(item.status));
+  const pending = ungrouped.filter((item) => !["active", "ready"].includes(item.status));
+  const hidden = specialists.filter(item => item.status !== "archived" && botSidebar(item).hidden);
+  const archived = specialists.filter(item => item.status === "archived");
   const collapsedLimit = 3;
   const visiblePending = expanded ? pending : pending.slice(0, collapsedLimit);
   const isAssistant = !activeBot && currentThreadId === PERSONAL_ASSISTANT_THREAD;
-
+  function row(item: Specialist) {
+    return <li key={item.specialistId} className="bot-rail-row">
+      <Link className="bot-rail-item" data-active={activeBot === item.specialistId ? "true" : undefined}
+        data-paused={isUnviewedPaused(item) ? "true" : undefined} data-unread={botSidebar(item).unread ? "true" : undefined}
+        title={isUnviewedPaused(item) ? "已暂停 · 无人查看" : undefined}
+        href={`/assistant?bot=${encodeURIComponent(item.specialistId)}`} onClick={event => void openBot(event, item.specialistId)}>
+        <BotRailAvatar tone={specialistAppearance(item).color} shape={specialistAppearance(item).avatar} />
+        <span className="bot-rail-label"><strong>{item.name}</strong></span>
+        {botSidebar(item).unread && <span className="bot-rail-unread" aria-label="未读" />}
+      </Link>
+      <BotRailMenu bot={item} groups={groups} onUpdate={patch => saveSidebar(item, patch)}
+        onEdit={() => setEditing(item.specialistId)} onArchive={() => changeArchive(item, "archived")} />
+    </li>;
+  }
   return (
     <section className="bot-rail" aria-label="机器人">
       <div className="bot-rail-head">
@@ -189,51 +231,32 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
             </span>
           </Link>
         </li>
+        {pinned.length > 0 && <li className="bot-rail-group">已置顶</li>}
+        {pinned.map(row)}
+        {grouped.map(group => <li key={group.name} className="bot-rail-section">
+          <div className="bot-rail-group">{group.name}</div><ul className="bot-rail-list">{group.items.map(row)}</ul>
+        </li>)}
         {active.length > 0 && <li className="bot-rail-group">可接单</li>}
-        {active.map((item) => (
-          <li key={item.specialistId}>
-            <Link
-              className="bot-rail-item"
-              data-active={activeBot === item.specialistId ? "true" : undefined}
-              data-paused={isUnviewedPaused(item) ? "true" : undefined}
-              title={isUnviewedPaused(item) ? "已暂停 · 无人查看" : undefined}
-              href={`/assistant?bot=${encodeURIComponent(item.specialistId)}`}
-              onClick={(event) => openBot(event, item.specialistId)}
-            >
-              <BotRailAvatar
-                tone={specialistAppearance(item).color}
-                shape={specialistAppearance(item).avatar}
-              />
-              <span className="bot-rail-label">
-                <strong>{item.name}</strong>
-              </span>
-            </Link>
-          </li>
-        ))}
-        {pending.length > 0 && (
-          <li className="bot-rail-group">{active.length ? "需要关注" : "专职子助理"}</li>
-        )}
-        {visiblePending.map((item) => (
-          <li key={item.specialistId}>
-            <Link
-              className="bot-rail-item"
-              data-active={activeBot === item.specialistId ? "true" : undefined}
-              data-paused={isUnviewedPaused(item) ? "true" : undefined}
-              title={isUnviewedPaused(item) ? "已暂停 · 无人查看" : undefined}
-              href={`/assistant?bot=${encodeURIComponent(item.specialistId)}`}
-              onClick={(event) => openBot(event, item.specialistId)}
-            >
-              <BotRailAvatar
-                tone={specialistAppearance(item).color}
-                shape={specialistAppearance(item).avatar}
-              />
-              <span className="bot-rail-label">
-                <strong>{item.name}</strong>
-              </span>
-            </Link>
-          </li>
-        ))}
+        {active.map(row)}
+        {pending.length > 0 && <li className="bot-rail-group">{active.length ? "需要关注" : "专职子助理"}</li>}
+        {visiblePending.map(row)}
       </ul>
+      {railError && <p role="alert">{railError}</p>}
+      {editing && <BotEditDialog specialistId={editing} onClose={() => setEditing(null)} onSaved={() => {
+        setEditing(null); void load(); window.dispatchEvent(new CustomEvent("kai:specialists-changed"));
+      }} />}
+      {hidden.length > 0 && <>
+        <button type="button" className="bot-rail-more" aria-expanded={showHidden} onClick={() => setShowHidden(value => !value)}>隐藏的 Bot（{hidden.length}）</button>
+        {showHidden && <ul className="bot-rail-list">{hidden.map(item => <li className="bot-rail-recover" key={item.specialistId}>
+          <span>{item.name}</span><button type="button" onClick={() => void saveSidebar(item, {hidden: false}).catch(error => setRailError(String(error.message)))}>恢复显示</button>
+        </li>)}</ul>}
+      </>}
+      {archived.length > 0 && <>
+        <button type="button" className="bot-rail-more" aria-expanded={showArchived} onClick={() => setShowArchived(value => !value)}>已归档（{archived.length}）</button>
+        {showArchived && <ul className="bot-rail-list">{archived.map(item => <li className="bot-rail-recover" key={item.specialistId}>
+          <span>{item.name}</span><button type="button" onClick={() => void changeArchive(item, "paused").catch(error => setRailError(String(error.message)))}>恢复显示，保持暂停</button>
+        </li>)}</ul>}
+      </>}
       {creating && (
         <CreateBotDialog
           onClose={() => setCreating(false)}

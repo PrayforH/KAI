@@ -329,6 +329,13 @@ async def mark_specialist_viewed(
     )
 
 
+class SpecialistSidebar(StudioModel):
+    pinned: bool = False
+    hidden: bool = False
+    unread: bool = False
+    group: str = Field(default="", max_length=40)
+
+
 class SpecialistProfileRequest(StudioModel):
     """编辑 Bot：名称/标题/描述/外观，纯呈现信息。"""
 
@@ -336,6 +343,7 @@ class SpecialistProfileRequest(StudioModel):
     title: str | None = Field(default=None, max_length=80)
     description: str | None = Field(default=None, max_length=2_000)
     appearance: SpecialistAppearance | None = None
+    sidebar: SpecialistSidebar | None = None
     expected_revision: int = Field(alias="expectedRevision", ge=1)
 
 
@@ -351,6 +359,7 @@ async def update_specialist_profile(
         title=body.title,
         description=body.description,
         appearance=body.appearance.model_dump() if body.appearance else None,
+        **({"sidebar": body.sidebar.model_dump()} if body.sidebar is not None else {}),
         expected_revision=body.expected_revision,
     )
 

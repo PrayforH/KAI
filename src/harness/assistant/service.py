@@ -1007,6 +1007,7 @@ class AssistantService:
         title: str | None,
         description: str | None,
         appearance: dict[str, str] | None = None,
+        sidebar: dict[str, object] | None = None,
         expected_revision: int,
     ) -> Specialist:
         """改名/标题/描述/外观：只动呈现，不触发配置状态重算。"""
@@ -1021,6 +1022,8 @@ class AssistantService:
             profile["title"] = title.strip()[:80]
         if appearance is not None:
             profile["appearance"] = appearance
+        if sidebar is not None:
+            profile["sidebar"] = sidebar
         if not profile:
             raise ConflictError("没有要保存的修改")
         return await self.repository.update_specialist(

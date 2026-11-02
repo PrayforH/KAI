@@ -38,6 +38,7 @@ import { ReplySendContext, type ReplyReference } from "./reply-reference";
 export function AssistantRuntimeShell({
   threadId,
   localOnly = false,
+  conversationSurface = "task",
   agentName,
   agentVersion,
   agentOwnerUserId,
@@ -51,6 +52,7 @@ export function AssistantRuntimeShell({
 }: {
   threadId: string;
   localOnly?: boolean;
+  conversationSurface?: "assistant" | "task";
   agentName: string;
   agentVersion: string;
   agentOwnerUserId?: string;
@@ -101,6 +103,7 @@ export function AssistantRuntimeShell({
       url: `/api/agui?${query.toString()}`,
       modelRouteOverride: conversationalModelRouteOverride,
       knowledgeReferences,
+      conversationSurface,
       onRunSucceeded: refreshDurableHistory,
     });
     next.threadId = threadId;
@@ -110,6 +113,7 @@ export function AssistantRuntimeShell({
     agentOwnerUserId,
     agentVersion,
     conversationalModelRouteOverride,
+    conversationSurface,
     knowledgeReferences,
     projectId,
     refreshDurableHistory,

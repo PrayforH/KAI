@@ -478,6 +478,12 @@ class AguiRunService:
                     raise ConflictError("当前运行时不支持知识问答，请切换支持知识检索的智能体")
             run_input: dict[str, object] = {
                 "prompt": prompt,
+                # Presentation guidance is opt-in per send, never inherited from a thread name.
+                **({"conversation_surface": "assistant"} if (
+                    isinstance(request.forwarded_props, dict)
+                    and request.forwarded_props.get("conversationSurface") == "assistant"
+                    and binding.project_id is None
+                ) else {}),
                 **({"quoted_message_context": quoted_message_context}
                    if quoted_message_context else {}),
                 "conversation_prompts": conversation_prompts,

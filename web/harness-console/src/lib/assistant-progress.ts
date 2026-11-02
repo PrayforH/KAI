@@ -100,7 +100,9 @@ export function progressPhrase(activity: ProgressActivity, options: { allowTrans
   }
   if (note) return note.text;
   if (options.allowTransient === false) return "";
-  if (["queued", "pending"].includes(activity.status ?? "")) return "请求已排队，等待开始处理。";
+  if (activity.items.some(item => item.event_type === "run.running")) return "已开始处理，正在准备回复。";
+  if (activity.items.some(item => item.event_type === "run.provisioning")) return "收到这条消息了，正在准备处理。";
+  if (["queued", "pending"].includes(activity.status ?? "")) return "收到这条消息了，等候开始处理。";
   if (activity.status === "provisioning") return "正在连接本次运行环境。";
   if (activity.items.some(item => item.event_type === "runtime.system" && (isTransientProgress(item.summary ?? "") || item.title === "模型正在处理"))) return "正在处理你的请求。";
   return "";
@@ -130,4 +132,9 @@ export function modelWaitingSince(activity: ProgressActivity): string | undefine
   const state = processState(activity);
   if (state.pending || state.approval) return;
   return latest.timestamp && Number.isFinite(Date.parse(latest.timestamp)) ? latest.timestamp : undefined;
+}
+
+export function hasPendingProgressAction(activity: ProgressActivity): boolean {
+  const state = processState(activity);
+  return Boolean(state.pending || state.approval);
 }

@@ -358,6 +358,22 @@ class RunOrchestrator:
             self._observability.annotate_current_io(output_value=text)
 
     async def _interaction_guidance(self, run: Run) -> str:
+        if (
+            run.input.get("conversation_surface") == "assistant"
+            and not run.input.get("studio_builder")
+        ):
+            # Avoid a serial auxiliary model call before a chat response. The existing
+            # main-model UI contract still owns forms, artifacts and interactive content.
+            return (
+                "## 当前助理聊天约定\n"
+                "简单问答直接回答，不先检索文件、不创建任务，也不额外发占位话。"
+                "需要工具或多步处理时，先向用户发送一句简短的公开回应（说明准备核对的范围），"
+                "再调用工具；不要先静默调用工具，等工具执行时才补上开场说明。"
+                "每取得一个重要结果再发一条短消息，最后给结论；允许多条消息，不把过程全挤在最后。"
+                "只说实际观察到的进展，不暴露私有思考或内部编号，不把排队说成已执行。"
+                "确认、授权和必要输入沿用已有交互卡；普通进展不制作额外卡片。"
+                "需要交互或图片时遵循现有交互协议，内容由主模型直接判断，无须等待额外展示分类。"
+            )
         if self._interaction_planner is None or run.input.get("studio_builder"):
             return ""
         with self._stage("harness.presentation.plan", {"run.id": run.run_id}):

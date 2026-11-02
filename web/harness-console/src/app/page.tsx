@@ -1040,6 +1040,7 @@ function AuthenticatedHome() {
                   key={`${threadId}:${runtimeAgentKey(selectedAgent)}`}
                   threadId={threadId}
                   localOnly={localThreadId === threadId}
+                  conversationSurface={conversationSurface}
                   agentName={selectedAgent.name}
                   agentVersion={selectedAgent.version}
                   agentOwnerUserId={selectedAgent.ownerUserId}

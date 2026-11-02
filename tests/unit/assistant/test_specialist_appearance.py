@@ -55,7 +55,9 @@ def test_profile_request_only_touches_presentation_fields() -> None:
     dumped = body.model_dump(by_alias=True)
     assert dumped["expectedRevision"] == 3
     # appearance 现在也是纯呈现字段：编辑弹窗可一并改颜色/形状。
-    assert set(dumped) == {"name", "title", "description", "appearance", "expectedRevision"}
+    assert set(dumped) == {
+        "name", "title", "description", "appearance", "sidebar", "expectedRevision"
+    }
 
 
 def test_delegate_tool_schema_hides_agent_fields() -> None:
@@ -90,3 +92,40 @@ def test_profile_rejects_bad_appearance_color() -> None:
         SpecialistProfileRequest.model_validate(
             {"appearance": {"color": "blue"}, "expectedRevision": 2}
         )
+
+
+def test_sidebar_is_presentation_only_and_rejects_execution_fields():
+    from harness.assistant.api import SpecialistProfileRequest
+
+    body = SpecialistProfileRequest.model_validate({
+        "sidebar": {"pinned": True, "group": "工作", "unread": True}, "expectedRevision": 2,
+    })
+    assert body.sidebar is not None and body.sidebar.pinned
+    assert body.sidebar.group == "工作"
+    with pytest.raises(ValidationError):
+        SpecialistProfileRequest.model_validate({
+            "sidebar": {"status": "active", "schedule_minutes": 15}, "expectedRevision": 2,
+        })
+
+
+@pytest.mark.asyncio
+async def test_profile_route_saves_sidebar_without_configuring_or_executing():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, Mock
+
+    from harness.assistant.api import SpecialistProfileRequest, update_specialist_profile
+
+    service = Mock()
+    service.update_specialist_profile = AsyncMock(return_value="saved")
+    body = SpecialistProfileRequest(sidebar={"pinned": True}, expectedRevision=4)
+    result = await update_specialist_profile(
+        "bot-1", body, SimpleNamespace(tenant_id="tenant-a", user_id="owner"), service
+    )
+    assert result == "saved"
+    service.update_specialist_profile.assert_awaited_once_with(
+        "tenant-a", "owner", "bot-1", name=None, title=None, description=None, appearance=None,
+        sidebar={"pinned": True, "hidden": False, "unread": False, "group": ""},
+        expected_revision=4,
+    )
+    service.configure_specialist.assert_not_called()
+    service.execute_objective.assert_not_called()

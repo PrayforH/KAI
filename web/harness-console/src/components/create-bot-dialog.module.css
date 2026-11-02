@@ -37,14 +37,14 @@
 
 .avatar {
   justify-self: center;
-  width: 92px;
-  height: 92px;
+  width: 112px;
+  height: 112px;
   display: grid;
   place-items: center;
   border-radius: 50%;
 }
 
-.avatar svg { width: 56px; height: 56px; }
+.avatar svg { width: 80px; height: 80px; }
 
 .name {
   width: 100%;

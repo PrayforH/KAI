@@ -33,7 +33,7 @@ describe("GrokFace draws the bot's saved shape", () => {
     expect(none).toContain('data-avatar="blob"');
     expect(none).toContain(`d="${shapePath("blob")}"`);
 
-    const unknown = renderToStaticMarkup(<GrokFace state="idle" avatar="hexagon" />);
+    const unknown = renderToStaticMarkup(<GrokFace state="idle" avatar="unknown-shape" />);
     expect(unknown).toContain('data-avatar="blob"');
     expect(unknown).toContain(`d="${shapePath("blob")}"`);
   });
@@ -68,12 +68,12 @@ describe("GrokFace draws the bot's saved shape", () => {
     expect(assistant).toContain('data-avatar="blob"');
   });
 
-  it("passes the shape through GrokActivityRow", () => {
+  it("keeps the status text-only even when a Bot avatar is configured", () => {
     const html = renderToStaticMarkup(
       <GrokActivityRow phrase="继续盯梢本轮：" state="working" avatar="pebble" />,
     );
-    expect(html).toContain('data-avatar="pebble"');
-    expect(html).toContain(`d="${shapePath("pebble")}"`);
+    expect(html).not.toContain("grok-face");
+    expect(html).toContain("继续盯梢本轮");
     expect(html.replace(/<[^>]+>/g, "")).toContain("继续盯梢本轮：");
   });
 });

@@ -32,16 +32,23 @@ from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedEr
 from harness.core.models import Run, Session
 from harness.runtime.platform_tools import PlatformTool, PlatformToolOverlay
 
-INSTRUCTIONS = (
+TASK_ROUTING = (
     "耗时超过一分钟的执行类任务，先调用 assistant_create_task 放到后台"
-    "（它会获得独立线程并进入后台执行队列），"
-    "然后立即回复用户任务已安排；期间可以继续回答其他消息。\n"
+    "（它会获得独立线程并进入后台执行队列），然后立即回复用户任务已安排。\n"
+    "用户要求持久专职子助理时，用 assistant_delegate_to_specialist 创建或复用并转交；"
+    "一次性或临时长任务可用 assistant_create_task。\n"
+)
+CHAT_ROUTING = (
+    "当前是主助理聊天：简单问答直接回答，需要委派的工作交给子助理承接。"
+    "先 assistant_specialist_status 查看已有子助理，按职责选合适的名称并复用；"
+    "没有合适的才创建清楚命名的专职子助理。使用 assistant_delegate_to_specialist 转交，"
+    "同一次交办只转交一次，沿用它的后台执行记录，不另建一条普通任务重复执行。"
+    "转交回执使用对应子助理名称和会话入口；一次交办不代表周期任务。\n"
+)
+COMMON_INSTRUCTIONS = (
     "接管用户已有任务（用户给出任务链接/ID 或点名任务）时，"
     "先 assistant_resolve_target 解析候选，确认后 assistant_manage_work 绑定原线程，"
     "mode=follow_only 只跟进汇报，mode=autonomous 才允许代为推进。\n"
-    "用户要求持久专职子助理（例如编码协同、研究助理）时，用 "
-    "assistant_delegate_to_specialist 建专职子助理并转交；一次性或临时的长任务用 "
-    "assistant_create_task，不要为一次任务永久建 Bot。\n"
     "子助理身份不等于定时任务。每次转交默认只执行本次；仅用户明确要求周期检查时"
     "传 interval_minutes，按时间间隔而非固定每日时刻执行；不要编造频率。\n"
     "assistant_task_status 查询后台任务的真实执行状态、检查点与 revision；"
@@ -52,7 +59,8 @@ INSTRUCTIONS = (
     "用户要求开启或关闭某条关注时，再传 managed_id、enabled、expected_revision。"
     "关闭关注不停止原任务，暂停整个职责才用 assistant_update_task。\n"
     "主助理像聊天Bot一样沟通：先说结论，只用一两句说明实际进展、结果和必要的下一步。"
-    "长报告通过成果文件交付，不在主会话重复整份执行报告。"
+    "主助理收到子助理回报时，只归纳一两句进展或结果；失败、未完成和需要用户决定的事项必须保留。"
+    "详细过程留在子助理会话，长报告通过成果文件交付，不在主会话重复整份执行报告。"
     "通过工具正确执行内部流程，但正文不展示工具名、API字段、状态码、内部编号或版本对照。"
     "用联系人名称和自然语言描述事项；说明未完成、失败原因及需要用户补充什么。"
     "配置选择、确认或授权由对应交互卡承接，正文不要再复述整套表单。"
@@ -62,6 +70,8 @@ INSTRUCTIONS = (
     "遇到冲突、未确认或缺项仍须直接说明，不能为了简短隐藏错误。\n"
     "入队只表示已安排，不代表后台已在执行；不要把简单问答包装成后台任务。"
 )
+
+INSTRUCTIONS = TASK_ROUTING + COMMON_INSTRUCTIONS
 
 
 class DelegationGateway(Protocol):
@@ -644,7 +654,7 @@ def assistant_delegation_overlay(
         )
         return PlatformToolOverlay(tools=tuple(tools), instructions=instructions)
 
-    return PlatformToolOverlay(
+    overlay = PlatformToolOverlay(
         tools=(
             PlatformTool(
                 name="assistant_create_task",
@@ -813,6 +823,15 @@ def assistant_delegation_overlay(
         ),
         instructions=INSTRUCTIONS,
     )
+    if run.input.get("conversation_surface") == "assistant":
+        # Main Bot chat exposes one delegation path. Task/project execution and
+        # scoped follow-up coordinators keep their original tool contracts.
+        return PlatformToolOverlay(
+            tools=tuple(t for t in overlay.tools if t.name != "assistant_create_task"),
+            instructions=CHAT_ROUTING + COMMON_INSTRUCTIONS,
+        )
+    return overlay
+
 
 
 class AssistantDelegationGateway:

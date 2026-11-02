@@ -80,8 +80,13 @@ export function compactActivityStream(source: Observable<BaseEvent>): Observable
                 // the transport identity before concatenating text.
                 if (seenEvents.has(parsed.data.id) || parsed.data.sequence <= lastSequence) continue;
                 seenEvents.add(parsed.data.id); lastSequence = parsed.data.sequence;
+                // Flush the first public token of each message immediately. Keep
+                // coalescing subsequent deltas to avoid quadratic conversation copies.
+                const firstPublicText = parsed.data.event_type === "message.delta" &&
+                  (next.items.at(-1)?.event_type !== "message.delta" ||
+                    next.items.at(-1)?.metadata.message_id !== parsed.data.metadata.message_id);
                 appendItem(next.items, parsed.data);
-                urgent ||= !STREAM_KEYS[parsed.data.event_type];
+                urgent ||= firstPublicText || !STREAM_KEYS[parsed.data.event_type];
               } else if (["add", "replace"].includes(patch.op) && patch.path === "/status" && typeof patch.value === "string") {
                 next.status = patch.value;
                 urgent = true;

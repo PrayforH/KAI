@@ -724,3 +724,16 @@ it("projects a live handover to its server run without a global latest-message e
     expect(handoverStore.snapshot().find(x => x.handoverId === "h-stream")).toMatchObject({ sourceRunId: "run-handover-stream", status: "pending_input" });
   } finally { vi.unstubAllGlobals(); }
 });
+
+it.each(["assistant", "task"] as const)("forwards the current %s surface independently of the historical thread", async surface => {
+  let sent: Record<string, unknown> = {};
+  const agent = new HarnessHttpAgent({
+    url: "http://harness/v1/agui", threadId: "assistant_historical", conversationSurface: surface,
+    fetch: async (_input, init) => {
+      sent = JSON.parse(String(init?.body));
+      return new Response('data: {"type":"RUN_STARTED","threadId":"assistant_historical","runId":"run-1"}\n\ndata: {"type":"RUN_FINISHED","threadId":"assistant_historical","runId":"run-1"}\n\n', {headers: {"Content-Type": "text/event-stream"}});
+    },
+  });
+  await agent.runAgent({runId: "run-1", forwardedProps: {existing: true}});
+  expect(sent.forwardedProps).toEqual({existing: true, conversationSurface: surface});
+});

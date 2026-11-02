@@ -2539,3 +2539,26 @@ async def test_planner_provider_failure_preserves_runtime_execution(tmp_path: Pa
         if e.type == "presentation.intent"
     )
     assert event.payload["status"] == "fallback"
+
+
+@pytest.mark.asyncio
+async def test_assistant_chat_owns_progress_without_a_serial_display_model(tmp_path: Path):
+    from unittest.mock import AsyncMock, Mock
+
+    planner = Mock()
+    planner.model = "test-display-model"
+    planner.plan = AsyncMock(side_effect=AssertionError("chat must not wait for UI classification"))
+    runtime = CapturingRuntime()
+    orchestrator, _, runs, _ = await arrange(
+        tmp_path, runtime_override=runtime, interaction_planner=planner,
+    )
+    run = await runs.get("tenant-a", "run-1")
+    chat = run.model_copy(update={"input": {**run.input, "conversation_surface": "assistant"}})
+    guidance = await orchestrator._interaction_guidance(chat)  # pyright: ignore[reportPrivateUsage]
+    assert "先向用户发送一句简短的公开回应" in guidance
+    assert "不暴露私有思考" in guidance
+    planner.plan.assert_not_awaited()
+    # The same historical thread, opened as a task, keeps the old planning path.
+    planner.plan = AsyncMock(return_value=None)
+    assert await orchestrator._interaction_guidance(run) == ""  # pyright: ignore[reportPrivateUsage]
+    planner.plan.assert_awaited_once()

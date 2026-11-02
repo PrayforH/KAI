@@ -77,3 +77,16 @@ it("replaces token fragments with a restored compact row instead of rendering pr
  expect(activityStore.getViewSnapshot()?.items[0].summary).toBe("工作区与 Node 均可用。继续构建。");
  source.complete();activityStore.clear();
 });
+
+it("flushes the first public token immediately and batches only subsequent tokens", () => {
+  vi.useFakeTimers(); const {source, events} = stream();
+  const text = (sequence: number, value: string) => ({...delta(sequence, value, "message.delta"),
+    patch: [{...delta(sequence, value, "message.delta").patch[0], value: {...delta(sequence, value, "message.delta").patch[0].value, metadata: {message_id: "m"}}}]});
+  source.next(text(1, "先"));
+  expect(events).toHaveLength(2);
+  expect((events.at(-1) as ActivitySnapshotEvent).content.items[0].summary).toBe("先");
+  source.next(text(2, "核对"));
+  expect(events).toHaveLength(2); vi.advanceTimersByTime(50);
+  expect((events.at(-1) as ActivitySnapshotEvent).content.items[0].summary).toBe("先核对");
+  source.complete();
+});

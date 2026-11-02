@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { RunActivity } from "../lib/activity-schema";
-import { modelWaitingSince, progressPhrase, shouldShowChatActivityRow } from "../lib/assistant-progress";
+import { hasPendingProgressAction, modelWaitingSince, progressPhrase, shouldShowChatActivityRow } from "../lib/assistant-progress";
 import { ChatActivitySteps, GrokActivityRow } from "./grok-activity";
 
 /** One projection for both pre-response and in-turn progress; no extra model calls. */
@@ -20,8 +20,11 @@ export function AssistantProgress({ activity, avatar, publicMessagesVisible = fa
   const elapsed = since ? Math.max(0, Math.floor((now - Date.parse(since)) / 1000)) : 0;
   const process = publicMessagesVisible ? { ...activity, items: activity.items.filter(item => item.event_type !== "message.delta") } : activity;
   const phrase = progressPhrase(process);
+  const textAt = activity.items.findLastIndex(item => item.event_type === "message.delta");
+  const processAt = activity.items.findLastIndex(item => /^(?:tool|runtime|context|approval|subagent|artifact)\./.test(item.event_type));
+  if (publicMessagesVisible && textAt > processAt && !hasPendingProgressAction(activity)) return null;
   return <>
-    <GrokActivityRow phrase={phrase} state="working" avatar={avatar} />
+    <GrokActivityRow phrase={phrase} state="working" />
     {!publicMessagesVisible && <ChatActivitySteps activity={activity} phrase={phrase} />}
     {since && elapsed >= 30 && <p className="chat-progress-wait" aria-live="off">
       模型尚未返回新的进展 · 已等待 {elapsed < 60 ? `${elapsed} 秒` : `${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒`}

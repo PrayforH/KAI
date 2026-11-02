@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { assistantRequest, type Specialist } from "../lib/assistant-client";
-import { BOT_COLORS, BOT_SHAPES } from "./create-bot-dialog";
+import { BOT_COLORS, BOT_SHAPES } from "../lib/bot-appearance";
+import { BotGlyph } from "./bot-glyph";
 import { DutyScheduleControl, type BotDuty } from "./duty-schedule-control";
 import { LocalToolPermissions } from "./local-tool-permissions";
 import { SpecialistCredentials } from "./specialist-credentials";
@@ -193,9 +194,7 @@ export function BotEditDialog({
                 className={styles.shapeButton}
                 onClick={() => setAvatar(item.id)}
               >
-                <svg viewBox="0 0 64 64" aria-hidden="true">
-                  <path d={item.path} fill={item.id === avatar ? color : "#5b5b5b"} />
-                </svg>
+                <BotGlyph shape={item.id} color={item.id === avatar ? color : "#5b5b5b"} />
               </button>
             ))}
           </div>

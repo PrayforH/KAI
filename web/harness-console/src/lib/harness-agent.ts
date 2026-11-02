@@ -24,6 +24,7 @@ export interface HarnessHttpAgentConfig extends HttpAgentConfig {
   cancelFetch?: typeof fetch;
   modelRouteOverride?: string | null;
   knowledgeReferences?: readonly string[];
+  conversationSurface?: "assistant" | "task";
   onRunSucceeded?: () => void;
 }
 
@@ -183,12 +184,14 @@ export class HarnessHttpAgent extends HttpAgent {
   private knowledgeReferences?: readonly string[];
   private replyOverride?: ReplyReference;
   private onRunSucceeded?: () => void;
+  private conversationSurface?: "assistant" | "task";
 
   constructor(config: HarnessHttpAgentConfig) {
     const {
       cancelFetch,
       modelRouteOverride,
       knowledgeReferences,
+      conversationSurface,
       onRunSucceeded,
       ...httpConfig
     } = config;
@@ -219,6 +222,7 @@ export class HarnessHttpAgent extends HttpAgent {
     this.modelRouteOverride = modelRouteOverride || undefined;
     this.knowledgeReferences = knowledgeReferences?.length ? knowledgeReferences : undefined;
     this.onRunSucceeded = onRunSucceeded;
+    this.conversationSurface = conversationSurface;
     const cancelTransport = cancelFetch ?? globalThis.fetch.bind(globalThis);
     this.cancelFetch = async (input, init) => {
       const response = await cancelTransport(input, init);
@@ -248,7 +252,7 @@ export class HarnessHttpAgent extends HttpAgent {
   }
 
   private withModelOverride<T extends object>(input: T): T {
-    if (!this.modelRouteOverride && !this.knowledgeReferences && !this.replyOverride) {
+    if (!this.conversationSurface && !this.modelRouteOverride && !this.knowledgeReferences && !this.replyOverride) {
       return input;
     }
     const current = input as T & { forwardedProps?: Record<string, unknown> };
@@ -256,6 +260,7 @@ export class HarnessHttpAgent extends HttpAgent {
       ...input,
       forwardedProps: {
         ...current.forwardedProps,
+        ...(this.conversationSurface ? { conversationSurface: this.conversationSurface } : {}),
         ...(this.modelRouteOverride ? { modelRoute: this.modelRouteOverride } : {}),
         ...(this.knowledgeReferences
           ? { knowledgeReferences: [...this.knowledgeReferences] }

@@ -6,6 +6,8 @@ import hashlib
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+from typing import cast as type_cast
+from urllib.parse import urlencode
 from uuid import uuid4
 
 from sqlalchemy import DateTime, Select, and_, cast, func, literal, or_, select
@@ -557,7 +559,7 @@ class PostgresAssistantRepository:
         """
         async with self._context(write=True) as session:
             row = await session.scalar(
-                select(SpecialistRow).where(
+                select(SpecialistRow).with_for_update().where(
                     SpecialistRow.tenant_id == tenant_id,
                     SpecialistRow.user_id == user_id,
                     SpecialistRow.specialist_id == specialist_id,
@@ -566,9 +568,16 @@ class PostgresAssistantRepository:
             if row is None:
                 return False
             current = Specialist.model_validate(row.payload)
-            updated = current.model_copy(
-                update={"last_viewed_at": now, "routine_paused_reason": None, "updated_at": now}
+            updates: dict[str, object] = {
+                "last_viewed_at": now, "routine_paused_reason": None, "updated_at": now
+            }
+            raw_sidebar = current.config.get("sidebar")
+            sidebar = (
+                type_cast(dict[str, object], raw_sidebar) if isinstance(raw_sidebar, dict) else {}
             )
+            if sidebar.get("unread") is True:
+                updates["config"] = {**current.config, "sidebar": {**sidebar, "unread": False}}
+            updated = current.model_copy(update=updates)
             row.payload = updated.model_dump(mode="json", by_alias=True)
             row.updated_at = now
         return True
@@ -1246,6 +1255,7 @@ class PostgresAssistantRepository:
                           "href": href, "timestamp": notice.created_at.isoformat()}
                 if bot:
                     source["botId"] = bot.specialist_id
+                    source["href"] = "/assistant?" + urlencode({"bot": bot.specialist_id})
                 appearance = bot.config.get("appearance") if bot else None
                 if isinstance(appearance, dict):
                     source.update({key: value for key, value in appearance.items()
@@ -1392,7 +1402,7 @@ class PostgresAssistantRepository:
                         changes[key] = profile[key]
                 presentation = {
                     key: profile[key]
-                    for key in ("title", "appearance")
+                    for key in ("title", "appearance", "sidebar")
                     if profile.get(key) is not None
                 }
                 if presentation:

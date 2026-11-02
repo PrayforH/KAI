@@ -238,6 +238,7 @@ def overlay(
     coordinator_thread: bool = True,
     emit: Any = None,
     emit_receipt: Any = None,
+    conversation_surface: str | None = None,
 ) -> Any:
     run = Run(
         run_id="run-1",
@@ -245,6 +246,7 @@ def overlay(
         tenant_id="t",
         status=RunStatus.RUNNING,
         idempotency_key="k",
+        input={"conversation_surface": conversation_surface} if conversation_surface else {},
         created_at=NOW,
         updated_at=NOW,
     )
@@ -852,3 +854,16 @@ async def test_notification_tool_rejects_ambiguous_mutations(fields):
     tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
     await tools["assistant_work_notifications"]({"objective_id": "o"} | fields)
     assert not gateway.notification_changes
+
+
+@pytest.mark.asyncio
+async def test_main_bot_chat_has_one_specialist_delegation_path_without_a_duplicate_task():
+    gateway = FakeGateway()
+    chat = overlay(gateway, conversation_surface="assistant")
+    tools = {tool.name: tool.handler for tool in chat.tools}
+    assert "assistant_create_task" not in tools
+    assert "assistant_specialist_status" in tools and "assistant_manage_work" in tools
+    await tools["assistant_delegate_to_specialist"]({"name": "编码协同", "task": "实现侧栏"})
+    assert len(gateway.delegate_calls) == 1
+    assert not gateway.created
+    assert "assistant_create_task" in {tool.name for tool in overlay(gateway).tools}

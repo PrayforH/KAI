@@ -97,3 +97,16 @@ it("reports real elapsed model waiting, then clears it on a new operation or com
   await act(async () => root.render(<AssistantProgress activity={{...toolActivity, status: "succeeded"}} />));
   expect(host.textContent).toBe("");
 });
+
+it("shows receipt and preparation from real lifecycle facts without waiting for model prose", async () => {
+  const activity = runActivitySchema.parse({run_id: "receipt", status: "running", started_at: "2026-11-02T00:00:00Z", metrics: {},
+    items: [{id: "e1", sequence: 1, event_type: "run.running", kind: "run", status: "running", title: "", timestamp: "2026-11-02T00:00:01Z", metadata: {}}]});
+  const host = document.createElement("div"), root = createRoot(host); document.body.append(host);
+  try {
+    await act(async () => root.render(<AssistantProgress activity={activity} />));
+    expect(host.querySelector('[aria-label="处理进展"]')?.textContent).toBe("已开始处理，正在准备回复。");
+    expect(host.querySelector(".grok-face")).toBeNull();
+    await act(async () => root.render(<AssistantProgress activity={{...activity, status: "failed"}} />));
+    expect(host.textContent).toBe("");
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});

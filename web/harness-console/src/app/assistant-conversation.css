@@ -258,7 +258,7 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
   border-radius: 22px 22px 0 0;
 }
 
-/* ── 活动行：脸 + 渐现短语（对齐客户端 GrokBotMark + activityPhraseDraw） ── */
+/* Assistant live status: text only, with a restrained light sweep. */
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .grok-activity-row {
   display: flex;
   align-items: flex-start;
@@ -672,7 +672,7 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .grok-
 }
 
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-progress-wait {
-  margin: 4px 0 8px 32px;
+  margin: 4px 0 8px;
   color: var(--codex-muted);
   font-size: 12px;
   line-height: 1.6;
@@ -703,4 +703,23 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .assis
 }
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .assistant-exchange-line .assistant-event-line {
   margin: 0;
+}
+
+/* Restrict motion to live Bot status text, never task/project output or saved messages. */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .grok-activity-row[data-state="working"] .grok-phrase {
+  color: var(--codex-muted);
+  background: linear-gradient(105deg, var(--codex-muted) 35%, var(--codex-ink) 49%, var(--codex-muted) 63%);
+  background-size: 240% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: assistant-status-sweep 2.4s linear infinite;
+}
+@keyframes assistant-status-sweep { from { background-position: 180% 0; } to { background-position: -80% 0; } }
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .grok-activity-row[data-state="working"] .grok-phrase {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+  }
 }
