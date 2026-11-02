@@ -23,6 +23,12 @@ class SteeringInbox:
         self.closed = False
 
     async def emit(self, event_type: str, payload: dict[str, object]) -> None:
+        current = await self.runs.get(self.run.tenant_id, self.run.run_id)
+        if (
+            current.fencing_token != self.run.fencing_token
+            or current.status is not RunStatus.RUNNING
+        ):
+            return
         await self.events.append(
             tenant_id=self.run.tenant_id,
             run_id=self.run.run_id,
@@ -32,6 +38,26 @@ class SteeringInbox:
         )
 
     async def open(self) -> None:
+        # A new runtime activation must not silently inherit a transport write
+        # whose consumer never acknowledged it. Keep the text; never resend it.
+        events = await self.events.list_after(self.run.tenant_id, self.run.run_id, 0)
+        latest: dict[str, str] = {}
+        texts: dict[str, str] = {}
+        for event in events:
+            if event.type.startswith("run.steer."):
+                key = str(event.payload.get("request_id", ""))
+                if event.type == "run.steer.requested":
+                    texts.setdefault(key, str(event.payload.get("text", "")))
+                    if key in latest:
+                        continue
+                latest[key] = event.type
+        for request_id, status in latest.items():
+            if request_id and status == "run.steer.sending":
+                await self.emit("run.steer.unknown", {
+                    "request_id": request_id,
+                    "text": texts.get(request_id, ""),
+                    "error": "运行已恢复，但未确认是否收到这条补充；请核对原任务后决定是否重发。",
+                })
         await self.emit("runtime.steering.ready", {})
 
     async def read(self) -> list[SteeringInput]:
@@ -46,7 +72,9 @@ class SteeringInbox:
         events = await self.events.list_after(self.run.tenant_id, self.run.run_id, self.cursor)
         # Never replay a transport write after a Worker crash: delivery can be uncertain.
         for event in events:
-            if event.type in {"run.steer.sending", "run.steer.accepted", "run.steer.failed"}:
+            if event.type in {
+                "run.steer.sending", "run.steer.accepted", "run.steer.failed", "run.steer.unknown"
+            }:
                 self.seen.add(str(event.payload.get("request_id", "")))
         inputs: list[SteeringInput] = []
         for event in events:

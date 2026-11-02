@@ -273,12 +273,22 @@ async def test_restarted_or_stale_worker_never_replays_uncertain_guidance():
     item = (await inbox.read())[0]
     await inbox.sending(item)
     restarted = SteeringInbox(run, runs, inbox.events)
+    await restarted.open()
     assert await restarted.read() == []
+    request = (await service.steering_state("t", "r"))["requests"][0]
+    assert request["status"] == "unknown"
+    assert request["text"] == "only once"
+    # Reopening again does not manufacture another receipt or replay the input.
+    await restarted.open()
+    events = await inbox.events.list_after("t", "r", 0)
+    assert len([e for e in events if e.type == "run.steer.unknown"]) == 1
     await service.steer("t", "r", "two", "new")
     assert await runs.compare_and_set(
         RunStatus.RUNNING, run.model_copy(update={"fencing_token": 1})
     )
     assert await inbox.read() == []
+    await inbox.acknowledge(item)
+    assert (await service.steering_state("t", "r"))["requests"][0]["status"] == "unknown"
 
 
 @pytest.mark.asyncio

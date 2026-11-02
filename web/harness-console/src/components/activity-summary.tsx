@@ -89,7 +89,7 @@ interface CommentaryNode {
   text: string;
   sequence: number;
   source: "progress" | "reasoning_summary" | "reasoning" | "guidance";
-  steeringStatus?: "pending" | "accepted";
+  steeringStatus?: "pending" | "accepted" | "unknown";
 }
 
 type ProcessCategory = "setup" | "model" | "result";
@@ -222,10 +222,10 @@ function commentaryNodes(view: RunViewModel, includePending: boolean): Commentar
     if (item.event_type.startsWith("run.steer.")) {
       const key = `guidance:${String(item.metadata.request_id ?? item.id)}`;
       if (item.event_type === "run.steer.failed") grouped.delete(key);
-      else if (item.summary && (item.event_type === "run.steer.accepted" ||
+      else if (item.summary && (item.event_type === "run.steer.unknown" || item.event_type === "run.steer.accepted" ||
         (item.event_type === "run.steer.requested" && ["queued", "running", "waiting_approval"].includes(view.phase)))) {
         grouped.set(key, { id: key, sequence: item.sequence, text: item.summary, source: "guidance",
-          steeringStatus: item.event_type === "run.steer.accepted" ? "accepted" : "pending" });
+          steeringStatus: item.event_type === "run.steer.unknown" ? "unknown" : item.event_type === "run.steer.accepted" ? "accepted" : "pending" });
       }
       continue;
     }

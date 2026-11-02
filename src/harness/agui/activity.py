@@ -355,13 +355,17 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
             ),
             metadata=_metadata(retention_seconds=retention_seconds),
         )
-    if event.type in {"run.steer.requested", "run.steer.failed"}:
+    if event.type in {"run.steer.requested", "run.steer.failed", "run.steer.unknown"}:
         failed = event.type == "run.steer.failed"
+        unknown = event.type == "run.steer.unknown"
         return _item(
             event,
             kind="analysis",
             status="failed" if failed else "waiting",
-            title="补充说明未送达" if failed else "等待接收补充说明",
+            title=(
+                "补充接收状态待核对" if unknown
+                else "补充说明未送达" if failed else "等待接收补充说明"
+            ),
             summary=str(payload.get("text", "")),
             metadata=_metadata(request_id=payload.get("request_id"), error=payload.get("error")),
         )
