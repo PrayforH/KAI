@@ -59,10 +59,10 @@
 | P13-b | 服务端随机持久外观：未用色/形优先 → 未用组合 → 低重复；创建后固化；幂等/并发/刷新稳定；不改已有或手选 | ✅ 实现 + 单测 + 实页（`p13-random-appearance.png`） |
 | P13-c | 白色外观中性灰底 + 深浅主题足够对比度；统一 appearance token，不各处硬编码 | ✅ 实现 + 单测（≥4.5:1）+ 实页（`p13c-white-appearance.png`） |
 | P14 | 输入 `@` 弹可访问助理 → 过滤 → 键盘选择 → 稳定 ID mention；只选中不提交；发送才发/派工；回执「已发送消息给」 | ✅ 实现 + 单测 + 实页（`p14-mention-receipt.png`） |
-| P15 | 设置内助理 Vault：全部/登录密钥/卡片/联系信息分类；搜索、新建、编辑、受控使用、明确删除确认；复用加密存储与 credential_ref | ✅ 实现 + 单测 + 实页（`p15-vault-item.png`） |
+| P15 | 设置内助理 Vault：全部/登录密钥/卡片/联系信息分类；搜索、新建、编辑、受控使用、明确删除确认；复用加密存储与 credential_ref | ✅ 实现 + 单测 + 实页（`p15-vault-item.png`）；**补齐**：凭据按授权在进程内解析（79 实测），撤销/删除即拒用，旧引用给出明确原因 |
 | ADD-1 | 状态行：助理图标 + 短真实阶段短语 + 扫光，无句末标点；不再只有「已开始处理，正在准备回复。」 | ✅ 实现 + 单测（实页未取到运行中状态行） |
-| ADD-2 | 助理默认跟随平台联网（复用 WebConfigurationService），新建默认继承 | ✅ 已实现（`assistant_scope` 运行时注入）+ 79 实测发现真缺口（子助理的已发布工具目录无联网工具）+ **79 实跑证明**：不带联网工具的助理实际调用了 WebSearch/WebFetch 并给出带来源的回答 |
-| P10 | 仅 79 渐进发布 + 真实网页验收 | ⚠️ **79 已发布**（四批；最终 api/worker `kai/superagent-api:20261103-24212a54`、web `kai/superagent-web:20261103-12a3d523`，schema 0065，三服务 healthy）；**79 真实接口验收通过**；**仅 79 实页验收未做**（自签证书 + `AUTH_COOKIE_SECURE=true`，需本人接管，见结果文档 8.9） |
+| ADD-2 | 助理默认跟随平台联网（复用 WebConfigurationService），新建默认继承 | ✅ 已实现（`assistant_scope` 运行时注入）+ 79 实测发现真缺口（子助理的已发布工具目录无联网工具）+ **79 实跑证明**：不带联网工具的助理实际调用了 WebSearch/WebFetch 并给出带来源的回答（运行 `run_620bba5b…`，succeeded） |
+| P10 | 仅 79 渐进发布 + 真实网页验收 | ⚠️ **79 已发布**（五批；最终 api/worker `kai/superagent-api:20261103-b68e88eb`、web `kai/superagent-web:20261103-b68e88eb`，schema 0065，三服务 healthy；第五批已合并旧首段任务 02:4x 的新提交后再发）；**79 真实接口验收通过**（含一次真实 WebSearch/WebFetch 运行）；**仅 79 实页验收未做**（自签证书 + `AUTH_COOKIE_SECURE=true`，需本人接管，见结果文档 8.9） |
 | P11 | 飞书同步 + `docs/results/2026-11-03-kai-bot-vault-79.md` | ✅ 结果文档与检查点齐备；飞书已同步 revision 83／84／85（逐次回读确认，未覆盖历史内容） |
 
 ## 3. 阶段记录（北京时间，时间取自 git 提交时间与 79 上的文件/构建时间戳）

@@ -168,7 +168,8 @@
 | ① `8546636d` | `kai/superagent-api:20261103-8546636d` | `kai/superagent-web:20261103-67ef9304` | 0064→0065 | healthy |
 | ② `0025afa8` | `kai/superagent-api:20261103-0025afa8` | 同上 | 0065 | healthy |
 | ③ `12a3d523` | `kai/superagent-api:20261103-12a3d523` | `kai/superagent-web:20261103-12a3d523` | 0065 | healthy |
-| ④ `24212a54` | `kai/superagent-api:20261103-24212a54` | 同上 | 0065 | healthy（收回授权时容忍并发编辑） |
+| ④ `24212a54` | `kai/superagent-api:20261103-24212a54` | 同上 | 0065 | healthy（收回授权时容忍并发编辑）；随后被旧首段任务的 02:4x 发布覆盖，见 8.9b |
+| ⑤ `b68e88eb` | `kai/superagent-api:20261103-b68e88eb` | `kai/superagent-web:20261103-b68e88eb` | 0065 | healthy（合并对方最新提交后重发；含凭据按授权解析与 @ 引用作废） |
 
 - 三批均在切换前核对 `active_runs=0`、`active_objectives=0` 与 schema；失败即按 `compose.private.before-kai-bot-20261103.json` 逐服务回滚。
 - 79 现网前端产物已确认含新代码（静态 chunk 中可检出「助理资料库」「外观由服务端随机分配」「已发送消息给」）。
@@ -187,6 +188,14 @@
 3. 输入 `@` 弹出可访问助理候选，回车选中后出现可删除的提及 chip；发送后出现居中「已发送消息给 · 头像 · 名称」。
 4. 设置 →「助理资料库」：四类分类、搜索、新建/编辑、删除需确认标题、按 Bot 授权；列表与页面均不含密钥明文。
 
+
+## 8.9a 凭据按授权解析（79 实测，进程内）
+
+- 新增 `AssistantService.resolve_specialist_credential(tenant, user, specialist, name)`：
+  只在**进程内**把值交给要用它的工具，不经任何 HTTP 接口、模型上下文、RunEvent 或日志。
+- 79 实测（容器内进程调用，未开任何接口）：合成账户的 Bot「ZCode验收Bot1103」持有授权资料
+  「ZCode验收站点」→ 解析成功（值长 20 字符，探针只记录长度不记录内容）✓。
+- 撤销后或资料被删后：引用被移除，解析立刻拒用并给出「请重新授权」（单测覆盖）。
 
 ## 8.9b 其他 Agent 在本轮期间的发布（已整合，未覆盖）
 
