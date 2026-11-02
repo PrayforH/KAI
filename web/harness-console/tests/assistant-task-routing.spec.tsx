@@ -2,7 +2,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { useAssistantSurface } from "../src/components/assistant-bot-context";
+import { useAssistantSurface, useAssistantBot } from "../src/components/assistant-bot-context";
 import Home from "../src/app/page";
 import { PersonalAssistantEntry, PERSONAL_ASSISTANT_THREAD } from "../src/components/personal-assistant-context";
 import { createUserScopedStorage, loadOrCreateThread, selectThread } from "../src/lib/thread-store";
@@ -28,7 +28,7 @@ vi.mock("../src/lib/assistant-client", () => ({ assistantRequest: async (path: s
     threadId: path.includes("bot-b") ? "bot-second" : "bot-original", primaryObjectiveId: null};
 } }));
 vi.mock("../src/components/task-sidebar", () => ({ TaskSidebar: ({ onSelect, onNewTask }: { onSelect: (task: unknown) => void; onNewTask: () => void }) => <nav><button onClick={() => onSelect(state.task)}>打开历史任务</button><button onClick={onNewTask}>新建任务</button></nav> }));
-vi.mock("../src/components/agent-thread", () => ({ AgentThread: ({ threadId }: { threadId: string }) => <p data-thread={threadId} data-assistant-surface={useAssistantSurface()}>{threadId}</p> }));
+vi.mock("../src/components/agent-thread", () => ({ AgentThread: ({ threadId }: { threadId: string }) => <p data-thread={threadId} data-assistant-surface={useAssistantSurface()} data-specialist={useAssistantBot()?.specialistId ?? ""}>{threadId}</p> }));
 vi.mock("../src/components/assistant-runtime-shell", () => ({ AssistantRuntimeShell: ({ children, agentName }: { children: ReactNode; agentName: string }) => <div data-runtime-agent={agentName}>{children}</div> }));
 vi.mock("../src/components/assistant-computer-pane", () => ({ AssistantComputerPane: ({ children }: { children: ReactNode }) => children }));
 vi.mock("../src/components/assistant-channel-status", () => ({ AssistantChannelStatus: () => null }));
@@ -158,4 +158,5 @@ it("editing main contact identity never replaces its actual task Agent binding",
   expect(host.textContent).toContain("自定义总管");
   expect(host.querySelector('[data-runtime-agent]')?.getAttribute("data-runtime-agent")).toBe("agent");
   expect(host.querySelector(`[data-thread="${PERSONAL_ASSISTANT_THREAD}"]`)).not.toBeNull();
+  expect(host.querySelector('[data-thread]')?.getAttribute('data-specialist')).toBe('');
 });

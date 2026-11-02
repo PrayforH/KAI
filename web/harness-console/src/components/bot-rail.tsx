@@ -110,7 +110,7 @@ export function AssistantHeaderAvatar({
 }
 
 /**
- * 左侧「机器人」区：主助理置顶，专职子助理按最近更新排序。
+ * 左侧「机器人」区：按本人置顶/分组与稳定创建顺序组织。
  * 点击进入该助理的会话或职责面板——对话优先，配置其次。
  */
 type BotRailProps = {
@@ -230,11 +230,13 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
   }
   return (
     <section className="bot-rail" aria-label="机器人">
-      <div className="bot-rail-head">
+      <div className="task-list-toolbar bot-rail-toolbar">
+        <div className="task-list-heading">
         <button type="button" className="task-section-toggle" aria-expanded={!collapsed} aria-controls={sectionId}
           aria-label={`${collapsed ? "展开" : "收起"}机器人分组`} onClick={() => setGroupsView(current => {
             const next = new Set(current); if (collapsed) next.delete("section:bots:collapsed"); else next.add("section:bots:collapsed"); return next;
           })}><span>机器人</span><SidebarIcon name="chevronDown" size={12} className="task-group-chevron" /></button>
+        </div>
         <button
           type="button"
           className="bot-rail-add"
@@ -298,12 +300,14 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
       {!collapsed && contactOrder.length > collapsedLimit && (
         <button
           type="button"
-          className="bot-rail-more"
+          className="task-list-item tasks-show-more"
+          aria-label={expanded ? "收起机器人" : "展开机器人"}
+          aria-expanded={expanded}
           onClick={() => setGroupsView(current => {
             const next = new Set(current); if (expanded) next.delete("bots:all"); else next.add("bots:all"); return next;
           })}
         >
-          {expanded ? "收起显示" : `展开全部（${contactOrder.length - collapsedLimit}）`}
+          <span className="task-list-title">{expanded ? "收起显示" : `展开显示（${contactOrder.length - collapsedLimit}）`}</span>
         </button>
       )}
     </section>

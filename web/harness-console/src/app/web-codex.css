@@ -3388,14 +3388,8 @@ body.codex-theme-v1:has(.console-shell) .bot-rail {
   padding: 2px 6px 6px;
 }
 
-body.codex-theme-v1:has(.console-shell) .bot-rail-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 6px 6px;
-  color: var(--codex-ink-soft, #b9b9b9);
-  font-size: 12px;
-  letter-spacing: 0.02em;
+body.codex-theme-v1:has(.console-shell) .bot-rail-toolbar {
+  margin: 0 -14px;
 }
 
 /* 沿用项目区「+」的图标尺寸与悬停行为 */

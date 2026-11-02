@@ -27,7 +27,10 @@ it("does not jump after polling changes read times, statuses or source response 
 it("collapses the whole directory and reveals all Bot groups on request", async () => {
   request.mockResolvedValue([bot(7), bot(1), bot(2), bot(3), bot(4), bot(5), bot(6)]); await mount();
   expect(names()).toHaveLength(6);
-  const more = [...host.querySelectorAll("button")].find(n => n.textContent?.startsWith("展开全部"))!;
+  const more = host.querySelector<HTMLButtonElement>('button[aria-label="展开机器人"]')!;
+  expect(more.className).toBe("task-list-item tasks-show-more");
+  expect(more.querySelector('.task-list-title')?.textContent).toBe('展开显示（2）');
+  expect(host.querySelector('.task-list-toolbar .task-list-heading .task-section-toggle')).not.toBeNull();
   await act(async () => more.click()); expect(names()).toHaveLength(8);
   const toggle = host.querySelector<HTMLButtonElement>('[aria-label="收起机器人分组"]')!;
   await act(async () => toggle.click());

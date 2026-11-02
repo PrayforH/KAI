@@ -398,29 +398,6 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
   color: #d98b8b;
 }
 
-/* 流式期 live 气泡：与正式回答气泡同款，逐字长出 */
-body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .live-streaming-bubble {
-  width: fit-content;
-  max-width: min(640px, 92%);
-  padding: 10px 14px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.08);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .live-streaming-bubble::after {
-  content: "";
-  display: inline-block;
-  width: 6px;
-  height: 14px;
-  margin-left: 3px;
-  border-radius: 2px;
-  background: var(--kai-bot-accent, #126fd4);
-  animation: kai-caret 0.9s ease-in-out infinite;
-  vertical-align: -2px;
-}
-
 /* ── 主对话流内的转交状态行：居中、细字、随消息滚动（非置顶条） ── */
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .handover-inline {
   display: grid;

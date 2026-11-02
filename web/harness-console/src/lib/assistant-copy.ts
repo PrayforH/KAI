@@ -24,7 +24,7 @@ export function assistantCopy(text: string): string {
     .replace(internalId(), "")
     .replace(/\b(?:assistant_resolve_target|assistant_manage_work|assistant_delegate_to_specialist|assistant_work_notifications|assistant_update_task|assistant_task_status|assistant_send_instruction|assistant_create_task)\b/g, "")
     .replace(/\bfollow_only\b/g, "只跟进").replace(/\bautonomous\b/g, "自动推进")
-    .replace(/\[needs_input\]|\bpending_input\b/g, "等你补充信息")
+    .replace(/`?\[?(?:needs_input|pending_input)\]?`?/g, "等你补充信息")
     .replace(/\[ready\]/g, "可接单")
     .replace(/\bsucceeded\b/g, "本次处理已结束")
     .replace(/\bqueued\b/g, "已排队").replace(/\brunning\b/g, "正在处理")

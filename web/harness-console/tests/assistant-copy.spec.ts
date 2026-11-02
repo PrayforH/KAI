@@ -18,6 +18,8 @@ describe("main assistant conversational copy", () => {
   it("translates actual settings and waiting states", () => {
     expect(assistantCopy("notify_on_progress=false；notification_error 为空。")).toContain("结果通知已关闭");
     expect(assistantCopy("[needs_input]，尚未启动。")).toBe("等你补充信息，尚未启动。");
+    expect(assistantCopy("仍是 `[needs_input]` 状态。")).toBe("仍是 等你补充信息 状态。");
+    expect(assistantCopy("仍是 `needs_input` 状态。")).toBe("仍是 等你补充信息 状态。");
   });
   it("compacts background narration while keeping a later blocking problem", () => {
     const copy=compactAssistantProgress("检查已结束。\n\n"+"一般运行细节。".repeat(90)+"\n\n下载失败，文件仍保留，需要重新下载。");

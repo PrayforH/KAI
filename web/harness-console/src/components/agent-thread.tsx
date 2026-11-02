@@ -1554,7 +1554,10 @@ export function HarnessAssistantMessage() {
   if (terminalActivity) capturedChatActivity.current = { messageId, activity: terminalActivity };
   const chatActivity = terminalActivity ?? capturedChatActivity.current?.activity;
   const chatReplies = assistantSurface && !hasVideoGeneration ? assistantChatReplies(chatActivity) : [];
-  const responseText = collapseRepeatedAssistantText(responseTextForDisplay(responseCandidate, terminalActivity));
+  // Bot text is already the public AG-UI channel. Show its owned live slot while
+  // the durable activity stream catches up; task prose keeps process gating.
+  const responseText = collapseRepeatedAssistantText(assistantSurface && directStream
+    ? publicChatText(responseCandidate) : responseTextForDisplay(responseCandidate, terminalActivity));
   const copyText = redact(responseText);
   const previousAssistantText = useAuiState((state) => {
     const messages = state.thread.messages;
@@ -1613,7 +1616,7 @@ export function HarnessAssistantMessage() {
     /^mcp__harness-builder__assistant_(?:resolve_target|manage_work|delegate_to_specialist|work_notifications|update_task|task_status|send_instruction|create_task)$/.test(String(item.metadata.name)));
   const displayedText = compactMain
     ? (isNotice ? compactAssistantProgress : coordinationOnly && !showingInputCard ? compactAssistantReceipt : assistantCopy)(stripHarnessUiFences(displayCandidate, publishedBlocks))
-    : displayCandidate;
+    : assistantSurface ? assistantCopy(displayCandidate) : displayCandidate;
   const chatBubbles = chatReplies.map(reply => ({ ...reply,
     text: assistantCopy(redact(publicChatText(stripHarnessUiFences(reply.text, publishedBlocks)))),
   })).filter(reply => reply.text.trim());
@@ -1770,35 +1773,24 @@ function TurnCompletion() {
 /**
  * 流式期 live 气泡：正式回答的消息元素挂载之前（上下文摘要/长前置阶段），
  * 由 live store（rAF 批量）直接把正文长在一个气泡里——聊天软件的流式观感；
- * 助手消息一旦出现（isLast 变成 assistant）就自动让位，避免双份。
+ * 只挂在当前最后一条用户消息之后；正式消息接管时由同一运行时状态同步卸载。
  */
-function LiveStreamingBubble() {
+export function LiveStreamingBubble() {
   const live = useLiveResponse();
   const activity = useRunActivity();
+  const view = useRunViewModel();
+  const redact = useConversationRedactor();
+  const currentPrompt = useAuiState(state => state.message.isLast && state.thread.isRunning);
   const publicMessagesVisible = activity?.run_id === live.runId && assistantChatReplies(activity).length > 0;
-  // 让位以 DOM 实况为准：页面上出现覆盖同等文本的正式气泡才算接管完成。
-  // state 里 in-flight 消息挂载早于正文渲染，按 state 判断会让正文出现真空帧。
-  const [handedOff, setHandedOff] = useState(false);
-  const runId = live.runId;
-  useEffect(() => {
-    setHandedOff(false);
-  }, [runId]);
-  useEffect(() => {
-    if (!live.visible || !live.text.trim()) return;
-    const timer = window.setInterval(() => {
-      const answers = document.querySelectorAll(".harness-assistant-message .assistant-answer");
-      const last = answers[answers.length - 1];
-      if (last && (last.textContent ?? "").length >= live.text.trim().length) {
-        setHandedOff(true);
-      }
-    }, 150);
-    return () => window.clearInterval(timer);
-  }, [live.visible, live.text]);
-  if (handedOff || publicMessagesVisible) return null;
-  if (!live.visible || live.status !== "streaming" || !live.text.trim()) return null;
+  if (!currentPrompt || publicMessagesVisible || view?.runId !== live.runId) return null;
+  if (!live.visible || live.status !== "streaming") return null;
+  const text = assistantCopy(redact(publicChatText(live.text)));
+  if (!text) return null;
   return (
-    <div className="assistant-answer live-streaming-bubble" data-streaming="true" aria-live="polite">
-      {live.text}
+    <div className="harness-assistant-message" data-live-preview="true" aria-live="polite">
+      <div className="assistant-answer-row">
+        <AssistantResponse text={text} streaming={!live.textComplete} />
+      </div>
     </div>
   );
 }

@@ -1036,7 +1036,7 @@ function AuthenticatedHome() {
             ) : (
             <div className="chat-surface">
               <ConversationSurfaceProvider surface={conversationSurface}>
-              <AssistantBotProvider bot={bot}>
+              <AssistantBotProvider bot={botParam ? bot : null}>
               {bot && botEditOpen && (
                 <BotEditDialog
                   specialistId={bot.specialistId}

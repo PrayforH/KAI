@@ -36,6 +36,7 @@ from harness.assistant.delegation import (
     objective_observer_session,
     observer_create_scope,
     session_specialist,
+    specialist_directory_instructions,
     specialist_instructions,
 )
 from harness.assistant.file_delivery import ChannelFiles
@@ -1664,6 +1665,13 @@ def build_production_container(
             await container.assistant.primary_profile(session.tenant_id, session.user_id)
             if container.assistant is not None and coordinator else None
         )
+        directory_overlay = PlatformToolOverlay()
+        if coordinator and container.assistant is not None:
+            directory_overlay = PlatformToolOverlay(instructions=specialist_directory_instructions(
+                await container.assistant.repository.list_specialists(
+                    session.tenant_id, session.user_id
+                ), session.tenant_id, session.user_id,
+            ))
         memory_overlay = PlatformToolOverlay()
         specialist = (
             await session_specialist(container.assistant, container.agui, session)
@@ -1694,6 +1702,7 @@ def build_production_container(
                 office_overlay,
                 delegation_overlay,
                 role_overlay,
+                directory_overlay,
                 memory_overlay,
             )
             if layer.instructions

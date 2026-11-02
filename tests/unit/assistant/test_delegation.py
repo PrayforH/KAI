@@ -8,6 +8,7 @@ import pytest
 from harness.assistant.delegation import (
     assistant_delegation_overlay,
     coordinator_session,
+    specialist_directory_instructions,
 )
 from harness.assistant.models import (
     Objective,
@@ -611,6 +612,41 @@ async def test_specialist_status_lists_instances_and_receipts():
     result = await tools["assistant_specialist_status"]({})
     body = text_of(result)
     assert "费用监控" in body and "pending_input" in body
+
+
+@pytest.mark.asyncio
+async def test_current_availability_is_not_overridden_by_a_historical_pending_receipt():
+    from types import SimpleNamespace
+
+    gateway = FakeGateway()
+    gateway.specialists = [SimpleNamespace(
+        specialist_id="specialist-coding", name="编码协同", revision=3,
+        status=SimpleNamespace(value="active"), config={},
+    )]
+    gateway.handovers = [SimpleNamespace(
+        specialist_id="specialist-coding", status=SimpleNamespace(value="pending_input"),
+    )]
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    text = text_of(await tools["assistant_specialist_status"]({}))
+    assert '"availability": "active"' in text
+    assert '"missing_local_permissions": []' in text
+    assert "不代表当前接单状态" in text
+    assert "pending_input" in text  # historical fact retained, not silently discarded
+
+
+def test_directory_keeps_real_permission_blocks_and_excludes_main_contact():
+    from types import SimpleNamespace
+
+    from harness.assistant.constants import primary_specialist_id
+
+    entries = [SimpleNamespace(
+        specialist_id="coding", name="编码协同", status=SimpleNamespace(value="needs_input"),
+        config={"required_local_tools": ["run_commands"], "local_tool_permissions": []},
+    ), SimpleNamespace(specialist_id=primary_specialist_id("t", "u"))]
+    snapshot = specialist_directory_instructions(entries, "t", "u")
+    assert '"availability": "needs_input"' in snapshot
+    assert '"missing_local_permissions": ["run_commands"]' in snapshot
+    assert primary_specialist_id("t", "u") not in snapshot
 
 
 @pytest.mark.asyncio
