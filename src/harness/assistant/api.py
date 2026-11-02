@@ -363,6 +363,42 @@ class SpecialistProfileRequest(StudioModel):
     expected_revision: int = Field(alias="expectedRevision", ge=1)
 
 
+class SpecialistMessageRequest(StudioModel):
+    """给某个 Bot 发一句话：只提交正文，目标与线程由服务端解析。"""
+
+    text: str = Field(min_length=1, max_length=20_000)
+
+
+@router.post("/specialists/{specialist_id}/messages", status_code=202)
+async def send_specialist_message(
+    specialist_id: str,
+    body: SpecialistMessageRequest,
+    identity: Writer,
+    assistant: Service,
+    idempotency_key: Annotated[str, Header(min_length=8, max_length=128)],
+) -> dict[str, object]:
+    """登记一次「已发送消息给 X」的回执。
+
+    投递本身走既有 AG-UI 通道（目标 Bot 的原会话），这里只落一条幂等的
+    Handover：重复提交同一把钥匙不会多出回执，也不会新建定时任务。
+    """
+    handover = await assistant.record_mention_handover(
+        identity.tenant_id,
+        identity.user_id,
+        specialist_id,
+        text=body.text,
+        idempotency_key=idempotency_key,
+    )
+    return {
+        "handoverId": handover.handover_id,
+        "specialistId": handover.specialist_id,
+        "messageId": handover.message_id,
+        "status": handover.status.value,
+        "summary": handover.summary,
+        "createdAt": handover.created_at.isoformat(),
+    }
+
+
 @router.post("/specialists/{specialist_id}/profile")
 async def update_specialist_profile(
     specialist_id: str, body: SpecialistProfileRequest, identity: Writer, assistant: Service

@@ -429,6 +429,40 @@ class AssistantService:
             now=datetime.now(UTC),
         )
 
+    async def record_mention_handover(
+        self, tenant_id: str, user_id: str, specialist_id: str, *,
+        text: str, idempotency_key: str,
+    ) -> SpecialistHandover:
+        """用户明确 @某个 Bot 时的持久回执。
+
+        只登记「发给了谁、原话是什么」，不新建职责、不建定时任务：
+        真正的投递走既有 AG-UI 通道（同任务/项目对话），
+        幂等键保证重复提交不会多出回执。
+        """
+        specialist = await self.repository.get_specialist(tenant_id, user_id, specialist_id)
+        if specialist.status is SpecialistStatus.ARCHIVED:
+            raise ConflictError("这个 Bot 已归档，收不到新消息")
+        message_id = f"mention-specialist:{idempotency_key}:{specialist_id}"
+        for item in await self.repository.handovers(
+            tenant_id, user_id, specialist_id=specialist_id
+        ):
+            if item.message_id == message_id:
+                return item
+        now = datetime.now(UTC)
+        return await self.repository.record_handover(
+            SpecialistHandover(
+                handoverId=f"handover_{uuid4().hex}",
+                tenantId=tenant_id,
+                userId=user_id,
+                specialistId=specialist.specialist_id,
+                messageId=message_id,
+                summary=text[:400],
+                status=HandoverStatus.SENT,
+                createdAt=now,
+                updatedAt=now,
+            )
+        )
+
     async def specialist_thread(
         self, tenant_id: str, user_id: str, specialist: Specialist,
         *, duties: list[Objective] | None = None,

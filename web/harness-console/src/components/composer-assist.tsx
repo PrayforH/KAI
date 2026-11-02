@@ -1,11 +1,12 @@
 "use client";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { COMPOSER_COMMANDS, composerTrigger } from "../lib/composer-interactions";
+import { MENTION_PREFIX, type MentionedAssistant } from "../lib/bot-mentions";
 import type { TaskAgent } from "../lib/task-agent-catalog";
 export function composerOptions(
   text: string,
   caret: number,
-  _agents: readonly TaskAgent[],
+  assistants: readonly MentionedAssistant[] = [],
   skills: NonNullable<TaskAgent["skills"]> = [],
   knowledgeBases: readonly { reference: string; displayName: string; kbType: string }[] = [],
   selectedKnowledge: readonly string[] = [],
@@ -13,10 +14,17 @@ export function composerOptions(
   const trigger = composerTrigger(text, caret);
   if (!trigger) return [];
   if (trigger.symbol === "/") return COMPOSER_COMMANDS.filter((item) => `${item.name} ${item.label}`.toLowerCase().includes(trigger.query)).map((item) => ({ id: item.name, label: item.name, description: `${item.label} · ${item.description}`, agent: undefined as TaskAgent | undefined }));
-  // `@` designates knowledge bases and supports multi-select; agents are
-  // switched from the composer's agent control.
-  if (trigger.symbol === "@")
-    return knowledgeBases
+  // `@` 先列可访问的助理（按稳定 ID 记住选择），再列知识库（可多选）。
+  if (trigger.symbol === "@") {
+    const botOptions = assistants
+      .filter((bot) => `${bot.name} ${bot.description ?? ""}`.toLowerCase().includes(trigger.query))
+      .map((bot) => ({
+        id: `${MENTION_PREFIX}${bot.specialistId}`,
+        label: `@${bot.name}`,
+        description: `${bot.description || "子助理"} · 回车提及`,
+        agent: undefined as TaskAgent | undefined,
+      }));
+    const knowledgeOptions = knowledgeBases
       .filter((base) =>
         `${base.reference} ${base.displayName}`.toLowerCase().includes(trigger.query),
       )
@@ -26,6 +34,8 @@ export function composerOptions(
         description: `${base.kbType} 知识库 · ${selectedKnowledge.includes(base.reference) ? "已选，回车取消" : "回车选择，可多选"}`,
         agent: undefined as TaskAgent | undefined,
       }));
+    return [...botOptions, ...knowledgeOptions];
+  }
   const available = new Map(skills.map((skill) => [skill.name, skill] as const));
   return [...available.values()]
     .filter((skill) => `${skill.name} ${skill.description}`.toLowerCase().includes(trigger.query))
