@@ -4048,131 +4048,18 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .h
   margin: 6px auto 2px;
 }
 
-/* 每个转交条目可以带一张内联补齐卡（pending_input）；行文字仍居中。 */
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-inline-item {
+body.codex-theme-v1:has(.console-shell) .handover-inline-item {
   width: 100%;
-  display: grid;
-  justify-items: center;
-  gap: 2px;
+  min-width: 0;
 }
-
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-permission-card {
-  width: min(640px, 92%);
-  margin: 6px auto 2px;
-  padding: 10px 12px;
-  border: 1px solid #3a3a3a;
-  border-radius: 14px;
-  background: #1b1b1b;
-  text-align: left;
-}
-
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-title {
-  margin: 0 0 6px;
-  color: #d2a83a;
-  font-size: 12px;
-}
-
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 4px;
-  color: #dcdcdc;
-  font-size: 13px;
-}
-
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-actions button {
-  padding: 7px 14px;
-  border: 1px solid #3a3a3a;
-  border-radius: 9px;
-  background: #242424;
-  color: #ededed;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-actions button[data-action="allow"] {
-  border-color: #4c8dff;
-  background: #1f4f95;
-}
-
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-local-tool-error {
-  margin: 6px 0 0;
-  color: #ff9a8a;
-  font-size: 12px;
-}
-
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-approval-card {
-  width: min(640px, 92%);
-  margin: 6px auto 2px;
-  padding: 10px 12px;
-  border: 1px solid #3a3a3a;
-  border-radius: 14px;
-  background: #1b1b1b;
-  text-align: left;
-}
-
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-approval-title {
-  margin: 0 0 6px;
-  color: #d2a83a;
-  font-size: 12px;
-}
-
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-ask-card {
-  width: min(640px, 92%);
-  margin: 6px auto 2px;
-  padding: 10px 12px;
-  border: 1px solid #333;
-  border-radius: 14px;
-  background: #1b1b1b;
-  text-align: left;
-}
-
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-ask-title {
-  margin: 0 0 6px;
-  color: #cfcfcf;
-  font-size: 12px;
-}
-
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-credential-card {
-  width: min(640px, 92%);
-  margin: 6px auto 2px;
-  padding: 12px 14px;
-  border: 1px solid #333;
-  border-radius: 14px;
-  background: #1b1b1b;
-}
-
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-inline-item .specialist-setup-card {
-  margin: 6px auto 2px;
-}
-
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-inline-line {
-  margin: 0;
-  font-size: 12px;
-  line-height: 20px;
-  color: #7d7d7d;
+body.codex-theme-v1:has(.console-shell) .handover-receipt-note {
+  margin: 2px 0 6px;
   text-align: center;
+  font-size: 12px;
+  color: var(--muted-ink);
 }
-
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-inline-line a {
-  color: #7d7d7d;
-  text-decoration: none;
-}
-
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-inline-line a:hover {
-  color: #b8b8b8;
-}
-
-body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] .handover-inline-target {
-  color: #a8a8a8;
+body.codex-theme-v1:has(.console-shell) .handover-receipt-note[role="alert"] {
+  color: #c97973;
 }
 
 /* 转交后缺配置的补齐卡：贴会话顶部、随内容滚动（非置顶条） */
@@ -4281,10 +4168,10 @@ body.codex-theme-v1:has(.console-shell) .chat-stage[data-surface="assistant"] :i
   background: transparent;
 }
 
-/* A source identity is a quiet conversation event, not an action card. */
-body.codex-theme-v1:has(.console-shell) .assistant-message-source {
+/* Incoming results and outgoing deliveries share one centered event line. */
+body.codex-theme-v1:has(.console-shell) .assistant-event-line {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   align-items: center;
   gap: 7px;
   margin: 8px 0 14px;
@@ -4292,7 +4179,7 @@ body.codex-theme-v1:has(.console-shell) .assistant-message-source {
   font-size: 13px;
   line-height: 1.5;
 }
-body.codex-theme-v1:has(.console-shell) .assistant-message-source a {
+body.codex-theme-v1:has(.console-shell) .assistant-event-line a {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -4300,16 +4187,16 @@ body.codex-theme-v1:has(.console-shell) .assistant-message-source a {
   text-decoration: none;
   min-width: 0;
 }
-body.codex-theme-v1:has(.console-shell) .assistant-message-source a:hover {
+body.codex-theme-v1:has(.console-shell) .assistant-event-line a:hover {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-body.codex-theme-v1:has(.console-shell) .assistant-message-source .bot-rail-avatar {
+body.codex-theme-v1:has(.console-shell) .assistant-event-line .bot-rail-avatar {
   width: 20px;
   height: 20px;
   flex: 0 0 20px;
 }
-body.codex-theme-v1:has(.console-shell) .assistant-message-source a:focus-visible {
+body.codex-theme-v1:has(.console-shell) .assistant-event-line a:focus-visible {
   outline: 2px solid var(--codex-accent, #9ec1ff);
   outline-offset: 4px;
   border-radius: 4px;

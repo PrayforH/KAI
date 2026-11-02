@@ -7,6 +7,7 @@ export type HandoverNotice = {
   sourceRunId: string | null;
   specialistId: string;
   specialistName: string;
+  appearance?: { color?: string; avatar?: string };
   objectiveId?: string | null;
   status: string;
   at: number;
@@ -14,13 +15,17 @@ export type HandoverNotice = {
 };
 
 const STATUS_TEXT: Record<string, string> = {
-  sent: "已发送给",
-  received: "已转交给",
-  applied: "已安排",
-  executing: "执行中 ·",
-  pending_input: "待补充 ·",
-  failed: "转交失败 ·",
+  sent: "已发送消息给",
+  received: "已发送消息给",
+  applied: "已发送消息给",
+  executing: "已发送消息给",
+  pending_input: "已发送消息给",
+  failed: "转交未完成 ·",
 };
+
+type IdentityListing = { specialistId: string; name: string; updatedAt?: string;
+  config?: Record<string, unknown> };
+const identities = new Map<string, {name: string; at: number; appearance: HandoverNotice["appearance"]}>();
 
 const listeners = new Set<() => void>();
 let entries: HandoverNotice[] = [];
@@ -43,6 +48,31 @@ function upsert(notice: HandoverNotice) {
 }
 
 export const handoverStore = {
+  /** Reuse the existing contact-list read; never fetch one profile per receipt. */
+  updateSpecialists(specialists: readonly IdentityListing[]) {
+    for (const item of specialists) {
+      const raw = item.config?.appearance;
+      const appearance = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+      identities.set(item.specialistId, {name: item.name,
+        at: receiptTime(item.updatedAt, 0), appearance: {
+          color: typeof appearance.color === "string" ? appearance.color : undefined,
+          avatar: typeof appearance.avatar === "string" ? appearance.avatar : undefined,
+        }});
+    }
+    let changed = false;
+    const updated = entries.map(notice => {
+      const identity = identities.get(notice.specialistId);
+      if (!identity) return notice;
+      // A delayed list without a newer identity timestamp cannot replace a
+      // live receipt's name. Identity updates never change delivery status/time.
+      const name = identity.at > notice.createdAt ? identity.name : notice.specialistName;
+      if (name === notice.specialistName && identity.appearance?.color === notice.appearance?.color &&
+          identity.appearance?.avatar === notice.appearance?.avatar) return notice;
+      changed = true;
+      return {...notice, specialistName: name, appearance: identity.appearance};
+    });
+    if (changed) { entries = updated; emitChange(); }
+  },
   /** 派活工具的 ui.handover 事件（即时，免轮询）。 */
   ingest(payload: unknown) {
     if (typeof payload !== "object" || payload === null) return;
@@ -58,6 +88,7 @@ export const handoverStore = {
       sourceRunId,
       specialistId,
       specialistName,
+      appearance: identities.get(specialistId)?.appearance,
       objectiveId: typeof raw.objective_id === "string" ? raw.objective_id : null,
       status: typeof raw.status === "string" ? raw.status : "sent",
       at: receiptTime(raw.updated_at, createdAt),
@@ -74,8 +105,9 @@ export const handoverStore = {
         Array<{ handoverId: string; messageId: string; specialistId: string; objectiveId?: string | null; status: string; createdAt: string; updatedAt?: string }>
       >("handovers");
       const specialists = await assistantRequest<
-        Array<{ specialistId: string; name: string }>
+        IdentityListing[]
       >("specialists");
+      handoverStore.updateSpecialists(specialists);
       const names = new Map(specialists.map((item) => [item.specialistId, item.name]));
       for (const handover of handovers) {
         upsert({
@@ -84,6 +116,7 @@ export const handoverStore = {
           specialistId: handover.specialistId,
           objectiveId: handover.objectiveId,
           specialistName: names.get(handover.specialistId) ?? "专职子助理",
+          appearance: identities.get(handover.specialistId)?.appearance,
           status: handover.status,
           at: receiptTime(handover.updatedAt, receiptTime(handover.createdAt, 0)),
           createdAt: receiptTime(handover.createdAt, 0),
@@ -93,7 +126,7 @@ export const handoverStore = {
       seeded = false;
     }
   },
-  /** 主会话内联补齐配置成功后：本地把该行从「待补充」改为「已安排」。 */
+  /** Confirm one specific handover locally; never settle its siblings. */
   markConfigured(handoverId: string) {
     const current = entries.find((item) => item.handoverId === handoverId);
     if (!current) return;
@@ -129,7 +162,7 @@ function receiptTime(value: unknown, fallback: number): number {
   return Number.isFinite(time) ? time : fallback;
 }
 
-/** Current requests own actionable prompts; historical receipts stay lightweight. */
+/** Only the latest request owns a pending-input hint. */
 export function isLatestHandover(notice: HandoverNotice, all: readonly HandoverNotice[]): boolean {
   return !all.some(other => other.specialistId === notice.specialistId &&
     (other.createdAt > notice.createdAt ||

@@ -5,7 +5,7 @@ import { emitHandover } from "./helpers/handover";
 import { handoverStore } from "../src/lib/handover-store";
 
 describe("quiet handover receipts", () => {
-  it("collapses settled receipts while keeping pending and failed actions open", () => {
+  it("shows delivery rows with a plain pending/failure note and no mirrored cards", () => {
     for (const status of ["applied", "pending_input", "failed"]) {
       emitHandover({ specialist_id: status, specialist_name: status, status });
     }
@@ -13,8 +13,11 @@ describe("quiet handover receipts", () => {
     expect(html).not.toContain("<details");
     expect(html).not.toContain("查看回执");
     expect(html).not.toContain("已登记转交");
-    expect(html).toContain("已安排");
-    expect(html).toContain("待补充");
+    expect(html).toContain("已发送消息给");
+    expect(html).toContain("等待补充信息");
+    expect(html).not.toContain("<form");
+    expect(html).not.toContain("specialist-setup-card");
+    expect(html).not.toContain("handover-approval-card");
     expect(html).toContain('role="alert"');
   });
 

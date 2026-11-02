@@ -1,7 +1,6 @@
 "use client";
 import { z } from "zod";
-import { BotRailAvatar, botAccent } from "./bot-rail";
-import { assistantCopy } from "../lib/assistant-copy";
+import { AssistantEventLine } from "./assistant-event-line";
 
 const sourceSchema = z.object({
   name: z.string().min(1).max(160),
@@ -18,11 +17,5 @@ export function noticeSource(parts: readonly {type: string; toolName?: string; a
 export function AssistantNoticeSource({parts}: {parts: Parameters<typeof noticeSource>[0]}) {
   const source = noticeSource(parts);
   if (!source) return null;
-  return <div className="assistant-message-source">
-    <span>消息来自</span>
-    <a href={source.href}>
-      <BotRailAvatar tone={source.color ?? (source.botId ? botAccent(source.botId) : "#658b7d")} shape={source.avatar} />
-      <span>{assistantCopy(source.name) || "后台助理"}</span>
-    </a>
-  </div>;
+  return <AssistantEventLine label="消息来自" {...source} />;
 }

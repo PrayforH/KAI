@@ -6,6 +6,7 @@ import { assistantRequest, type Specialist } from "../lib/assistant-client";
 import { BOT_SHAPES, CreateBotDialog } from "./create-bot-dialog";
 import { SidebarIcon } from "./sidebar-icon";
 import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
+import { handoverStore } from "../lib/handover-store";
 
 // 取自客户端调色板（sand-fill-*-bubble-user）：每个 bot 一个稳定强调色，
 // 头像、选中态与该 bot 会话里的用户气泡共用同一色。
@@ -131,6 +132,7 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
   const load = useCallback(async () => {
     try {
       const list = await assistantRequest<Specialist[]>("specialists");
+      handoverStore.updateSpecialists(list);
       setSpecialists(list.filter((item) => item.status !== "archived"));
     } catch {
       // 机器人列表是导航增强；读不到时保留主助理入口即可。
