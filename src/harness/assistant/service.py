@@ -444,6 +444,8 @@ class AssistantService:
         specialist = await self.repository.get_specialist(tenant_id, user_id, specialist_id)
         if specialist.status is SpecialistStatus.ARCHIVED:
             raise ConflictError("这个 Bot 已归档，收不到新消息")
+        if specialist.status is SpecialistStatus.PAUSED:
+            raise ConflictError("这个 Bot 已暂停接单，先恢复再发消息")
         message_id = f"mention-specialist:{idempotency_key}:{specialist_id}"
         for item in await self.repository.handovers(
             tenant_id, user_id, specialist_id=specialist_id
@@ -1185,12 +1187,33 @@ class AssistantService:
     async def delete_vault_item(
         self, tenant_id: str, user_id: str, item_id: str, *, confirm_title: str
     ) -> bool:
-        """删除条目：必须确认标题，密文一起删掉，不留孤儿。"""
+        """删除条目：必须确认标题，密文一起删掉，不留孤儿。
+
+        删除即失效：已经授权给某个 Bot 的引用也要收回，否则 Bot 手里还留着
+        一条指向已删资料的 credential_ref。
+        """
         row = await self.repository.get_vault_item(tenant_id, user_id, item_id)
         if confirm_title.strip() != row.title:
             raise ConflictError("确认标题与这条资料不一致，未删除")
         await self.repository.delete_credential_blob(tenant_id, user_id, row.reference)
-        return await self.repository.delete_vault_item(tenant_id, user_id, item_id)
+        deleted = await self.repository.delete_vault_item(tenant_id, user_id, item_id)
+        if deleted:
+            await self._revoke_vault_references(tenant_id, user_id, row.title)
+        return deleted
+
+    async def _revoke_vault_references(self, tenant_id: str, user_id: str, title: str) -> None:
+        """把引用了这条资料的 Bot 的 credential_ref 收回。"""
+        key = f"credential_ref:{title}"
+        for specialist in await self.repository.list_specialists(tenant_id, user_id):
+            if key not in specialist.config:
+                continue
+            await self.repository.update_specialist(
+                tenant_id, user_id, specialist.specialist_id,
+                expected_revision=specialist.revision,
+                config={key: ""},
+                config_remove=(key,),
+                now=datetime.now(UTC),
+            )
 
     async def grant_vault_item(
         self, tenant_id: str, user_id: str, specialist_id: str, *,

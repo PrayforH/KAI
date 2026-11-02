@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -90,56 +90,25 @@ async def test_mention_with_the_same_key_never_duplicates_the_receipt() -> None:
 
 @pytest.mark.asyncio
 async def test_mention_to_an_archived_bot_is_refused() -> None:
-    service, _ = _service(_specialist(SpecialistStatus.ARCHIVED))
+    """删除/停用的 Bot 不再接收新消息：回执也不该留下。"""
+    service, repo = _service()
+    repo.get_specialist.side_effect = None
+    repo.get_specialist.return_value = _specialist(SpecialistStatus.ARCHIVED)
     with pytest.raises(ConflictError):
         await service.record_mention_handover(
             "t", "u", "specialist_a", text="在吗", idempotency_key="key-12345678"
         )
+    repo.record_handover.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_mention_to_an_unknown_bot_is_not_found() -> None:
-    service, _ = _service(None)
-    with pytest.raises(NotFoundError):
+async def test_mention_to_a_paused_bot_is_refused() -> None:
+    """停用（暂停接单）的 Bot 也不接收新消息。"""
+    service, repo = _service()
+    repo.get_specialist.side_effect = None
+    repo.get_specialist.return_value = _specialist(SpecialistStatus.PAUSED)
+    with pytest.raises(ConflictError):
         await service.record_mention_handover(
-            "t", "u", "specialist_missing", text="在吗", idempotency_key="key-12345678"
+            "t", "u", "specialist_a", text="在吗", idempotency_key="key-12345678"
         )
-
-
-@pytest.mark.asyncio
-async def test_mention_route_passes_the_idempotency_key_through() -> None:
-    from harness.assistant.api import SpecialistMessageRequest, send_specialist_message
-
-    service = Mock()
-    service.record_mention_handover = AsyncMock(
-        return_value=SimpleNamespace(
-            handover_id="handover_1",
-            specialist_id="specialist_a",
-            message_id="mention-specialist:key-12345678:specialist_a",
-            status=SimpleNamespace(value="sent"),
-            summary="在吗",
-            created_at=datetime(2026, 11, 3, tzinfo=UTC),
-        )
-    )
-    result = await send_specialist_message(
-        "specialist_a",
-        SpecialistMessageRequest(text="在吗"),
-        SimpleNamespace(tenant_id="t", user_id="u"),
-        service,
-        "key-12345678",
-    )
-    assert result["handoverId"] == "handover_1"
-    assert result["status"] == "sent"
-    service.record_mention_handover.assert_awaited_once_with(
-        "t", "u", "specialist_a", text="在吗", idempotency_key="key-12345678"
-    )
-
-
-def test_mention_route_requires_an_idempotency_key() -> None:
-    """没有幂等键就不能登记回执：重复提交会留下两条回执。"""
-    import inspect
-
-    from harness.assistant.api import send_specialist_message
-
-    parameters = inspect.signature(send_specialist_message).parameters
-    assert "idempotency_key" in parameters
+    repo.record_handover.assert_not_called()

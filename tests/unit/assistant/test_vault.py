@@ -183,3 +183,18 @@ def test_delete_request_requires_a_confirmation_title() -> None:
     assert body.confirm_title == "行情网站"
     with pytest.raises(ValidationError):
         VaultDeleteRequest.model_validate({})
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_vault_item_revokes_the_bot_grants() -> None:
+    """删除即失效：已经授权给 Bot 的 credential_ref 也要收回。"""
+    granted = _specialist({"credential_ref:行情网站": "vault_abc"})
+    service, repo = _service(rows=[_vault_row()], specialist=granted)
+    repo.list_specialists.return_value = [granted]
+    deleted = await service.delete_vault_item(
+        "t", "u", "vault_item_1", confirm_title="行情网站"
+    )
+    assert deleted is True
+    repo.delete_credential_blob.assert_awaited_once_with("t", "u", "vault_abc")
+    # 引用被显式移除：Bot 手里不再留着指向已删资料的引用。
+    assert repo.update_specialist.await_args.kwargs["config_remove"] == ("credential_ref:行情网站",)

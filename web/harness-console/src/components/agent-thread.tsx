@@ -691,8 +691,10 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     const key = mentionKeyRef.current ?? mentionIdempotencyKey();
     mentionKeyRef.current = key;
     const text = composerText.trim();
-    try {
-      for (const bot of mentions) {
+    const delivered: string[] = [];
+    const failed: Array<{ id: string; reason: string }> = [];
+    for (const bot of mentions) {
+      try {
         const detail = await assistantRequest<{
           specialist: { name: string };
           threadId: string | null;
@@ -717,14 +719,31 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
           specialistId: bot.specialistId,
           specialistName: detail.specialist.name || bot.name,
         });
+        delivered.push(bot.specialistId);
+      } catch (error) {
+        // 多目标时一个失败不阻断其余：已送达的照常发回执，失败的留在提及里可重试。
+        failed.push({
+          id: bot.specialistId,
+          reason: error instanceof Error ? error.message : "发送失败",
+        });
       }
+    }
+    if (failed.length) {
+      setMentions((current) => current.filter((item) => failed.some((entry) => entry.id === item.specialistId)));
+      setInputError(
+        failed.map((entry) => `${entry.reason}`).join("\n") +
+        (delivered.length ? `\n已送达 ${delivered.length} 个助理。` : ""),
+      );
+    }
+    if (!failed.length) {
       mentionKeyRef.current = null;
       setMentions([]);
       aui.composer().setText("");
       onSubmitted?.();
-    } catch (error) {
-      setInputError(error instanceof Error ? error.message : "发送失败，请重试。");
-    } finally { composerSendLock.current = false; }
+    } else if (delivered.length) {
+      aui.composer().setText("");
+    }
+    composerSendLock.current = false;
   }
 
   async function submitComposer(alternate = false) {
