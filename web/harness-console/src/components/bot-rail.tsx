@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { assistantRequest, type Specialist } from "../lib/assistant-client";
 import { CreateBotDialog } from "./create-bot-dialog";
 import { BOT_SHAPES } from "../lib/bot-appearance";
@@ -11,6 +12,8 @@ import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
 import { BotRailMenu } from "./bot-rail-menu";
 import { BotEditDialog } from "./bot-edit-dialog";
 import { botSidebar, type BotSidebar } from "../lib/bot-sidebar";
+import { stableBotOrder, isPrimaryBot, botConversationHref } from "../lib/bot-sidebar";
+import { peekClientRead, rememberClientRead } from "../lib/client-read-cache";
 import { handoverStore } from "../lib/handover-store";
 
 // 取自客户端调色板（sand-fill-*-bubble-user）：每个 bot 一个稳定强调色，
@@ -110,41 +113,59 @@ export function AssistantHeaderAvatar({
  * 左侧「机器人」区：主助理置顶，专职子助理按最近更新排序。
  * 点击进入该助理的会话或职责面板——对话优先，配置其次。
  */
-export function BotRail({ currentThreadId }: { currentThreadId: string }) {
-  // 当前选中的机器人来自地址（?bot=），线程 id 不能用来判断。
-  const [activeBot, setActiveBot] = useState<string | null>(null);
-  useEffect(() => {
-    const read = () => setActiveBot(new URLSearchParams(window.location.search).get("bot"));
-    read();
-    window.addEventListener("popstate", read);
-    return () => window.removeEventListener("popstate", read);
-  }, []);
-  const [specialists, setSpecialists] = useState<Specialist[]>([]);
-  const [expanded, setExpanded] = useState(false);
+type BotRailProps = {
+  currentThreadId: string; activeBotId?: string | null; userId?: string; tenantId?: string;
+  groupsState?: readonly [ReadonlySet<string>, (change: (current: ReadonlySet<string>) => ReadonlySet<string>) => void];
+};
+export function BotRail(props: BotRailProps) {
+  return <BotDirectory key={`${props.tenantId ?? ""}:${props.userId ?? ""}`} {...props} />;
+}
+function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, groupsState}: BotRailProps) {
+  const mounted = useRef(true);
+  const requestVersion = useRef(0);
+  useEffect(() => { mounted.current = true; return () => {mounted.current = false;}; }, []);
+  const router = useRouter();
+  const activeBot = activeBotId;
+  const cacheKey = userId ? `bot-directory:${tenantId ?? ""}:${userId}` : null;
+  const [specialists, setSpecialists] = useState<Specialist[]>(() => cacheKey ? peekClientRead<Specialist[]>(cacheKey) ?? [] : []);
+  const [localGroups, setLocalGroups] = useState<ReadonlySet<string>>(new Set());
+  const [groupsView, setGroupsView] = groupsState ?? [localGroups, setLocalGroups];
+  const collapsed = groupsView.has("section:bots:collapsed");
+  const sectionId = useId();
+  const expanded = groupsView.has("bots:all");
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [railError, setRailError] = useState("");
 
-  function openBot(event: React.MouseEvent, specialistId: string | null) {
-    // 同一路由只改查询参数时页面不会重挂载，旧线程会盖住新 bot：
-    // 直接整页导航，和从地址栏打开走同一条路径。
-    event.preventDefault();
-    window.location.assign(
-      specialistId ? `/assistant?bot=${encodeURIComponent(specialistId)}` : "/assistant",
-    );
-  }
-
   const load = useCallback(async () => {
+    const version = ++requestVersion.current;
+    let initialized = false;
     try {
-      const list = await assistantRequest<Specialist[]>("specialists");
+      let list = await assistantRequest<Specialist[]>("specialists");
+      if (!mounted.current || version !== requestVersion.current) return;
+      if (userId && !list.some(isPrimaryBot)) {
+        try {
+          const primary = await assistantRequest<Specialist>("primary", "POST");
+          if (!mounted.current || version !== requestVersion.current) return;
+          if (primary?.specialistId && isPrimaryBot(primary)) {
+            list = [...list, primary];
+            rememberClientRead(`primary-bot:${tenantId ?? ""}:${userId}`, primary);
+            initialized = true;
+          }
+        } catch { /* Existing main conversation remains available during setup failure. */ }
+      }
+      if (!mounted.current || version !== requestVersion.current) return;
       handoverStore.updateSpecialists(list);
-      setSpecialists(list);
+      const ordered = stableBotOrder(list);
+      setSpecialists(ordered);
+      if (cacheKey) rememberClientRead(cacheKey, ordered);
+      if (initialized) window.dispatchEvent(new CustomEvent("kai:specialists-changed"));
     } catch {
       // 机器人列表是导航增强；读不到时保留主助理入口即可。
     }
-  }, []);
+  }, [cacheKey, userId, tenantId]);
 
   useEffect(() => {
     void load();
@@ -175,26 +196,30 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
     await assistantRequest(`specialists/${encodeURIComponent(item.specialistId)}/status`, "POST", {status, expectedRevision: latest.specialist.revision});
     await load(); window.dispatchEvent(new CustomEvent("kai:specialists-changed"));
   }
-  const available = specialists.filter(item => item.status !== "archived" && !botSidebar(item).hidden);
+  const ordered = stableBotOrder(specialists);
+  const primary = ordered.find(isPrimaryBot);
+  const available = ordered.filter(item => item.status !== "archived" && !botSidebar(item).hidden);
   const pinned = available.filter(item => botSidebar(item).pinned);
   const unpinned = available.filter(item => !botSidebar(item).pinned);
   const groups = [...new Set(specialists.map(item => botSidebar(item).group).filter(Boolean))];
   const grouped = groups.map(name => ({name, items: unpinned.filter(item => botSidebar(item).group === name)})).filter(group => group.items.length);
   // Availability and organization are orthogonal; pinning never enables a Bot.
   const ungrouped = unpinned.filter(item => !botSidebar(item).group);
-  const active = ungrouped.filter((item) => ["active", "ready"].includes(item.status));
-  const pending = ungrouped.filter((item) => !["active", "ready"].includes(item.status));
+  const contacts = ungrouped;
   const hidden = specialists.filter(item => item.status !== "archived" && botSidebar(item).hidden);
   const archived = specialists.filter(item => item.status === "archived");
-  const collapsedLimit = 3;
-  const visiblePending = expanded ? pending : pending.slice(0, collapsedLimit);
+  const collapsedLimit = 5;
+  const contactOrder = [...pinned, ...grouped.flatMap(group => group.items), ...contacts];
+  const visible = new Set((expanded ? contactOrder : contactOrder.slice(0, collapsedLimit)).map(item => item.specialistId));
+  const shown = (item: Specialist) => visible.has(item.specialistId);
+  const visibleContacts = contacts.filter(shown);
   const isAssistant = !activeBot && currentThreadId === PERSONAL_ASSISTANT_THREAD;
   function row(item: Specialist) {
     return <li key={item.specialistId} className="bot-rail-row">
-      <Link className="bot-rail-item" data-active={activeBot === item.specialistId ? "true" : undefined}
+      <Link className="bot-rail-item" data-active={(isPrimaryBot(item) ? !activeBot && currentThreadId === PERSONAL_ASSISTANT_THREAD : activeBot === item.specialistId) ? "true" : undefined}
         data-paused={isUnviewedPaused(item) ? "true" : undefined} data-unread={botSidebar(item).unread ? "true" : undefined}
         title={isUnviewedPaused(item) ? "已暂停 · 无人查看" : undefined}
-        href={`/assistant?bot=${encodeURIComponent(item.specialistId)}`} onClick={event => void openBot(event, item.specialistId)}>
+        href={botConversationHref(item)} scroll={false}>
         <BotRailAvatar tone={specialistAppearance(item).color} shape={specialistAppearance(item).avatar} />
         <span className="bot-rail-label"><strong>{item.name}</strong></span>
         {botSidebar(item).unread && <span className="bot-rail-unread" aria-label="未读" />}
@@ -206,7 +231,10 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
   return (
     <section className="bot-rail" aria-label="机器人">
       <div className="bot-rail-head">
-        <span>机器人</span>
+        <button type="button" className="task-section-toggle" aria-expanded={!collapsed} aria-controls={sectionId}
+          aria-label={`${collapsed ? "展开" : "收起"}机器人分组`} onClick={() => setGroupsView(current => {
+            const next = new Set(current); if (collapsed) next.delete("section:bots:collapsed"); else next.add("section:bots:collapsed"); return next;
+          })}><span>机器人</span><SidebarIcon name="chevronDown" size={12} className="task-group-chevron" /></button>
         <button
           type="button"
           className="bot-rail-add"
@@ -217,29 +245,28 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
           <SidebarIcon name="plus" />
         </button>
       </div>
+      <div id={sectionId} hidden={collapsed}>
       <ul className="bot-rail-list">
-        <li>
+        {!primary && <li>
           <Link
             className="bot-rail-item"
             data-active={isAssistant ? "true" : undefined}
             href="/assistant"
-            onClick={(event) => openBot(event, null)}
+            scroll={false}
           >
             <BotRailAvatar letter="K" tone={BOT_ACCENTS[0]!} />
             <span className="bot-rail-label">
               <strong>主助理</strong>
             </span>
           </Link>
-        </li>
+        </li>}
         {pinned.length > 0 && <li className="bot-rail-group">已置顶</li>}
-        {pinned.map(row)}
-        {grouped.map(group => <li key={group.name} className="bot-rail-section">
-          <div className="bot-rail-group">{group.name}</div><ul className="bot-rail-list">{group.items.map(row)}</ul>
+        {pinned.filter(shown).map(row)}
+        {grouped.filter(group => group.items.some(shown)).map(group => <li key={group.name} className="bot-rail-section">
+          <div className="bot-rail-group">{group.name}</div><ul className="bot-rail-list">{group.items.filter(shown).map(row)}</ul>
         </li>)}
-        {active.length > 0 && <li className="bot-rail-group">可接单</li>}
-        {active.map(row)}
-        {pending.length > 0 && <li className="bot-rail-group">{active.length ? "需要关注" : "专职子助理"}</li>}
-        {visiblePending.map(row)}
+        {contacts.length > 0 && (pinned.length > 0 || grouped.length > 0) && <li className="bot-rail-group">未分组</li>}
+        {visibleContacts.map(row)}
       </ul>
       {railError && <p role="alert">{railError}</p>}
       {editing && <BotEditDialog specialistId={editing} onClose={() => setEditing(null)} onSaved={() => {
@@ -257,21 +284,26 @@ export function BotRail({ currentThreadId }: { currentThreadId: string }) {
           <span>{item.name}</span><button type="button" onClick={() => void changeArchive(item, "paused").catch(error => setRailError(String(error.message)))}>恢复显示，保持暂停</button>
         </li>)}</ul>}
       </>}
+      </div>
       {creating && (
         <CreateBotDialog
           onClose={() => setCreating(false)}
           onCreated={(specialistId) => {
-            window.location.assign(`/assistant?bot=${encodeURIComponent(specialistId)}`);
+            setCreating(false);
+            window.dispatchEvent(new CustomEvent("kai:specialists-changed"));
+            router.push(`/assistant?bot=${encodeURIComponent(specialistId)}`, {scroll: false});
           }}
         />
       )}
-      {pending.length > collapsedLimit && (
+      {!collapsed && contactOrder.length > collapsedLimit && (
         <button
           type="button"
           className="bot-rail-more"
-          onClick={() => setExpanded((value) => !value)}
+          onClick={() => setGroupsView(current => {
+            const next = new Set(current); if (expanded) next.delete("bots:all"); else next.add("bots:all"); return next;
+          })}
         >
-          {expanded ? "收起" : "展开"}
+          {expanded ? "收起显示" : `展开全部（${contactOrder.length - collapsedLimit}）`}
         </button>
       )}
     </section>

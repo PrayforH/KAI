@@ -8,6 +8,7 @@ const assistantRequest = vi.fn();
 vi.mock("../src/lib/assistant-client", () => ({
   assistantRequest: (...args: unknown[]) => assistantRequest(...args),
 }));
+vi.mock("next/navigation", () => ({useRouter: () => ({push: vi.fn()})}));
 vi.mock("next/link", () => ({
   default: ({ children, ...props }: { children?: unknown }) => <a {...props}>{children as never}</a>,
 }));

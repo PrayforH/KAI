@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { BotRailAvatar, botAccent } from "./bot-rail";
 import { assistantCopy } from "../lib/assistant-copy";
 
@@ -10,9 +11,9 @@ export function AssistantEventLine({label, name, href, botId, color, avatar, att
   const tone = color && /^#[0-9a-f]{6}$/i.test(color) ? color : botId ? botAccent(botId) : "#658b7d";
   return <div className="assistant-event-line" role={attention ? "alert" : undefined}>
     <span>{label}</span>
-    <a href={href}>
+    <Link href={href} scroll={false}>
       <BotRailAvatar tone={tone} shape={avatar} />
       <span>{assistantCopy(name) || "子助理"}</span>
-    </a>
+    </Link>
   </div>;
 }

@@ -223,6 +223,16 @@ async def read_notice(
     )
 
 
+@router.get("/primary")
+async def primary_profile(identity: Reader, assistant: Service) -> Specialist | None:
+    return await assistant.primary_profile(identity.tenant_id, identity.user_id)
+
+
+@router.post("/primary")
+async def initialize_primary_profile(identity: Writer, assistant: Service) -> Specialist | None:
+    return await assistant.primary_profile(identity.tenant_id, identity.user_id, initialize=True)
+
+
 @router.get("/specialists")
 async def list_specialists(identity: Reader, assistant: Service) -> list[Specialist]:
     return await assistant.repository.list_specialists(identity.tenant_id, identity.user_id)

@@ -183,7 +183,7 @@ it("collapses project and task sections independently and persists them across r
   const button = (label: string) => container.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!;
   try {
     await act(async () => render());
-    expect([...container.querySelectorAll(".task-section-toggle")].map((item) => item.textContent)).toEqual(["项目", "任务"]);
+    expect([...container.querySelectorAll(".task-section-toggle")].map((item) => item.textContent)).toEqual(["机器人", "项目", "任务"]);
     expect(container.querySelectorAll(".task-list-row")).toHaveLength(6);
     await act(async () => button("展开任务").click());
     expect(container.querySelectorAll(".task-list-row")).toHaveLength(8);

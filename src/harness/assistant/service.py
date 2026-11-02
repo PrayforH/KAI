@@ -19,6 +19,7 @@ from harness.agui.response import final_response_text
 from harness.agui.service import AguiRunService
 from harness.application.agents import AgentService
 from harness.application.runs import RunService
+from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD, primary_specialist_id
 from harness.assistant.lifecycle import next_check
 from harness.assistant.models import (
     AssistantInboxItem,
@@ -427,6 +428,8 @@ class AssistantService:
         *, duties: list[Objective] | None = None,
     ) -> str:
         """One read-only conversation address for navigation and target resolution."""
+        if specialist.specialist_id == primary_specialist_id(tenant_id, user_id):
+            return PERSONAL_ASSISTANT_THREAD
         thread = f"assistant_{specialist.specialist_id}"
         if specialist.config.get("conversation_thread_id") == thread:
             return thread
@@ -949,6 +952,38 @@ class AssistantService:
         except NotFoundError:
             return False
         return True
+
+    async def primary_profile(
+        self, tenant_id: str, user_id: str, *, initialize: bool = False
+    ) -> Specialist | None:
+        """Store the main contact in the existing Bot profile store, without a new Run.
+
+        Its fixed conversation, coordination authority and memory remain unchanged.
+        Only an explicit initialization command creates the presentation record.
+        """
+        specialist_id = primary_specialist_id(tenant_id, user_id)
+        try:
+            return await self.repository.get_specialist(tenant_id, user_id, specialist_id)
+        except NotFoundError:
+            if not initialize:
+                return None
+        try:
+            binding = await self._agui.get_binding(
+                tenant_id=tenant_id, user_id=user_id, thread_id=PERSONAL_ASSISTANT_THREAD
+            )
+            agent_name, agent_version = binding.agent_name, binding.agent_version
+        except NotFoundError:
+            agent_name, agent_version = await self._default_agent(tenant_id, user_id)
+        now = datetime.now(UTC)
+        return await self.repository.create_specialist(Specialist(
+            specialistId=specialist_id, tenantId=tenant_id, userId=user_id,
+            slug="primary-assistant-profile", name="主助理", description="",
+            agentName=agent_name, agentVersion=agent_version, status=SpecialistStatus.READY,
+            config={"conversation_thread_id": PERSONAL_ASSISTANT_THREAD,
+                    "appearance": {"color": "#126fd4", "avatar": "blob"},
+                    "sidebar": {"pinned": True}},
+            createdAt=now, updatedAt=now,
+        ))
 
     async def create_specialist(
         self,

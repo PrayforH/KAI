@@ -2,6 +2,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
+import { ConversationSurfaceProvider } from "../src/components/assistant-bot-context";
 import { AssistantResults } from "../src/components/assistant-results";
 import { ActivitySummary } from "../src/components/activity-summary";
 import { runActivitySchema } from "../src/lib/activity-schema";
@@ -29,7 +30,7 @@ it("shows one owned file with working preview and download; survives history rem
 
 it("keeps assistant process collapsed while allowing explicit inspection", () => {
   const activity = runActivitySchema.parse({ run_id: "compact-results-test", status: "running", started_at: "2026-10-29T00:00:00Z", items: [{ id: "one", kind: "tool", event_type: "tool.request", timestamp: "2026-10-29T00:00:00Z", sequence: 1, title: "读取内部文件", status: "running", metadata: { name: "Read", arguments: { file_path: "internal.txt" } } }] });
-  act(() => root.render(<PersonalAssistantEntry><ActivitySummary activity={activity} /></PersonalAssistantEntry>));
+  act(() => root.render(<PersonalAssistantEntry><ConversationSurfaceProvider surface="assistant"><ActivitySummary activity={activity} /></ConversationSurfaceProvider></PersonalAssistantEntry>));
   expect(host.querySelector("section")?.getAttribute("data-open")).toBe("false");
   act(() => (host.querySelector("button.execution-disclosure") as HTMLButtonElement).click());
   expect(host.querySelector("section")?.getAttribute("data-open")).toBe("true");

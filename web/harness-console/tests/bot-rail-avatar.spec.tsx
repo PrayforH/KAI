@@ -8,6 +8,7 @@ const assistantRequest = vi.fn();
 vi.mock("../src/lib/assistant-client", () => ({
   assistantRequest: (...args: unknown[]) => assistantRequest(...args),
 }));
+vi.mock("next/navigation", () => ({useRouter: () => ({push: vi.fn()})}));
 vi.mock("next/link", () => ({
   default: ({ children, ...props }: { children?: unknown }) => <a {...props}>{children as never}</a>,
 }));
@@ -104,18 +105,18 @@ describe("BotRail uses the shape avatars for every bot group", () => {
     await render(<BotRail currentThreadId="assistant" />);
 
     const avatars = [...host.querySelectorAll('[data-avatar="shape"]')];
-    expect(avatars.map((node) => node.getAttribute("data-shape"))).toEqual(["star", "drop"]);
+    expect(avatars.map((node) => node.getAttribute("data-shape"))).toEqual(["drop", "star"]);
     expect(avatars.map((node) => node.textContent)).toEqual(["", ""]);
-    expect(avatars[0]?.querySelector("path")?.getAttribute("d")).toBe(shapePath("star"));
-    expect(avatars[1]?.querySelector("path")?.getAttribute("fill")).toBe("#0d9655");
+    expect(avatars[1]?.querySelector("path")?.getAttribute("d")).toBe(shapePath("star"));
+    expect(avatars[0]?.querySelector("path")?.getAttribute("fill")).toBe("#0d9655");
 
     const mainAvatar = host.querySelector('[data-avatar="letter"]');
     expect(mainAvatar?.textContent).toBe("K");
     expect(mainAvatar?.querySelector("svg")).toBeNull();
 
     const text = host.textContent ?? "";
-    expect(text).toContain("可接单");
-    expect(text).toContain("需要关注");
+    expect(text).not.toContain("可接单");
+    expect(text).not.toContain("需要关注");
     expect(text).toContain("主助理");
   });
 

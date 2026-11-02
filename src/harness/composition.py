@@ -1616,6 +1616,7 @@ def build_production_container(
             else PlatformToolOverlay()
         )
         delegation_overlay = PlatformToolOverlay()
+        coordinator = False
         if container.assistant is not None and session.agent_name:
             coordinator = await coordinator_session(container.agui, session)
             observer = (
@@ -1659,13 +1660,18 @@ def build_production_container(
                     emit=emit_handover,
                     emit_receipt=emit_control_receipt,
                 )
+        primary_profile = (
+            await container.assistant.primary_profile(session.tenant_id, session.user_id)
+            if container.assistant is not None and coordinator else None
+        )
         memory_overlay = PlatformToolOverlay()
         specialist = (
             await session_specialist(container.assistant, container.agui, session)
             if container.assistant is not None and session.agent_name else None
         )
         role_overlay = PlatformToolOverlay(
-            instructions=specialist_instructions(specialist) if specialist else ""
+            instructions=specialist_instructions(specialist or primary_profile)
+            if specialist or primary_profile else ""
         )
         if container.memory_bank is not None and session.agent_name:
             memory_scope = f"specialist:{specialist.slug}" if specialist else None

@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { canonicalConversationHref, taskThreadHref } from "../lib/conversation-navigation";
 import { PERSONAL_ASSISTANT_THREAD, usePersonalAssistantEntry } from "../components/personal-assistant-context";
 import { loadTaskSummary, projectHref } from "../lib/project-space";
@@ -8,6 +8,7 @@ import { agentDisplayName } from "../lib/agent-display-name";
 import { useInternalAgentsPreference } from "../lib/interface-preferences";
 
 import {
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -16,6 +17,7 @@ import {
   type ReactNode,
 } from "react";
 import { AgentThread } from "../components/agent-thread";
+import { usePrimaryBot } from "../components/use-primary-bot";
 import { BotEditDialog } from "../components/bot-edit-dialog";
 import { AuthProvider, useAuth } from "../components/auth-provider";
 import { AssistantChannelStatus } from "../components/assistant-channel-status";
@@ -202,7 +204,7 @@ function TaskContextBar({
 export default function Home() {
   return (
     <AuthProvider>
-      <AuthenticatedHome />
+      <Suspense fallback={<ProductLoading />}><AuthenticatedHome /></Suspense>
     </AuthProvider>
   );
 }
@@ -210,23 +212,37 @@ export default function Home() {
 function AuthenticatedHome() {
   const assistantEntry = usePersonalAssistantEntry();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const botParam = assistantEntry ? searchParams.get("bot") : null;
+  const routeRunId = searchParams.get("run");
+  const routeTrace = searchParams.get("trace") === "1";
   const leaveAssistantForTask = useCallback((nextThreadId: string) => {
     if (!assistantEntry) return false;
     router.push(taskThreadHref(nextThreadId));
     return true;
   }, [assistantEntry, router]);
-  const { user } = useAuth();
+  const { user, membership } = useAuth();
+  const primaryProfile = usePrimaryBot(user.user_id, membership?.tenant_id);
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
     const projectId = query.get("project");
     if (projectId && !query.has("thread")) {
       const tab = query.get("tab");
-      window.location.replace(`${projectHref(projectId)}${tab ? `?tab=${encodeURIComponent(tab)}` : ""}`);
+      router.replace(`${projectHref(projectId)}${tab ? `?tab=${encodeURIComponent(tab)}` : ""}`);
     }
-  }, []);
+  }, [router]);
   const [showInternalAgents] = useInternalAgentsPreference();
   const [threadId, setThreadId] = useState("");
-  const [bot, setBot] = useState<AssistantBot | null>(null);
+  const [loadedBot, setBot] = useState<AssistantBot | null>(null);
+  const bot = useMemo<AssistantBot | null>(() => botParam
+    ? loadedBot?.specialistId === botParam ? loadedBot : null
+    : assistantEntry && primaryProfile ? {
+      specialistId: primaryProfile.specialistId, name: primaryProfile.name,
+      description: primaryProfile.description, agentName: primaryProfile.agentName,
+      agentVersion: primaryProfile.agentVersion, status: primaryProfile.status,
+      threadId: PERSONAL_ASSISTANT_THREAD, objectiveId: null,
+      appearance: primaryProfile.config.appearance as {color?: string; avatar?: string} | undefined,
+    } : null, [assistantEntry, botParam, loadedBot, primaryProfile]);
   const personalAssistant = assistantEntry && threadId === PERSONAL_ASSISTANT_THREAD;
   // 助理入口一律用对话形态；选中机器人时标题与输入框跟着它变。
   const [computerOpen, setComputerOpen] = useState(false);
@@ -245,22 +261,11 @@ function AuthenticatedHome() {
       if (url.searchParams.has("computer")) { url.searchParams.delete("computer"); window.history.replaceState(null, "", url.href); }
     } catch { /* optional view preference */ }
   };
-  const [botParam, setBotParam] = useState<string | null>(null);
   // 每次进入某个 Bot 会话只上报一次"查看"（botRevision 刷新不重复上报）。
   const botViewedRef = useRef<string | null>(null);
   const [botEditOpen, setBotEditOpen] = useState(false);
   const [botRevision, setBotRevision] = useState(0);
-  useEffect(() => {
-    if (!assistantEntry) { setBotParam(null); return; }
-    const read = () => setBotParam(new URLSearchParams(window.location.search).get("bot"));
-    read();
-    window.addEventListener("popstate", read);
-    window.addEventListener("kai:bot-navigate", read as EventListener);
-    return () => {
-      window.removeEventListener("popstate", read);
-      window.removeEventListener("kai:bot-navigate", read as EventListener);
-    };
-  }, [assistantEntry]);
+
 
   // 只有「主助理线程 / 某个 bot 的会话」才是助理面。
   // 在助理路由下点侧栏的普通任务时，线程会被换成任务线程，但路由仍是 /assistant；
@@ -290,6 +295,12 @@ function AuthenticatedHome() {
     }>(`specialists/${encodeURIComponent(botId)}`)
       .then((data) => {
         if (!active) return;
+        if (data.threadId === PERSONAL_ASSISTANT_THREAD) {
+          const query = new URLSearchParams(window.location.search);
+          query.delete("bot"); query.delete("thread");
+          router.replace(`/assistant${query.size ? `?${query}` : ""}`, {scroll: false});
+          return;
+        }
         setBot({
           specialistId: data.specialist.specialistId,
           name: data.specialist.name,
@@ -327,23 +338,42 @@ function AuthenticatedHome() {
       })
       .catch(() => { if (active) setBot(null); });
     return () => { active = false; };
-  }, [assistantEntry, user.user_id, botParam, botRevision]);
+  }, [assistantEntry, user.user_id, botParam, botRevision, router]);
 
   const [taskAgents, setTaskAgents] = useState<TaskAgent[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<TaskAgent | null>(null);
   useEffect(() => {
-    if (!bot?.agentName || !bot.agentVersion) return;
+    if (!botParam || !bot?.agentName || !bot.agentVersion) return;
     if (selectedAgent?.name === bot.agentName && selectedAgent.version === bot.agentVersion
       && selectedAgent.ownerUserId === user.user_id && !selectedAgent.spaceId) return;
     setSelectedAgent({
       name: bot.agentName, version: bot.agentVersion, displayName: bot.name,
       ownerUserId: user.user_id, scope: "personal", domain: "assistant",
     });
-  }, [bot, selectedAgent, user.user_id]);
+  }, [bot, botParam, selectedAgent, user.user_id]);
 
   const [systemAssistant, setSystemAssistant] = useState<TaskAgent | null>(null);
   const [modelRoutes, setModelRoutes] = useState<TaskModelRoute[]>([]);
   const [modelRouteOverride, setModelRouteOverride] = useState<string | null>(null);
+  useEffect(() => {
+    if (!assistantEntry || botParam) return;
+    setBot(null);
+    setThreadId(PERSONAL_ASSISTANT_THREAD);
+    setCurrentTask(null);
+    setCurrentThreadState("durable");
+    const stored = loadThreadAgent(createUserScopedStorage(window.localStorage, user.user_id), PERSONAL_ASSISTANT_THREAD);
+    if (stored) setSelectedAgent({...stored, displayName: agentDisplayName(stored.name, stored.displayName), domain: stored.domain ?? "restored"});
+    else if (systemAssistant) setSelectedAgent(systemAssistant);
+  }, [assistantEntry, botParam, systemAssistant, user.user_id]);
+  useEffect(() => {
+    if (!assistantEntry || botParam) return;
+    if (primaryProfile && botViewedRef.current !== primaryProfile.specialistId) {
+      botViewedRef.current = primaryProfile.specialistId;
+      void assistantRequest(`specialists/${encodeURIComponent(primaryProfile.specialistId)}/viewed`, "POST")
+        .then(() => window.dispatchEvent(new CustomEvent("kai:specialists-changed"))).catch(() => {});
+    }
+  }, [assistantEntry, botParam, primaryProfile]);
+  useEffect(() => { taskSelectionRevision.current += 1; }, [botParam]);
   const [agentsLoading, setAgentsLoading] = useState(true);
   const [agentsError, setAgentsError] = useState("");
   const [versionSwitchPending, setVersionSwitchPending] = useState(false);
@@ -390,10 +420,10 @@ function AuthenticatedHome() {
   // 在 effect 里读 URL，避免服务端首屏与客户端水合不一致。
   const [focusRunId, setFocusRunId] = useState<string | null>(null);
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("trace") === "1") setStageView("trace");
-    setFocusRunId(params.get("run"));
-  }, []);
+    setStageView(routeTrace ? "trace" : "conversation");
+    setFocusRunId(routeRunId);
+    setBotEditOpen(false);
+  }, [routeRunId, routeTrace, botParam]);
   useEffect(() => {
     const openTrace = () => setStageView("trace");
     window.addEventListener("harness:open-trace", openTrace);
@@ -447,7 +477,7 @@ function AuthenticatedHome() {
       (initialSearch.get("space") || initialSearch.get("owner")),
     );
     setLocalThreadId(isLocalThread(storage, initialThreadId) ? initialThreadId : null);
-    setThreadId(initialThreadId);
+    if (!assistantEntry || !initialSearch.get("bot")) setThreadId(initialThreadId);
     // The concrete thread-to-Agent binding is already durable in this
     // browser. Restore it immediately so returning from Studio can mount the
     // conversation/history while the authoritative catalogs revalidate in
@@ -880,6 +910,7 @@ function AuthenticatedHome() {
         <TaskSidebar
           activeNav={assistantView ? "assistant" : "tasks"}
           currentThreadId={threadId}
+          activeBotId={botParam}
           collapsed={!taskSidebarOpen}
           overlayOpen={compactTaskSidebar && taskSidebarOpen}
           onToggle={() => {
@@ -1013,11 +1044,14 @@ function AuthenticatedHome() {
                   onSaved={() => {
                     setBotEditOpen(false);
                     setBotRevision((current) => current + 1);
+                    window.dispatchEvent(new CustomEvent("kai:specialists-changed"));
                   }}
                 />
               )}
               {versionSwitchError && <p role="alert">{versionSwitchError}</p>}
-              {botParam && !bot?.threadId ? (
+              {assistantEntry && (botParam ? (!bot?.threadId || threadId !== bot.threadId ||
+                selectedAgent?.name !== bot.agentName || selectedAgent?.version !== bot.agentVersion)
+                : threadId !== PERSONAL_ASSISTANT_THREAD) ? (
                 <div className="bot-empty-state">
                   <p className="bot-empty-title">{bot ? `${bot.name} 还没有职责` : "正在打开这个 Bot…"}</p>
                   {bot && (
@@ -1028,7 +1062,7 @@ function AuthenticatedHome() {
                       <button
                         type="button"
                         className="bot-empty-action"
-                        onClick={() => window.location.assign("/assistant")}
+                        onClick={() => router.push("/assistant", {scroll: false})}
                       >
                         找主助理派活
                       </button>

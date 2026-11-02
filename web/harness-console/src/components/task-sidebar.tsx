@@ -105,6 +105,7 @@ const activeStatuses = new Set(["queued", "running", "waiting_approval", "cancel
 
 export function TaskSidebar({
   currentThreadId,
+  activeBotId = null,
   collapsed,
   overlayOpen = false,
   onToggle,
@@ -118,6 +119,7 @@ export function TaskSidebar({
   onProjectsChanged,
 }: {
   currentThreadId: string;
+  activeBotId?: string | null;
   collapsed: boolean;
   overlayOpen?: boolean;
   onToggle: () => void;
@@ -156,7 +158,7 @@ export function TaskSidebar({
   const expandButtonRef = useRef<HTMLButtonElement>(null);
   const wasOverlayOpenRef = useRef(false);
   const runView = useRunViewModel();
-  const { user } = useAuth();
+  const { user, membership } = useAuth();
   const [expandedTaskGroups, setExpandedTaskGroups] = useSidebarGroups(user.user_id);
   const sectionId = useId();
   const projectsCollapsed = expandedTaskGroups.has("section:projects:collapsed");
@@ -568,7 +570,7 @@ export function TaskSidebar({
               visible={["knowledge", "agents", "automation", "skills"]}
             />
           </div>
-          {(activeNav === "assistant" || activeNav === "tasks") && <BotRail currentThreadId={currentThreadId} />}
+          {(activeNav === "assistant" || activeNav === "tasks") && <BotRail currentThreadId={currentThreadId} activeBotId={activeBotId} userId={user.user_id} tenantId={membership?.tenant_id} groupsState={[expandedTaskGroups, setExpandedTaskGroups]} />}
           <div className="task-list-toolbar task-project-toolbar">
             <div className="task-list-heading">
               <button type="button" className="task-section-toggle"
