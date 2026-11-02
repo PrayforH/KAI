@@ -39,8 +39,11 @@ export function chatTimeLabel(timestamp: string, now = new Date()): string | nul
   return `${prefix} ${date.getHours()}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
-export function showChatTime(timestamp?: string, previous?: string): boolean {
+export function showChatTime(timestamp?: string, previous?: string, now = Date.now()): boolean {
   if (!timestamp || !Number.isFinite(Date.parse(timestamp))) return false;
+  // Fresh sends belong to the live exchange. Only settled history gets separators;
+  // do not stamp every newly mounted response or an optimistic history hand-off.
+  if (now - Date.parse(timestamp) < 5 * 60_000) return false;
   if (!previous || !Number.isFinite(Date.parse(previous))) return true;
   const current = new Date(timestamp), before = new Date(previous);
   return current.toDateString() !== before.toDateString() || current.getTime() - before.getTime() >= 5 * 60_000;

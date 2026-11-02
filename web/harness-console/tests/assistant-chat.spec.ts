@@ -52,3 +52,14 @@ it("keeps reserved form payloads out of streamed chat without hiding ordinary co
   expect(publicChatText('结果如下。\n```harness-ui\n{"schema_version":')).toBe('结果如下。');
   expect(publicChatText('```python\nprint(1)\n```')).toBe('```python\nprint(1)\n```');
 });
+
+
+it("does not stamp fresh sends, even after an old history gap", () => {
+  const now = Date.parse("2026-11-02T18:51:00+08:00");
+  const previous = "2026-11-02T17:00:00+08:00";
+  expect(showChatTime("2026-11-02T18:51:00+08:00", previous, now)).toBe(false);
+  expect(showChatTime("2026-11-02T18:51:00+08:00", undefined, now)).toBe(false);
+  expect(showChatTime("2026-11-02T18:46:01+08:00", previous, now)).toBe(false);
+  expect(showChatTime("2026-11-02T18:46:00+08:00", previous, now)).toBe(true);
+  expect(showChatTime("2026-11-02T18:46:00+08:00", "2026-11-02T18:45:00+08:00", now)).toBe(false);
+});
