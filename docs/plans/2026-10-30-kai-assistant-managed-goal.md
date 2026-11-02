@@ -89,7 +89,7 @@ ruff 全过；pyright 剖面与基线一致（2449/1160/234）。
 | 3.3 | 转交回执 assistant_handovers（message_id 幂等；sent→received→applied/pending_input；重放不重建） | 已实现+已测试 |
 | 3.4 | delegate_to_specialist：创建/复用 + 职责登记 + 缺项不启动；assistant_specialist_status | 已实现+已测试 |
 | 3.5 | API：specialists CRUD/config/status + handovers | 已实现+已测试 |
-| 3.6 | 凭据专用加密输入接口：`POST specialists/{id}/credentials` → McpCredentialCipher(AES-GCM, 租户/用户/引用 AAD) 密文入 `assistant_specialist_credentials`（迁移 0059），config 只写 `credential_ref:<名称>`，无读取接口；子助理领域记忆 | 凭据接口 已实现+已测试+已部署(79 r3)；领域记忆 未实现 |
+| 3.6 | 凭据专用加密输入接口：`POST specialists/{id}/credentials` → McpCredentialCipher(AES-GCM, 租户/用户/引用 AAD) 密文入 `assistant_specialist_credentials`（迁移 0059），config 只写 `credential_ref:<名称>`，无读取接口；子助理领域记忆 | 凭据接口 已实现+已测试+已部署(79 r3)；领域记忆 已实现+已测试+**79 真实写入/召回/隔离已验收**（58890381 远程 MCP 令牌按 specialist:{slug} + be2d69d8 Bot 会话线程 scope；证据见 results/2026-11-02-superagent-79.md「子助理领域记忆…」节） |
 | 3.7 | 子助理管理面板：/studio/assistant 新增「专职子助理」标签页（列表/配置状态/配置表单/启用暂停/转交记录/打开职责会话）；收件卡带「打开原任务」链接 | 已实现+已部署(79)+已测试(单测/构建) |
 
 ## 阶段 4：项目托管、持续运营、Computer 与预算（8.2/8.6/8.7 P2/P3）
@@ -99,8 +99,8 @@ ruff 全过；pyright 剖面与基线一致（2449/1160/234）。
 | 4.1 | ObjectiveBudget（maxRunsPerDay/maxTotalRuns）：入队事务内原子计数，达到即拒派（含次日恢复/总量永久两路径测试）；token/费用上限需计量对接，未开放 | 已实现+已测试 |
 | 4.2 | 暂停 vs 立即停止语义：pause 停调度不停在途（既有），stop 经 _reconcile 取消绑定 Run（既有）；预算/截止/缺项拒派语义与 4.1 共闸门 | 已实现+已测试（既有部分） |
 | 4.3 | 项目托管核心：ManagedTask.dependsOnObjectiveId（迁移 0058，绑定服务端无环校验+深度上限）；assistant_manage_work 多线程纳管（observe 角色收集到同一职责）；协调执行线程只读状态工具（无委派权，递归保持关闭）；跨项目纳管需该项目授权 | 已实现+已测试+已部署(79 r2)；新建任务范围/成果汇总/项目面板未实现 |
-| 4.4 | Computer 多任务排队仲裁与跨项目隔离增强（现有：共享桌面单执行者、接管 ACK、恢复重观察已在 79 验证过） | 未实现（本轮无新增） |
-| 4.5 | 事件驱动持续运营（无变化不唤起模型）、消息去重升级、成本耗时指标、故障回放 | 未实现 |
+| 4.4 | Computer 多任务排队仲裁与跨项目隔离增强（现有：共享桌面单执行者、接管 ACK、恢复重观察已在 79 验证过） | 单执行者 + occupancy 位次/原因 + 顶栏 chip 已落地；跨项目等待文案已增强（84439439：project_id 不同即点名「跨项目」并带 holder 职责标题，缺字段安全回退）；FIFO 抢占/优先级仍未做 |
+| 4.5 | 事件驱动持续运营（无变化不唤起模型）、消息去重升级、成本耗时指标、故障回放 | skipUnchanged（无变化不唤起，R5）、检查点计量（R4 tokens/cost，未计量显式说明）、失败回放（浮标失败卡深链 thread+trace+run+checkpoint）已落地；「消息去重升级」仍无独立升级（仅成果卡去重 eeab0194，不冒充） |
 
 ## 阶段 5：79 渐进部署与真实验收（8.8）
 
@@ -131,7 +131,7 @@ ruff 全过；pyright 剖面与基线一致（2449/1160/234）。
 | --- | --- | --- |
 | R1 | 中文职责名查重：slug 附加名称短哈希，同名复用、异名各建（真实中文名集成测试） | 已实现+已测试 |
 | R2 | 成果汇总：managed_overview/render + coordinator 提示注入（只读、读不到不猜） | 已实现+已测试+已部署 |
-| R3 | 子助理领域记忆：MemoryBankGateway scope + specialist_memory_scope（specialist:{slug}） | 已实现+已测试(单测)；79 未做真实记忆写入验收 |
+| R3 | 子助理领域记忆：MemoryBankGateway scope + specialist_memory_scope（specialist:{slug}） | 已实现+已测试+**79 真实写入/召回/隔离已验收**（写=propose_memory 落 specialist:{slug}；读=scoped 投影零工具召回；跨 Bot 检索无命中+匿名 401；两缺口 58890381/be2d69d8 已修且 79 live 20261103-b68e88eb 原生包含） |
 | R4 | 计量：检查点记 tokens/cost/unknown_usage（从配额账本读真实用量）；预算 maxTokens/maxCostUsd；未计量时拒派并说明 | 已实现+已测试+已部署（79 实测拒绝文案） |
 | R5 | 事件驱动：skipUnchanged + 进展指纹，定时无变化不唤起模型 | 已实现+已测试 |
 | R6 | Computer 单执行者：assistant_desktop_turns（部分唯一索引、幂等、TTL 回收、释放交接） | 已实现+已测试 |
