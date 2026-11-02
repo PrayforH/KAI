@@ -839,9 +839,17 @@ class ClaudeSdkRuntime:
         if (
             remote_transport
             and self._remote_memory_mcp is not None
+            and self._remote_memory_mcp.enabled
             and context.identity is not None
         ):
-            resolved_tools = self._remote_memory_mcp.attach(resolved_tools, context.identity)
+            # 与提取/投影同判：职责线程的远程记忆读写也落在 specialist:{slug}，
+            # 否则 Bot 会话的提议写进底层 agent 名下，读侧 specialist scope 看不到。
+            identity = (
+                await self._memory_bank.scoped_identity(context.identity)
+                if self._memory_bank is not None
+                else context.identity
+            )
+            resolved_tools = self._remote_memory_mcp.attach(resolved_tools, identity)
             mcp_servers = dict(resolved_tools.mcp_servers)
             allowed_tools = list(resolved_tools.allowed_tools)
             builtin_tools = list(resolved_tools.builtin_tools)
