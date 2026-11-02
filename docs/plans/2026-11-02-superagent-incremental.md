@@ -167,3 +167,26 @@ Ruff/diff通过。测试仅用127.0.0.1:15483/harness_test，未连接业务库�
 79 SSH已恢复，当前仍是API d78a8d5a / Worker eeab0194 / Web1fdc934d、schema0064；
 本批代码尚未部署，网页新流程尚未真实验收，浏览器扩展创建标签超时但原生Chrome可读。
 下一步仅发布API/Worker/Web，无迁移，不改Control/IM/VM；再次核对并发与Compose后切换。
+
+### 本批已发布与真实网页结果
+
+实施提交 ece5e862 已仅更新79 API/Worker/Web，镜像标签20261102-ece5e862。
+切换前后均无活跃Run/职责执行，schema仍0064，无迁移；非目标服务Compose配置逐项一致。
+容器healthy，API/Worker运行10001:10001、Web nextjs，服务源码hash核对通过。
+私有发布与新业务库备份在/data/kai-superagent-20261102-ece5e862，备份pg_restore --list验证通过，
+本批没有声称再次做完整恢复演练。未修改Control、渠道、VM或基础设施。
+
+真实登录Chrome（扩展连接超时后改用cua原生App）已验证：
+- 主助理首次交办卡改为“开始这次交办”，不再出现必填检查频率。
+- 新建“按需协同验收-1102”即进入独立会话，无职责也可输入；一条ONDEMAND79-1102消息
+  得到正确自身名称的一句话回答，未要求设频率；没有联网/电脑动作请求。
+- 本条回答的引用条打开/取消；浏览器刷新后Bot与两条消息仍保留。
+- 编辑窗口无全局频率项，明确每项任务自行设置执行方式。
+- 只读数据库核对该Bot ready、稳定assistant_specialist_*线程、绑定职责数0；
+  原编码协同职责schedule/next_check_at仍空，execution_count=0，没有重启旧探查。
+- 既有HTML成果展开后宽度已在桌面实页确认；窄屏仍未复核。
+
+截图位于本机visualizations/2026/11/02/kai-superagent-plan/ondemand-bot-79.png，
+只保留验收Bot对话，收起包含历史任务的侧栏。验收Bot保留供复查，未删除业务对象。
+单次交办/明确周期/暂停调度由隔离存储与DOM回归验证；本批未新建线上定时验收任务，
+不将其描述为实页周期执行通过。IM依用户要求暂缓；Goal继续active，后续优先网页托管与交互。
