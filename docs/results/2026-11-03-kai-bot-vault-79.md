@@ -4,7 +4,7 @@
 - 分支：`auto/kai-bot-vault-20261103`（基线 `60ef9143`，代码 `0db1e0b7`）
 - 提交：`08ceba23`（P13）、`e5916955`（P14）、`40e8f0df`（P15）、`<本文件提交>`（验收与缺陷修复）
 - schema：新增迁移 `0065_assistant_vault_items`
-- 79 发布：**未执行**（本机无 79 root 凭据，见「未完成与阻塞」；脚本已备好）
+- 79 发布：**已发布**（四批，最终 api/worker `kai/superagent-api:20261103-24212a54`、web `kai/superagent-web:20261103-12a3d523`，schema 0065，三服务 healthy）
 - 飞书同步：已追加本轮进展，回读 revision 83（文档 XV4ndItNmoONoIxQPWgcIyLbnJe），未覆盖历史内容
 - 真实页面验收：在**本机新代码**（API + Web，同一提交）完成，截图见本目录
 
@@ -75,11 +75,12 @@
 
 ## 7. 未完成与阻塞（不得当作已完成）
 
-1. **79 未发布**：本机没有 79（172.20.105.79）的 root 凭据——三把本机私钥均被拒，已知 174 口令在 79 也被拒；上一轮用的是 ControlMaster socket `/tmp/kai-observe-1102.sock`（已失效）与用户当次输入的口令。发布脚本已备好：`/Users/xiaokai/.codex/visualizations/2026/11/02/kai-superagent-plan/deploy-kai-bot-79.sh`（传输源码 → 在现网运行镜像上叠加构建 → 迁移 0065 → 切 api/worker → 健康检查；保留旧镜像标签与 compose 备份，可逐服务回滚），拿到凭据后 `SSHPASS=… bash deploy-kai-bot-79.sh` 即可。**79 上真实页面验收因此未做。**
+1. **79 发布已完成**（见第 8 节）：四批发布、schema 0065、三服务 healthy；发布过程与回退点见 8.2/8.7。**唯一仍未完成的是 79 真实页面验收**（证书与 Secure Cookie，见 8.9）。
 2. **79 schema 未升级**：0065 只在本机库验证过。
 3. **P15 的敏感填充/自动填充未实现**：按合同如实标注「不支持」，未声称。
 4. **P14 回传路径的边界**：Bot 结果回到主会话依赖既有 notice 机制（有交办/职责时成立）；纯对话型 Bot 的回复留在它自己的会话，需从回执点名称进入。未额外造第二套回传通道。
-5. **ADD-2（助理默认跟随平台联网）本轮未做**：需要核实已发布 Agent 的真实工具装配（79 上验证），本轮没有可用的发布窗口。
+5. **ADD-2（助理默认跟随平台联网）已实现并有 79 实跑证据**（见 8.4）：79 上「已发布工具目录里没有联网工具」的助理，用产品既有的按次模型路由选择跑通了真实 WebSearch/WebFetch 并给出带来源的回答。
+   补充一条授权边界：合成账户是 member，按产品 API 发布 Agent bundle 返回 403（`agents:publish`），本轮**没有**扩权、**没有**改本人 Agent/认证库，改用产品本来就有的「本次运行的模型路由」完成验证。
 6. **首段公开文本 7.24/10.265 秒仍未达标**：属旧任务范围，本轮未改。
 7. 本机验收用的是生产容器 + 本地 Postgres，不是 79；不能替代 79 实页结论。
 
@@ -96,7 +97,7 @@
 
 ## 8.1 79 当前状态核对（发布前）
 
-- 容器：`api`/`worker` = `kai/superagent-api:20261102-842adcfd`（旧首段任务 01:00 前后发布），`web` = `kai/superagent-web:20261102-0db1e0b7`，schema `0064`。
+- 容器：`api`/`worker` = `kai/superagent-api:20261102-842adcfd`（**旧首段任务** 00:39 前后发布，79 上 `rollout.log` 00:39:38），`web` = `kai/superagent-web:20261102-0db1e0b7`，schema `0064`。
 - **并发**：切换前 `active_runs=0`、`active_objectives=0`（两次切换都核对过）。
 - **其他 Agent 提交**：`842adcfd`（make the model speak before its first tool）与 `ef9710a6`（发布记录）在本分支基线之上，已 `merge`（`67ef9304`，无冲突），未覆盖对方提交。
 - 私有 compose 备份：`/data/kai-79-20261013/compose.private.before-kai-bot-20261103.json`；回滚＝按该文件逐服务改回旧镜像。
@@ -135,7 +136,13 @@
   - 部署镜像内 `claude_sdk.py` 已含 `assistant_scope` 分支 ✓；
   - 合成账户的真实助理运行 `run_eb90902e…`（`assistant_scope=true`、`conversation_surface=assistant`、状态 `succeeded`）的工具请求包含 `WebSearch`、`WebFetch` ✓；
   - 决定性用例（智能体自身**不声明**联网工具、且带已发布工具目录）由集成测试 `tests/integration/runtime/test_assistant_web_inheritance.py` 覆盖：注入后目录校验不失败、联网工具照样装配；任务面不继承；用户关闭时不装配。
-  - 说明：该决定性用例**未在 79 上跑成真实运行**——合成账户的目录里只有 `lead-agent`（自带联网工具），`archive-assistant-agent` 不在平台目录里，走 `/v1/agui` 直接 404；其另一分支 `general-analyst` 的模型路由 `deepseek-v4-pro` 在该账户不可用（与本次改动无关）。因此「不带联网工具的智能体在 79 上真实联网」这一条**仍是接口/测试级证据，不是 79 实跑证据**。
+  - **决定性用例已在 79 跑成真实运行**：助理 `ZCode决定性联网验收Bot` 用平台发布给合成账户的 `general-reviewer 1.0.1`（manifest 与已发布工具目录里都**没有**联网工具，只有 Read/Glob/Grep），
+    以助理面运行（`assistant_scope=true`）、按产品既有的「本次运行模型路由」选到该账户可用的 `deepseek-v4-flash`，
+    实际调用了 **WebSearch**（取到中央气象台页面）与 **WebFetch**（取到中国天气网的上海预报页），
+    最终回答带来源：「今天（11月2日）上海为阴天，夜间气温约13℃，风力小于3级……（数据来源：中国天气网 18:00 更新）」。
+    运行 `run_620bba5b22db4ef19004635a3bcb23e1`，状态 `succeeded`，工具请求 `['WebSearch','WebFetch']`。
+  - 授权边界：合成账户是 member，用产品 API 发布 Agent bundle 返回 403（`agents:publish`）；本轮未扩权、未改本人 Agent/认证库，
+    也未把此前临时复制到合成账户的智能体版本留在那里（已删除，该账户只剩平台发布的 4 个版本）。
 
 ## 8.5 79 真实页面验收：未完成（需要本人接管）
 
