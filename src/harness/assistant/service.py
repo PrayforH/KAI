@@ -1202,18 +1202,31 @@ class AssistantService:
         return deleted
 
     async def _revoke_vault_references(self, tenant_id: str, user_id: str, title: str) -> None:
-        """把引用了这条资料的 Bot 的 credential_ref 收回。"""
+        """把引用了这条资料的 Bot 的 credential_ref 收回。
+
+        Bot 的资料可能同时被改过：冲突时按最新 revision 重试一次，
+        不因为一次并发编辑就把「删除即失效」变成半截。
+        """
         key = f"credential_ref:{title}"
         for specialist in await self.repository.list_specialists(tenant_id, user_id):
             if key not in specialist.config:
                 continue
-            await self.repository.update_specialist(
-                tenant_id, user_id, specialist.specialist_id,
-                expected_revision=specialist.revision,
-                config={key: ""},
-                config_remove=(key,),
-                now=datetime.now(UTC),
-            )
+            for attempt in range(2):
+                try:
+                    await self.repository.update_specialist(
+                        tenant_id, user_id, specialist.specialist_id,
+                        expected_revision=specialist.revision,
+                        config={},
+                        config_remove=(key,),
+                        now=datetime.now(UTC),
+                    )
+                    break
+                except ConflictError:
+                    if attempt:
+                        raise
+                    specialist = await self.repository.get_specialist(
+                        tenant_id, user_id, specialist.specialist_id
+                    )
 
     async def grant_vault_item(
         self, tenant_id: str, user_id: str, specialist_id: str, *,

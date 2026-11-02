@@ -198,3 +198,24 @@ async def test_deleting_a_vault_item_revokes_the_bot_grants() -> None:
     repo.delete_credential_blob.assert_awaited_once_with("t", "u", "vault_abc")
     # 引用被显式移除：Bot 手里不再留着指向已删资料的引用。
     assert repo.update_specialist.await_args.kwargs["config_remove"] == ("credential_ref:行情网站",)
+
+
+@pytest.mark.asyncio
+async def test_revoking_a_grant_retries_after_a_concurrent_edit() -> None:
+    """Bot 的资料同时被改过时，按最新 revision 重试，不把「删除即失效」做成半截。"""
+    granted = _specialist({"credential_ref:行情网站": "vault_abc"})
+    service, repo = _service(rows=[_vault_row()], specialist=granted)
+    repo.list_specialists.return_value = [granted]
+    calls: list[int] = []
+
+    def _flaky(tenant, user, specialist_id, **kwargs):
+        calls.append(kwargs["expected_revision"])
+        if len(calls) == 1:
+            raise ConflictError("Specialist changed; reload before applying this change")
+        return _specialist({})
+
+    repo.update_specialist.side_effect = _flaky
+    repo.get_specialist.side_effect = None
+    repo.get_specialist.return_value = _specialist({"credential_ref:行情网站": "vault_abc", "title": "研究"})
+    await service.delete_vault_item("t", "u", "vault_item_1", confirm_title="行情网站")
+    assert len(calls) == 2
