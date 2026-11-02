@@ -129,7 +129,9 @@ async def test_result_and_artifact_events_coalesce_and_duplicate_delivery_keeps_
     assert len(notices) == 1 and notices[0].item_id == first.item_id
     assert notices[0].content == "真实结果：文件已生成。"
     assert notices[0].source_sequence == 3 and notices[0].source_event_id == done.event_id
-    await service.repository.read_notice("tenant-a", "user-a", first.item_id, now=at)
+    await service.repository.read_notice(
+        "tenant-a", "user-a", first.item_id, now=at, expected_source_sequence=3,
+    )
     await service.observe_run_event(ready)
     assert (await service.repository.inbox("tenant-a", "user-a"))[0].read_at == at
     assert await service.repository.pending_managed_events() == []
@@ -335,3 +337,80 @@ async def test_own_objective_execution_keeps_its_existing_canonical_notice(datab
     )
     notices = await service.repository.inbox("tenant-a", "user-a")
     assert len(notices) == 1 and notices[0].execution_id == execution.execution_id
+
+
+@pytest.mark.asyncio
+async def test_read_ack_is_owned_durable_and_does_not_consume_a_newer_result(database):
+    from harness.api.dependencies import Identity
+    from harness.assistant.api import NoticeReadRequest, read_notice
+
+    service, _, _ = await prepare(database)
+    run = await source(database, "read-receipt")
+    at = datetime.now(UTC) + timedelta(seconds=1)
+    first = event(run, 1, "artifact.ready", at, artifact_id="first")
+    await service._events.append(first)
+    await service.observe_run_event(first)
+    item = (await service.repository.inbox("tenant-a", "user-a"))[0]
+    latest = event(run, 2, "run.succeeded", at)
+    await service._events.append(latest)
+    await service.observe_run_event(latest)
+    identity = Identity(tenant_id="tenant-a", user_id="user-a")
+    with pytest.raises(ConflictError):
+        await read_notice(
+            item.item_id, identity, service, NoticeReadRequest(expectedSourceSequence=1)
+        )
+    with pytest.raises(ConflictError):  # unversioned clients cannot swallow a projected update
+        await read_notice(item.item_id, identity, service)
+    with pytest.raises(NotFoundError):
+        await read_notice(item.item_id, Identity(tenant_id="tenant-a", user_id="other"),
+                          service, NoticeReadRequest(expectedSourceSequence=2))
+    assert (await service.repository.inbox("tenant-a", "user-a"))[0].read_at is None
+    await read_notice(item.item_id, identity, service, NoticeReadRequest(expectedSourceSequence=2))
+    acknowledged = (await service.repository.inbox("tenant-a", "user-a"))[0]
+    assert acknowledged.read_at is not None
+    # A duplicate result cannot reset the saved receipt; a material update must.
+    await service.observe_run_event(latest)
+    assert (await service.repository.inbox("tenant-a", "user-a"))[0].read_at == acknowledged.read_at
+    newer = event(run, 3, "artifact.ready", at, artifact_id="second")
+    await service._events.append(newer)
+    await service.observe_run_event(newer)
+    refreshed = (await service.repository.inbox("tenant-a", "user-a"))[0]
+    assert refreshed.item_id == item.item_id and refreshed.source_sequence == 3
+    assert refreshed.read_at is None
+
+
+@pytest.mark.asyncio
+async def test_conversation_gateway_controls_only_its_original_subscription(database):
+    from harness.assistant.delegation import AssistantDelegationGateway
+
+    service, obj, task = await prepare(database)
+    service._runs = cast(Any, SimpleNamespace(list_for_sessions=AsyncMock(return_value=[])))
+    gateway = AssistantDelegationGateway(service)
+    status = await gateway.managed_status("tenant-a", "user-a", obj.objective_id)
+    assert status["revision"] == 1
+    assert status["managed"][0]["managed_id"] == task.managed_id
+    assert status["managed"][0]["notify_on_progress"] is True
+    await gateway.configure_managed_notifications(
+        "tenant-a", "user-a", obj.objective_id, task.managed_id,
+        enabled=False, expected_revision=1,
+    )
+    status = await gateway.managed_status("tenant-a", "user-a", obj.objective_id)
+    assert status["revision"] == 2 and not status["managed"][0]["notify_on_progress"]
+    with pytest.raises(ConflictError):
+        await gateway.configure_managed_notifications(
+            "tenant-a", "user-a", obj.objective_id, task.managed_id,
+            enabled=True, expected_revision=1,
+        )
+    with pytest.raises(NotFoundError):
+        await gateway.managed_status("tenant-a", "other", obj.objective_id)
+    service.validate = AsyncMock(side_effect=PermissionDeniedError("source revoked"))
+    await gateway.configure_managed_notifications(
+        "tenant-a", "user-a", obj.objective_id, task.managed_id,
+        enabled=False, expected_revision=2,
+    )
+    with pytest.raises(PermissionDeniedError):
+        await gateway.configure_managed_notifications(
+            "tenant-a", "user-a", obj.objective_id, task.managed_id,
+            enabled=True, expected_revision=3,
+        )
+    assert not await service.repository.executions("tenant-a", "user-a", obj.objective_id)

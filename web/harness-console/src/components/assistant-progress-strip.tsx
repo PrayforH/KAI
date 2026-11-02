@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { assistantRequest, type Notice } from "../lib/assistant-client";
 import { CheckpointMeteringLine } from "./checkpoint-metering";
@@ -46,24 +46,51 @@ export function progressNoticeLink(
 }
 
 /**
- * 8.5 结果优先：主助理页只突出「需要你处理、正在推进、已交付」。
+ * 8.5 结果优先：主助理页只突出需要处理和真实执行/成果状态。
  * 执行记录与完整过程仍在原任务；这里的卡片是引用，可追溯到原会话。
  */
 export function AssistantProgressStrip() {
   const [notices, setNotices] = useState<Notice[]>([]);
-  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
+  const [reading, setReading] = useState<ReadonlySet<string>>(new Set());
+  const [error, setError] = useState<string | null>(null);
+  const receiptVersion = useRef(0);
   // 默认收成一行浮标，不挤占对话高度；需要时再展开（对齐 bot 的悬浮交互）。
   const [expanded, setExpanded] = useState(false);
   const [hidden, setHidden] = useState(false);
 
   const load = useCallback(async () => {
+    const version = receiptVersion.current;
     try {
       const list = await assistantRequest<Notice[]>("inbox");
-      setNotices(list.slice(0, 6));
+      if (version === receiptVersion.current) {
+        setNotices(list.filter((item) => !item.readAt).slice(0, 6));
+      }
     } catch {
       // 后台进展是增强信息；读取失败不打断主对话。
     }
   }, []);
+
+  const markRead = async (item: Notice) => {
+    setReading((current) => new Set(current).add(item.itemId));
+    setError(null);
+    try {
+      await assistantRequest(`inbox/${encodeURIComponent(item.itemId)}/read`, "POST", {
+        expectedSourceSequence: item.sourceSequence ?? null,
+      });
+      receiptVersion.current += 1;
+      setNotices((current) => current.filter((notice) =>
+        notice.itemId !== item.itemId || notice.sourceSequence !== item.sourceSequence));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "未能标为已读，请稍后重试。");
+      void load();
+    } finally {
+      setReading((current) => {
+        const next = new Set(current);
+        next.delete(item.itemId);
+        return next;
+      });
+    }
+  };
 
   useEffect(() => {
     void load();
@@ -73,7 +100,7 @@ export function AssistantProgressStrip() {
     return () => clearInterval(timer);
   }, [load]);
 
-  const visible = notices.filter((item) => !dismissed.has(item.itemId));
+  const visible = notices;
   if (!visible.length || hidden) return null;
   const attention = visible.filter((item) => KIND_LABEL[item.kind]?.tone === "attention").length;
   const summary = [
@@ -111,6 +138,7 @@ export function AssistantProgressStrip() {
           ×
         </button>
       </div>
+      {error && <p role="alert">{error}</p>}
       {expanded && (
       <ul>
         {shown.map((item) => {
@@ -131,17 +159,18 @@ export function AssistantProgressStrip() {
                   className="assistant-progress-link"
                   data-replay={link.mode}
                   href={link.href}
-                  onClick={() => setDismissed((current) => new Set(current).add(item.itemId))}
                 >
                   {link.label}
                 </Link>
               )}
               <button
                 type="button"
-                aria-label="隐藏这条进展"
-                onClick={() => setDismissed((current) => new Set(current).add(item.itemId))}
+                aria-label={`将${item.title}的这条进展标为已读`}
+                title="标为已读"
+                disabled={reading.has(item.itemId)}
+                onClick={() => void markRead(item)}
               >
-                ×
+                {reading.has(item.itemId) ? "保存中" : "已读"}
               </button>
             </li>
           );

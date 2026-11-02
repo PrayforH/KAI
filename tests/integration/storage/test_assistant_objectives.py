@@ -12,6 +12,7 @@ from harness.assistant.models import (
     ObjectiveSchedule,
     ObjectiveStatus,
     Specialist,
+    SpecialistStatus,
 )
 from harness.assistant.repository import PostgresAssistantRepository
 from harness.core.errors import ConflictError, NotFoundError
@@ -26,6 +27,7 @@ async def test_declared_capabilities_gate_durable_intent_creation(database: Data
     bot = await repo.create_specialist(Specialist(
         specialistId="bot", tenantId="tenant-a", userId="user-a", slug="bot", name="Bot",
         description="test", agentName="audit-agent", agentVersion="1.0.0",
+        status=SpecialistStatus.READY,
         config={"required_local_tools": ["run_commands"]}, createdAt=NOW, updatedAt=NOW,
     ))
     await repo.create(objective().model_copy(update={"specialist_id": bot.specialist_id}))

@@ -345,7 +345,10 @@ class AssistantService:
         expected_revision: int,
     ) -> ManagedTask:
         objective = await self.repository.get(tenant_id, user_id, objective_id)
-        await self.validate(tenant_id, user_id, objective)
+        # Turning off a notice needs ownership, not renewed access to its source.
+        # A revoked source must not prevent the owner from unsubscribing.
+        if enabled:
+            await self.validate(tenant_id, user_id, objective)
         task = next(
             (
                 item

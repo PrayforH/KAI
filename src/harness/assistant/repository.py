@@ -1164,7 +1164,10 @@ class PostgresAssistantRepository:
                 for row in rows
             ]
 
-    async def read_notice(self, tenant_id: str, user_id: str, item_id: str, now: datetime) -> None:
+    async def read_notice(
+        self, tenant_id: str, user_id: str, item_id: str, now: datetime,
+        *, expected_source_sequence: int | None = None,
+    ) -> None:
         async with self._context(write=True) as session:
             row = await session.scalar(
                 select(AssistantInboxRow)
@@ -1177,6 +1180,10 @@ class PostgresAssistantRepository:
             )
             if row is None:
                 raise NotFoundError("Notice not found")
+            # A merged card may have changed since it was displayed. Never let
+            # an acknowledgement of the old result swallow the newer one.
+            if row.payload.get("sourceSequence") != expected_source_sequence:
+                raise ConflictError("进展已有更新，请先查看最新结果")
             row.read_at = row.read_at or now
 
     async def create_specialist(self, specialist: Specialist) -> Specialist:

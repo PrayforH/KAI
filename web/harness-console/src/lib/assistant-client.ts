@@ -13,6 +13,7 @@ export type Execution = { executionId: string; threadId: string; runId: string |
   summary: string; createdAt: string };
 export type Notice = { itemId: string; objectiveId: string; title: string; content: string;
   kind: string; createdAt: string; readAt: string | null; threadId?: string | null;
+  sourceSequence?: number | null;
   // 失败回放：终态 notice 带 Run/执行 id，前端可深链到失败检查点；旧行没有。
   runId?: string | null; executionId?: string | null;
   // 终态 notice 的结算计量（与同次 checkpoint 同口径）；旧行没有这两个字段。

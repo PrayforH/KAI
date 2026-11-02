@@ -46,6 +46,10 @@ INSTRUCTIONS = (
     "assistant_task_status 查询后台任务的真实执行状态、检查点与 revision；"
     "assistant_send_instruction 给托管任务补充要求（accepted=已送达当前执行，queued=进入下一轮）；"
     "assistant_update_task 需要 expected_revision，取自最近一次状态查询。\n"
+    "只读关注是结果通知，不是定时任务，也不会执行原任务。"
+    "assistant_work_notifications 省略 enabled 可查看各原任务的关注开关、摘要和 revision；"
+    "用户要求开启或关闭某条关注时，再传 managed_id、enabled、expected_revision。"
+    "关闭关注不停止原任务，暂停整个职责才用 assistant_update_task。\n"
     "入队只表示已安排，不代表后台已在执行；不要把简单问答包装成后台任务。"
 )
 
@@ -104,7 +108,17 @@ class DelegationGateway(Protocol):
     ) -> list[Any]: ...
 
     async def bind_thread(
-        self, tenant_id: str, user_id: str, objective_id: str, thread_id: str
+        self, tenant_id: str, user_id: str, objective_id: str, thread_id: str,
+        *, notify_on_progress: bool = False,
+    ) -> None: ...
+
+    async def managed_status(
+        self, tenant_id: str, user_id: str, objective_id: str
+    ) -> dict[str, Any]: ...
+
+    async def configure_managed_notifications(
+        self, tenant_id: str, user_id: str, objective_id: str, managed_id: str,
+        *, enabled: bool, expected_revision: int,
     ) -> None: ...
 
     async def delegate_to_specialist(
@@ -300,21 +314,27 @@ def assistant_delegation_overlay(
                 tenant_id,
                 user_id,
                 brief,
-                idempotency_key=None,
+                idempotency_key="manage:" + hashlib.sha256(
+                    json.dumps([run.run_id, thread_id, mode,
+                                brief.model_dump(mode="json"), thread_ids],
+                               ensure_ascii=False).encode()
+                ).hexdigest(),
                 managed_thread_id=thread_id or None,
                 mode=mode,
             )
             for extra in thread_ids:
                 if extra and extra != thread_id:
                     await gateway.bind_thread(
-                        tenant_id, user_id, objective.objective_id, extra
+                        tenant_id, user_id, objective.objective_id, extra,
+                        notify_on_progress=mode == "follow_only",
                     )
         except (ConflictError, NotFoundError, PermissionDeniedError, ValueError) as error:
             return _text(f"托管未能建立：{error}")
         if mode == "follow_only":
             return _text(
                 f"已开始只跟进 {objective.objective_id}（线程 {thread_id}）："
-                "将汇报进展与差距，不代为执行。"
+                "仅关注此后的新结果，不代为执行、不开定时器。"
+                "查询或调整关注用 assistant_work_notifications；查看当前摘要不代表收到了新结果。"
             )
         try:
             execution = await gateway.enqueue(
@@ -498,6 +518,36 @@ def assistant_delegation_overlay(
         body = "\n".join(lines) if lines else "当前没有后台任务。"
         return {"content": [{"type": "text", "text": body}]}
 
+    async def work_notifications(arguments: dict[str, Any]) -> dict[str, Any]:
+        objective_id = str(arguments.get("objective_id", "")).strip()
+        if not 1 <= len(objective_id) <= 128:
+            return _text("objective_id 必填，先用 assistant_task_status 确认职责。")
+        changing = "enabled" in arguments
+        if changing:
+            enabled = arguments["enabled"]
+            revision = arguments.get("expected_revision")
+            managed_id = str(arguments.get("managed_id", "")).strip()
+            if not isinstance(enabled, bool):
+                return _text("enabled 必须是 true 或 false；省略时仅查询。")
+            if not managed_id or len(managed_id) > 128:
+                return _text("managed_id 必填，先查询关注状态，不要猜测。")
+            if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
+                return _text("expected_revision 必须是查询返回的正整数。")
+        try:
+            if changing:
+                await gateway.configure_managed_notifications(
+                    tenant_id, user_id, objective_id, managed_id,
+                    enabled=enabled, expected_revision=revision,
+                )
+            status = await gateway.managed_status(tenant_id, user_id, objective_id)
+        except (ConflictError, NotFoundError, PermissionDeniedError, ValueError) as error:
+            return _text(f"关注状态未能确认：{error}；请重新查询，不要据此宣称修改成功。")
+        prefix = (
+            "关注设置已保存；仅影响结果通知，不启动或停止原任务。\n"
+            if changing else "原任务关注状态（只读，不启动执行）：\n"
+        )
+        return _text(prefix + json.dumps(status, ensure_ascii=False))
+
     async def update_task(arguments: dict[str, Any]) -> dict[str, Any]:
         objective_id = str(arguments.get("objective_id", ""))
         revision = arguments.get("expected_revision")
@@ -654,6 +704,24 @@ def assistant_delegation_overlay(
                     "required": ["thread_id"],
                 },
                 handler=manage_work,
+            ),
+            PlatformTool(
+                name="assistant_work_notifications",
+                description=(
+                    "查看原任务的结果关注与真实摘要；用户要求时开关单条通知。"
+                    "不运行任务、不创建周期；查询后使用返回的 managed_id 和 revision 修改。"
+                ),
+                schema={
+                    "type": "object",
+                    "properties": {
+                        "objective_id": {"type": "string", "maxLength": 128},
+                        "managed_id": {"type": "string", "maxLength": 128},
+                        "enabled": {"type": "boolean"},
+                        "expected_revision": {"type": "integer", "minimum": 1},
+                    },
+                    "required": ["objective_id"],
+                },
+                handler=work_notifications,
             ),
             PlatformTool(
                 name="assistant_send_instruction",
@@ -845,10 +913,46 @@ class AssistantDelegationGateway:
         )
 
     async def bind_thread(
-        self, tenant_id: str, user_id: str, objective_id: str, thread_id: str
+        self, tenant_id: str, user_id: str, objective_id: str, thread_id: str,
+        *, notify_on_progress: bool = False,
     ) -> None:
         await self._assistant.bind_thread(
-            tenant_id, user_id, objective_id, thread_id
+            tenant_id, user_id, objective_id, thread_id, notify_on_progress=notify_on_progress,
+        )
+
+    async def managed_status(
+        self, tenant_id: str, user_id: str, objective_id: str
+    ) -> dict[str, Any]:
+        objective = await self._assistant.repository.get(tenant_id, user_id, objective_id)
+        bindings = await self._assistant.repository.managed_bindings(
+            tenant_id, user_id, objective_id=objective_id
+        )
+        overview = await self._assistant.managed_overview(tenant_id, user_id, objective_id)
+        by_thread = {item["thread_id"]: item for item in overview}
+        return {
+            "objective_id": objective.objective_id,
+            "revision": objective.revision,
+            "status": objective.status.value,
+            "notification_mode": objective.notification_mode.value,
+            "managed": [
+                {
+                    "managed_id": task.managed_id,
+                    "thread_id": task.thread_id,
+                    "notify_on_progress": task.notify_on_progress,
+                    "notification_error": task.notification_error,
+                    "progress": by_thread.get(task.thread_id),
+                }
+                for task in bindings
+            ],
+        }
+
+    async def configure_managed_notifications(
+        self, tenant_id: str, user_id: str, objective_id: str, managed_id: str,
+        *, enabled: bool, expected_revision: int,
+    ) -> None:
+        await self._assistant.configure_managed_notifications(
+            tenant_id, user_id, objective_id, managed_id,
+            enabled=enabled, expected_revision=expected_revision,
         )
 
     async def list_specialists(self, tenant_id: str, user_id: str) -> list[Any]:

@@ -208,10 +208,18 @@ async def inbox(identity: Reader, assistant: Service) -> list[AssistantInboxItem
     return await assistant.repository.inbox(identity.tenant_id, identity.user_id)
 
 
+class NoticeReadRequest(StudioModel):
+    expected_source_sequence: int | None = Field(default=None, alias="expectedSourceSequence", ge=1)
+
+
 @router.post("/inbox/{item_id}/read", status_code=204)
-async def read_notice(item_id: str, identity: Reader, assistant: Service) -> None:
+async def read_notice(
+    item_id: str, identity: Reader, assistant: Service,
+    body: NoticeReadRequest | None = None,
+) -> None:
     await assistant.repository.read_notice(
-        identity.tenant_id, identity.user_id, item_id, datetime.now(UTC)
+        identity.tenant_id, identity.user_id, item_id, datetime.now(UTC),
+        expected_source_sequence=body.expected_source_sequence if body else None,
     )
 
 

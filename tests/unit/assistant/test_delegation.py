@@ -41,6 +41,8 @@ class FakeGateway:
         self.resolved_queries: list[str] = []
         self.delegate_calls: list[dict[str, Any]] = []
         self.bound_threads: list[tuple[str, str]] = []
+        self.notification_changes: list[dict[str, Any]] = []
+        self.bound_notifications: list[bool] = []
         self.instruct_outcome: dict[str, Any] = {
             "status": "queued",
             "message": "当前没有进行中的执行",
@@ -166,9 +168,26 @@ class FakeGateway:
         return self.delegate_outcome
 
     async def bind_thread(
-        self, tenant_id: str, user_id: str, objective_id: str, thread_id: str
+        self, tenant_id: str, user_id: str, objective_id: str, thread_id: str,
+        *, notify_on_progress: bool = False,
     ) -> None:
         self.bound_threads.append((objective_id, thread_id))
+        self.bound_notifications.append(notify_on_progress)
+
+    async def managed_status(self, tenant_id, user_id, objective_id):
+        objective = self.objectives[objective_id]
+        return {"revision": objective.revision, "managed": [{"managed_id": "managed-one"}]}
+
+    async def configure_managed_notifications(
+        self, tenant_id, user_id, objective_id, managed_id, *, enabled, expected_revision,
+    ):
+        objective = self.objectives[objective_id]
+        if objective.revision != expected_revision:
+            raise ConflictError("revision changed")
+        self.notification_changes.append({"managed_id": managed_id, "enabled": enabled})
+        self.objectives[objective_id] = objective.model_copy(
+            update={"revision": objective.revision + 1}
+        )
 
     async def list_specialists(self, tenant_id: str, user_id: str) -> list[Any]:
         return self.specialists
@@ -778,3 +797,50 @@ async def test_standalone_bot_conversation_uses_its_owned_profile_and_domain_mem
     assert "internal-only" not in instructions
     repo.get_specialist.side_effect = NotFoundError("not owned")
     assert await specialist_memory_scope(SimpleNamespace(repository=repo), agui, session) is None
+
+
+@pytest.mark.asyncio
+async def test_follow_only_project_subscribes_each_original_without_executing_and_retries_once():
+    gateway = FakeGateway()
+    gateway.bindings = [{
+        "thread_id": "original", "title": "report", "agent_name": "audit",
+        "agent_version": "1", "project_id": None, "managed_objective_id": None,
+    }]
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    args = {"thread_id": "original", "thread_ids": ["second"], "mode": "follow_only"}
+    await tools["assistant_manage_work"](args)
+    await tools["assistant_manage_work"](args)
+    assert len(gateway.created) == 1
+    assert not gateway.records
+    assert gateway.bound_notifications == [True, True]
+
+
+@pytest.mark.asyncio
+async def test_conversation_can_query_and_disable_one_subscription_with_cas():
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    await tools["assistant_create_task"]({"task": "existing duty"})
+    query = {"objective_id": "objective_0001"}
+    body = text_of(await tools["assistant_work_notifications"](query))
+    assert '"revision": 1' in body and 'managed-one' in body
+    assert gateway.notification_changes == []
+    change = query | {"managed_id": "managed-one", "enabled": False, "expected_revision": 1}
+    body = text_of(await tools["assistant_work_notifications"](change))
+    assert "已保存" in body and '"revision": 2' in body
+    assert gateway.notification_changes == [{"managed_id": "managed-one", "enabled": False}]
+    assert "未能确认" in text_of(await tools["assistant_work_notifications"](change))
+    assert len(gateway.records["objective_0001"]) == 1  # no new execution
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fields", [
+    {"enabled": "false", "managed_id": "m", "expected_revision": 1},
+    {"enabled": False, "expected_revision": 1},
+    {"enabled": False, "managed_id": "m", "expected_revision": True},
+    {"enabled": False, "managed_id": "m"},
+])
+async def test_notification_tool_rejects_ambiguous_mutations(fields):
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    await tools["assistant_work_notifications"]({"objective_id": "o"} | fields)
+    assert not gateway.notification_changes
