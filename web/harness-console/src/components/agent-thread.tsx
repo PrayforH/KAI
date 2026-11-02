@@ -80,7 +80,6 @@ import { TaskAgentSwitcher } from "./task-agent-switcher";
 import { ApprovalCard, type ApprovalDetails } from "./approval-card";
 import { ArtifactCard, isImageArtifact, type ArtifactDetails } from "./artifact-list";
 import { AssistantResults } from "./assistant-results";
-import { AssistantControlDetails } from "./assistant-control-details";
 import { assistantControlSummary } from "../lib/assistant-control-receipt";
 import { usePersonalAssistantEntry } from "./personal-assistant-context";
 import { replyWebImages } from "../lib/reply-web-images";
@@ -1544,6 +1543,7 @@ export function HarnessAssistantMessage() {
   );
   const responseCandidate = responseTextForTurn(messageId, nativeText, directStream, live, capturedResponse, pendingLive);
   const feedbackRun = feedbackRunId(messageId, isLast, runView?.runId);
+  const isNotice = messageId.startsWith("notice-");
   // Requirement: citations must be reachable from the reply itself, not only
   // from the collapsed execution summary. Deduplicate by chunk so repeated
   // retrieval in one run shows one chip per slice.
@@ -1590,8 +1590,8 @@ export function HarnessAssistantMessage() {
   });
   const webImages = useMemo(() => turnSettled ? replyWebImages(content, terminalActivity, copyText, userPrompt) : [], [content, terminalActivity, copyText, turnSettled, userPrompt]);
   const turnArtifacts = useMemo(
-    () => turnSettled ? artifactsForTurn(content, runView?.runId, isLast) : [],
-    [content, runView?.runId, isLast, turnSettled],
+    () => turnSettled && !isNotice ? artifactsForTurn(content, runView?.runId, isLast) : [],
+    [content, runView?.runId, isLast, turnSettled, isNotice],
   );
   // Interactive answer blocks arrive on the same tool-call channel artifacts do,
   // so they are present live and after a reload without a second code path.
@@ -1619,12 +1619,14 @@ export function HarnessAssistantMessage() {
   }, [actionHistory, threadRuntime]);
   const actionBusy = ["running", "queued", "waiting_approval"].includes(runView?.phase ?? "");
   // 历史/重试偶尔把同一条回答写成相邻两条 assistant；只保留第一条。
-  if (duplicateAssistantReply && !controlSummary && !showingInputCard) return null;
+  if (duplicateAssistantReply && !isNotice && !controlSummary && !showingInputCard) return null;
   return (
     <AnswerCitationProvider citations={answerCitations}>
     <PublishedBlocksProvider sources={publishedBlocks}>
     <AssistantMessage.Root
       className="harness-assistant-message"
+      data-turn-id={messageId}
+      tabIndex={-1}
       data-test-run={conversationScope && messageId.startsWith("assistant-") ? messageId.replace(/^assistant-/, "") : undefined}
       data-turn-answer={displayedText.replace(/\s+/g, " ").slice(0, 360)}
       data-direct-stream={directStream ? "true" : "false"}
@@ -1671,11 +1673,6 @@ export function HarnessAssistantMessage() {
         </div>
       ) : null}
       </div>
-      {controlSummary && copyText.trim() && copyText.trim() !== displayedText.trim() && (
-        <AssistantControlDetails>
-          <AssistantResponse text={copyText} streaming={messageStatus?.type === "running"} />
-        </AssistantControlDetails>
-      )}
       <div className="followup-input-anchor" data-followup-for={messageId} />
       {!hasVideoGeneration && <TerminalResponseNotice activity={terminalActivity}
         hasResponse={Boolean(displayedText.trim()) || showingInputCard || turnPresentations.length > 0 || turnArtifacts.length > 0} />}

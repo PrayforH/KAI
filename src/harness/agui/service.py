@@ -381,6 +381,7 @@ class AguiRunService:
         space_id: str | None = None,
         connection_mode: Literal["caller_owned", "service_owned"] = "caller_owned",
         project_id: str | None = None,
+        quoted_message_context: str = "",
         deduplicate_active_input: bool = True,
     ) -> AguiRunCreation:
         prompt, input_artifact_ids = _latest_user_input(request)
@@ -477,6 +478,8 @@ class AguiRunService:
                     raise ConflictError("当前运行时不支持知识问答，请切换支持知识检索的智能体")
             run_input: dict[str, object] = {
                 "prompt": prompt,
+                **({"quoted_message_context": quoted_message_context}
+                   if quoted_message_context else {}),
                 "conversation_prompts": conversation_prompts,
                 "input_artifact_ids": user_input_ids,
                 **(

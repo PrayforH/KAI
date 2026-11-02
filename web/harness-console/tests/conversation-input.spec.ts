@@ -105,3 +105,10 @@ it("accepts longer generic forms within transport bounds and never truncates mul
  const questions=Array.from({length:5},(_,i)=>({id:`q${i}`,label:`问题${i}`,type:"text"}));
  expect(parseConversationInput(fence({version:1,title:"补充信息",questions}))?.questions).toHaveLength(5);
 });
+it("keeps the actual unanswered question when background results arrive", () => {
+  const question = { id: "assistant-question", role: "assistant", status: {type: "complete"}, content: [{type: "text", text: fence(payload)}] };
+  const result = {...question, id: "notice-background", content: [{type: "text", text: fence({...payload, title: "Quoted configuration"})}]};
+  expect(latestConversationInput([question, result])?.messageId).toBe("assistant-question");
+  expect(latestConversationInput([result])).toBeNull();
+  expect(latestConversationInput([question, {id: "user-answer", role: "user", content: [{type: "text", text: "网页"}]}, result])).toBeNull();
+});

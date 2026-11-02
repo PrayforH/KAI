@@ -20,7 +20,6 @@ import { BotEditDialog } from "../components/bot-edit-dialog";
 import { SpecialistSetupCard } from "../components/specialist-setup-card";
 import { AuthProvider, useAuth } from "../components/auth-provider";
 import { AssistantChannelStatus } from "../components/assistant-channel-status";
-import { AssistantProgressStrip } from "../components/assistant-progress-strip";
 import { assistantRequest } from "../lib/assistant-client";
 import {
   AssistantBotProvider,
@@ -131,18 +130,15 @@ function SidebarExpandToggle({ onToggle }: { onToggle: () => void }) {
 
 function HeaderUtilities({
   computerControl,
-  notifications,
   taskRailOpen,
   onToggleTaskRail,
 }: {
   computerControl?: ReactNode;
-  notifications?: ReactNode;
   taskRailOpen: boolean;
   onToggleTaskRail: () => void;
 }) {
   return (
     <div className="header-utilities">
-      {notifications}
       {computerControl}
       <SidebarPanelToggle expanded={taskRailOpen} onToggle={onToggleTaskRail} />
     </div>
@@ -972,7 +968,6 @@ function AuthenticatedHome() {
               />}
             </div>
             <HeaderUtilities
-              notifications={personalAssistant ? <AssistantProgressStrip /> : undefined}
               computerControl={personalAssistant ? (
                 <>
                   <DesktopOccupancyChip />

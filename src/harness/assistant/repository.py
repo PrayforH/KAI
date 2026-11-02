@@ -1164,6 +1164,53 @@ class PostgresAssistantRepository:
                 for row in rows
             ]
 
+    async def conversation_notices(
+        self, tenant_id: str, user_id: str, *,
+        before: tuple[datetime, str] | None = None, limit: int = 100,
+    ) -> tuple[list[AssistantInboxItem], int]:
+        """Page the owner's durable receipts, including ones already read.
+
+        Share the conversation cursor's (timestamp, message id) ordering. The
+        old inbox's newest-100 limit must not silently truncate chat history.
+        """
+        from harness.assistant.chat_notices import NOTICE_MESSAGE_PREFIX
+
+        async with self._context() as session:
+            owner = (
+                AssistantInboxRow.tenant_id == tenant_id,
+                AssistantInboxRow.user_id == user_id,
+            )
+            total = await session.scalar(
+                select(func.count()).select_from(AssistantInboxRow).where(*owner)
+            )
+            query = select(AssistantInboxRow).where(*owner)
+            if before is not None:
+                at, message_id = before
+                query = query.where(or_(
+                    AssistantInboxRow.created_at < at,
+                    and_(AssistantInboxRow.created_at == at,
+                         literal(NOTICE_MESSAGE_PREFIX) + AssistantInboxRow.item_id < message_id),
+                ))
+            rows = await session.scalars(query.order_by(
+                AssistantInboxRow.created_at.desc(), AssistantInboxRow.item_id.desc(),
+            ).limit(limit))
+            return [AssistantInboxItem.model_validate(row.payload).model_copy(
+                update={"read_at": row.read_at}
+            ) for row in rows], int(total or 0)
+
+    async def conversation_notice(
+        self, tenant_id: str, user_id: str, item_id: str,
+    ) -> AssistantInboxItem | None:
+        async with self._context() as session:
+            row = await session.scalar(select(AssistantInboxRow).where(
+                AssistantInboxRow.tenant_id == tenant_id,
+                AssistantInboxRow.user_id == user_id,
+                AssistantInboxRow.item_id == item_id,
+            ))
+            return AssistantInboxItem.model_validate(row.payload).model_copy(
+                update={"read_at": row.read_at}
+            ) if row else None
+
     async def read_notice(
         self, tenant_id: str, user_id: str, item_id: str, now: datetime,
         *, expected_source_sequence: int | None = None,

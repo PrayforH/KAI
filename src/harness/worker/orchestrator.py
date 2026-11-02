@@ -1667,9 +1667,13 @@ class RunOrchestrator:
             branch_projection = (
                 raw_branch_projection if isinstance(raw_branch_projection, str) else ""
             )
+            quoted = run.input.get("quoted_message_context")
+            quoted_projection = quoted if isinstance(quoted, str) else ""
             context_projection = "\n\n".join(
                 section
-                for section in (project_projection, recovery_projection, branch_projection)
+                for section in (
+                    project_projection, recovery_projection, branch_projection, quoted_projection,
+                )
                 if section.strip()
             )
             if recovery_projection:
