@@ -1,5 +1,5 @@
 "use client";
-import { assistantChatReplies, publicChatText } from "../lib/assistant-chat";
+import { assistantChatReplies, assistantChatMessages, publicChatText } from "../lib/assistant-chat";
 import { AssistantChatTime } from "./assistant-chat-time";
 import { responseTextForDisplay } from "../lib/process-response";
 import { sendComposerWithRecovery } from "../lib/composer-send";
@@ -52,6 +52,7 @@ import { ConversationThread } from "./conversation-thread";
 import { ConversationIndex } from "./conversation-index";
 import { useRunCancel } from "./run-cancel-context";
 import { PromptQueue } from "./prompt-queue";
+import { SteeringUserMessage } from "./steering-user-message";
 import { useFollowUpPreference } from "../lib/interface-preferences";
 import { useConversationRedactor } from "./conversation-redaction";
 import { SentUserContent } from "./sent-user-content";
@@ -60,7 +61,7 @@ import { groupWorkspaceFiles } from "../lib/workspace-file-groups";
 import { setPendingReply } from "../lib/reply-references";
 import { loadComposerReplyDraft, persistComposerReplyDraft } from "../lib/task-composer-draft";
 import { useAssistantBot, useAssistantSurface } from "./assistant-bot-context";
-import { AssistantConversationTail, AssistantSteeringMessages } from "./assistant-conversation-tail";
+import { AssistantConversationTail } from "./assistant-conversation-tail";
 import { HandoverInlineRows, shouldShowHandoverRows } from "./handover-row";
 import {
   MENTION_PREFIX,
@@ -1495,7 +1496,7 @@ function TurnActivity({
   ) return null;
 
   if (activitySurface) {
-    return <AssistantSteeringMessages activity={displayed} />;
+    return null;
   }
   return (
     <div
@@ -1678,7 +1679,7 @@ export function HarnessAssistantMessage() {
   if (capturedChatActivity.current?.messageId !== messageId) capturedChatActivity.current = undefined;
   if (terminalActivity) capturedChatActivity.current = { messageId, activity: terminalActivity };
   const chatActivity = terminalActivity ?? capturedChatActivity.current?.activity;
-  const chatReplies = assistantSurface && !hasVideoGeneration ? assistantChatReplies(chatActivity) : [];
+  const chatReplies = assistantSurface && !hasVideoGeneration ? assistantChatMessages(chatActivity) : [];
   // Bot text is already the public AG-UI channel. Show its owned live slot while
   // the durable activity stream catches up; task prose keeps process gating.
   const responseText = collapseRepeatedAssistantText(assistantSurface && directStream
@@ -1743,7 +1744,7 @@ export function HarnessAssistantMessage() {
     ? (isNotice ? compactAssistantProgress : coordinationOnly && !showingInputCard ? compactAssistantReceipt : assistantCopy)(stripHarnessUiFences(displayCandidate, publishedBlocks))
     : assistantSurface ? assistantCopy(displayCandidate) : displayCandidate;
   const chatBubbles = chatReplies.map(reply => ({ ...reply,
-    text: assistantCopy(redact(publicChatText(stripHarnessUiFences(reply.text, publishedBlocks)))),
+    text: reply.role === "user" ? redact(reply.text) : assistantCopy(redact(publicChatText(stripHarnessUiFences(reply.text, publishedBlocks)))),
   })).filter(reply => reply.text.trim());
   const actionText = showingInputCard ? (compactMain ? assistantCopy(conversationInputDisplay(copyText)) : conversationInputDisplay(copyText)) : displayedText;
   const draftScope = useContext(ComposerDraftContext);
@@ -1811,7 +1812,9 @@ export function HarnessAssistantMessage() {
         }}
       />
       {/* Bot controls sit beside the bubble; task controls stay below deliverables. */}
-      {chatBubbles.length ? chatBubbles.map(reply => (
+      {chatBubbles.length ? chatBubbles.map(reply => reply.role === "user" ? (
+        <SteeringUserMessage key={reply.id} chat text={reply.text} status={reply.receipt ?? "accepted"} />
+      ) : (
         <div className="assistant-answer-row" key={reply.id} data-chat-message={reply.id}>
           <AssistantResponse text={reply.text} streaming={reply.streaming} />
           <div className="assistant-message-controls">
@@ -1825,9 +1828,6 @@ export function HarnessAssistantMessage() {
         <AssistantResponse key={messageId} text={displayedText} streaming={!controlSummary && (directStream ? live.status === "streaming" && !live.textComplete : messageStatus?.type === "running")} />
         {assistantSurface && responseActions}
       </div>}
-      {assistantSurface && !hasVideoGeneration ? <TurnActivity
-        hasDurableProjection={hasRunActivityToolCall(content)} messageId={messageId}
-      /> : null}
       <div className="followup-input-anchor" data-followup-for={messageId} />
       {!hasVideoGeneration && (assistantSurface ? <BotRunNotice activity={terminalActivity}
         incomplete={showIncompleteRecovery}

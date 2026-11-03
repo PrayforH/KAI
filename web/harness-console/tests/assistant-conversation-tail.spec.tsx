@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import type { RunActivity } from "../src/lib/activity-schema";
 import { ConversationSurfaceProvider } from "../src/components/assistant-bot-context";
-import { AssistantConversationTail, AssistantSteeringMessages } from "../src/components/assistant-conversation-tail";
+import { AssistantConversationTail } from "../src/components/assistant-conversation-tail";
 import { PromptQueue } from "../src/components/prompt-queue";
 const state = vi.hoisted(() => ({ activity: undefined as RunActivity | undefined }));
 vi.mock("../src/lib/activity-store", () => ({
@@ -33,13 +33,4 @@ it("puts exactly one live status after the newest message as more messages arriv
   state.activity = { ...state.activity!, status: "succeeded" };
   render(["检查电脑", "帮我恢复下"]);
   expect(host.querySelector(".grok-activity-row")).toBeNull();
-});
-it("retains accepted and unknown messages in history once, without exposing receipt prose", () => {
-  host = document.createElement("div"); document.body.append(host); root = createRoot(host);
-  const activity: RunActivity = { run_id: "r", status: "succeeded", started_at: "2026-11-03T01:00:00Z", metrics: {}, items: [
-    ...["requested", "accepted", "accepted"].map((status, i) => ({ id: String(i), sequence: i, timestamp: "2026-11-03T01:00:00Z", event_type: `run.steer.${status}`, kind: "analysis" as const, status: "succeeded" as const, title: "", summary: "保留原目录", metadata: {request_id: "m1"} })),
-  ] };
-  act(() => root.render(<AssistantSteeringMessages activity={activity} />));
-  expect(host.textContent).toBe("保留原目录");
-  expect(host.querySelectorAll(".steering-user-message-bubble")).toHaveLength(1);
 });

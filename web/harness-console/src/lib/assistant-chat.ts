@@ -35,6 +35,38 @@ export function assistantChatReplies(activity?: RunActivity): ChatReply[] {
   return replies.filter(reply => reply.text.trim()).map(({ id, text, timestamp, streaming }) => ({ id, text, timestamp, streaming }));
 }
 
+export type ChatMessage = ChatReply & { role: "assistant" | "user"; receipt?: "accepted" | "unknown" };
+
+/** Merge durable corrections at their original send position, not at receipt time. */
+export function assistantChatMessages(activity?: RunActivity): ChatMessage[] {
+  if (!activity) return [];
+  const positions = new Map(activity.items.map(item => [item.id, item.sequence]));
+  const replies = assistantChatReplies(activity).map(reply => ({
+    ...reply, role: "assistant" as const, sequence: positions.get(reply.id) ?? 0,
+  }));
+  const guidance = new Map<string, ChatMessage & { sequence: number }>();
+  const requested = new Map<string, { sequence: number; text: string; timestamp: string }>();
+  for (const item of [...activity.items].sort((a, b) => a.sequence - b.sequence)) {
+    const id = item.metadata.request_id;
+    if (typeof id !== "string") continue;
+    if (item.event_type === "run.steer.requested" && item.summary && !requested.has(id)) {
+      requested.set(id, { sequence: item.sequence, text: item.summary, timestamp: item.timestamp });
+    }
+    if (item.event_type === "run.steer.accepted" || item.event_type === "run.steer.unknown") {
+      const original = requested.get(id);
+      const text = original?.text || item.summary;
+      if (text) guidance.set(id, {
+        id: `guidance:${id}`, role: "user", text, streaming: false,
+        timestamp: original?.timestamp ?? item.timestamp,
+        sequence: original?.sequence ?? item.sequence,
+        receipt: item.event_type === "run.steer.accepted" ? "accepted" : "unknown",
+      });
+    }
+  }
+  return [...replies, ...guidance.values()].sort((a, b) => a.sequence - b.sequence)
+    .map(({ sequence: _, ...message }) => message);
+}
+
 export function chatTimeLabel(timestamp: string, now = new Date()): string | null {
   const date = new Date(timestamp);
   if (!Number.isFinite(date.getTime())) return null;

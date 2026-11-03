@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assistantChatReplies, chatTimeLabel, showChatTime } from "../src/lib/assistant-chat";
+import { assistantChatReplies, assistantChatMessages, chatTimeLabel, showChatTime } from "../src/lib/assistant-chat";
 import type { RunActivity } from "../src/lib/activity-schema";
 const activity = (events: [string, string?, string?][], status = "running"): RunActivity => ({
   run_id: "r", status, started_at: "2026-11-02T00:00:00Z", metrics: {},
@@ -88,4 +88,18 @@ it("does not stamp fresh sends, even after an old history gap", () => {
   expect(showChatTime("2026-11-02T18:46:01+08:00", previous, now)).toBe(false);
   expect(showChatTime("2026-11-02T18:46:00+08:00", previous, now)).toBe(true);
   expect(showChatTime("2026-11-02T18:46:00+08:00", "2026-11-02T18:45:00+08:00", now)).toBe(false);
+});
+
+
+it("keeps a mid-turn correction before its answer even when acknowledgement arrives after answer deltas", () => {
+  const a = activity([
+    ["message.delta", "先检查旧方向", "old"], ["message.completed", undefined, "old"],
+    ["run.steer.requested", "换成新方向"], ["message.delta", "按新方向继续", "new"],
+    ["run.steer.accepted", "换成新方向"], ["run.steer.accepted", "换成新方向"],
+  ]);
+  for (const item of a.items) if (item.event_type.startsWith("run.steer.")) item.metadata.request_id = "correction";
+  expect(assistantChatMessages(a).map(item => [item.role, item.text])).toEqual([
+    ["assistant", "先检查旧方向"], ["user", "换成新方向"], ["assistant", "按新方向继续"],
+  ]);
+  expect(assistantChatMessages(JSON.parse(JSON.stringify(a)))).toEqual(assistantChatMessages(a));
 });
