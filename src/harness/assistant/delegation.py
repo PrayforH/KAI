@@ -494,6 +494,14 @@ def assistant_delegation_overlay(
                 )
             except Exception:  # noqa: BLE001 - 状态行是增强信息，失败不影响转交
                 pass
+        if status == "applied" and run.input.get("conversation_surface") == "assistant":
+            # Coordinates are already durable and emitted as ui.handover above.
+            # The main-chat model needs the confirmed outcome, not copyable IDs.
+            return _text(
+                f"已交给「{name}」，完成后会自动回报结果。\n"
+                "本次工作已成功转交，现在只向用户简短确认已转交并结束本轮；"
+                "不要展示内部状态或编号，不要重复执行、重新查证同一工作或轮询等待结果。"
+            )
         lines = [f"转交回执[{status}]：handover={outcome['handover_id']}"]
         lines.append(
             f"子助理：{outcome['specialist_id']}"
@@ -526,11 +534,6 @@ def assistant_delegation_overlay(
                 + (f"；{detail}" if detail else "")
                 + "）；首次执行产出前，子助理会话可能暂无输出。"
             )
-            if run.input.get("conversation_surface") == "assistant":
-                lines.append(
-                    "本次工作已成功转交，完成后会自动回传。现在只向用户简短确认已转交并结束本轮；"
-                    "不要重复执行、重新查证同一工作或轮询等待结果。"
-                )
         return _text("\n".join(lines))
 
     async def specialist_status(_arguments: dict[str, Any]) -> dict[str, Any]:

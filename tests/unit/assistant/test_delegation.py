@@ -570,9 +570,13 @@ async def test_applied_delegate_receipt_matches_the_enqueued_execution(surface):
         {"name": "费用监控", "task": "长期关注花费"}
     )
     body = text_of(result)
-    assert "applied" in body
-    assert "首次执行已入队" in body
-    assert "objective_run_abc" in body and "assistant_objective-9" in body
+    if surface == "assistant":
+        assert "已交给「费用监控」" in body
+        assert "applied" not in body and "objective-9" not in body and "handover-1" not in body
+    else:
+        assert "applied" in body
+        assert "首次执行已入队" in body
+        assert "objective_run_abc" in body and "assistant_objective-9" in body
     assert "待补充配置" not in body
     assert ("现在只向用户简短确认已转交并结束本轮" in body) is (surface == "assistant")
     if surface == "assistant":
