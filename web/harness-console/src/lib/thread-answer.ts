@@ -82,7 +82,9 @@ export async function submitThreadAnswer(input: {
       state: null,
       tools: [],
       context: [],
-      forwardedProps: {},
+      // 投给助理线程的消息也属于助理范围：漏了这个标记，运行时就不给它装配
+      // 平台联网，被 @ 的 Bot 只能回「取不到」。
+      forwardedProps: { conversationSurface: "assistant", assistantScope: true },
     }),
   });
   if (!response.ok) {
