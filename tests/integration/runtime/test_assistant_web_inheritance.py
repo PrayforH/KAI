@@ -242,6 +242,5 @@ async def test_assistant_web_directive_precedes_the_host_agent_persona(tmp_path:
     )
     prompt = options.system_prompt or ""
     assert prompt.startswith(WEB_ASSISTANT_CONTRACT)
-    assert "优先级高于上文任何关于你自身职责的描述" in prompt
-    # 与"不把文件内容外发"的既有约束显式对齐，避免模型把它读成禁止联网。
-    assert "并不冲突" in prompt
+    assert "不因联网能力而扩大权限" in prompt
+    assert "翻译和改写不要求联网" in prompt

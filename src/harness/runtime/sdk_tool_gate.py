@@ -18,6 +18,7 @@ from claude_agent_sdk.types import (
     PostToolUseHookInput,
     PreCompactHookInput,
     PreToolUseHookInput,
+    StopHookInput,
     SyncHookJSONOutput,
 )
 
@@ -52,6 +53,7 @@ from harness.runtime.input_redaction import (
 )
 from harness.runtime.sandbox_tools import canonical_tool_name, proxy_tool_name
 from harness.runtime.tool_allow_overrides import apply_allow_overrides
+from harness.runtime.web_evidence import WEB_VERIFICATION_REASON, WebEvidence
 
 
 class ToolGate(Protocol):
@@ -249,6 +251,11 @@ class SdkToolGate:
         current_context_trust: ContextTrust | None = None
         pending_result_trust: dict[str, tuple[str, ContextTrust, str]] = {}
         declared_result_trust = dict(result_trust_by_tool or {})
+        web_evidence = WebEvidence.for_request(
+            assistant_scope=bool(context.run.input.get("assistant_scope")),
+            prompt=str(context.run.input.get("prompt", "")),
+            tools=set(declared_result_trust),
+        )
         lead_skills = frozenset(skill_names)
         child_skills = {
             name: frozenset(names)
@@ -403,6 +410,10 @@ class SdkToolGate:
                 )
                 return _hook_output("deny", PREFACE_NUDGE_REASON)
             context_trust = await load_context_trust()
+            # A real request (including a policy refusal) is evidence of an
+            # attempt. The preface-only nudge above deliberately does not count.
+            if not typed_input.get("agent_id") and not typed_input.get("agent_type"):
+                web_evidence.note_request(canonical_name)
             output = await self._authorize(
                 context,
                 typed_input,
@@ -551,7 +562,27 @@ class SdkToolGate:
                 )
             return cast(HookJSONOutput, {})
 
-        return {
+        async def verify_web_failure(
+            hook_input: HookInput,
+            _tool_use_id: str | None,
+            _hook_context: HookContext,
+        ) -> HookJSONOutput:
+            typed_input = cast(StopHookInput, hook_input)
+            if not web_evidence.needs_verification(
+                typed_input.get("last_assistant_message", ""),
+                stop_hook_active=typed_input.get("stop_hook_active", False),
+            ):
+                return cast(HookJSONOutput, {})
+            await self._events.append(
+                tenant_id=context.run.tenant_id,
+                run_id=context.run.run_id,
+                session_id=context.run.session_id,
+                event_type="assistant.web_verification.requested",
+                payload={"reason": "unattempted_weather_failure", "attempt": 1},
+            )
+            return cast(HookJSONOutput, {"decision": "block", "reason": WEB_VERIFICATION_REASON})
+
+        hooks: dict[HookEvent, list[HookMatcher]] = {
             "PreCompact": [HookMatcher(matcher=None, hooks=[pre_compact], timeout=30.0)],
             "PreToolUse": [HookMatcher(matcher=None, hooks=[pre_tool_use], timeout=900.0)],
             "PostToolUse": [
@@ -571,6 +602,9 @@ class SdkToolGate:
                 HookMatcher(matcher=None, hooks=[trace_tool_failure]),
             ],
         }
+        if web_evidence.enabled:
+            hooks["Stop"] = [HookMatcher(matcher=None, hooks=[verify_web_failure], timeout=10.0)]
+        return hooks
 
     async def _authorize(
         self,

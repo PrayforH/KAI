@@ -45,9 +45,52 @@ from harness.runtime.assistant_preface import PREFACE_NUDGE_REASON, AssistantPre
 from harness.runtime.base import RuntimeContext
 from harness.runtime.input_redaction import INTERNAL_AGENT_ASSET_MARKER
 from harness.runtime.sdk_tool_gate import SdkToolGate
+from harness.runtime.web_tools import WEB_TOOL_NAMES
 from harness.sandbox.base import SandboxCommandResult, SandboxIsolation
 
 NOW = datetime(2026, 7, 13, tzinfo=UTC)
+
+
+@pytest.mark.asyncio
+async def test_weather_stop_hook_demands_a_real_attempt_only_once(tmp_path: Path) -> None:
+    gate, _, _, events, context = await _arrange(tmp_path)
+    context = context.model_copy(update={"run": context.run.model_copy(update={
+        "input": {"assistant_scope": True, "prompt": "今天上海天气"},
+    })})
+    hooks = gate.hooks(context, result_trust_by_tool={
+        WEB_TOOL_NAMES["WebFetch"]: ContextTrust.UNTRUSTED,
+    })
+    stop = hooks["Stop"][0].hooks[0]
+    payload = {"hook_event_name": "Stop", "stop_hook_active": False,
+               "last_assistant_message": "今日预报未获取到"}
+    result = await stop(payload, None, {"signal": None})
+    assert result["decision"] == "block"
+    assert await stop(payload, None, {"signal": None}) == {}
+    assert [e.type for e in await events.list_after("tenant-a", "run-sdk", 0)] == [
+        "assistant.web_verification.requested",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_weather_policy_refusal_is_not_retried_or_bypassed(tmp_path: Path) -> None:
+    gate, _, _, _, context = await _arrange(tmp_path, policy_rules=[PolicyRule(
+        name="no-web", tool="WebFetch", decision=PolicyDecision.DENY, priority=100,
+    )])
+    context = context.model_copy(update={"run": context.run.model_copy(update={
+        "input": {"assistant_scope": True, "prompt": "今天上海天气"},
+    })})
+    hooks = gate.hooks(context, result_trust_by_tool={
+        WEB_TOOL_NAMES["WebFetch"]: ContextTrust.UNTRUSTED,
+    })
+    result = await hooks["PreToolUse"][0].hooks[0](
+        _input(WEB_TOOL_NAMES["WebFetch"], {"url": "https://example.com"}, "web-1"),
+        "web-1", {"signal": None},
+    )
+    assert _decision(result) == "deny"
+    assert await hooks["Stop"][0].hooks[0](
+        {"hook_event_name": "Stop", "stop_hook_active": False,
+         "last_assistant_message": "今日预报未获取到"}, None, {"signal": None},
+    ) == {}
 
 
 def _ids() -> Callable[[str], str]:
