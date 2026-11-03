@@ -124,3 +124,13 @@ async def test_mention_to_another_users_bot_is_not_found() -> None:
             "t", "u", "specialist_other_user", text="在吗", idempotency_key="key-12345678"
         )
     repo.record_handover.assert_not_called()
+
+
+def test_routine_executions_carry_the_assistant_scope() -> None:
+    """例行执行（每天那条提醒）必须带助理范围，否则退化成没有联网检索能力。
+
+    早先每条天气提醒都答「本运行没有联网检索能力」，就是这条标记漏在聊天入口里。
+    """
+    from harness.assistant.service import routine_forwarded_props
+
+    assert routine_forwarded_props() == {"assistantScope": True}

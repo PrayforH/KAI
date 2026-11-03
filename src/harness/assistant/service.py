@@ -936,8 +936,7 @@ class AssistantService:
                         messages=[UserMessage(id=execution.execution_id, content=prompt)],
                         tools=[],
                         context=[],
-                        # 助理的例行执行属于助理范围：平台联网配好时默认跟随。
-                        forwarded_props={"assistantScope": True},
+                        forwarded_props=routine_forwarded_props(),
                     ),
                 )
                 run = creation.run
@@ -1697,6 +1696,15 @@ class AssistantService:
             "execution_id": execution.execution_id,
             "thread_id": execution.thread_id,
         }
+
+
+def routine_forwarded_props() -> dict[str, object]:
+    """例行执行与助理对话同一口径：都属于助理范围，平台联网配好时默认跟随。
+
+    这条不能只写在聊天入口：例行执行走的是服务端自建的 AG-UI 请求，
+    少传这个标记就会退化成「本运行没有联网检索能力」。
+    """
+    return {"assistantScope": True}
 
 
 def _handover_coordinates(handover: SpecialistHandover) -> dict[str, str]:
