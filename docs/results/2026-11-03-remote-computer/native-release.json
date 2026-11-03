@@ -1,0 +1,31 @@
+{
+  "compose_sha256": "7931f25921c4ddb775de4385fe60565aebdc2fa7d3840f87163f177236619b33",
+  "remote_image": "sha256:dae4e9987131a128cc4fc60ce2264bc0731400f798691a449e1d016449a8c52e",
+  "images": {
+    "api": {
+      "tag": "kai/superagent-api:20261103-native-desktop-v2",
+      "id": "sha256:6cc1e8f94ede73fc7d71a7d97e2f1c7f68776860d440e1828de44e4f57a09262",
+      "status": "healthy"
+    },
+    "worker": {
+      "tag": "kai/superagent-api:20261103-native-desktop-v2",
+      "id": "sha256:6cc1e8f94ede73fc7d71a7d97e2f1c7f68776860d440e1828de44e4f57a09262",
+      "status": "healthy"
+    },
+    "computer-control": {
+      "tag": "kai/superagent-api:20261103-native-desktop-v2",
+      "id": "sha256:6cc1e8f94ede73fc7d71a7d97e2f1c7f68776860d440e1828de44e4f57a09262",
+      "status": "healthy"
+    },
+    "computer-viewer": {
+      "tag": "kai/computer-viewer:20261103-native-desktop-v2",
+      "id": "sha256:fedc42e9ddd8d92be9668b0c129adba6a74794a08761a66704844f607e084bd6",
+      "status": "running"
+    },
+    "web": {
+      "tag": "kai/superagent-web:20261103-chat-v3",
+      "id": "sha256:b90567fbbf21ee88d9284af448bc4483e5c1faba3a1727ef08f69947e2f32ecb",
+      "status": "healthy"
+    }
+  }
+}

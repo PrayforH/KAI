@@ -6,7 +6,7 @@
 
 ## 实现结构
 
-ComputerRegistry仍是当前绑定的唯一事实来源；运营配置声明两个可选目标，公开API只暴露opaque target ID和名称。切换沿用同一事务/行锁，拒绝活跃执行或人工控制，递增桌面epoch。云VM磁盘和本机系统/用户文件各自保留，不搬移HOME、不关闭机器。
+ComputerRegistry仍是供助理执行的电脑绑定唯一事实来源；查看目标单独选择，只读切画面不改变执行机。“更多→供助理使用”才申请变更执行。运营配置声明两个可选目标，公开API只暴露opaque target ID和名称。切换沿用同一事务/行锁，拒绝活跃执行或人工控制，递增桌面epoch。云VM磁盘和本机系统/用户文件各自保留，不搬移HOME、不关闭机器。
 
 remote-computer执行复用原supervisor的UID28000、PID/mount namespace和执行租约。独立SSH控制密钥只能进入固定root gate；桌面密钥只能转发本人当前:0桌面的私有Unix RFB socket。SSH传输与VM共享实现；桌面队列、接管取消和drain确认沿用原协调器。
 
@@ -39,3 +39,12 @@ agent-desktop的辅助功能定位作为后续适配器：接入本地电脑本�
 这证明本机可运行原生agent-desktop，不代表KAI已新增AX模型工具。后续AX适配应放在既有DesktopService协调器内，与RFB输入共享租约/epoch、取消和人工接管屏障；不得让模型通过普通命令直接连接用户session bus，不得另起一套生命周期或按业务写死流程。
 
 真实部署发现两项环境问题并修复：远端HOME原为777，OpenSSH StrictModes拒绝其viewer密钥，只移除组/其他用户的写权限为755，不递归变更文件、不关闭StrictModes；本地SSH代理改用shlex.join组织的绝对sys.executable，在桌面通道的精简PATH下同样可执行。新增Unix socket真正收发、空PATH回归，相关181项单元测试通过。
+
+
+## 最新增量已发布79，用户自行手动验收
+
+原生computer_ui适配已接入32.45：复用DesktopService权限、租约和接管屏障，以固定CLI协议读取控件树并执行语义动作；远端组件pin和控制代次同时核验。云电脑仍走原路径。此段取代前述“后续AX适配”的计划状态；此前安装与Files验证是早期证据，本次模型端到端仍待用户验证，不宣称token节省比例。
+
+助理连续消息默认直接补充，历史按需分页、缓存、去重并拒绝旧会话异步结果；隐藏加载历史小字。机器人加号靠右，归档／隐藏移入设置管理并可受控删除。电脑查看和执行分离，底部控制与连接动画参考本地Grok客户端；尚无真实OS睡眠／唤醒能力。
+
+发布API／Worker／Control及Viewer native-desktop-v2、Web chat-v3，健康与HTTP入口通过；飞书11.14回读revision112。最新自动检查与用户手动清单见acceptance.md。仅79和32.45，本轮没有真实网页／模型验收通过结论。

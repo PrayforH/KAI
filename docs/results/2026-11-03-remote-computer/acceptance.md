@@ -1,12 +1,37 @@
 # Remote Computer 与 Ubuntu 24.04 验收记录
 
+当前版本已部署79。用户最新要求自行手动验收；以下旧版本RFB现场证据保留，不能代替本次原生控件、消息和分页的真实网页验收。
+
+## 最新发布与手动验收交接
+
+实现提交c073a44e、7a874ad5、3add8d9a、d632a31b。API／Worker／Control与Viewer为native-desktop-v2，Web为chat-v3。实际镜像及Compose校验见[native-release.json](native-release.json)。API、Worker、Control、Web健康，Viewer运行，/assistant HTTP 200；32.45固定组件校验同步更新。云虚机、聊天、配置、绑定与文件保留。
+
+自动验证：91项后端／原生控件／电脑查看／历史及隔离数据库回归、70项前端测试通过，相关TypeScript、电脑模块Pyright和改动生产文件Ruff通过。Bot删除／主助理／目标契约相关17项通过，另一个旧测试替身缺少归属字段，修正后该案例复验通过。未声称仓库全量类型检查无错误。
+
+computer_ui已通过平台原有租约、权限和接管屏障连接32.45的agent-desktop，提供有界控件树及语义操作；云电脑维持原路径。远端固定协议、二进制校验、降权、进程清理及持久控制代次约束动作；未知投递不自动重试。不支持的GTK4语义输入返回真实拒绝。本次模型实测和token节省比例尚待验证。
+
+已查看本地Grok Bot原生客户端。电脑控件移至底部，增加预览圆角、连接动画及画面淡入；没有真实OS休眠／唤醒接口，不把网络故障显示为休眠，未让32.45休眠。
+
+交给用户的手动清单：
+
+- 运行中连续补充2—3条，每条独立气泡、直接调整方向；普通任务／项目仍各自独立。
+- 快速切助理并向上翻页，确认历史按需加载、位置稳定、不串消息，没有加载历史小字。
+- 机器人加号靠右；归档／隐藏只在设置→机器人管理。用临时测试Bot验证恢复、删除。
+- 底部电脑控件、预览／全屏、连接动画；执行时仅切换云／本地查看，原执行机不变；空闲时“更多→供助理使用”才变更执行机。
+- 32.45合成窗口“KAI 原生控件验收”（应用python3.12）里，输入AX-OK、点击“确认验收”并读回；运行详情核对computer_ui。合成窗口暂留供用户验收。
+- 人工接管阻止助理输入，交还后恢复。以上本次真实页面／模型检查均待用户验证。
+
+飞书11.14已同步并回读至revision112，含当前实现、发布版本及待手动验证边界。
+
+## 以下为前一版本现场记录
+
 状态：24.04升级与重启、真实本地桌面、模型GUI输入点击、人工键盘鼠标、人工接管拒绝与交还后恢复已实测。云→本地→云往返切换最后一项待用户当前电脑操作空闲后完成。模型出现一次跨窗口焦点误投，影响已核查并保留为可靠性问题。
 
 ## 发布范围
 
 仅79应用与192.168.32.45电脑。未改174，未覆盖共享main工作区。云虚机及原有磁盘保留。实现分支feat/remote-computer-20261103，基线提交b2eabb9e、c48a9610；最终代码提交见Git记录。
 
-79最终API/Worker/Control（remote-computer-v2）：sha256:f1ef067666e48e49946ba9d6c9f472ee08d1a199df5d5f37d5a2a8a9aa73b37f。Web（v1）：sha256:b39ed08ced64413270f40d1f44709a08c95ab8098419eb296a05376df7ed1d7f。Viewer（v4）：sha256:c714f7098c8b0b2096bb2149dca954a8aae334aa22b1412485236bf89604bb28。API、Worker、Web、Control健康。Viewer直接基于最终API构建，二者均95层，Web9层；避免按每次修补累加viewer层。Compose SHA：c3302a05c1d77d807cadf22b88573a91cda83574e95e6ca4fa91088668a77bf4。
+79此前API/Worker/Control（remote-computer-v2）：sha256:f1ef067666e48e49946ba9d6c9f472ee08d1a199df5d5f37d5a2a8a9aa73b37f。Web（v1）：sha256:b39ed08ced64413270f40d1f44709a08c95ab8098419eb296a05376df7ed1d7f。Viewer（v4）：sha256:c714f7098c8b0b2096bb2149dca954a8aae334aa22b1412485236bf89604bb28。API、Worker、Web、Control健康。Viewer直接基于最终API构建，二者均95层，Web9层；避免按每次修补累加viewer层。Compose SHA：c3302a05c1d77d807cadf22b88573a91cda83574e95e6ca4fa91088668a77bf4。
 
 ## 已有证据
 
