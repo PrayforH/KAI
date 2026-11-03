@@ -967,17 +967,19 @@ class ClaudeSdkRuntime:
                 for tool in snapshot.manifest.spec.tools
                 if tool.builtin in WEB_BUILTINS
             )
-        assistant_web = False
         if context.run.input.get("assistant_scope") and not web_builtins:
             # 助理默认跟随平台联网：平台配好联网、本人没关闭时，
             # 主助理与子助理都能搜索/抓取，不必逐个 Bot 重新发布带联网工具的智能体。
             # 密钥与开关仍是平台那一份；关掉即不装配，任务/项目面不受影响。
             if await self._tool_resolver.web_allowed(context.identity):
                 web_builtins.update(WEB_BUILTINS)
-                assistant_web = True
         if web_builtins and not await self._tool_resolver.web_allowed(context.identity):
             web_builtins.clear()
             builtin_tools = [name for name in builtin_tools if name not in WEB_BUILTINS]
+        # 联网工具不论来自 Agent 声明、工具目录还是助理范围注入，只要本轮真的可用，
+        # 助理面就要配那条"先检索再作答"的契约：宿主 Agent 的自述职责常常与当下
+        # 问题无关（归档 Agent 被问天气），光把工具挂上，模型也会直接回"取不到"。
+        assistant_web = bool(context.run.input.get("assistant_scope") and web_builtins)
         if web_builtins:
             if remote_transport:
                 raise ToolResolutionError("当前远程 CLI 尚不支持平台内置联网工具，请使用已有 MCP。")

@@ -45,8 +45,16 @@ async def _options(
     assistant_scope: bool,
     personal_web_enabled: bool,
     with_directory: bool,
+    agent_declares_web: bool = False,
 ) -> ClaudeAgentOptions:
     snapshot = load_manifest("tests/fixtures/agents/echo-agent/agent.yaml")
+    if agent_declares_web:
+        payload = snapshot.model_dump(mode="json")
+        payload["manifest"]["spec"]["tools"] = [
+            *payload["manifest"]["spec"].get("tools", []),
+            {"builtin": "WebSearch", "mcp": None, "python_entry": None},
+        ]
+        snapshot = AgentManifestSnapshot.model_validate(payload)
     if with_directory:
         directory = ToolDirectorySnapshot.create(
             catalog_revision=1,
@@ -203,3 +211,18 @@ async def test_task_surface_keeps_the_plain_web_contract(tmp_path: Path) -> None
         tmp_path, assistant_scope=False, personal_web_enabled=True, with_directory=False
     )
     assert WEB_ASSISTANT_CONTRACT not in (options.system_prompt or "")
+
+
+@pytest.mark.asyncio
+async def test_contract_applies_when_the_agent_already_declares_web(tmp_path: Path) -> None:
+    """工具来自 Agent 声明时同样要有"先检索再说"的契约，不只是注入那一路。"""
+    from harness.runtime.web_tools import WEB_ASSISTANT_CONTRACT
+
+    options = await _options(
+        tmp_path,
+        assistant_scope=True,
+        personal_web_enabled=True,
+        with_directory=False,
+        agent_declares_web=True,
+    )
+    assert WEB_ASSISTANT_CONTRACT in (options.system_prompt or "")
