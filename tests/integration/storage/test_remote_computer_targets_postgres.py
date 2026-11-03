@@ -2,7 +2,7 @@
 
 import pytest
 
-from harness.computer.desktop import DesktopControlService
+from harness.computer.desktop import DesktopControlService, DesktopOccupiedError
 from harness.computer.models import ComputerBusyError
 from harness.computer.targets import ComputerTarget, ComputerTargetService
 from harness.core.errors import NotFoundError
@@ -49,6 +49,25 @@ async def test_switch_and_return_preserve_source_and_fence_desktop_generation(da
     await selection.select("tenant-a", "user-a", "cloud")
     saved = await registry.get("tenant-a", "user-a")
     assert saved.volume_ref == "kai-computer-old" and saved.computer_id == CID
+
+
+@pytest.mark.asyncio
+async def test_stale_view_cannot_take_over_return_or_refresh_a_different_target(database):
+    selection = service(await seeded(database))
+    desktop = DesktopControlService(database[1])
+    before = await desktop.view("tenant-a", "user-a")
+    await selection.select("tenant-a", "user-a", "local")
+    current = await desktop.view("tenant-a", "user-a")
+    assert current.binding_key != before.binding_key
+    allowed = (await selection.view("tenant-a", "user-a"))["targets"]
+    assert current.binding_key == next(
+        item["binding_key"] for item in allowed if item["target_id"] == "local"
+    )
+    for action in (desktop.request_human, desktop.release_human, desktop.refresh_human):
+        with pytest.raises(DesktopOccupiedError):
+            await action("tenant-a", "user-a", expected_binding=before.binding_key)
+    assert (await desktop.view("tenant-a", "user-a")).state.value == "observe"
+    await desktop.request_human("tenant-a", "user-a", expected_binding=current.binding_key)
 
 
 @pytest.mark.asyncio

@@ -337,7 +337,20 @@ def create_viewer_app(
 ) -> FastAPI:
     auth = client or httpx.AsyncClient(base_url=settings.api_url, trust_env=False, timeout=5)
     desktop = DesktopSsh(settings)
-    busy = asyncio.Lock()
+    sessions: dict[str | None, asyncio.Lock] = {}
+
+    @asynccontextmanager
+    async def preview_slot(target: str | None) -> AsyncGenerator[bool]:
+        lock = sessions.setdefault(target, asyncio.Lock())
+        if lock.locked():
+            yield False
+            return
+        await lock.acquire()
+        try:
+            yield True
+        finally:
+            lock.release()
+
     input_frames = {"keyboard": 0, "pointer": 0}
 
     @asynccontextmanager
@@ -375,7 +388,7 @@ def create_viewer_app(
         return {
             "enabled": True,
             "mode": "preview",
-            "busy": busy.locked(),
+            "busy": any(lock.locked() for lock in sessions.values()),
             "input_frames": dict(input_frames),
             "desktop_url": settings.public_origin + "/assistant/computer",
             "control": control,
@@ -383,7 +396,9 @@ def create_viewer_app(
 
     app.add_api_route("/computer/status", status, methods=["GET"])
 
-    async def desktop_state(token: str | None, *, refresh: bool = True) -> dict[str, str | int]:
+    async def desktop_state(
+        token: str | None, *, refresh: bool = True, binding: str | None = None
+    ) -> dict[str, str | int]:
         """The shared desktop lease decides who may type or click."""
 
         observe: dict[str, str | int] = {"state": "observe", "epoch": 0}
@@ -398,6 +413,8 @@ def create_viewer_app(
             if response.status_code != 200:
                 return observe
             value: dict[str, Any] = response.json()
+            if binding is not None and value.get("binding_key") != binding:
+                return observe
             state = str(value.get("state", "observe"))
             if state == "human" and refresh:
                 # An open viewer is proof the owner is present; refresh the
@@ -405,6 +422,7 @@ def create_viewer_app(
                 with contextlib.suppress(httpx.HTTPError, ValueError):
                     await auth.post(
                         "/v1/studio/assistant/computer/desktop/heartbeat",
+                        params={"binding_key": binding} if binding else None,
                         headers={"Authorization": "Bearer " + token},
                         timeout=3,
                     )
@@ -412,9 +430,13 @@ def create_viewer_app(
         except (httpx.HTTPError, ValueError, TypeError):
             return observe
 
-    async def active_endpoint(token: str | None) -> tuple[str | None, SshEndpoint | None]:
+    async def active_endpoint(
+        token: str | None, requested: str | None = None
+    ) -> tuple[str | None, SshEndpoint | None, str | None]:
         if not settings.targets:
-            return None, None
+            if requested is not None:
+                raise RuntimeError("requested desktop is not served")
+            return None, None, None
         response = await auth.get(
             "/v1/studio/assistant/computer/targets",
             headers={"Authorization": "Bearer " + (token or "")},
@@ -422,11 +444,20 @@ def create_viewer_app(
         )
         if response.status_code != 200:
             raise RuntimeError("desktop selection is unavailable")
-        target = response.json().get("active_target")
+        value = response.json()
+        target = requested if requested is not None else value.get("active_target")
+        allowed = next(
+            (item for item in value.get("targets", []) if item.get("target_id") == target), None
+        )
+        if requested is not None and allowed is None:
+            raise RuntimeError("requested desktop is not allowed")
         endpoint = settings.targets.get(target) if isinstance(target, str) else None
         if endpoint is None:
             raise RuntimeError("selected desktop is not served")
-        return target, endpoint
+        binding = allowed.get("binding_key") if allowed else None
+        if not isinstance(binding, str) or not re.fullmatch(r"[a-f0-9]{64}", binding):
+            raise RuntimeError("requested desktop has no verified binding")
+        return target, endpoint, binding
 
     async def stream(websocket: WebSocket) -> None:
         token = websocket.cookies.get(settings.cookie_name)
@@ -439,11 +470,16 @@ def create_viewer_app(
             await websocket.close(code=1008)
             return
         # One viewer for this preview. No Agent GUI endpoint exists yet.
-        if busy.locked():
-            logging.getLogger(__name__).warning("desktop connection refused: viewer already active")
-            await websocket.close(code=1013)
+        requested = websocket.query_params.get("target")
+        try:
+            target_id, endpoint, binding = await active_endpoint(token, requested)
+        except (RuntimeError, httpx.HTTPError, ValueError):
+            await websocket.close(code=1008)
             return
-        async with busy:
+        async with preview_slot(target_id) as acquired:
+            if not acquired:
+                await websocket.close(code=1013)
+                return
             control: dict[str, str | int] = {"state": "observe", "epoch": 0}
             # The input generation this connection was granted at. It is set
             # only by this connection's own poll observing ``human``, so a
@@ -453,7 +489,6 @@ def create_viewer_app(
             process: asyncio.subprocess.Process | None = None
             tasks: list[asyncio.Task[None]] = []
             try:
-                target_id, endpoint = await active_endpoint(token)
                 process = (
                     await desktop.connect(endpoint)
                     if endpoint is not None
@@ -497,7 +532,7 @@ def create_viewer_app(
                                 # prove its current epoch before reaching a PC.
                                 # Returning or switching elsewhere invalidates a
                                 # previously granted socket immediately.
-                                latest = await desktop_state(token, refresh=False)
+                                latest = await desktop_state(token, refresh=False, binding=binding)
                                 if latest["state"] != "human" or latest["epoch"] != granted_epoch:
                                     raise ValueError("desktop input ownership changed")
                             if kind == RFB_KEYBOARD:
@@ -521,10 +556,16 @@ def create_viewer_app(
                         await asyncio.sleep(AUTH_CHECK_SECONDS)
                         if not await authorized(token):
                             return
-                        selected, _ = await active_endpoint(token)
-                        if selected != target_id:
+                        selected, current_endpoint, current_binding = await active_endpoint(
+                            token, requested
+                        )
+                        if (selected, current_endpoint, current_binding) != (
+                            target_id,
+                            endpoint,
+                            binding,
+                        ):
                             return
-                        control.update(await desktop_state(token))
+                        control.update(await desktop_state(token, binding=binding))
                         if control["state"] == "human":
                             epoch = int(control.get("epoch") or 0)
                             if granted_epoch is None:

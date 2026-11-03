@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from harness.computer.binding import desktop_binding
 from harness.computer.storage import ComputerDesktopLeaseRow as Row
 from harness.core.errors import ConflictError, NotFoundError
 from harness.storage.database import SessionFactory
@@ -51,6 +52,7 @@ class DesktopControl(BaseModel):
     epoch: int
     revision: int
     expires_at: datetime | None
+    binding_key: str | None = None
 
     def input_allowed(self, *, kind: str, epoch: int | None = None) -> bool:
         if kind == "agent":
@@ -74,11 +76,10 @@ class DesktopControlService:
             settled = self._settle(row, datetime.now(UTC))
             if settled:
                 session.add(row)
-            return DesktopControl.model_validate(row)
+            binding = await self._binding(session, row)
+            return DesktopControl.model_validate(row).model_copy(update={"binding_key": binding})
 
-    async def acquire_agent(
-        self, tenant_id: str, user_id: str, *, owner: str
-    ) -> DesktopControl:
+    async def acquire_agent(self, tenant_id: str, user_id: str, *, owner: str) -> DesktopControl:
         """First GUI use of a Run claims input ownership from observe."""
 
         _identity(owner)
@@ -131,12 +132,15 @@ class DesktopControlService:
                 row.updated_at = moment
             return DesktopControl.model_validate(row)
 
-    async def request_human(self, tenant_id: str, user_id: str) -> DesktopControl:
+    async def request_human(
+        self, tenant_id: str, user_id: str, *, expected_binding: str | None = None
+    ) -> DesktopControl:
         """Takeover blocks both sides until the node confirms the drain."""
 
         async with self._sessions.begin() as session:
             moment = datetime.now(UTC)
             row = await self._row(session, tenant_id, user_id)
+            await self._check_binding(session, row, expected_binding)
             self._settle(row, moment)
             if row.state == DesktopState.HUMAN.value:
                 row.expires_at = moment + timedelta(seconds=HUMAN_TTL_SECONDS)
@@ -182,9 +186,12 @@ class DesktopControlService:
             row.updated_at = moment
             return DesktopControl.model_validate(row)
 
-    async def release_human(self, tenant_id: str, user_id: str) -> DesktopControl:
+    async def release_human(
+        self, tenant_id: str, user_id: str, *, expected_binding: str | None = None
+    ) -> DesktopControl:
         async with self._sessions.begin() as session:
             row = await self._row(session, tenant_id, user_id)
+            await self._check_binding(session, row, expected_binding)
             if row.state in {DesktopState.HUMAN.value, DesktopState.TAKEOVER_PENDING.value}:
                 moment = datetime.now(UTC)
                 row.state = DesktopState.OBSERVE.value
@@ -194,9 +201,12 @@ class DesktopControlService:
                 row.updated_at = moment
             return DesktopControl.model_validate(row)
 
-    async def refresh_human(self, tenant_id: str, user_id: str) -> DesktopControl:
+    async def refresh_human(
+        self, tenant_id: str, user_id: str, *, expected_binding: str | None = None
+    ) -> DesktopControl:
         async with self._sessions.begin() as session:
             row = await self._row(session, tenant_id, user_id)
+            await self._check_binding(session, row, expected_binding)
             if row.state == DesktopState.HUMAN.value:
                 moment = datetime.now(UTC)
                 row.expires_at = moment + timedelta(seconds=HUMAN_TTL_SECONDS)
@@ -233,13 +243,31 @@ class DesktopControlService:
             return "用户正在控制电脑；请等待交还后再试。"
         return "桌面控制权状态异常，请稍后重试。"
 
+    @staticmethod
+    async def _binding(session: AsyncSession, row: Row) -> str:
+        from harness.computer.storage import AssistantComputerRow as Computer
+
+        # The desktop row stays locked throughout this read. A provider switch
+        # needs that same lock, so target identity and epoch cannot tear apart.
+        computer = await session.scalar(
+            select(Computer).where(
+                Computer.tenant_id == row.tenant_id,
+                Computer.user_id == row.user_id,
+            )
+        )
+        if computer is None:
+            raise NotFoundError("owner computer not found")
+        return desktop_binding(computer.provider, computer.image, computer.volume_ref)
+
+    async def _check_binding(self, session: AsyncSession, row: Row, expected: str | None) -> None:
+        if expected is not None and await self._binding(session, row) != expected:
+            raise DesktopOccupiedError("查看的电脑不是当前助理使用的电脑，请刷新后重试。")
+
     async def _row(self, session: AsyncSession, tenant_id: str, user_id: str) -> Row:
         from harness.computer.storage import AssistantComputerRow as Computer
 
         found = await session.scalar(
-            select(Row)
-            .where(Row.tenant_id == tenant_id, Row.user_id == user_id)
-            .with_for_update()
+            select(Row).where(Row.tenant_id == tenant_id, Row.user_id == user_id).with_for_update()
         )
         row: Row | None = found
         if row is not None:

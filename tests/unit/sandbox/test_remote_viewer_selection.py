@@ -23,13 +23,25 @@ def selected_viewer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     def respond(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/targets"):
-            return httpx.Response(200, json={"active_target": selected["target"]})
+            return httpx.Response(
+                200,
+                json={
+                    "active_target": selected["target"],
+                    "targets": [
+                        {"target_id": name, "binding_key": key * 64}
+                        for name, key in [("cloud", "c"), ("local", "a")]
+                    ]
+                    if selected.get("allowed", True)
+                    else [],
+                },
+            )
         if request.url.path.endswith("/desktop"):
             return httpx.Response(
                 200,
                 json={
                     "state": selected.get("control", "observe"),
                     "epoch": selected.get("epoch", 1),
+                    "binding_key": ("c" if selected["target"] == "cloud" else "a") * 64,
                 },
             )
         return httpx.Response(
@@ -98,6 +110,38 @@ def test_unserved_selection_never_opens_an_ssh_connection(selected_viewer):
     with pytest.raises(WebSocketDisconnect):
         with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}):
             pytest.fail("unserved desktop was accepted")
+    assert opened == []
+
+
+def test_explicit_view_survives_execution_switch_without_inheriting_human_input(selected_viewer):
+    client, selected, opened = selected_viewer
+    with client.websocket_connect(
+        "/computer/desktop?target=local", headers={"origin": ORIGIN}
+    ) as socket:
+        assert socket.receive_bytes() == b"RFB 003.008\n"
+        selected["control"] = "human"  # on cloud, never on the observed local PC
+        time.sleep(0.05)
+        handshake = b"RFB 003.008\n" + b"\x01\x01"
+        socket.send_bytes(handshake)
+        assert socket.receive_bytes() == handshake
+        # An input followed by a read-only refresh must echo only the refresh.
+        socket.send_bytes(b"\x04\x01\x00\x00\x00\x00\x00\x41" + b"\x03" + b"\x00" * 9)
+        assert socket.receive_bytes() == b"\x03" + b"\x00" * 9
+        selected["target"] = "local"
+        selected["control"] = "observe"
+        time.sleep(0.05)
+        socket.send_bytes(b"\x03" + b"\x00" * 9)
+        assert socket.receive_bytes() == b"\x03" + b"\x00" * 9
+        selected["allowed"] = False
+        assert socket.receive()["type"] == "websocket.close"
+    assert opened == ["local"]
+
+
+def test_explicit_unknown_target_never_opens_transport(selected_viewer):
+    client, _, opened = selected_viewer
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/computer/desktop?target=other", headers={"origin": ORIGIN}):
+            pytest.fail("unauthorized view was accepted")
     assert opened == []
 
 

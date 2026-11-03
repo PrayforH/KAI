@@ -7,7 +7,7 @@ it again before every agent action.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from harness.api.dependencies import Identity, ensure_permission, require_identity
@@ -51,10 +51,13 @@ async def state(
 async def takeover(
     identity: Annotated[Identity, Depends(require_identity)],
     service: Service,
+    binding_key: Annotated[str | None, Query(min_length=64, max_length=64)] = None,
 ) -> DesktopControl:
     ensure_permission(identity, "tasks:write")
     try:
-        return await service.request_human(identity.tenant_id, identity.user_id)
+        return await service.request_human(
+            identity.tenant_id, identity.user_id, expected_binding=binding_key
+        )
     except NotFoundError as error:
         raise _not_found(error) from None
 
@@ -63,6 +66,7 @@ async def takeover(
 async def heartbeat(
     identity: Annotated[Identity, Depends(require_identity)],
     service: Service,
+    binding_key: Annotated[str | None, Query(min_length=64, max_length=64)] = None,
 ) -> DesktopControl:
     """Keep an active human takeover alive while the owner is using it.
 
@@ -72,7 +76,9 @@ async def heartbeat(
 
     ensure_permission(identity, "tasks:write")
     try:
-        return await service.refresh_human(identity.tenant_id, identity.user_id)
+        return await service.refresh_human(
+            identity.tenant_id, identity.user_id, expected_binding=binding_key
+        )
     except NotFoundError as error:
         raise _not_found(error) from None
 
@@ -81,10 +87,13 @@ async def heartbeat(
 async def return_control(
     identity: Annotated[Identity, Depends(require_identity)],
     service: Service,
+    binding_key: Annotated[str | None, Query(min_length=64, max_length=64)] = None,
 ) -> DesktopControl:
     ensure_permission(identity, "tasks:write")
     try:
-        return await service.release_human(identity.tenant_id, identity.user_id)
+        return await service.release_human(
+            identity.tenant_id, identity.user_id, expected_binding=binding_key
+        )
     except NotFoundError as error:
         raise _not_found(error) from None
 

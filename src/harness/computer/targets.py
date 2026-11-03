@@ -6,6 +6,7 @@ The existing registry performs the atomic idle-only switch and retains history.
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from harness.computer.binding import desktop_binding
 from harness.computer.registry import ComputerRegistry
 from harness.core.errors import NotFoundError
 
@@ -48,7 +49,14 @@ class ComputerTargetService:
         return {
             "active_target": active,
             "revision": current.revision,
-            "targets": [{"target_id": t.target_id, "label": t.label} for t in allowed],
+            "targets": [
+                {
+                    "target_id": t.target_id,
+                    "label": t.label,
+                    "binding_key": desktop_binding(t.provider, t.image, t.volume_ref),
+                }
+                for t in allowed
+            ],
         }
 
     async def select(self, tenant: str, user: str, target_id: str) -> dict[str, object]:
