@@ -548,7 +548,13 @@ class AssistantService:
                 thread_id=target.thread_id,
                 run_id=f"mention-{receipt.handover_id}",
                 state={},
-                messages=[UserMessage(id=receipt.handover_id, content=text)],
+                # @ is a recipient coordinate, not another tool invocation for
+                # the receiving Bot. Keep the original text in the receipt/hash.
+                messages=[UserMessage(
+                    id=receipt.handover_id,
+                    content=(re.sub(rf"@{re.escape(specialist.name)}(?!\w)", "", text).strip()
+                             or "你好"),
+                )],
                 tools=[],
                 context=[],
                 forwarded_props={

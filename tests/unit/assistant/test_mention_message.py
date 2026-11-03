@@ -302,3 +302,26 @@ async def test_shared_legacy_conversation_rechecks_access_before_sending():
     )
     service._agui.create_run_with_result.assert_not_awaited()
     repo.record_handover.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_recipient_token_is_not_a_second_delegation_instruction():
+    from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD as MAIN
+
+    service, repo = _service(_specialist())
+    service.specialist_thread = AsyncMock(return_value="assistant_specialist_a")
+    service._agui.create_run_with_result.return_value = SimpleNamespace(
+        run=SimpleNamespace(run_id="real")
+    )
+    text = "今天有什么快报 @资料 Bot；只总结"
+    await service.send_mention_message(
+        "t",
+        "u",
+        "specialist_a",
+        text=text,
+        idempotency_key="recipient-token-key",
+        source_thread_id=MAIN,
+    )
+    request = service._agui.create_run_with_result.call_args.kwargs["request"]
+    assert request.messages[0].content == "今天有什么快报 ；只总结"
+    assert repo.record_handover.call_args.args[0].summary == text
