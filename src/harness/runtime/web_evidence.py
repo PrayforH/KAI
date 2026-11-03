@@ -12,6 +12,10 @@ from harness.runtime.web_tools import WEB_TOOL_NAMES
 
 _WEATHER = re.compile(r"天气|气温|预报|\bweather\b|\bforecast\b", re.IGNORECASE)
 _TEXT_ONLY = re.compile(r"翻译|改写|润色|解释.{0,8}(词|句)|translate|rephrase", re.IGNORECASE)
+_NO_WEB = re.compile(
+    r"(不要|无需|不用|禁止|不允许).{0,8}(联网|检索|搜索|工具)|不联网|"
+    r"\boffline\b|\b(no|without)\s+(web|tools|search)", re.IGNORECASE,
+)
 _UNAVAILABLE = re.compile(
     r"未获取到|无法.{0,20}(获取|查询|联网|预报)|"
     r"(没有|不能|不具备).{0,16}(联网|检索|实时|查询)|"
@@ -37,6 +41,7 @@ class WebEvidence:
         return cls(enabled=bool(
             assistant_scope and tools.intersection(WEB_TOOL_NAMES.values())
             and _WEATHER.search(prompt) and not _TEXT_ONLY.search(prompt)
+            and not _NO_WEB.search(prompt)
         ))
 
     def note_request(self, name: str) -> None:

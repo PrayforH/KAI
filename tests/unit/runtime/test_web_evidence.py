@@ -28,6 +28,8 @@ def test_an_actual_attempt_allows_honest_failure(tool):
     {"assistant_scope": False}, {"tools": set()},
     {"prompt": "把‘今日预报未获取到’翻译成英文"},
     {"prompt": "解释‘天气预报’这个词"}, {"prompt": "读取这个文件"},
+    {"prompt": "今天上海天气，不要联网查询"},
+    {"prompt": "Shanghai weather, without web access"},
 ])
 def test_non_weather_work_and_disabled_web_are_unaffected(overrides):
     assert not evidence(**overrides).needs_verification("今日预报未获取到")
