@@ -124,6 +124,7 @@ async def test_messages_reuse_pinned_history_and_return_only_to_origin(creation,
             update={
                 "status": RunStatus.RUNNING,
                 "fencing_token": parent.run.fencing_token + 1,
+                "input": parent.run.input | {"model_route_override": "chosen-model"},
             }
         )
         assert await c.worker._runs.compare_and_set(parent.run.status, active_parent)
@@ -209,6 +210,7 @@ async def test_messages_reuse_pinned_history_and_return_only_to_origin(creation,
         continued = await c.runs.get("tenant-a", answer.json()["runId"])
         assert continued.session_id == child.session_id
         assert continued.input["prompt"] == reply_body["text"]
+        assert continued.input["model_route_override"] == "chosen-model"
         assert continued.input["conversation_prompts"][-1] == reply_body["text"]
         stale = await client.post(
             f"/v1/studio/assistant/specialists/{bot.specialist_id}/messages",

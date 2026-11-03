@@ -169,7 +169,8 @@ async def assistant_messaging_overlay(
             ),
             PlatformTool(
                 name="assistant_send_message", description=(
-                    "向本人Bot会话发送消息并返回真实投递回执，结果沿原来源回传。"
+                    "向本人Bot会话发送消息并返回真实投递回执。"
+                    "问题、确认、授权与结果会在原来源会话展示，用户可在原会话回答。"
                     "text省略时发送用户原话，附件省略时转交本轮新上传文件。"
                     "不同消息用不同request_key，同一消息重试保持key和内容不变。"
                 ), schema=SendMessageRequest.model_json_schema(), handler=controls.send_message,

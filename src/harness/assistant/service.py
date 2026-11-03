@@ -600,6 +600,9 @@ class AssistantService:
                 and item.target_thread_id == target.thread_id), None)
             if source is None:
                 raise NotFoundError("原问题已不可用，请刷新会话")
+            original_run = await self._runs.get(tenant_id, reply_to_run_id)
+            if model_route is None:
+                model_route = original_run.input.get("model_route_override")
             # A successful retry must return its canonical receipt even when that
             # continuation is now the newest Run. Never repeat the accepted answer.
             prior = next((item for item in history if item.message_id ==
