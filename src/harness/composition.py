@@ -30,6 +30,7 @@ from harness.application.sessions import SessionService
 from harness.application.workspaces import WorkspacePolicy, WorkspaceService
 from harness.assistant.conversation import PersonalConversation
 from harness.assistant.delegation import (
+    COMMON_INSTRUCTIONS,
     AssistantDelegationGateway,
     assistant_delegation_overlay,
     coordinator_session,
@@ -1674,6 +1675,12 @@ def build_production_container(
                 directory_overlay = await assistant_routing_overlay(
                     container.assistant, events, run, session
                 )
+                if directory_overlay.workflow is not None:
+                    # Replace the old "simple requests run here" routing rule;
+                    # appending a contradictory preference leaves it ambiguous.
+                    delegation_overlay = PlatformToolOverlay(
+                        tools=delegation_overlay.tools, instructions=COMMON_INSTRUCTIONS,
+                    )
             else:
                 directory_overlay = PlatformToolOverlay(
                     instructions=specialist_directory_instructions(

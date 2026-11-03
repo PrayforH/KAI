@@ -135,7 +135,17 @@ async def test_persisted_intent_retries_same_target_after_interrupted_delivery()
 async def test_direct_and_clarify_do_not_deliver_or_grant_permissions(action):
     assistant, events, run, session, bot = setup()
     overlay = await assistant_routing_overlay(assistant, events, run, session)
-    await overlay.tools[0].handler({"action": action, "reason": "无匹配职责或城市不明确"})
+    await overlay.tools[0].handler(
+        {
+            "action": action,
+            "reason": "无匹配职责或城市不明确",
+            **(
+                {"direct_kind": "no_match", "unmatched": {bot.specialist_id: "领域无关"}}
+                if action == "direct"
+                else {}
+            ),
+        }
+    )
     assistant.send_mention_message.assert_not_awaited()
     assert (overlay.workflow.before_tool("WebSearch") is None) is (action == "direct")
     assert overlay.workflow.before_finish() is None
@@ -177,3 +187,55 @@ async def test_unknown_target_missing_grant_and_attachment_never_drop_input_or_s
     )
     assistant.send_mention_message.assert_not_awaited()
     assert not await events.list_after("t", "parent", 0)
+
+
+@pytest.mark.asyncio
+async def test_short_or_fast_is_not_a_direct_disposition_and_partial_assessment_is_rejected():
+    assistant, events, run, session, bot = setup()
+    overlay = await assistant_routing_overlay(assistant, events, run, session)
+    result = await overlay.tools[0].handler({"action": "direct", "reason": "一次性天气自己查更快"})
+    assert "必须填写direct_kind" in text(result)
+    result = await overlay.tools[0].handler(
+        {"action": "direct", "direct_kind": "no_match", "unmatched": {}, "reason": "没有匹配"}
+    )
+    assert "逐项说明" in text(result)
+    assert not await events.list_after("t", "parent", 0)
+    assert overlay.workflow.before_tool("WebFetch")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["conversation", "management"])
+async def test_non_execution_direct_categories_do_not_allow_domain_execution(kind):
+    assistant, events, run, session, bot = setup()
+    overlay = await assistant_routing_overlay(assistant, events, run, session)
+    await overlay.tools[0].handler(
+        {"action": "direct", "direct_kind": kind, "reason": "问候或配置管理"}
+    )
+    assert overlay.workflow.before_tool("WebFetch")
+    assert overlay.workflow.before_tool("Bash")
+    assert (overlay.workflow.before_tool("assistant_update_task") is None) is (kind == "management")
+    assistant.send_mention_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_claiming_attachments_or_self_preference_requires_original_evidence():
+    assistant, events, run, session, bot = setup()
+    overlay = await assistant_routing_overlay(assistant, events, run, session)
+    for extra in [
+        {"direct_kind": "attachments"},
+        {"direct_kind": "user_requested_self"},
+        {"direct_kind": "user_requested_self", "self_request": "你自己查"},
+    ]:
+        await overlay.tools[0].handler({"action": "direct", "reason": "直接处理", **extra})
+    assert not await events.list_after("t", "parent", 0)
+    requested = run.model_copy(update={"input": {"prompt": "这次你自己查武汉天气，不要转交"}})
+    requested_overlay = await assistant_routing_overlay(assistant, events, requested, session)
+    await requested_overlay.tools[0].handler(
+        {
+            "action": "direct",
+            "direct_kind": "user_requested_self",
+            "self_request": "你自己查",
+            "reason": "用户明确要求亲自查",
+        }
+    )
+    assert requested_overlay.workflow.before_tool("WebFetch") is None
