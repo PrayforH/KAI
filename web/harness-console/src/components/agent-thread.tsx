@@ -72,7 +72,7 @@ import {
   useMentionableAssistants,
 } from "../lib/bot-mentions";
 import { handoverStore } from "../lib/handover-store";
-import { submitThreadAnswer } from "../lib/thread-answer";
+import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
 import { assistantRequest } from "../lib/assistant-client";
 import {
   ComposerReplyProvider,
@@ -687,7 +687,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     replyScope.cancelReply();
   }
   const mentionKeyRef = useRef<string | null>(null);
-  /** 投递给被 @ 的助理：既有 AG-UI 通道负责送达，这里只补一条幂等回执。 */
+  /** 投递给被 @ 的助理：服务端复用 AG-UI 执行，并关联当前会话的回执与返回结果。 */
   async function sendMentions() {
     if (composerSendLock.current) return;
     composerSendLock.current = true;
@@ -695,30 +695,25 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     const key = mentionKeyRef.current ?? mentionIdempotencyKey();
     mentionKeyRef.current = key;
     const text = composerText.trim();
+    const sourceThreadId = replyScope?.threadId ?? botScope?.threadId ?? PERSONAL_ASSISTANT_THREAD;
     const { delivered, failed } = await deliverMentions(mentions, text, async (bot, body) => {
-      const detail = await assistantRequest<{
-        specialist: { name: string };
-        threadId: string | null;
-        agentName: string;
-        agentVersion: string;
-      }>(`specialists/${encodeURIComponent(bot.specialistId)}`);
-      if (!detail.threadId) throw new Error(`${bot.name} 还没有可接收消息的会话`);
-      await submitThreadAnswer({
-        threadId: detail.threadId,
-        agentName: detail.agentName,
-        agentVersion: detail.agentVersion,
-        text: body,
-      });
-      const receipt = await assistantRequest<{ handoverId: string }>(
+      const receipt = await assistantRequest<{
+        handoverId: string; runId: string; sourceThreadId: string;
+        targetThreadId: string; createdAt: string;
+      }>(
         `specialists/${encodeURIComponent(bot.specialistId)}/messages`,
         "POST",
-        { text: body },
+        { text: body, sourceThreadId, ...(overrideRouteId ? { modelRoute: overrideRouteId } : {}) },
         key,
       );
       handoverStore.ingestMention({
         handoverId: receipt.handoverId,
         specialistId: bot.specialistId,
-        specialistName: detail.specialist.name || bot.name,
+        specialistName: bot.name,
+        sourceThreadId: receipt.sourceThreadId,
+        targetThreadId: receipt.targetThreadId,
+        runId: receipt.runId,
+        createdAt: receipt.createdAt,
       });
     });
     if (failed.length) {
@@ -1600,8 +1595,10 @@ export function responseTextForTurn(messageId: string, nativeText: string, direc
  */
 function HarnessMessagesFooter() {
   const assistantSurface = useAssistantSurface();
+  const reply = useComposerReply();
+  const bot = useAssistantBot();
   if (!assistantSurface) return null;
-  return <AssistantMentionReceipts />;
+  return <AssistantMentionReceipts threadId={reply?.threadId ?? bot?.threadId ?? PERSONAL_ASSISTANT_THREAD} />;
 }
 
 export function HarnessAssistantMessage() {

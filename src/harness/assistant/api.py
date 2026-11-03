@@ -374,6 +374,10 @@ class SpecialistMessageRequest(StudioModel):
     """给某个 Bot 发一句话：只提交正文，目标与线程由服务端解析。"""
 
     text: str = Field(min_length=1, max_length=20_000)
+    source_thread_id: str | None = Field(
+        default=None, alias="sourceThreadId", min_length=1, max_length=128
+    )
+    model_route: str | None = Field(default=None, alias="modelRoute", min_length=1, max_length=128)
 
 
 @router.get("/vault")
@@ -448,17 +452,26 @@ async def send_specialist_message(
     assistant: Service,
     idempotency_key: Annotated[str, Header(min_length=8, max_length=128)],
 ) -> dict[str, object]:
-    """登记一次「已发送消息给 X」的回执。
+    """在目标原会话执行消息，并将幂等回执和结果关联到拥有者的来源会话。
 
-    投递本身走既有 AG-UI 通道（目标 Bot 的原会话），这里只落一条幂等的
-    Handover：重复提交同一把钥匙不会多出回执，也不会新建定时任务。
+    无来源的旧客户端仍只登记回执；新客户端由服务端复用既有 AG-UI 执行管线。
     """
-    handover = await assistant.record_mention_handover(
+    send = (
+        assistant.send_mention_message
+        if body.source_thread_id
+        else assistant.record_mention_handover
+    )
+    handover = await send(
         identity.tenant_id,
         identity.user_id,
         specialist_id,
         text=body.text,
         idempotency_key=idempotency_key,
+        **(
+            {"source_thread_id": body.source_thread_id, "model_route": body.model_route}
+            if body.source_thread_id
+            else {}
+        ),
     )
     return {
         "handoverId": handover.handover_id,
@@ -467,6 +480,9 @@ async def send_specialist_message(
         "status": handover.status.value,
         "summary": handover.summary,
         "createdAt": handover.created_at.isoformat(),
+        "sourceThreadId": handover.source_thread_id,
+        "targetThreadId": handover.target_thread_id,
+        "runId": handover.run_id,
     }
 
 

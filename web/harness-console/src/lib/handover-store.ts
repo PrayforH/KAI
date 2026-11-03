@@ -14,6 +14,9 @@ export type HandoverNotice = {
   createdAt: number;
   /** 用户明确 @某个 Bot 发出的消息：不挂在某条助手回复下，单独成行。 */
   mention?: boolean;
+  sourceThreadId?: string | null;
+  targetThreadId?: string | null;
+  runId?: string | null;
 };
 
 /** 用户 @ 某个 Bot 的持久回执前缀；与派活工具的键空间分开。 */
@@ -106,6 +109,9 @@ export const handoverStore = {
     specialistId: string;
     specialistName: string;
     createdAt?: string;
+    sourceThreadId?: string | null;
+    targetThreadId?: string | null;
+    runId?: string | null;
   }) {
     if (!payload.handoverId || !payload.specialistId) return;
     const createdAt = receiptTime(payload.createdAt, Date.now());
@@ -120,6 +126,9 @@ export const handoverStore = {
       at: createdAt,
       createdAt,
       mention: true,
+      sourceThreadId: payload.sourceThreadId,
+      targetThreadId: payload.targetThreadId,
+      runId: payload.runId,
     });
   },
   /** 页面加载的一次性投影：把持久 handovers 落成状态行（无轮询）。 */
@@ -129,7 +138,7 @@ export const handoverStore = {
     try {
       const { assistantRequest } = await import("./assistant-client");
       const handovers = await assistantRequest<
-        Array<{ handoverId: string; messageId: string; specialistId: string; objectiveId?: string | null; status: string; createdAt: string; updatedAt?: string }>
+        Array<{ handoverId: string; messageId: string; specialistId: string; objectiveId?: string | null; status: string; createdAt: string; updatedAt?: string; sourceThreadId?: string | null; targetThreadId?: string | null; runId?: string | null }>
       >("handovers");
       const specialists = await assistantRequest<
         IdentityListing[]
@@ -149,6 +158,9 @@ export const handoverStore = {
           at: receiptTime(handover.updatedAt, receiptTime(handover.createdAt, 0)),
           createdAt: receiptTime(handover.createdAt, 0),
           mention,
+          sourceThreadId: handover.sourceThreadId,
+          targetThreadId: handover.targetThreadId,
+          runId: handover.runId,
         });
       }
     } catch {
@@ -184,6 +196,11 @@ export function handoversForMessage(
     return messageId === prefix || messageId.startsWith(`${prefix}-`) ||
       (messageId.startsWith("__optimistic__") && liveRunId === notice.sourceRunId);
   });
+}
+
+/** Unattributed legacy receipts stay hidden; never guess their originating chat. */
+export function mentionsForThread(notices: readonly HandoverNotice[], threadId: string) {
+  return notices.filter(notice => notice.mention && notice.sourceThreadId === threadId && Boolean(notice.runId));
 }
 
 function receiptTime(value: unknown, fallback: number): number {

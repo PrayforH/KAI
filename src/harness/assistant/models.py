@@ -340,6 +340,21 @@ class SpecialistHandover(StudioModel):
     objective_id: str | None = Field(default=None, alias="objectiveId")
     message_id: str = Field(alias="messageId")
     summary: str = ""
+    source_thread_id: str | None = Field(default=None, alias="sourceThreadId")
+    target_thread_id: str | None = Field(default=None, alias="targetThreadId")
+    run_id: str | None = Field(default=None, alias="runId")
+    request_hash: str | None = Field(default=None, alias="requestHash")
     status: HandoverStatus = HandoverStatus.SENT
     created_at: AwareDatetime = Field(alias="createdAt")
     updated_at: AwareDatetime = Field(alias="updatedAt")
+
+
+class MentionReply(StudioModel):
+    """Read projection of an existing child Run, scoped to its originating chat."""
+
+    message_id: str
+    text: str
+    source: dict[str, str]
+    created_at: AwareDatetime
+    run_id: str
+    target_thread_id: str

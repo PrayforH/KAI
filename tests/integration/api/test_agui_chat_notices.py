@@ -56,7 +56,10 @@ def attach(app, items):
         conversation_notice_sources=AsyncMock(return_value={}),
         conversation_notice=AsyncMock(side_effect=one),
     )
-    app.state.container = replace(app.state.container, assistant=SimpleNamespace(repository=repo))
+    app.state.container = replace(
+        app.state.container,
+        assistant=SimpleNamespace(repository=repo, mention_replies=AsyncMock(return_value=([], 0))),
+    )
     return repo
 
 
@@ -190,3 +193,43 @@ async def test_history_carries_source_identity_without_a_body_navigation_link():
     assert json.loads(call["function"]["arguments"])["timestamp"] == item.created_at.isoformat()
     assert result["role"] == "tool" and result["toolCallId"] == call["id"]
     assert body["status"] == "idle" and "run_id" not in body
+
+
+@pytest.mark.asyncio
+async def test_mention_result_is_a_source_message_and_quote_resolves_server_text():
+    from harness.assistant.models import MentionReply
+
+    app = create_memory_app()
+    attach(app, [])
+    reply = MentionReply(
+        message_id="mention-result-handover-one",
+        text="检查完成，未发现异常。",
+        source={"name": "资料 Bot", "botId": "specialist_a", "href": "/assistant?bot=specialist_a"},
+        created_at=datetime.now(UTC),
+        run_id="actual-child",
+        target_thread_id="assistant_specialist_a",
+    )
+
+    async def replies(tenant, user, thread, **kwargs):
+        owned = (tenant, user, thread) == ("tenant-a", "user-1", MAIN)
+        return ([reply], 1) if owned else ([], 0)
+
+    app.state.container.assistant.mention_replies = AsyncMock(side_effect=replies)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        base = f"/v1/agui/threads/{MAIN}"
+        first = (await client.get(base + "/history", headers=HEADERS)).json()
+        second = (await client.get(base + "/history", headers=HEADERS)).json()
+        assert first == second
+        assert first["total"] == 1 and first["status"] == "idle"
+        message, tool = first["messages"]
+        assert message["content"] == reply.text and message["id"] == reply.message_id
+        assert message["toolCalls"][0]["function"]["name"] == "harness_notice_source"
+        assert tool["toolCallId"] == message["toolCalls"][0]["id"]
+        context = (
+            await client.get(base + f"/messages/{reply.message_id}", headers=HEADERS)
+        ).json()
+        assert context["found"] and context["excerpt"] == reply.text
+        other = (
+            await client.get(base + "/history", headers={**HEADERS, "X-User-ID": "other"})
+        ).json()
+        assert other["messages"] == []

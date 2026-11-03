@@ -50,6 +50,7 @@ from harness.assistant.storage import (
 )
 from harness.core.errors import ConflictError, NotFoundError
 from harness.core.events import RunEvent
+from harness.core.models import Run, RunStatus
 from harness.storage.database import SessionFactory
 from harness.storage.models import AguiThreadBindingRow, EventRow, RunRow, SessionRow
 
@@ -1446,22 +1447,148 @@ class PostgresAssistantRepository:
                 )
             )
             if existing is not None:
-                return SpecialistHandover.model_validate(existing.payload)
-            session.add(
-                SpecialistHandoverRow(
-                    handover_id=handover.handover_id,
-                    specialist_id=handover.specialist_id,
-                    objective_id=handover.objective_id,
-                    tenant_id=handover.tenant_id,
-                    user_id=handover.user_id,
-                    message_id=handover.message_id,
-                    status=handover.status.value,
-                    created_at=handover.created_at,
-                    updated_at=handover.updated_at,
-                    payload=handover.model_dump(mode="json", by_alias=True),
-                )
+                recovered = SpecialistHandover.model_validate(existing.payload)
+                if recovered.source_thread_id != handover.source_thread_id or (
+                    recovered.request_hash and recovered.request_hash != handover.request_hash
+                ):
+                    raise ConflictError("同一发送请求不能变更来源会话或正文")
+                return recovered
+            row = SpecialistHandoverRow(
+                handover_id=handover.handover_id,
+                specialist_id=handover.specialist_id,
+                objective_id=handover.objective_id,
+                tenant_id=handover.tenant_id,
+                user_id=handover.user_id,
+                message_id=handover.message_id,
+                status=handover.status.value,
+                created_at=handover.created_at,
+                updated_at=handover.updated_at,
+                payload=handover.model_dump(mode="json", by_alias=True),
             )
+            try:
+                async with session.begin_nested():
+                    session.add(row)
+                    await session.flush()
+            except IntegrityError as error:
+                # Another sender may have won the same idempotency key after
+                # our first read. A savepoint keeps the caller's transaction valid.
+                existing = await session.scalar(
+                    select(SpecialistHandoverRow).where(
+                        SpecialistHandoverRow.tenant_id == handover.tenant_id,
+                        SpecialistHandoverRow.user_id == handover.user_id,
+                        SpecialistHandoverRow.message_id == handover.message_id,
+                    )
+                )
+                if existing is None:
+                    raise
+                recovered = SpecialistHandover.model_validate(existing.payload)
+                if (
+                    recovered.source_thread_id != handover.source_thread_id
+                    or recovered.request_hash != handover.request_hash
+                ):
+                    raise ConflictError("同一发送请求不能变更来源会话或正文") from error
+                return recovered
         return handover
+
+    async def link_mention_run(
+        self,
+        tenant_id: str,
+        user_id: str,
+        handover_id: str,
+        run_id: str,
+    ) -> SpecialistHandover:
+        async with self._context(write=True) as session:
+            row = await session.scalar(
+                select(SpecialistHandoverRow)
+                .where(
+                    SpecialistHandoverRow.tenant_id == tenant_id,
+                    SpecialistHandoverRow.user_id == user_id,
+                    SpecialistHandoverRow.handover_id == handover_id,
+                )
+                .with_for_update()
+            )
+            if row is None:
+                raise NotFoundError("Handover not found")
+            current = SpecialistHandover.model_validate(row.payload)
+            if current.run_id and current.run_id != run_id:
+                raise ConflictError("这条消息已关联其他执行")
+            updated = current.model_copy(update={"run_id": run_id})
+            row.payload = updated.model_dump(mode="json", by_alias=True)
+            return updated
+
+    async def mention_reply_runs(
+        self,
+        tenant_id: str,
+        user_id: str,
+        source_thread_id: str,
+        *,
+        before: tuple[datetime, str] | None = None,
+        limit: int = 100,
+        message_id: str | None = None,
+    ) -> tuple[list[tuple[SpecialistHandover, Run, Specialist]], int]:
+        """Read completed replies from their original Runs; no synthetic task or model."""
+        h = SpecialistHandoverRow
+        key = literal("mention-result-") + h.handover_id
+        query = (
+            select(h, RunRow, SpecialistRow)
+            .join(
+                RunRow,
+                and_(
+                    RunRow.tenant_id == h.tenant_id, RunRow.run_id == h.payload["runId"].as_string()
+                ),
+            )
+            .join(
+                SessionRow,
+                and_(
+                    SessionRow.tenant_id == RunRow.tenant_id,
+                    SessionRow.session_id == RunRow.session_id,
+                    SessionRow.user_id == h.user_id,
+                ),
+            )
+            .join(
+                SpecialistRow,
+                and_(
+                    SpecialistRow.tenant_id == h.tenant_id,
+                    SpecialistRow.user_id == h.user_id,
+                    SpecialistRow.specialist_id == h.specialist_id,
+                ),
+            )
+            .where(
+                h.tenant_id == tenant_id,
+                h.user_id == user_id,
+                h.message_id.startswith("mention-specialist:"),
+                h.payload["sourceThreadId"].as_string() == source_thread_id,
+                h.payload["targetThreadId"].as_string() != source_thread_id,
+                RunRow.status.in_([s.value for s in RunStatus if s.is_terminal]),
+            )
+        )
+        if message_id is not None:
+            query = query.where(key == message_id)
+        async with self._context() as session:
+            total = int(
+                await session.scalar(select(func.count()).select_from(query.subquery())) or 0
+            )
+            if before is not None:
+                at, mid = before
+                query = query.where(
+                    or_(RunRow.updated_at < at, and_(RunRow.updated_at == at, key < mid))
+                )
+            rows = (
+                await session.execute(
+                    query.order_by(
+                        RunRow.updated_at.desc(),
+                        key.desc(),
+                    ).limit(limit)
+                )
+            ).all()
+            return [
+                (
+                    SpecialistHandover.model_validate(h.payload),
+                    Run.model_validate(r.payload),
+                    Specialist.model_validate(s.payload),
+                )
+                for h, r, s in rows
+            ], total
 
     async def update_handover(
         self,

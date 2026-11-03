@@ -34,6 +34,7 @@ from harness.assistant.models import (
     ManagedTask,
     ManagedTaskRole,
     ManagedTaskSource,
+    MentionReply,
     Objective,
     ObjectiveBrief,
     ObjectiveExecution,
@@ -432,8 +433,15 @@ class AssistantService:
         )
 
     async def record_mention_handover(
-        self, tenant_id: str, user_id: str, specialist_id: str, *,
-        text: str, idempotency_key: str,
+        self,
+        tenant_id: str,
+        user_id: str,
+        specialist_id: str,
+        *,
+        text: str,
+        idempotency_key: str,
+        source_thread_id: str | None = None,
+        target_thread_id: str | None = None,
     ) -> SpecialistHandover:
         """用户明确 @某个 Bot 时的持久回执。
 
@@ -447,10 +455,15 @@ class AssistantService:
         if specialist.status is SpecialistStatus.PAUSED:
             raise ConflictError("这个 Bot 已暂停接单，先恢复再发消息")
         message_id = f"mention-specialist:{idempotency_key}:{specialist_id}"
+        request_hash = hashlib.sha256(text.encode()).hexdigest()
         for item in await self.repository.handovers(
             tenant_id, user_id, specialist_id=specialist_id
         ):
             if item.message_id == message_id:
+                if item.source_thread_id != source_thread_id or (
+                    item.request_hash and item.request_hash != request_hash
+                ):
+                    raise ConflictError("同一发送请求不能变更来源会话或正文")
                 return item
         now = datetime.now(UTC)
         return await self.repository.record_handover(
@@ -461,11 +474,129 @@ class AssistantService:
                 specialistId=specialist.specialist_id,
                 messageId=message_id,
                 summary=text[:400],
+                sourceThreadId=source_thread_id,
+                targetThreadId=target_thread_id,
+                requestHash=request_hash,
                 status=HandoverStatus.SENT,
                 createdAt=now,
                 updatedAt=now,
             )
         )
+
+    async def send_mention_message(
+        self,
+        tenant_id: str,
+        user_id: str,
+        specialist_id: str,
+        *,
+        text: str,
+        idempotency_key: str,
+        source_thread_id: str,
+        model_route: str | None = None,
+    ) -> SpecialistHandover:
+        # A client supplies the origin, never another user's identity. Reserve
+        # the personal address for this authenticated user; other origins must
+        # already be owned assistant conversations.
+        if source_thread_id != PERSONAL_ASSISTANT_THREAD:
+            if not source_thread_id.startswith("assistant_"):
+                raise ConflictError("助理消息只能从助理会话发送")
+            await self._agui.get_binding(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                thread_id=source_thread_id,
+            )
+        specialist = await self.repository.get_specialist(tenant_id, user_id, specialist_id)
+        target = await self.specialist_thread(tenant_id, user_id, specialist)
+        receipt = await self.record_mention_handover(
+            tenant_id,
+            user_id,
+            specialist_id,
+            text=text,
+            idempotency_key=idempotency_key,
+            source_thread_id=source_thread_id,
+            target_thread_id=target,
+        )
+        if receipt.run_id:
+            return receipt
+        creation = await self._agui.create_run_with_result(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            agent_name=specialist.agent_name,
+            agent_version=specialist.agent_version,
+            connection_mode="service_owned",
+            request=RunAgentInput(
+                thread_id=target,
+                run_id=f"mention-{receipt.handover_id}",
+                state={},
+                messages=[UserMessage(id=receipt.handover_id, content=text)],
+                tools=[],
+                context=[],
+                forwarded_props={
+                    "conversationSurface": "assistant",
+                    "assistantScope": True,
+                    **({"modelRoute": model_route} if model_route else {}),
+                },
+            ),
+        )
+        return await self.repository.link_mention_run(
+            tenant_id,
+            user_id,
+            receipt.handover_id,
+            creation.run.run_id,
+        )
+
+    async def mention_replies(
+        self,
+        tenant_id: str,
+        user_id: str,
+        source_thread_id: str,
+        *,
+        before: tuple[datetime, str] | None = None,
+        limit: int = 100,
+        message_id: str | None = None,
+    ) -> tuple[list[MentionReply], int]:
+        from harness.assistant.chat_notices import brief_notice
+
+        rows, total = await self.repository.mention_reply_runs(
+            tenant_id,
+            user_id,
+            source_thread_id,
+            before=before,
+            limit=limit,
+            message_id=message_id,
+        )
+        replies = []
+        for handover, run, specialist in rows:
+            events = await self._events.list_after(tenant_id, run.run_id, 0)
+            text = brief_notice(final_response_text(events)) or "本次处理已结束，尚无结果正文。"
+            if run.status is not RunStatus.SUCCEEDED:
+                text = "本次处理未完成。\n\n" + text
+            source = {
+                "name": specialist.name,
+                "botId": specialist.specialist_id,
+                "href": "/assistant?bot=" + specialist.specialist_id,
+                "timestamp": run.updated_at.isoformat(),
+            }
+            appearance = specialist.config.get("appearance")
+            if isinstance(appearance, dict):
+                source.update(
+                    {
+                        k: v
+                        for k, v in appearance.items()
+                        if k in {"avatar", "color"} and isinstance(v, str)
+                    }
+                )
+            replies.append(
+                MentionReply(
+                    message_id="mention-result-" + handover.handover_id,
+                    text=text,
+                    source=source,
+                    created_at=run.updated_at,
+                    run_id=run.run_id,
+                    target_thread_id=handover.target_thread_id or "",
+                )
+            )
+        return replies, total
 
     async def specialist_thread(
         self, tenant_id: str, user_id: str, specialist: Specialist,

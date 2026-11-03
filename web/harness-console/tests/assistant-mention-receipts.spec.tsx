@@ -9,6 +9,9 @@ vi.mock("next/link", () => ({
   default: ({ children, ...props }: { children?: unknown }) => <a {...props}>{children as never}</a>,
 }));
 
+vi.mock("../src/lib/mention-completion", () => ({ MENTION_RESULT_EVENT: "mention-result", watchMentionCompletion: async () => false }));
+vi.mock("../src/lib/assistant-client", () => ({ assistantRequest: async () => [] }));
+
 import { AssistantMentionReceipts } from "../src/components/assistant-mention-bar";
 import { handoverStore } from "../src/lib/handover-store";
 
@@ -35,9 +38,11 @@ describe("mention receipts", () => {
       handoverId: "handover_mention_1",
       specialistId: "specialist_a",
       specialistName: "资料 Bot",
+      sourceThreadId: "main",
+      runId: "actual-run",
     });
     await act(async () => {
-      root!.render(<AssistantMentionReceipts />);
+      root!.render(<AssistantMentionReceipts threadId="main" />);
     });
     const line = host.querySelector(".assistant-event-line");
     expect(line?.textContent).toContain("已发送消息给");
@@ -47,6 +52,13 @@ describe("mention receipts", () => {
   });
 });
 
+it("never renders another conversation's receipts or ambiguous legacy receipts", async () => {
+  handoverStore.ingestMention({ handoverId: "unscoped", specialistId: "old", specialistName: "旧回执" });
+  handoverStore.ingestMention({ handoverId: "other", specialistId: "weather", specialistName: "天气提醒", sourceThreadId: "main", runId: "other-run" });
+  await act(async () => { root!.render(<AssistantMentionReceipts threadId="rest" />); });
+  expect(host.textContent).toBe("");
+});
+
 describe("回执的位置", () => {
   const thread = readFileSync(join(process.cwd(), "src/components/agent-thread.tsx"), "utf8");
 
@@ -54,8 +66,8 @@ describe("回执的位置", () => {
     // MessagesFooter 在滚动区里（Thread.Messages 之后），Composer 在它之外；
     // 回执贴在输入框上方会看起来像"发送到"工具栏。
     expect(thread).toContain("MessagesFooter: HarnessMessagesFooter");
-    expect(thread).toContain("return <AssistantMentionReceipts />");
+    expect(thread).toContain("return <AssistantMentionReceipts threadId={");
     // 输入区上方不再挂回执。
-    expect(thread).not.toContain("{assistantSurface && <AssistantMentionReceipts />}");
+    expect(thread).not.toContain("{assistantSurface && <AssistantMentionReceipts");
   });
 });

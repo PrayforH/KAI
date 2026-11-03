@@ -134,3 +134,85 @@ def test_routine_executions_carry_the_assistant_scope() -> None:
     from harness.assistant.service import routine_forwarded_props
 
     assert routine_forwarded_props() == {"assistantScope": True}
+
+
+@pytest.mark.asyncio
+async def test_send_links_real_child_run_and_retry_does_not_execute_again():
+    from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD as MAIN
+
+    service, repo = _service(_specialist())
+    service.specialist_thread = AsyncMock(return_value="assistant_specialist_a")
+    service._agui.create_run_with_result.return_value = SimpleNamespace(
+        run=SimpleNamespace(run_id="run-server-actual"),
+        reused=False,
+    )
+
+    async def link(_tenant, _user, _id, run_id):
+        sent = repo.record_handover.call_args.args[0]
+        linked = sent.model_copy(update={"run_id": run_id})
+        repo.handovers.return_value = [linked]
+        return linked
+
+    repo.link_mention_run.side_effect = link
+    args = dict(text="请检查资料", idempotency_key="key-12345678", source_thread_id=MAIN)
+    first = await service.send_mention_message("t", "u", "specialist_a", **args)
+    second = await service.send_mention_message("t", "u", "specialist_a", **args)
+    assert first == second
+    assert first.source_thread_id == MAIN and first.target_thread_id == "assistant_specialist_a"
+    assert first.run_id == "run-server-actual"
+    service._agui.create_run_with_result.assert_awaited_once()
+    request = service._agui.create_run_with_result.call_args.kwargs["request"]
+    assert request.run_id == f"mention-{first.handover_id}"
+    assert request.messages[0].content == "请检查资料"
+    assert request.forwarded_props["assistantScope"] is True
+    repo.create.assert_not_awaited()  # A message does not manufacture a duty or timer.
+    with pytest.raises(ConflictError):
+        await service.send_mention_message("t", "u", "specialist_a", **{**args, "text": "变更正文"})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("origin", ["task-ordinary", "assistant_other_user"])
+async def test_send_rejects_non_assistant_or_foreign_origin_before_any_receipt(origin):
+    service, repo = _service(_specialist())
+    service._agui.get_binding.side_effect = NotFoundError("not owned")
+    with pytest.raises((ConflictError, NotFoundError)):
+        await service.send_mention_message(
+            "t",
+            "u",
+            "specialist_a",
+            text="在吗",
+            idempotency_key="key-12345678",
+            source_thread_id=origin,
+        )
+    repo.record_handover.assert_not_awaited()
+    service._agui.create_run_with_result.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_completed_reply_is_brief_and_links_back_to_named_bot():
+    from harness.core.models import RunStatus
+
+    service, repo = _service(_specialist())
+    now = datetime(2026, 11, 3, tzinfo=UTC)
+    repo.mention_reply_runs.return_value = (
+        [
+            (
+                SimpleNamespace(
+                    handover_id="handover-one", target_thread_id="assistant_specialist_a"
+                ),
+                SimpleNamespace(run_id="real-run", updated_at=now, status=RunStatus.SUCCEEDED),
+                _specialist(),
+            ),
+        ],
+        1,
+    )
+    service._events.list_after.return_value = []
+    replies, total = await service.mention_replies("t", "u", "main")
+    assert total == 1 and len(replies) == 1
+    assert replies[0].message_id == "mention-result-handover-one"
+    assert replies[0].source["name"] == "资料 Bot"
+    assert replies[0].source["href"] == "/assistant?bot=specialist_a"
+    assert replies[0].run_id == "real-run"
+    repo.mention_reply_runs.assert_awaited_once_with(
+        "t", "u", "main", before=None, limit=100, message_id=None
+    )

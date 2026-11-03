@@ -33,6 +33,7 @@ import { RunCancelProvider } from "./run-cancel-context";
 import { TaskModelProvider } from "./task-model-context";
 import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
 import { ReplySendContext, type ReplyReference } from "./reply-reference";
+import { MENTION_RESULT_EVENT } from "../lib/mention-completion";
 
 
 export function AssistantRuntimeShell({
@@ -87,6 +88,15 @@ export function AssistantRuntimeShell({
     }, 250);
   }, [threadId]);
   const previousLocalOnly = useRef(localOnly);
+  useEffect(() => {
+    function onMentionResult(event: Event) {
+      if ((event as CustomEvent<{ threadId: string }>).detail?.threadId === threadId) {
+        refreshDurableHistory();
+      }
+    }
+    window.addEventListener(MENTION_RESULT_EVENT, onMentionResult);
+    return () => window.removeEventListener(MENTION_RESULT_EVENT, onMentionResult);
+  }, [threadId, refreshDurableHistory]);
   useEffect(() => {
     if (previousLocalOnly.current && !localOnly) refreshDurableHistory();
     previousLocalOnly.current = localOnly;
