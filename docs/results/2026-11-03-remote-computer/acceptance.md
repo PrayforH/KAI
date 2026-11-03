@@ -47,3 +47,9 @@ GTK4搜索框未暴露语义文本输入，type返回POLICY_DENIED、not_deliver
 反向socket目录为link:root、2750，socket为link:root、0660；sshd专用用户StreamLocalBindMask0117。Control与Viewer仍cap_drop ALL。x11vnc明确禁用IPv4和IPv6 TCP监听，仅本地Unix socket；初配发现IPv6 5900额外监听后已立即停止修正。
 
 首次重启后发现Docker172.20/16覆盖79路由，且公司VPN未连接。用户完成虎盾登录后，路由经tun1恢复，32→79 SSH实测成功；79实际Control容器的远端身份核验exit0，与登记machine-id、computer-id及组件pin完全一致，新Unix socket权限0660。用户另确认79正向可达。最终重启后仍需重新验证登录与通道，不能仅记录服务active。
+
+## 收尾状态
+
+当前选择本地电脑，已交还观察状态；本次3个QA Run均结束，默认DeepSeek Flash未改。合成HTTP服务已停止，页面不含真实账号或业务数据；原浏览器、窗口、虎盾和持久连接保留。Mac临时屏幕共享及15945转发均关闭，本机临时密钥副本和手册配置纯文本已清理；79/32正式私有凭证保留各自受限位置。普通用户可直接运行agent-desktop（/usr/local/bin入口）。
+
+飞书方案11.14已同步并回读至revision107，含实际证据、AX尚未集成的边界、误输入及影响、往返切换待验状态。实现提交6ffe390d，工作树其余变更仅为本报告收尾。用户正在使用KAI编辑新消息，最后往返切换需等待其明确空闲，不打断当前操作。

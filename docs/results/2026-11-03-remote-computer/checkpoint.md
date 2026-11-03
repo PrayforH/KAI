@@ -81,3 +81,5 @@ Viewer诊断v3短暂部署后确认上述PATH原因；compose当前694354035c133
 用户开始在KAI输入新草稿，已停止抢浏览器、不改草稿。最后云/本地往返切换复核暂待用户空闲；已发async问约30秒切换时机（现在可以/稍后），不可将等待当许可，不可在其电脑Run执行中切换。当前本地target，观察状态，无自己的QA运行。
 
 最终79 API/worker/control v2镜像f1ef067666e48e49946ba9d6c9f472ee08d1a199df5d5f37d5a2a8a9aa73b37f；viewer v4 c714f7098c8b0b2096bb2149dca954a8aae334aa22b1412485236bf89604bb28；二者95层。web仍v1 b39ed08ced64413270f40d1f44709a08c95ab8098419eb296a05376df7ed1d7f。composeSHA c3302a05c1d77d807cadf22b88573a91cda83574e95e6ca4fa91088668a77bf4。健康正常，nginx已reload。飞书11.14已更新真实证据、OS最终恢复、agent-desktop边界、误操作影响与未验往返切换，revision107已回读。报告acceptance.md；代码待最终commit。
+
+收尾：6ffe390d已提交，临时合成HTTP服务停止（DOM页面仍可看），正式link/display仍active；/usr/local/bin/agent-desktop入口验证正常。Mac临时control/viewer/tunnel私钥副本与guest.tar、手册配置纯文本已清理，正式79/32凭证保留。用户关于30秒往返切换时机的async问题仍待回复；不要把等待当许可、不要改其新草稿或正在运行的电脑任务。仅这项切换实页验证未完成，AX集成属于后续适配而非已完成能力。
