@@ -73,7 +73,9 @@ class ComputerRuntime:
             if re.fullmatch(_IMAGE, settings.assistant_computer_remote_image) is None:
                 raise ValueError("remote computer requires pinned components")
             self.drivers[REMOTE_PROVIDER] = RemoteComputerDriver(
-                control, image=settings.assistant_computer_remote_image
+                control,
+                image=settings.assistant_computer_remote_image,
+                native_desktop=settings.assistant_computer_native_desktop,
             )
         self.default_provider = settings.assistant_computer_default_provider
 
@@ -131,7 +133,12 @@ class ComputerRuntime:
             return PlatformToolOverlay()
         if not isinstance(handle, SandboxHandle) or not sandbox.owns(handle):
             return PlatformToolOverlay()
-        return computer_gui_overlay(self.desktop, sandbox, handle)
+        return computer_gui_overlay(
+            self.desktop,
+            sandbox,
+            handle,
+            native_desktop=bool(getattr(sandbox.driver, "native_desktop", False)),
+        )
 
     async def close(self) -> None:
         if self.client is not None:

@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     assistant_computer_image: str = ""
     assistant_computer_targets: list[dict[str, str]] = Field(default_factory=list)
     assistant_computer_remote_image: str = ""
+    assistant_computer_native_desktop: bool = False
     # A VM-based persistent computer shares the same control plane; its image
     # is the immutable guest base digest. Empty keeps VM routing disabled.
     assistant_computer_vm_image: str = ""

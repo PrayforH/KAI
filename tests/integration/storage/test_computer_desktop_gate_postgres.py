@@ -99,7 +99,7 @@ async def seed(sessions: SessionFactory) -> ComputerLease:
         tenant_id=TENANT,
         session_id=session.session_id,
         run_id=run.run_id,
-        owner="run-fence:1",
+        owner="run-fence:2",
         provider="vm-computer",
         sandbox_id=HANDLE,
     )
@@ -137,7 +137,9 @@ class StubScreen:
     def cancel(self, volume_ref: str) -> None:
         self.cancels += 1
 
-    async def wait_drained(self, volume_ref: str, *, timeout: float) -> bool:
+    async def wait_drained(
+        self, volume_ref: str, *, timeout: float, expected_epoch: int | None = None
+    ) -> bool:
         return self.drain_ok
 
     async def operate(
@@ -147,6 +149,8 @@ class StubScreen:
         payload: dict[str, Any],
         *,
         revalidate: Any = None,
+        scope: str | None = None,
+        expected_epoch: int | None = None,
     ) -> dict[str, object]:
         if revalidate is not None:
             await revalidate()  # the real screen re-checks inside its lock
@@ -177,7 +181,7 @@ async def test_gate_allows_the_current_holder_with_the_current_epoch(
     _, sessions = database
     app = create_app(
         ControllerSettings(
-            database_url="postgresql+asyncpg://harness:harness@127.0.0.1:35432/harness_test",
+            database_url=database[0].url.render_as_string(hide_password=False),
             secret=SecretStr(SECRET),
             image="sha256:" + "a" * 64,
             authorization="canonical",
@@ -208,7 +212,7 @@ async def test_gate_rejects_stale_epochs_released_desktops_and_wrong_secret(
     _, sessions = database
     app = create_app(
         ControllerSettings(
-            database_url="postgresql+asyncpg://harness:harness@127.0.0.1:35432/harness_test",
+            database_url=database[0].url.render_as_string(hide_password=False),
             secret=SecretStr(SECRET),
             image="sha256:" + "a" * 64,
             authorization="canonical",

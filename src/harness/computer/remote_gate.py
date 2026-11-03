@@ -25,7 +25,10 @@ def configuration() -> dict[str, Any]:
     if Path("/etc/machine-id").read_text().strip() != value["machine_id"]:
         raise PermissionError("remote machine identity changed")
     digest = hashlib.sha256()
-    for name in ("remote_display_gate.py", "remote_gate.py", "ssh_gate.py", "supervisor.py"):
+    components = ["remote_display_gate.py", "remote_gate.py", "ssh_gate.py", "supervisor.py"]
+    if value.get("native_desktop"):
+        components.append("native_desktop.py")
+    for name in components:
         component = Path("/opt/kai-computer") / name
         info = component.lstat()
         if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
@@ -55,6 +58,29 @@ def main() -> None:
     request = json.loads(body)
     if request == {"version": 1, "action": "identity", "spec": {}}:
         print(json.dumps({k: config[k] for k in ("machine_id", "computer_id", "image")}))
+        return
+    if request.get("action") in {"native_desktop", "native_barrier"}:
+        if (
+            not config.get("native_desktop")
+            or request.keys() != {"version", "action", "spec"}
+            or request["version"] != 1
+        ):
+            raise PermissionError("native desktop is not enabled")
+        # configuration() has already verified the root-owned module's digest.
+        native = importlib.util.spec_from_file_location(
+            "kai_native_desktop", "/opt/kai-computer/native_desktop.py"
+        )
+        assert native is not None and native.loader is not None
+        module = importlib.util.module_from_spec(native)
+        native.loader.exec_module(module)
+        with module.locked():
+            if request["action"] == "native_barrier":
+                if request["spec"].keys() != {"epoch"}:
+                    raise ValueError("native desktop barrier is invalid")
+                module.fence(request["spec"]["epoch"], blocked=True)
+                print('{"drained":true}')
+            else:
+                print(json.dumps(module.run(config, request["spec"]), ensure_ascii=False))
         return
     # Import only a root-owned fixed file; the VM gate owns decoding, spooling,
     # NNP and the supervisor entry. This wrapper changes only the home proof.

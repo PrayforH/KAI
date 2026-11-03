@@ -147,7 +147,7 @@ async def drain_pending_takeovers(
         # The stop request lands between keystrokes; the busy flag clearing
         # is the drain acknowledgement for this computer's queue.
         if remaining <= 0 or not await screen.wait_drained(
-            computer.volume_ref, timeout=max(0.0, remaining)
+            computer.volume_ref, timeout=max(0.0, remaining), expected_epoch=lease.epoch
         ):
             continue
         state = await desktop_leases.confirm_human(
@@ -352,7 +352,12 @@ def create_app(settings: ControllerSettings) -> FastAPI:
             # operate re-runs the same guard inside the action lock: a queued
             # action is only executed while its lease and epoch still hold.
             return await screen.operate(
-                computer, command.operation, command.payload, revalidate=guard
+                computer,
+                command.operation,
+                command.payload,
+                revalidate=guard,
+                scope=command.token.lease_id,
+                expected_epoch=command.expected_epoch,
             )
         except (ComputerLeaseLostError, DesktopOccupiedError, NotFoundError):
             raise HTTPException(409, "Computer desktop ownership was lost") from None

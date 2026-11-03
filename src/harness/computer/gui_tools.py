@@ -17,11 +17,22 @@ from harness.sandbox.base import SandboxHandle
 INSTRUCTIONS = (
     "你可以操作用户电脑的可见桌面（与网页右侧显示的是同一台电脑）。\n"
     "截图按像素计费：读文件、看日志、查进程、跑命令一律用 shell，不要截图；"
-    "只有必须看界面时才截图。\n"
+    "只有必须读取视觉画面时才截图。\n"
     "只看某个区域时传 region（x/y/width/height，单位是桌面像素）；界面偏小可传 scale 0.5–0.8，"
-    "两者都能显著降低开销。先看全屏定位，再用 region 复核细节。\n"
+    "两者都能显著降低开销。确需像素定位时可先看全屏，再用 region 复核细节。\n"
     "坐标动作之前要有对应的观测；动作后只在需要确认结果时重新截图。\n"
     "如果用户正在控制电脑，工具会明确提示，此时等待用户交还，不要重试输入。"
+)
+
+NATIVE_INSTRUCTIONS = (
+    "这台 Remote Computer 已接入 agent-desktop 原生可访问性接口，优先使用 computer_ui，"
+    "不用先截图。先 list_apps/list_windows 定位应用，再 snapshot（默认 interactive+compact；"
+    "复杂窗口先 skeleton，再 root 深入）。只使用当前运行返回的完整 @s…:e… ref。"
+    "每次界面变化后重新观察；不能凭旧 ref 连续盲点。click/type/select 是严格 headless 语义操作，"
+    "不会抢焦点、剪贴板或鼠标。保留并遵守原始 disposition：仅 retry=safe 且 delivery=not_delivered"
+    "才可重试；结果不确定先观察，不能重复提交。STALE_REF 重新 snapshot；AMBIGUOUS_TARGET "
+    "不要反复重试相同控件。不得为恢复 headless 失败而静默转成坐标输入或 headed。"
+    "截图保留给视觉内容与必要核对，不用截图代替可访问性树。"
 )
 
 
@@ -62,6 +73,8 @@ def computer_gui_overlay(
     desktop: DesktopControlService,
     sandbox: DesktopActionSource,
     handle: SandboxHandle,
+    *,
+    native_desktop: bool = False,
 ) -> PlatformToolOverlay:
     tenant_id, user_id, owner = (
         sandbox.session.tenant_id,
@@ -81,9 +94,7 @@ def computer_gui_overlay(
         if epoch is None:
             return _text(refusal or "桌面控制权暂不可用，请稍后重试。")
         try:
-            return await sandbox.desktop_action(
-                handle, operation, payload, expected_epoch=epoch
-            )
+            return await sandbox.desktop_action(handle, operation, payload, expected_epoch=epoch)
         except ComputerLeaseLostError as error:
             return _text(f"桌面控制权已变更：{error}")
         except (RuntimeError, ValueError) as error:
@@ -142,8 +153,65 @@ def computer_gui_overlay(
             handler=lambda arguments, _operation=operation: act(_operation, arguments),
         )
 
+    async def native(arguments: dict[str, Any]) -> dict[str, Any]:
+        result = await act("ui", arguments)
+        if "content" in result:
+            return result
+        return _text(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+
+    native_tools = (
+        (
+            PlatformTool(
+                name="computer_ui",
+                description=(
+                    "通过 agent-desktop 读取原生控件树、点击控件、填写字段或选择选项；"
+                    "优先于截图和坐标动作。结果必须重新观察核对。"
+                ),
+                schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": [
+                                "status",
+                                "list_apps",
+                                "list_windows",
+                                "snapshot",
+                                "click",
+                                "type",
+                                "select",
+                            ],
+                        },
+                        "app": {"type": "string", "maxLength": 160},
+                        "window_id": {"type": "string", "maxLength": 160},
+                        "ref": {
+                            "type": "string",
+                            "description": "click/type/select：本次运行 snapshot 返回的完整 @s…:e…",
+                        },
+                        "text": {
+                            "type": "string",
+                            "maxLength": 2000,
+                            "description": "type 的文字，或 select 的选项",
+                        },
+                        "root": {"type": "string", "description": "snapshot 局部读取的控件 ref"},
+                        "surface": {"type": "string", "enum": ["window", "menu", "sheet", "alert"]},
+                        "interactive": {"type": "boolean", "default": True},
+                        "skeleton": {"type": "boolean", "default": False},
+                        "max_depth": {"type": "integer", "minimum": 1, "maximum": 15},
+                    },
+                    "required": ["action"],
+                },
+                handler=native,
+            ),
+        )
+        if native_desktop
+        else ()
+    )
+
     return PlatformToolOverlay(
         tools=(
+            *native_tools,
             PlatformTool(
                 name="computer_screenshot",
                 description=(
@@ -196,7 +264,7 @@ def computer_gui_overlay(
             ),
             PlatformTool(
                 name="computer_key",
-                description="按下组合键，如 [\"ctrl\", \"c\"]、[\"enter\"]。",
+                description='按下组合键，如 ["ctrl", "c"]、["enter"]。',
                 schema={
                     "type": "object",
                     "properties": {
@@ -212,5 +280,5 @@ def computer_gui_overlay(
                 handler=lambda arguments: act("key", arguments),
             ),
         ),
-        instructions=INSTRUCTIONS,
+        instructions=(NATIVE_INSTRUCTIONS + "\n" if native_desktop else "") + INSTRUCTIONS,
     )

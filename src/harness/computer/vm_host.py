@@ -11,6 +11,7 @@ import base64
 import contextlib
 import json
 import re
+import time
 from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -43,6 +44,7 @@ from harness.computer.models import (
     ComputerStartRejectedError,
     LeasePurpose,
 )
+from harness.computer.native_desktop import command as native_command
 from harness.computer.registry import ComputerRegistry
 from harness.computer.ssh_transport import SshComputerSpec, SshEndpoint
 from harness.computer.vm_keys import ComputerVmSeed, VmSeedStore
@@ -126,11 +128,18 @@ class GuestGate:
             out, err = await asyncio.wait_for(
                 process.communicate(body), timeout=timeout_seconds + 60
             )
-        except TimeoutError:
+        except (TimeoutError, asyncio.CancelledError) as error:
             try:
                 process.terminate()
             except ProcessLookupError:
                 pass
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(process.wait(), timeout=3)
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
+            if isinstance(error, asyncio.CancelledError):
+                raise
             raise RuntimeError("computer guest control did not answer in time") from None
         code = process.returncode
         assert code is not None
@@ -432,7 +441,7 @@ class DisplayTransport:
         return process.stdout, process.stdin
 
 
-GUI_OPERATIONS = frozenset({"screenshot", "move", "click", "type", "key", "scroll"})
+GUI_OPERATIONS = frozenset({"screenshot", "move", "click", "type", "key", "scroll", "ui"})
 
 
 class VmDesktopService:
@@ -487,7 +496,9 @@ class VmDesktopService:
         if volume_ref in self._specs:
             self._stop_event(volume_ref).set()
 
-    async def wait_drained(self, volume_ref: str, *, timeout: float) -> bool:
+    async def wait_drained(
+        self, volume_ref: str, *, timeout: float, expected_epoch: int | None = None
+    ) -> bool:
         """True once no action of this computer is executing (or it stopped)."""
 
         if volume_ref not in self._specs:
@@ -496,6 +507,20 @@ class VmDesktopService:
             await asyncio.wait_for(self._busy_event(volume_ref).wait(), timeout)
         except TimeoutError:
             return False
+        spec = self._specs[volume_ref]
+        if getattr(spec, "native_desktop", False) and expected_epoch is not None:
+            try:
+                reply = await asyncio.wait_for(
+                    GuestGate(spec).call(
+                        "native_barrier",
+                        {"epoch": expected_epoch},
+                        timeout_seconds=timeout,
+                    ),
+                    timeout=timeout,
+                )
+                return reply.exit_code == 0 and json.loads(reply.stdout).get("drained") is True
+            except (TimeoutError, RuntimeError, ValueError, ComputerLeaseLostError):
+                return False
         return True
 
     async def operate(
@@ -505,10 +530,20 @@ class VmDesktopService:
         payload: Mapping[str, object],
         *,
         revalidate: Callable[[], Awaitable[object]],
+        scope: str | None = None,
+        expected_epoch: int | None = None,
     ) -> dict[str, object]:
         if operation not in GUI_OPERATIONS:
             raise ValueError("desktop operation is not supported")
         spec = self._spec(computer)
+        if operation == "ui":
+            if (
+                not getattr(spec, "native_desktop", False)
+                or scope is None
+                or expected_epoch is None
+            ):
+                raise ValueError("native accessibility is not enabled on this computer")
+            native_command(dict(payload))
         key = computer.volume_ref
         async with self._lock(key):
             # The queue wait may have spanned a takeover, a lease handover or
@@ -516,7 +551,7 @@ class VmDesktopService:
             # authorization still holds.
             await revalidate()
             client = self._sessions.get(key)
-            if client is None:
+            if client is None and operation != "ui":
                 client = RfbClient(DisplayTransport(spec))
                 self._sessions[key] = client
             stop = self._stop_event(key)
@@ -524,9 +559,35 @@ class VmDesktopService:
             busy = self._busy_event(key)
             busy.clear()
             try:
+                if operation == "ui":
+                    task = asyncio.create_task(
+                        GuestGate(spec).call(
+                            "native_desktop",
+                            {
+                                "scope": scope,
+                                "desktop_epoch": expected_epoch,
+                                "deadline": time.time() + 12,
+                                "payload": dict(payload),
+                            },
+                            timeout_seconds=10,
+                        )
+                    )
+                    try:
+                        result = await asyncio.shield(task)
+                    except asyncio.CancelledError:
+                        # The remote command is bounded and returns only after
+                        # its process group drains. Do not publish an idle
+                        # desktop and grant human input while it is still live.
+                        await task
+                        raise
+                    if result.exit_code:
+                        raise RuntimeError("native desktop command could not be confirmed")
+                    return cast(dict[str, object], json.loads(result.stdout))
+                assert client is not None
                 return await self._dispatch(client, operation, payload, stop=stop)
             except (TimeoutError, RuntimeError, ValueError, OSError, EOFError):
-                await client.close()
+                if client is not None:
+                    await client.close()
                 self._sessions.pop(key, None)
                 raise
             finally:

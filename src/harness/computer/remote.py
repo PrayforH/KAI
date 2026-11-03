@@ -10,6 +10,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from harness.computer.access import ComputerAuthorizer
+from harness.computer.docker import ComputerHost
 from harness.computer.gate_ack import validate as validate_ack
 from harness.computer.models import (
     AssistantComputer,
@@ -34,6 +35,7 @@ class RemoteComputerSpec(BaseModel):
     guest_base_digest: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
     control: SshEndpoint
     viewer: SshEndpoint
+    native_desktop: bool = False
 
     def ssh_endpoint(self, kind: Literal["control", "viewer"]) -> SshEndpoint:
         return self.control if kind == "control" else self.viewer
@@ -42,6 +44,10 @@ class RemoteComputerSpec(BaseModel):
 class RemoteComputerDriver(VmComputerDriver):
     provider = PROVIDER
     image_office = False
+
+    def __init__(self, host: ComputerHost, *, image: str, native_desktop: bool = False) -> None:
+        super().__init__(host, image=image)
+        self.native_desktop = native_desktop
 
 
 class RemoteComputerControl(SshComputerControl):
