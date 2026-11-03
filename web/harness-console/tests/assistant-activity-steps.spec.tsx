@@ -33,7 +33,7 @@ it("accepts the explicit public summary channel before the first tool", () => {
 
 it.each([
   ["WebSearch", "正在检索相关资料。"], ["Read", "正在读取所需文件。"],
-  ["Bash", "正在执行所需命令。"], ["mcp__computer__screenshot", "正在操作云电脑。"],
+  ["Bash", "正在执行所需命令。"], ["mcp__computer__screenshot", "正在查看电脑画面。"],
   ["mcp__harness-builder__assistant_delegate_to_specialist", "正在联系子助理。"],
   ["mcp__harness-builder__assistant_task_status", "正在核对子助理和原任务。"],
 ])("uses actual pending operations instead of a fixed wait (%s)", (name, expected) => {
@@ -112,4 +112,15 @@ it("shows receipt and preparation from real lifecycle facts without waiting for 
     await act(async () => root.render(<AssistantProgress activity={{...activity, status: "failed"}} />));
     expect(host.textContent).toBe("");
   } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+
+it("describes native desktop actions without leaking field contents or assuming a cloud computer", () => {
+  for (const [action, phrase] of Object.entries({ snapshot: "正在识别界面控件。", type: "正在填写界面内容。", list_windows: "正在查找应用窗口。" })) {
+    const item = { ...request("ui", "mcp__computer__computer_ui"), metadata: {tool_call_id: "ui", name: "computer_ui", arguments: {action, text: "PRIVATE_PASSWORD", target: "PRIVATE_REF"}} };
+    expect(progressPhrase({items: [item]})).toBe(phrase);
+    const finished = progressPhrase({items: [item, { ...result("ui"), summary: "PRIVATE_NATIVE_PROTOCOL" }]});
+    expect(finished).not.toMatch(/PRIVATE_|云电脑/);
+  }
+  expect(progressPhrase({items: [{...request("ui", "computer_ui"), metadata: {name: "computer_ui", arguments: {action: "PRIVATE_ACTION"}}}]})).not.toContain("PRIVATE_ACTION");
 });

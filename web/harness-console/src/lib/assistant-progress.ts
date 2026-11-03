@@ -43,7 +43,35 @@ function publicNotes(activity: ProgressActivity): Array<ChatActivityStep & { ind
   });
 }
 
-function toolStage(name: string): [string, string] {
+const UI_STAGES: Record<string, [string, string]> = {
+  status: ["正在检查桌面连接。", "桌面连接信息已返回。"],
+  list_apps: ["正在查看可用应用。", "应用列表已返回。"],
+  list_windows: ["正在查找应用窗口。", "窗口列表已返回。"],
+  snapshot: ["正在识别界面控件。", "界面控件信息已返回。"],
+  click: ["正在点击界面控件。", "点击结果已返回。"],
+  type: ["正在填写界面内容。", "填写结果已返回。"],
+  select: ["正在选择界面选项。", "选择结果已返回。"],
+};
+
+function toolStage(name: string, args?: unknown): [string, string] {
+  if (/computer_ui$/i.test(name) && args && typeof args === "object") {
+    // Only an allowlisted operation enum affects the public status. Never
+    // expose field text, passwords, commands, URLs or raw control references.
+    const action = (args as Record<string, unknown>).action;
+    if (typeof action === "string" && Object.hasOwn(UI_STAGES, action)) return UI_STAGES[action];
+  }
+  if (/computer.*(?:screenshot|screen_capture)|desktop.*screenshot/i.test(name)) return ["正在查看电脑画面。", "电脑画面已返回。"];
+  if (/computer.*click/i.test(name)) return ["正在点击界面。", "点击结果已返回。"];
+  if (/computer.*type/i.test(name)) return ["正在输入内容。", "输入结果已返回。"];
+  if (/computer.*key/i.test(name)) return ["正在发送按键。", "按键结果已返回。"];
+  if (/computer.*scroll/i.test(name)) return ["正在滚动查看界面。", "滚动结果已返回。"];
+  if (/computer.*move/i.test(name)) return ["正在定位界面。", "定位结果已返回。"];
+  if (/assistant_create_specialist/i.test(name)) return ["正在创建助理。", "助理创建结果已返回。"];
+  if (/assistant_resolve_target/i.test(name)) return ["正在查找对应助理。", "助理查找结果已返回。"];
+  if (/assistant_send_message|assistant_send_instruction/i.test(name)) return ["正在向助理发送消息。", "助理消息回执已返回。"];
+  if (/assistant_update_task|assistant_manage_work/i.test(name)) return ["正在调整任务安排。", "任务调整结果已返回。"];
+  if (/credential|vault/i.test(name)) return ["正在检查可用凭证。", "凭证检查结果已返回。"];
+
   if (/assistant_route_message/i.test(name)) return ["正在安排处理。", "已确定处理方式。"];
   if (/^(?:Task|Agent)$/.test(name)) return ["子助理正在处理请求。", "已收到子助理结果，正在核对。"];
   if (/assistant_(?:delegate|create|send_instruction)/i.test(name)) return ["正在联系子助理。", "已收到交办回执，正在核对。"];
@@ -54,7 +82,7 @@ function toolStage(name: string): [string, string] {
   if (/browser|browse|navigate|web_fetch/i.test(name)) return ["正在查看相关页面。", "页面信息已返回，正在整理。"];
   if (/read|file_get|list_files/i.test(name)) return ["正在读取所需文件。", "文件内容已返回，正在整理。"];
   if (/write|edit|file_put/i.test(name)) return ["正在更新相关文件。", "文件操作已有结果，正在核对。"];
-  if (/computer|desktop|screen/i.test(name)) return ["正在操作云电脑。", "电脑操作已有返回，正在核对。"];
+  if (/computer|desktop|screen/i.test(name)) return ["正在操作电脑。", "电脑操作结果已返回。"];
   return ["正在处理这一步。", "这一步已有结果，正在整理。"];
 }
 
@@ -91,13 +119,17 @@ export function progressPhrase(activity: ProgressActivity, options: { allowTrans
   if (latest?.event_type === "subagent.started") return "子助理正在处理，等待它返回进展。";
   if (latest?.event_type === "artifact.ready") return "交付文件已准备好，正在整理说明。";
   if (latest?.event_type === "runtime.system" && /^(?:retrying|reconnecting)$/i.test(latest.summary ?? "")) return "请求正在重试，等待新的结果。";
-  if (pending) return toolStage(String(pending.item.metadata?.name ?? ""))[0];
+  if (pending) return toolStage(String(pending.item.metadata?.name ?? ""), pending.item.metadata?.arguments)[0];
   const notes = publicNotes(activity);
   const note = notes.at(-1);
   if (note && (!result || note.index > result.index)) return note.text;
   if (result) {
     const text = trimConclusion(result.item.summary ?? "");
-    return text && !/^返回\s*\d|^工具调用/.test(text) ? text : toolStage(String(result.request?.metadata?.name ?? ""))[1];
+    const name = String(result.request?.metadata?.name ?? "");
+    // Computer results can contain native protocol details; keep those in
+    // run details and show only the observed operation's receipt in chat.
+    return text && !/^返回\s*\d|^工具调用/.test(text) && !/computer|desktop|screen/i.test(name)
+      ? text : toolStage(name, result.request?.metadata?.arguments)[1];
   }
   if (note) return note.text;
   if (options.allowTransient === false) return "";
