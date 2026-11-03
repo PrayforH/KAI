@@ -14,7 +14,7 @@ export function composerTrigger(text: string, caret: number) {
   if (!match || (match[1] === "/" && before.trimStart() !== match[0].trimStart())) return null;
   return { symbol: match[1], query: match[2].toLowerCase(), start: caret - match[2].length - 1, end: caret };
 }
-export interface QueuedPrompt { id: string; text: string; attachments: CompleteAttachment[]; steerRunId?: string; intent?: "steer" | "next" }
+export interface QueuedPrompt { id: string; text: string; attachments: CompleteAttachment[]; steerRunId?: string; intent?: "steer" | "next"; receipt?: "unknown" | "failed" }
 export function queueAttachments(attachments: readonly Attachment[]): CompleteAttachment[] {
   return attachments.map((attachment) => {
     if (attachment.status.type === "complete") return attachment as CompleteAttachment;
@@ -34,4 +34,22 @@ export function restorePromptQueue(raw: string | null): QueuedPrompt[] {
     if (!Array.isArray(value)) return [];
     return value.filter((item): item is QueuedPrompt => Boolean(item && typeof item.id === "string" && typeof item.text === "string" && Array.isArray(item.attachments) && item.attachments.every((a: CompleteAttachment) => a?.status?.type === "complete" && Array.isArray(a.content)))).slice(0, 50);
   } catch { return []; }
+}
+
+/** Only a confirmed non-delivery can become a fresh turn automatically. */
+export function settleAssistantFollowup(item: QueuedPrompt, status: string): QueuedPrompt | null {
+  if (status === "accepted") return null;
+  if (status === "not_delivered") return { ...item, intent: "next", steerRunId: undefined, receipt: undefined };
+  if (status === "unknown" || status === "failed") return { ...item, receipt: status };
+  return item;
+}
+
+export function nextQueuedPrompt(items: QueuedPrompt[]): QueuedPrompt | undefined {
+  // Ambiguous writes stay retained; they do not block later, distinct messages.
+  return items.find(item => !item.receipt && !item.steerRunId);
+}
+
+
+export function nextSteeringPrompt(items: QueuedPrompt[], awaitingReceipt: readonly string[]): QueuedPrompt | undefined {
+  return items.find(item => item.intent === "steer" && !item.steerRunId && !item.receipt && !item.attachments.length && !awaitingReceipt.includes(item.id));
 }

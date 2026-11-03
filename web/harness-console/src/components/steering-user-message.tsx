@@ -1,4 +1,5 @@
 "use client";
+import { useAssistantSurface } from "./assistant-bot-context";
 import { useConversationRedactor } from "./conversation-redaction";
 
 const RECEIPT_COPY = {
@@ -13,12 +14,13 @@ const RECEIPT_COPY = {
 /** Local Codex UserMessage: an end-aligned compact message, independent of
  * the surrounding collapsible agent activity. The receipt remains accessible
  * without adding a banner to the authored message. */
-export function SteeringUserMessage({ text, status }: { text: string; status: "pending" | "accepted" | "unknown" }) {
+export function SteeringUserMessage({ text, status, chat = false }: { text: string; status: "pending" | "accepted" | "unknown"; chat?: boolean }) {
+  const assistantSurface = useAssistantSurface();
   const redact = useConversationRedactor();
   const copy = RECEIPT_COPY[status];
   return <article className="steering-user-message" data-steering-status={status}
     aria-label={copy.label}>
     <div className="steering-user-message-bubble">{redact(text)}</div>
-    {copy.detail && <small className="steering-user-message-status" role="status">{copy.detail}</small>}
+    {!chat && !assistantSurface && copy.detail && <small className="steering-user-message-status" role="status">{copy.detail}</small>}
   </article>;
 }

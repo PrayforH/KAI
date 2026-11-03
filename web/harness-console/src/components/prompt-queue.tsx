@@ -26,9 +26,7 @@ export function PromptQueue({ items, paused, busy, canSteer, sendingIds, onChang
   if (!items.length) return null;
   if (chat) return <div className="assistant-pending-messages" aria-label="已发送的消息">
     {items.map(item => <div key={item.id}>
-      <SteeringUserMessage text={item.text || `附件消息（${item.attachments.length} 个附件）`} status={paused && !item.steerRunId ? "unknown" : "pending"} />
-      {item.attachments.length > 0 && <small className="assistant-message-receipt">当前回复结束后发送附件</small>}
-      {paused && !item.steerRunId && <button type="button" className="assistant-message-retry" disabled={sendingIds.length > 0 || (busy && !canSteer) || (busy && !!item.attachments.length)} onClick={() => busy ? onGuide(item) : onSend(item)}>重新发送</button>}
+      <SteeringUserMessage chat text={item.text || `附件消息（${item.attachments.length} 个附件）`} status={item.receipt === "unknown" || item.receipt === "failed" ? "unknown" : "pending"} />
     </div>)}
   </div>;
   const queuedCount = items.filter(item => !item.steerRunId).length;

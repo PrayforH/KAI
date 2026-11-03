@@ -6,7 +6,7 @@ import { hasPendingProgressAction, modelWaitingSince, progressPhrase, shouldShow
 import { ChatActivitySteps, GrokActivityRow } from "./grok-activity";
 
 /** One projection for both pre-response and in-turn progress; no extra model calls. */
-export function AssistantProgress({ activity, avatar, publicMessagesVisible = false }: { activity: RunActivity; avatar?: string | null; publicMessagesVisible?: boolean }) {
+export function AssistantProgress({ activity, avatar, publicMessagesVisible = false, compact = false }: { activity: RunActivity; avatar?: string | null; publicMessagesVisible?: boolean; compact?: boolean }) {
   const visible = shouldShowChatActivityRow(activity.status, activity);
   const since = visible ? modelWaitingSince(activity) : undefined;
   const [now, setNow] = useState(Date.now);
@@ -25,8 +25,8 @@ export function AssistantProgress({ activity, avatar, publicMessagesVisible = fa
   if (publicMessagesVisible && textAt > processAt && !hasPendingProgressAction(activity)) return null;
   return <>
     <GrokActivityRow phrase={phrase} state="working" avatar={avatar} />
-    {!publicMessagesVisible && <ChatActivitySteps activity={activity} phrase={phrase} />}
-    {since && elapsed >= 30 && <p className="chat-progress-wait" aria-live="off">
+    {!compact && !publicMessagesVisible && <ChatActivitySteps activity={activity} phrase={phrase} />}
+    {!compact && since && elapsed >= 30 && <p className="chat-progress-wait" aria-live="off">
       模型尚未返回新的进展 · 已等待 {elapsed < 60 ? `${elapsed} 秒` : `${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒`}
     </p>}
   </>;

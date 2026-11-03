@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { composerTrigger, queueAttachments, queueMayDispatch, restorePromptQueue } from "../src/lib/composer-interactions";
+import { composerTrigger, queueAttachments, queueMayDispatch, restorePromptQueue, settleAssistantFollowup, nextQueuedPrompt, nextSteeringPrompt } from "../src/lib/composer-interactions";
 import { composerOptions } from "../src/components/composer-assist";
 import { durationLabel } from "../src/components/activity-summary";
 
@@ -41,4 +41,34 @@ describe("composer semantics and queue boundaries", () => {
   it("does not show a sixty-second remainder", () => {
     expect(durationLabel(119900)).toBe("1分59秒");
   });
+});
+
+describe("assistant follow-up delivery races", () => {
+  it("continues a definitely undelivered message as a fresh turn, preserving its identity and attachments", () => {
+    const original = { id: "m1", text: "帮我恢复下", attachments: [], steerRunId: "ended", intent: "steer" as const };
+    const next = settleAssistantFollowup(original, "not_delivered")!;
+    expect(next.id).toBe(original.id);
+    expect(next.attachments).toBe(original.attachments);
+    expect(next.intent).toBe("next");
+    expect(next.steerRunId).toBeUndefined();
+    expect(nextQueuedPrompt([next])).toBe(next);
+  });
+  it("never automatically duplicates an ambiguous write, without blocking later distinct sends", () => {
+    const uncertain = settleAssistantFollowup({ id: "m1", text: "补充", attachments: [], steerRunId: "ended" }, "unknown")!;
+    expect(nextQueuedPrompt([uncertain])).toBeUndefined();
+    const fresh = { id: "m2", text: "继续检查", attachments: [] };
+    expect(nextQueuedPrompt([uncertain, fresh])).toBe(fresh);
+    expect(uncertain.steerRunId).toBe("ended");
+    expect(settleAssistantFollowup(uncertain, "accepted")).toBeNull();
+  });
+});
+
+
+it("sends the next distinct message without waiting for earlier consumption receipts", () => {
+  const first = { id: "one", text: "第一条", attachments: [], intent: "steer" as const, steerRunId: "r" };
+  const second = { id: "two", text: "第二条", attachments: [], intent: "steer" as const };
+  const third = { id: "three", text: "第三条", attachments: [], intent: "steer" as const };
+  expect(nextSteeringPrompt([first, second, third], ["one"])).toBe(second);
+  expect(nextSteeringPrompt([first, { ...second, steerRunId: "r" }, third], ["one", "two"])).toBe(third);
+  expect(nextSteeringPrompt([first], ["one"])).toBeUndefined();
 });

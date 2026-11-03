@@ -58,3 +58,15 @@ it("shows successive assistant sends as independent bubbles before a run is read
   expect(host.querySelector(".prompt-queue")).toBeNull();
   expect(host.querySelector("button")).toBeNull();
 });
+
+
+it("keeps assistant sends as plain bubbles through transport uncertainty, with no receipt text or resend controls", () => {
+  host = document.createElement("div"); document.body.append(host); root = createRoot(host);
+  act(() => root.render(<PromptQueue chat items={[
+    { ...seed[0], receipt: "unknown" }, { ...seed[1], receipt: "failed" },
+  ]} paused busy={false} canSteer={false} sendingIds={[]} onChange={vi.fn()} onPause={vi.fn()} onGuide={vi.fn()} onSend={vi.fn()} />));
+  expect(host.textContent).toBe("firstsecond");
+  expect(host.querySelector("button")).toBeNull();
+  expect(host.querySelector("small")).toBeNull();
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+});

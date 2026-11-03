@@ -476,7 +476,10 @@ async def _client_query(
 SDK_STEERING_RECEIPT_TIMEOUT_SECONDS = 10.0
 
 
-async def _completed_run_messages(client: ClaudeSDKClient | WarmEntry) -> AsyncIterator[object]:
+async def _completed_run_messages(
+    client: ClaudeSDKClient | WarmEntry,
+    redirecting: Callable[[], bool] = lambda: False,
+) -> AsyncIterator[object]:
     """Hide intermediate results until the CLI has finished its background work.
 
     The caller owns the Run timeout/cancellation and the one response reader.
@@ -505,7 +508,7 @@ async def _completed_run_messages(client: ClaudeSDKClient | WarmEntry) -> AsyncI
             elif status in {"running", "pending"}:
                 active.add(message.task_id)
         if isinstance(message, ResultMessage):
-            if message.is_error or (state in {None, "idle"} and not active):
+            if redirecting() or message.is_error or (state in {None, "idle"} and not active):
                 result = None
                 yield message
             else:
@@ -531,19 +534,47 @@ async def _steerable_response(
     pending: dict[str, SteeringInput] = {}
     terminal_result: ResultMessage | None = None
     receipt_deadline: float | None = None
+    immediate = steering.run.input.get("conversation_surface") == "assistant"
+    redirecting = False
+    redirect_queue: list[SteeringInput] = []
+    redirect_deadline: float | None = None
 
-    async def deliver() -> None:
-        for item in await steering.read():
-            await steering.sending(item)
-            pending[item.request_id] = item
-            try:
-                async with asyncio.timeout(10):
-                    await client.query(item.text)
-            except Exception:
-                pending.pop(item.request_id, None)
-                await steering.acknowledge(item, error="运行未接收引导，请在下一条消息中重试")
-            # A transport write is not consumption. --replay-user-messages
-            # acknowledges the input when the CLI takes it into a turn.
+    async def send(item: SteeringInput) -> None:
+        await steering.sending(item)
+        pending[item.request_id] = item
+        try:
+            async with asyncio.timeout(10):
+                await client.query(item.text)
+        except Exception:
+            pending.pop(item.request_id, None)
+            await steering.acknowledge(item, error="运行未接收引导，请在下一条消息中重试")
+        # A transport write is not consumption. --replay-user-messages
+        # acknowledges the input when the CLI takes it into a turn.
+
+    async def deliver(*, at_boundary: bool = False) -> None:
+        nonlocal redirecting, redirect_deadline
+        inputs = await steering.read()
+        if not inputs:
+            return
+        if immediate and not at_boundary and (redirecting or not pending):
+            redirect_queue.extend(inputs)
+            if not redirecting:
+                # Like the official streaming client: interrupt, consume its
+                # terminal boundary, then send corrections in the same session.
+                redirecting = True
+                redirect_deadline = asyncio.get_running_loop().time() + 10
+                try:
+                    async with asyncio.timeout(10):
+                        await client.interrupt()
+                except Exception:
+                    redirecting = False
+                    redirect_deadline = None
+                    for item in redirect_queue:
+                        await steering.acknowledge(item, error="未能调整当前会话")
+                    redirect_queue.clear()
+            return
+        for item in inputs:
+            await send(item)
 
     async def fail_pending() -> None:
         for item in list(pending.values()):
@@ -554,12 +585,17 @@ async def _steerable_response(
         while not closed:
             async with lock:
                 if not closed:
+                    if (
+                        redirect_deadline is not None
+                        and asyncio.get_running_loop().time() >= redirect_deadline
+                    ):
+                        raise TimeoutError("SDK interrupt did not reach its response boundary")
                     await deliver()
             await asyncio.sleep(0.25)
 
     await steering.open()
     polling = asyncio.create_task(poll())
-    messages = _completed_run_messages(client).__aiter__()
+    messages = _completed_run_messages(client, lambda: redirecting).__aiter__()
     next_message: asyncio.Task[object] | None = None
 
     async def receive_next() -> object:
@@ -611,6 +647,24 @@ async def _steerable_response(
                         receipt_deadline = None
             if isinstance(message, ResultMessage):
                 async with lock:
+                    if redirecting:
+                        redirecting = False
+                        redirect_deadline = None
+                        queued, redirect_queue = redirect_queue, []
+                        for item in queued:
+                            await send(item)
+                        # This result belongs to the interrupted response, not
+                        # the corrected request. Never publish it as Run failure.
+                        if pending:
+                            terminal_result = message
+                            receipt_deadline = (
+                                asyncio.get_running_loop().time()
+                                + SDK_STEERING_RECEIPT_TIMEOUT_SECONDS
+                            )
+                            continue
+                    if not message.is_error:
+                        # Close the 250ms polling race at a natural boundary.
+                        await deliver(at_boundary=True)
                     if pending and not message.is_error:
                         # Inputs can merge before one result or be consumed after
                         # it. Count acknowledged inputs, never query() calls.

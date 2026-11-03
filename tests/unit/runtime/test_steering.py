@@ -29,7 +29,7 @@ from harness.runtime.claude_sdk import _steerable_response
 from harness.runtime.steering import SteeringInbox
 
 
-async def setup_inbox():
+async def setup_inbox(*, assistant: bool = False):
     now = datetime.now(UTC)
     run = Run(
         run_id="r",
@@ -37,6 +37,7 @@ async def setup_inbox():
         session_id="s",
         status=RunStatus.RUNNING,
         idempotency_key="initial",
+        input={"conversation_surface": "assistant"} if assistant else {},
         created_at=now,
         updated_at=now,
     )
@@ -211,23 +212,32 @@ async def test_sdk_missing_receipt_keeps_guidance_without_hanging(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_sdk_terminal_boundary_preserves_undelivered_guidance():
+async def test_sdk_terminal_boundary_drains_a_correction_before_closing_session():
     _, _, service, inbox = await setup_inbox()
+    submitted = asyncio.Event()
 
     class Client:
         async def query(self, text):
-            pytest.fail("Must not start another SDK turn after the terminal result")
+            assert text == "save for the next turn"
+            submitted.set()
 
         async def receive_messages(self):
             await service.steer("t", "r", "late", "save for the next turn")
             yield result()
+            await submitted.wait()
+            yield UserMessage(content="save for the next turn")
+            yield "corrected answer"
+            yield result()
 
-    observed = [item async for item in _steerable_response(cast(ClaudeSDKClient, Client()), inbox)]
-    assert len(observed) == 1
+    async with asyncio.timeout(1):
+        observed = [
+            item async for item in _steerable_response(cast(ClaudeSDKClient, Client()), inbox)
+        ]
+    assert "corrected answer" in observed
+    assert len([item for item in observed if isinstance(item, ResultMessage)]) == 1
     assert inbox.closed
     state = await service.steering_state("t", "r")
-    assert state["requests"][0]["status"] == "not_delivered"
-    assert state["requests"][0]["text"] == "save for the next turn"
+    assert state["requests"][0]["status"] == "accepted"
 
 
 @pytest.mark.asyncio
@@ -354,3 +364,67 @@ async def test_background_stream_closure_cannot_report_intermediate_success():
         async for message in _steerable_response(cast(ClaudeSDKClient, Client()), None):
             observed.append(message)
     assert not any(isinstance(item, ResultMessage) for item in observed)
+
+
+@pytest.mark.asyncio
+async def test_assistant_redirect_interrupts_then_consumes_boundary_before_sending_burst():
+    _, _, service, inbox = await setup_inbox(assistant=True)
+    interrupted, submitted = asyncio.Event(), asyncio.Event()
+    calls: list[str] = []
+
+    class Client:
+        async def interrupt(self):
+            calls.append("interrupt")
+            interrupted.set()
+
+        async def query(self, text):
+            calls.append(text)
+            if text == "补充第二点":
+                submitted.set()
+
+        async def receive_messages(self):
+            await service.steer("t", "r", "one", "调整方向")
+            await service.steer("t", "r", "two", "补充第二点")
+            yield "original work"
+            # The original task never completes naturally. A correction must
+            # interrupt it, rather than waiting for its final answer.
+            await interrupted.wait()
+            assert calls == ["interrupt"]
+            boundary = result()
+            boundary.is_error = True
+            boundary.subtype = "interrupted"
+            yield boundary
+            await submitted.wait()
+            yield UserMessage(content="调整方向")
+            yield UserMessage(content="补充第二点")
+            yield "new direction applied"
+            yield result()
+
+    async with asyncio.timeout(2):
+        observed = [
+            item async for item in _steerable_response(cast(ClaudeSDKClient, Client()), inbox)
+        ]
+    assert calls == ["interrupt", "调整方向", "补充第二点"]
+    assert "new direction applied" in observed
+    assert all(not item.is_error for item in observed if isinstance(item, ResultMessage))
+    state = await service.steering_state("t", "r")
+    assert [item["status"] for item in state["requests"]] == ["accepted", "accepted"]
+
+
+@pytest.mark.asyncio
+async def test_real_sdk_failure_without_redirect_is_not_hidden_by_late_input():
+    _, _, service, inbox = await setup_inbox()
+
+    class Client:
+        async def query(self, text):
+            pytest.fail("A provider failure must not silently start a replacement turn")
+
+        async def receive_messages(self):
+            await service.steer("t", "r", "late", "keep me")
+            failure = result()
+            failure.is_error = True
+            yield failure
+
+    observed = [item async for item in _steerable_response(cast(ClaudeSDKClient, Client()), inbox)]
+    assert len(observed) == 1 and observed[0].is_error
+    assert (await service.steering_state("t", "r"))["requests"][0]["status"] == "not_delivered"

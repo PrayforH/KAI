@@ -60,8 +60,7 @@ import { groupWorkspaceFiles } from "../lib/workspace-file-groups";
 import { setPendingReply } from "../lib/reply-references";
 import { loadComposerReplyDraft, persistComposerReplyDraft } from "../lib/task-composer-draft";
 import { useAssistantBot, useAssistantSurface } from "./assistant-bot-context";
-import { AssistantProgress } from "./assistant-progress";
-import { shouldShowChatActivityRow } from "../lib/assistant-progress";
+import { AssistantConversationTail, AssistantSteeringMessages } from "./assistant-conversation-tail";
 import { HandoverInlineRows, shouldShowHandoverRows } from "./handover-row";
 import {
   MENTION_PREFIX,
@@ -157,7 +156,7 @@ import {
   TaskKnowledgeSelection,
   useTaskKnowledge,
 } from "./task-knowledge-context";
-import { composerTrigger, queueAttachments, queueMayDispatch, restorePromptQueue, type QueuedPrompt } from "../lib/composer-interactions";
+import { composerTrigger, queueAttachments, queueMayDispatch, restorePromptQueue, settleAssistantFollowup, nextQueuedPrompt, nextSteeringPrompt, type QueuedPrompt } from "../lib/composer-interactions";
 
 import { writeTextToClipboard } from "../lib/clipboard";
 import { CodexResponseIcon } from "./codex-response-icon";
@@ -451,7 +450,8 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const stopInFlight = useRef(false);
   const steeringSentAt = useRef<Record<string, number>>({});
   const steeringInFlight = useRef(new Set<string>());
-  const steeringRunId = queue.find((item) => item.steerRunId)?.steerRunId ?? runView?.runId;
+  const [steeringDispatchVersion, setSteeringDispatchVersion] = useState(0);
+  const steeringRunId = queue.find((item) => item.steerRunId && steeringIds.includes(item.id))?.steerRunId ?? runView?.runId;
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
   const voiceComposer = useDictationComposer(inputRef, () => aui.composer().getState().text,
@@ -486,10 +486,11 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   useEffect(() => {
     if (!queueKey) return;
     try {
-      const saved = restorePromptQueue(localStorage.getItem(queueKey));
+      const saved = restorePromptQueue(localStorage.getItem(queueKey)).map(item =>
+        assistantSurface && !item.steerRunId && !item.receipt ? { ...item, receipt: "unknown" as const } : item);
       setQueue(saved);
       setSteeringIds(saved.filter((item) => item.steerRunId).map((item) => item.id));
-      setQueuePaused(saved.length > 0);
+      setQueuePaused(!assistantSurface && saved.length > 0);
     } catch { setQueue([]); }
     setQueueLoaded(true);
   }, [queueKey]);
@@ -500,18 +501,19 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   useEffect(() => { setSuggestionIndex(0); }, [composerText]);
   const terminalRun = useRef("");
   useEffect(() => {
-    if (!runView || !["failed", "rejected", "cancelled"].includes(runView.phase) || terminalRun.current === runView.runId) return;
+    if (assistantSurface || !runView || !["failed", "rejected", "cancelled"].includes(runView.phase) || terminalRun.current === runView.runId) return;
     terminalRun.current = runView.runId;
     setQueuePaused(true);
-  }, [runView?.runId, runView?.phase]);
+  }, [assistantSurface, runView?.runId, runView?.phase]);
   useEffect(() => {
     if (busy) { dispatching.current = false; return; }
     if (!queueLoaded || steeringIds.length > 0 || !queue.length || dispatching.current || !queueMayDispatch(busy, queuePaused, runView?.phase)) return;
+    if (assistantSurface && !nextQueuedPrompt(queue)) return;
     // Allow terminal-state effects and durable history synchronization to settle.
     const timer = window.setTimeout(() => {
       if (threadRuntime.getState().isRunning || dispatching.current) return;
       dispatching.current = true;
-      const next = queue[0];
+      const next = assistantSurface ? nextQueuedPrompt(queue)! : queue[0];
       try {
         threadRuntime.append({ role: "user", content: [{ type: "text", text: next.text }], attachments: next.attachments });
         setQueue((current) => current.filter((item) => item.id !== next.id));
@@ -522,7 +524,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       }
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [busy, queue, queueLoaded, queuePaused, runView?.phase, steeringIds, threadRuntime]);
+  }, [assistantSurface, busy, queue, queueLoaded, queuePaused, runView?.phase, steeringIds, threadRuntime]);
   function command(value: string) {
     if (value === "/stop") { void stopRun(); }
     else if (value === "/files") {if (conversationScope) conversationScope.onOpenFiles();else window.dispatchEvent(new Event("harness:open-files"));}
@@ -576,6 +578,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       const next: QueuedPrompt = { id: createRandomId(), text: composerText.trim(), attachments: queueAttachments(composerAttachments),
         ...(assistantSurface ? { intent: steer ? "steer" as const : "next" as const } : {}) };
       setQueue((current) => [...current, next]);
+      if (assistantSurface) setQueuePaused(false);
       setInputError("");
       aui.composer().setText("");
       await threadRuntime.composer.clearAttachments();
@@ -584,8 +587,8 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     } catch (error) { setInputError(error instanceof Error ? error.message : "无法加入队列"); }
   }
   const hasPendingSteering = steeringIds.length > 0;
-  const steeringContext = useRef({ runId: runView?.runId, busy, steeringIds });
-  steeringContext.current = { runId: runView?.runId, busy, steeringIds };
+  const steeringContext = useRef({ runId: runView?.runId, busy, steeringIds, queue });
+  steeringContext.current = { runId: runView?.runId, busy, steeringIds, queue };
   useEffect(() => {
     if (!steeringRunId || (!busy && !hasPendingSteering)) { setSteerAvailable(false); return; }
     let available = false;
@@ -593,7 +596,8 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       runId: steeringRunId,
       shouldPoll: () => (steeringContext.current.busy && !available) || steeringContext.current.steeringIds.length > 0,
       onState: (state) => {
-        const steeringIds = steeringContext.current.steeringIds;
+        const steeringIds = steeringContext.current.steeringIds.filter(id =>
+          steeringContext.current.queue.some(item => item.id === id && item.steerRunId === steeringRunId));
         available = state.available;
         setSteerAvailable(state.available && steeringRunId === steeringContext.current.runId);
         for (const id of steeringIds) {
@@ -602,8 +606,12 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
           if (Date.now() - steeringSentAt.current[id] > 10_000) {
             setSteeringIds((ids) => ids.filter((value) => value !== id));
             setQueue((items) => items.map((entry) => entry.id === id ? { ...entry, steerRunId: undefined } : entry));
-            setQueuePaused(true);
-            setInputError("未查到引导接收记录，内容已保留，可再次点击引导核对。");
+            if (assistantSurface) {
+              setQueue((items) => items.map(entry => entry.id === id ? { ...entry, steerRunId: steeringRunId, receipt: "unknown" } : entry));
+            } else {
+              setQueuePaused(true);
+              setInputError("未查到引导接收记录，内容已保留，可再次点击引导核对。");
+            }
           }
         }
         for (const item of state.requests) {
@@ -614,21 +622,37 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
             setSteeringNotice("");
           } else if (["failed", "not_delivered", "unknown"].includes(item.status)) {
             setSteeringIds((ids) => ids.filter((id) => id !== item.request_id));
-            setQueuePaused(true);
-            setQueue((items) => items.map((entry) => entry.id === item.request_id ? { ...entry, steerRunId: undefined } : entry));
-            setInputError(item.status === "unknown" ? "引导接收状态不确定，请先查看回复再决定是否重发。" : item.error || "运行已经结束，补充仍保留在队列中。");
+            if (assistantSurface) {
+              setQueue(items => items.flatMap(entry => {
+                if (entry.id !== item.request_id) return [entry];
+                const next = settleAssistantFollowup(entry, item.status);
+                return next ? [next] : [];
+              }));
+              if (item.status === "not_delivered") setQueuePaused(false);
+            } else {
+              setQueuePaused(true);
+              setQueue((items) => items.map((entry) => entry.id === item.request_id ? { ...entry, steerRunId: undefined } : entry));
+              setInputError(item.status === "unknown" ? "引导接收状态不确定，请先查看回复再决定是否重发。" : item.error || "运行已经结束，补充仍保留在队列中。");
+            }
           }
         }
       },
       onError: () => {
         setSteerAvailable(false);
         if (steeringContext.current.steeringIds.length) {
-          setQueuePaused(true);
-          setInputError("暂时无法核对引导状态；补充已保留，请刷新后核对，避免重复发送。");
+          if (assistantSurface) {
+            const pending = steeringContext.current.steeringIds.filter(id =>
+              steeringContext.current.queue.some(item => item.id === id && item.steerRunId === steeringRunId));
+            setQueue(items => items.map(item => pending.includes(item.id) ? { ...item, receipt: "unknown" } : item));
+            setSteeringIds(ids => ids.filter(id => !pending.includes(id)));
+          } else {
+            setQueuePaused(true);
+            setInputError("暂时无法核对引导状态；补充已保留，请刷新后核对，避免重复发送。");
+          }
         }
       },
     });
-  }, [steeringRunId, busy, hasPendingSteering]);
+  }, [steeringRunId, busy, hasPendingSteering, assistantSurface]);
 
   async function guide(item: QueuedPrompt) {
     if (!runView?.runId || steeringIds.includes(item.id) || steeringInFlight.current.has(item.id)) return;
@@ -636,7 +660,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     steeringInFlight.current.add(item.id);
     setSteeringIds((ids) => [...ids, item.id]);
     steeringSentAt.current[item.id] = Date.now();
-    setQueue((items) => items.map((entry) => entry.id === item.id ? { ...entry, steerRunId: runView.runId } : entry));
+    setQueue((items) => items.map((entry) => entry.id === item.id ? { ...entry, steerRunId: runView.runId, receipt: undefined } : entry));
     setInputError("");
     setSteeringNotice("");
     try {
@@ -644,21 +668,32 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request_id: item.id, text: item.text }),
       }));
       if (!response.ok) {
-        setQueuePaused(true);
         setSteeringIds((ids) => ids.filter((id) => id !== item.id));
-        setQueue((items) => items.map((entry) => entry.id === item.id ? { ...entry, steerRunId: undefined } : entry));
-        setInputError("当前运行无法接收引导，内容仍保留在队列中。");
+        if (assistantSurface) {
+          const receipt = response.status === 409 ? "not_delivered" : response.status < 500 ? "failed" : "unknown";
+          setQueue(items => items.map(entry => entry.id === item.id ? settleAssistantFollowup(entry, receipt)! : entry));
+          if (receipt === "not_delivered") setQueuePaused(false);
+        } else {
+          setQueuePaused(true);
+          setQueue((items) => items.map((entry) => entry.id === item.id ? { ...entry, steerRunId: undefined } : entry));
+          setInputError("当前运行无法接收引导，内容仍保留在队列中。");
+        }
       }
-    } catch { setInputError("引导请求状态待确认，正在核对接收结果；请勿重复发送。"); }
-    finally { steeringInFlight.current.delete(item.id); }
+    } catch { if (!assistantSurface) setInputError("引导请求状态待确认，正在核对接收结果；请勿重复发送。"); }
+    finally {
+      steeringInFlight.current.delete(item.id);
+      setSteeringDispatchVersion(version => version + 1);
+    }
   }
   // Startup may not have a steering channel yet. Keep each sent message visible
   // and deliver it once the current run is ready, rather than failing a 409.
   useEffect(() => {
     if (!assistantSurface || !busy || !steerAvailable || queuePaused) return;
-    const next = queue.find(item => item.intent === "steer" && !item.steerRunId && !item.attachments.length);
-    if (next && !steeringIds.length) void guide(next);
-  }, [assistantSurface, busy, steerAvailable, queuePaused, queue, steeringIds.length]);
+    const next = nextSteeringPrompt(queue, steeringIds);
+    // Serialize transport writes, not acknowledgement waits. Each following
+    // message can be submitted as soon as the previous POST completes.
+    if (next && steeringInFlight.current.size === 0) void guide(next);
+  }, [assistantSurface, busy, steerAvailable, queuePaused, queue, steeringIds, steeringDispatchVersion]);
   useEffect(() => {
     if (queueLoaded && queue.length === 0 && steeringIds.length === 0) setQueuePaused(false);
   }, [queueLoaded, queue.length, steeringIds.length]);
@@ -952,8 +987,9 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
           ) : null}
         </>
       ) : null}
+      <AssistantConversationTail>
       <PromptQueue chat={assistantSurface} items={queue.filter(item => !item.steerRunId || !runView?.items.some(event =>
-        ["run.steer.requested", "run.steer.accepted"].includes(event.event_type) && event.metadata.request_id === item.id))} paused={queuePaused} busy={busy} canSteer={steerAvailable} sendingIds={steeringIds}
+        [...(assistantSurface ? [] : ["run.steer.requested"]), "run.steer.accepted", "run.steer.unknown"].includes(event.event_type) && event.metadata.request_id === item.id))} paused={queuePaused} busy={busy} canSteer={steerAvailable} sendingIds={steeringIds}
         onChange={setQueue} onPause={(value) => { dispatching.current = false; setQueuePaused(value); }} onGuide={(item) => void guide(item)}
         onSend={(item) => {
           if (busy || threadRuntime.getState().isRunning || steeringIds.length) return;
@@ -963,7 +999,8 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
             setQueue((items) => items.filter((entry) => entry.id !== item.id));
           } catch { setInputError("发送失败，消息仍保留在队列中。"); }
         }} />
-      {steeringNotice && <p className="composer-status-announcement" role="status">{steeringNotice}</p>}
+      </AssistantConversationTail>
+      {steeringNotice && !assistantSurface && <p className="composer-status-announcement" role="status">{steeringNotice}</p>}
       {inputError && <p className="composer-input-error" role="alert">{inputError}</p>}
       {!conversationScope?.compactComposer && <TaskKnowledgeSelection disabled={busy || Boolean(conversationScope)} />}
       <ReplyComposerBar />
@@ -1407,13 +1444,12 @@ export function AssistantResponse({ text, streaming }: { text: string; streaming
 function TurnActivity({
   hasDurableProjection,
   messageId,
-  publicMessagesVisible = false,
 }: {
   hasDurableProjection: boolean;
   messageId: string;
-  publicMessagesVisible?: boolean;
 }) {
   const activity = useRunActivity();
+  const activitySurface = useAssistantSurface();
   const runView = useRunViewModel();
   const isLast = useAuiState((state) => state.message.isLast);
   const content = useAuiState((state) => state.message.content);
@@ -1458,18 +1494,8 @@ function TurnActivity({
     (!durableActivity && !turnOwnsRun(messageId, displayed.run_id, isLast, runView?.runId))
   ) return null;
 
-  const activitySurface = useAssistantSurface();
-  const activityAvatar = useAssistantBot()?.appearance?.avatar;
   if (activitySurface) {
-    if (!shouldShowChatActivityRow(displayed.status, displayed)) return null;
-    return (
-      <div
-        className={`latest-activity ${displayed.status}`}
-        data-activity-source={isLast ? "current-run" : "captured-turn"}
-      >
-        <AssistantProgress activity={displayed} avatar={activityAvatar} publicMessagesVisible={publicMessagesVisible} />
-      </div>
-    );
+    return <AssistantSteeringMessages activity={displayed} />;
   }
   return (
     <div
@@ -1801,7 +1827,6 @@ export function HarnessAssistantMessage() {
       </div>}
       {assistantSurface && !hasVideoGeneration ? <TurnActivity
         hasDurableProjection={hasRunActivityToolCall(content)} messageId={messageId}
-        publicMessagesVisible={chatBubbles.length > 0}
       /> : null}
       <div className="followup-input-anchor" data-followup-for={messageId} />
       {!hasVideoGeneration && (assistantSurface ? <BotRunNotice activity={terminalActivity}
@@ -1935,7 +1960,6 @@ function useMessageEditor() {
 function HarnessUserMessage() {
   const redact = useConversationRedactor();
   const assistantSurface = useAssistantSurface();
-  const activityAvatar = useAssistantBot()?.appearance?.avatar;
   const message = useAuiState((state) => state.message);
   const isLastMessage = useAuiState((state) => state.message.isLast);
   const threadRunning = useAuiState((state) => state.thread.isRunning);
@@ -2045,16 +2069,12 @@ function HarnessUserMessage() {
           )}
         </MessagePrimitive.If>
       </UserMessage.Root>
-      {preResponseActivity ? (
+      {preResponseActivity && !assistantSurface ? (
         <div
           className={`latest-activity pre-response-activity ${preResponseActivity.status}`}
           data-activity-source="pre-response"
         >
-          {assistantSurface ? (
-            <AssistantProgress activity={preResponseActivity} avatar={activityAvatar} />
-          ) : (
-            <ActivitySummary activity={preResponseActivity} />
-          )}
+          <ActivitySummary activity={preResponseActivity} />
         </div>
       ) : null}
       {assistantSurface ? <LiveStreamingBubble /> : null}
