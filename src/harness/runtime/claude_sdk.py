@@ -1134,11 +1134,11 @@ class ClaudeSdkRuntime:
             allowed_tools=[] if permission_mode == "auto" else allowed_tools,
             mcp_servers=mcp_servers,
             system_prompt=(
-                f"{self._snapshot.system_prompt.rstrip()}\n\n{VISIBLE_EXECUTION_CONTRACT}\n{WEB_CONTRACT}"
-                # 助理范围继承来的联网工具要配一条明确的"先检索再说"契约：
-                # 宿主 Agent 的自述职责常常与当下问题无关（例如归档 Agent 被问天气），
-                # 没有这句话时模型会把"取不到"当默认答案，工具装上了也不用。
+                # 助理面的联网要求放在最前面并声明优先级：宿主 Agent 的自述职责
+                # 常常与当下问题无关（归档 Agent 被问天气），只把工具挂上、把要求
+                # 追加在末尾，模型仍会顺着自己的角色和会话历史直接回"取不到"。
                 f"{WEB_ASSISTANT_CONTRACT if assistant_web else ''}"
+                f"{self._snapshot.system_prompt.rstrip()}\n\n{VISIBLE_EXECUTION_CONTRACT}\n{WEB_CONTRACT}"
                 f"{delegation_contract}{_knowledge_mode_contract(context)}"
                 f"{_sandbox_tool_contract(allowed_tools, workspace=context.remote_workspace)}"
                 f"\n{context.platform_tools.instructions}"

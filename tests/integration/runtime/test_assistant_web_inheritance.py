@@ -226,3 +226,22 @@ async def test_contract_applies_when_the_agent_already_declares_web(tmp_path: Pa
         agent_declares_web=True,
     )
     assert WEB_ASSISTANT_CONTRACT in (options.system_prompt or "")
+
+
+@pytest.mark.asyncio
+async def test_assistant_web_directive_precedes_the_host_agent_persona(tmp_path: Path) -> None:
+    """要求必须放在最前面并声明优先级。
+
+    归档 Agent 的自述职责与"今天上海天气"无关；只把工具挂上、把要求追加在末尾，
+    模型会顺着自己的角色和会话历史直接回"取不到"。
+    """
+    from harness.runtime.web_tools import WEB_ASSISTANT_CONTRACT
+
+    options = await _options(
+        tmp_path, assistant_scope=True, personal_web_enabled=True, with_directory=False
+    )
+    prompt = options.system_prompt or ""
+    assert prompt.startswith(WEB_ASSISTANT_CONTRACT)
+    assert "优先级高于上文任何关于你自身职责的描述" in prompt
+    # 与"不把文件内容外发"的既有约束显式对齐，避免模型把它读成禁止联网。
+    assert "并不冲突" in prompt
