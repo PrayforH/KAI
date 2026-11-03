@@ -157,7 +157,7 @@ import {
   TaskKnowledgeSelection,
   useTaskKnowledge,
 } from "./task-knowledge-context";
-import { composerTrigger, queueAttachments, queueMayDispatch, restorePromptQueue, settleAssistantFollowup, nextQueuedPrompt, nextSteeringPrompt, type QueuedPrompt } from "../lib/composer-interactions";
+import { composerTrigger, queueAttachments, queueMayDispatch, restorePromptQueue, settleAssistantFollowup, nextQueuedPrompt, nextSteeringPrompt, reconcilePromptHistory, type QueuedPrompt } from "../lib/composer-interactions";
 
 import { writeTextToClipboard } from "../lib/clipboard";
 import { CodexResponseIcon } from "./codex-response-icon";
@@ -499,6 +499,18 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     if (!queueLoaded || !queueKey) return;
     try { localStorage.setItem(queueKey, JSON.stringify(queue)); } catch { /* Keep the in-memory queue. */ }
   }, [queue, queueKey, queueLoaded]);
+  useEffect(() => {
+    if (!assistantSurface) return;
+    setQueue(items => {
+      if (!items.some(item => item.receipt && !item.historyRunId)) return items;
+      const activities = messages.flatMap(message => message.content.flatMap(part => {
+        if (part.type !== "tool-call" || part.toolName !== "harness_run_activity") return [];
+        const parsed = runActivitySchema.safeParse(part.args.activity);
+        return parsed.success ? [parsed.data] : [];
+      }));
+      return reconcilePromptHistory(items, activities);
+    });
+  }, [assistantSurface, messages]);
   useEffect(() => { setSuggestionIndex(0); }, [composerText]);
   const terminalRun = useRef("");
   useEffect(() => {
@@ -2119,7 +2131,7 @@ export function AgentThread({
   const historyPagination = useThreadHistoryPagination(threadId, {
     importRepository: (repository) => threadRuntime?.import(repository),
   });
-  const loadEarlierMessages = useAutoLoadEarlierMessages(frame, historyPagination, { readerDriven: assistantSurface });
+  useAutoLoadEarlierMessages(frame, historyPagination, { readerDriven: assistantSurface });
   const composerDraftScope = useMemo(
     () => ({ userId, threadId }),
     [threadId, userId],
@@ -2171,13 +2183,12 @@ export function AgentThread({
             } : undefined}>
             <div className="harness-thread-frame" ref={frame}>
             <ConversationIndex frame={frame} threadId={threadId} pagination={historyPagination} />
-            {assistantSurface && historyPagination.hasMore && <button type="button" className="assistant-history-earlier" disabled={historyPagination.loading} onClick={() => void loadEarlierMessages()}>查看更早的消息</button>}
             {!assistantSurface && historyPagination.loading ? (
               <div className="history-load-earlier" role="status" aria-live="polite">
                 <span className="history-load-earlier-status">正在加载更早的消息…</span>
               </div>
             ) : null}
-            <ConversationThread threadId={threadId}
+            <ConversationThread key={threadId} threadId={threadId}
             assistantMessage={{
               allowCopy: false,
               allowReload: false,

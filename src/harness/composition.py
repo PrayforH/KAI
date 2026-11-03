@@ -1697,6 +1697,24 @@ def build_production_container(
             memory_overlay = assistant_memory_overlay(
                 MemoryBankGateway(container.memory_bank, scope=memory_scope), run, session
             )
+        file_overlay = PlatformToolOverlay()
+        if (run.input.get("conversation_surface") == "assistant"
+                and run.business_project_id is None):
+            from harness.assistant.artifact_delivery import assistant_file_overlay
+
+            async def file_channel() -> FeishuService:
+                if (container.feishu_connections is not None
+                        and container.feishu_factory is not None):
+                    return container.feishu_factory(
+                        await container.feishu_connections.resolve(run.tenant_id)
+                    )
+                if container.feishu is None:
+                    raise ValueError("飞书连接尚未配置")
+                return container.feishu
+
+            file_overlay = await assistant_file_overlay(
+                artifact_service, run_service, agui, file_channel, run, session,
+            )
         merged = (
             overlay.tools
             + computer_overlay.tools
@@ -1704,6 +1722,7 @@ def build_production_container(
             + delegation_overlay.tools
             + memory_overlay.tools
             + directory_overlay.tools
+            + file_overlay.tools
         )
         instructions = "\n\n".join(
             layer.instructions
@@ -1716,6 +1735,7 @@ def build_production_container(
                 role_overlay,
                 directory_overlay,
                 memory_overlay,
+                file_overlay,
             )
             if layer.instructions
         )

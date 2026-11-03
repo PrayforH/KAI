@@ -1,4 +1,5 @@
 "use client";
+import { PendingMessagePlacement } from "./pending-message-placement";
 import { SteeringUserMessage } from "./steering-user-message";
 import { ConversationControl } from "./conversation-control";
 import { useRef, useState } from "react";
@@ -25,9 +26,9 @@ export function PromptQueue({ items, paused, busy, canSteer, sendingIds, onChang
   }
   if (!items.length) return null;
   if (chat) return <div className="assistant-pending-messages" aria-label="已发送的消息">
-    {items.map(item => <div key={item.id}>
+    {items.map(item => <PendingMessagePlacement key={item.id} runId={item.historyRunId}>
       <SteeringUserMessage chat text={item.text || `附件消息（${item.attachments.length} 个附件）`} status={item.receipt === "unknown" || item.receipt === "failed" ? "unknown" : "pending"} />
-    </div>)}
+    </PendingMessagePlacement>)}
   </div>;
   const queuedCount = items.filter(item => !item.steerRunId).length;
   const pendingGuidance = items.filter(item => item.steerRunId);

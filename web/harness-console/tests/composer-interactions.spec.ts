@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { composerTrigger, queueAttachments, queueMayDispatch, restorePromptQueue, settleAssistantFollowup, nextQueuedPrompt, nextSteeringPrompt } from "../src/lib/composer-interactions";
+import { composerTrigger, queueAttachments, queueMayDispatch, restorePromptQueue, settleAssistantFollowup, nextQueuedPrompt, nextSteeringPrompt, reconcilePromptHistory } from "../src/lib/composer-interactions";
 import { composerOptions } from "../src/components/composer-assist";
 import { durationLabel } from "../src/components/activity-summary";
 
@@ -71,4 +71,14 @@ it("sends the next distinct message without waiting for earlier consumption rece
   expect(nextSteeringPrompt([first, second, third], ["one"])).toBe(second);
   expect(nextSteeringPrompt([first, { ...second, steerRunId: "r" }, third], ["one", "two"])).toBe(third);
   expect(nextSteeringPrompt([first], ["one"])).toBeUndefined();
+});
+
+it("reconciles legacy stuck sends with durable history without replaying them", () => {
+  const legacy = {id: "old", text: "帮我恢复下", attachments: [], receipt: "unknown" as const};
+  const history = [{run_id: "original", status: "succeeded", items: [{event_type: "run.steer.requested", metadata: {request_id: "old"}}]}];
+  const placed = reconcilePromptHistory([legacy], history);
+  expect(placed[0].historyRunId).toBe("original");
+  expect(nextQueuedPrompt(placed)).toBeUndefined();
+  history[0].items.push({event_type: "run.steer.accepted", metadata: {request_id: "old"}});
+  expect(reconcilePromptHistory(placed, history)).toEqual([]);
 });

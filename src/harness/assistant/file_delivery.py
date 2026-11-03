@@ -88,10 +88,13 @@ class ChannelFiles:
         source_id: str,
         route: str,
         run_id: str,
+        artifact_ids: tuple[str, ...] | None = None,
     ) -> int:
         artifacts = await self.artifacts.list_for_run(tenant_id, run_id)
         count = 0
         for artifact in artifacts:
+            if artifact_ids is not None and artifact.artifact_id not in artifact_ids:
+                continue
             if artifact.status is not ArtifactStatus.READY:
                 continue
             key = hashlib.sha256(

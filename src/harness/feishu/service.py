@@ -20,7 +20,7 @@ from harness.assistant.service import AssistantService
 from harness.assistant.storage import ObjectiveRow
 from harness.auth.service import AuthService
 from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
-from harness.core.models import RunStatus
+from harness.core.models import ArtifactStatus, RunStatus
 from harness.feishu.cards import callback_button, card, text_message
 from harness.feishu.media import FeishuMedia, MediaRejectedError
 from harness.feishu.models import (
@@ -87,6 +87,69 @@ class FeishuService:
         user, membership = await self.auth.profile(tenant_id, user_id)
         if user.disabled or membership.role not in {"owner", "admin", "member"}:
             raise PermissionDeniedError("KAI account cannot use assistant commands")
+
+    async def queue_artifact(
+        self, tenant_id: str, user_id: str, artifact_id: str, request_key: str,
+        *, thread_id: str | None = None,
+    ) -> dict[str, str | None]:
+        """Explicitly send an owned historical file through the existing durable transport."""
+        await self.authorize(tenant_id, user_id)
+        if not self.settings.enabled or self.files is None:
+            raise ConflictError("飞书文件投递尚未启用")
+        artifact = await self.files.artifacts.get(tenant_id, artifact_id)
+        original = await self.conversation.runs.get(tenant_id, artifact.run_id)
+        owner = await self.conversation.agui.get_thread_record_for_session(
+            tenant_id=tenant_id, user_id=user_id, session_id=original.session_id,
+        )
+        if thread_id is not None and owner.thread_id != thread_id:
+            raise PermissionDeniedError("文件不属于当前助理会话")
+        if artifact.status is not ArtifactStatus.READY:
+            raise ConflictError("文件尚未就绪")
+        source_id = "explicit:" + digest(f"{tenant_id}:{user_id}:{request_key}")
+        async with self.repository.sessions.begin() as session:
+            binding = await self.repository.binding(session, tenant_id, user_id, lock=True)
+            if binding is None:
+                raise ConflictError("请先绑定本人飞书会话")
+            prior = await session.scalar(select(ChannelFileRow).where(
+                ChannelFileRow.channel == "feishu", ChannelFileRow.tenant_id == tenant_id,
+                ChannelFileRow.user_id == user_id, ChannelFileRow.source_id == source_id,
+            ))
+            if prior is not None:
+                if prior.route != self.settings.app_id + ":" + binding.binding_id:
+                    raise ConflictError("飞书绑定已变更，请使用新的发送编号")
+                if prior.artifact_id != artifact_id:
+                    raise ConflictError("该发送编号已用于其他文件")
+                return self._file_receipt(prior)
+            await self.files.enqueue(
+                session, tenant_id=tenant_id, user_id=user_id, source_id=source_id,
+                route=self.settings.app_id + ":" + binding.binding_id,
+                run_id=artifact.run_id, artifact_ids=(artifact_id,),
+            )
+            row = await session.scalar(select(ChannelFileRow).where(
+                ChannelFileRow.channel == "feishu", ChannelFileRow.source_id == source_id,
+                ChannelFileRow.tenant_id == tenant_id, ChannelFileRow.user_id == user_id,
+                ChannelFileRow.artifact_id == artifact_id,
+            ))
+            if row is None:
+                raise ConflictError("文件未能进入投递队列")
+            return self._file_receipt(row)
+
+    @staticmethod
+    def _file_receipt(row: ChannelFileRow) -> dict[str, str | None]:
+        return {"deliveryId": row.delivery_id, "artifactId": row.artifact_id,
+                "status": row.status, "errorCode": row.error_code, "messageId": row.message_id}
+
+    async def file_receipt(
+        self, tenant_id: str, user_id: str, delivery_id: str,
+    ) -> dict[str, str | None]:
+        await self.authorize(tenant_id, user_id)
+        async with self.repository.sessions() as session:
+            row = await session.get(ChannelFileRow, delivery_id)
+            if (row is None or row.channel != "feishu"
+                    or (row.tenant_id, row.user_id) != (tenant_id, user_id)
+                    or not row.route.startswith(self.settings.app_id + ":")):
+                raise NotFoundError("文件投递不存在")
+            return self._file_receipt(row)
 
     async def issue_code(self, tenant_id: str, user_id: str) -> BindingCode:
         if not self.settings.enabled:

@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
+from pydantic import Field
 
 from harness.api.dependencies import Identity, ensure_permission
 from harness.assistant.api import Reader, Writer
@@ -18,6 +19,7 @@ from harness.feishu.configuration import (
 )
 from harness.feishu.models import BindingCode, ConnectionStatus, NotificationPreference
 from harness.feishu.service import FeishuService
+from harness.studio.models import StudioModel
 
 
 class PrivateConnectionRoute(APIRoute):
@@ -53,6 +55,27 @@ async def service(request: Request, identity: Reader) -> FeishuService:
 
 
 Service = Annotated[FeishuService, Depends(service)]
+
+
+class SendArtifactRequest(StudioModel):
+    artifact_id: str = Field(alias="artifactId", min_length=1, max_length=128)
+    request_key: str = Field(alias="requestKey", min_length=1, max_length=80)
+
+
+@router.post("/files/send", status_code=202)
+async def send_artifact(
+    body: SendArtifactRequest, identity: Writer, feishu: Service,
+) -> dict[str, str | None]:
+    return await feishu.queue_artifact(
+        identity.tenant_id, identity.user_id, body.artifact_id, body.request_key,
+    )
+
+
+@router.get("/files/{delivery_id}")
+async def artifact_receipt(
+    delivery_id: str, identity: Reader, feishu: Service,
+) -> dict[str, str | None]:
+    return await feishu.file_receipt(identity.tenant_id, identity.user_id, delivery_id)
 
 
 @router.post("/files/retry")

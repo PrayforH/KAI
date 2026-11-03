@@ -749,3 +749,5 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
 .chat-stage[data-surface="assistant"] .assistant-message-receipt,
 .chat-stage[data-surface="assistant"] .assistant-message-retry { display: block; margin: 4px 0 0 auto; color: var(--codex-muted, #8f8f8f); font-size: 12px; }
 .chat-stage[data-surface="assistant"] .assistant-message-retry { border: 0; background: transparent; cursor: pointer; }
+
+.chat-stage[data-surface="assistant"] .assistant-message-tail-slot { flex-shrink: 0; width: 100%; padding-bottom: 12px; }
