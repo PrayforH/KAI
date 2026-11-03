@@ -112,3 +112,14 @@ it("keeps the actual unanswered question when background results arrive", () => 
   expect(latestConversationInput([result])).toBeNull();
   expect(latestConversationInput([question, {id: "user-answer", role: "user", content: [{type: "text", text: "网页"}]}, result])).toBeNull();
 });
+
+
+it("keeps a main Bot question active when a child result arrives", async () => {
+  const { latestConversationInput } = await import("../src/lib/conversation-input");
+  const question = {id:"main-question",role:"assistant",status:{type:"complete"},content:[
+    {type:"text",text:fence({version:1,title:"选择",questions:[{id:"color",label:"颜色",type:"single",options:["蓝色","绿色"]}]})}]};
+  const notice = {id:"mention-result-child",role:"assistant",content:[
+    {type:"tool-call",toolName:"harness_notice_source"},{type:"text",text:"我在等待颜色"}]};
+  expect(latestConversationInput([question,notice])?.messageId).toBe("main-question");
+  expect(latestConversationInput([question,notice,{id:"answer",role:"user",content:[{type:"text",text:"绿色"}]}])).toBeNull();
+});

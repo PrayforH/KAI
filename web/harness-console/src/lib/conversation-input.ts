@@ -98,11 +98,12 @@ export function conversationInputDisplay(text: string, streaming = false): strin
   }
   return text;
 }
-export function latestConversationInput(messages: readonly { id: string; role: string; content: readonly { type: string; text?: string }[]; status?: {type: string} }[]) {
+export function latestConversationInput(messages: readonly { id: string; role: string; content: readonly { type: string; text?: string; toolName?: string }[]; status?: {type: string} }[]) {
   // Background results are conversation messages, not new configuration
   // questions. They must neither dismiss a pending answer nor mount a form
   // quoted from another Bot's result.
-  const last = messages.findLast(message => !message.id.startsWith("notice-"));
+  const last = messages.findLast(message => !message.id.startsWith("notice-") &&
+    !message.content.some(part => part.type === "tool-call" && part.toolName === "harness_notice_source"));
   if (!last || last.role !== "assistant" || (last.status && last.status.type !== "complete")) return null;
   const input = parseConversationInput(last.content.filter(p => p.type === "text").map(p => p.text ?? "").join("\n"));
   return input ? { messageId: last.id, input } : null;
