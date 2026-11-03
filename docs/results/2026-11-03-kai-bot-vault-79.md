@@ -4,7 +4,7 @@
 - 分支：`auto/kai-bot-vault-20261103`（基线 `60ef9143`，代码 `0db1e0b7`）
 - 提交：`08ceba23`（P13）、`e5916955`（P14）、`40e8f0df`（P15）、`<本文件提交>`（验收与缺陷修复）
 - schema：新增迁移 `0065_assistant_vault_items`
-- 79 发布：**已发布**（七批；**唯一当前版本** api/worker `kai/superagent-api:20261102-a6a29662`、web `kai/superagent-web:20261103-f79adb54`，schema 0065，三服务 healthy。历史批次见 8.7，现网结论见 8.8／8.15）
+- 79 发布：**已发布**（八批；**唯一当前版本** api/worker `kai/superagent-api:20261102-a6a29662`、web `kai/superagent-web:20261103-93c6e05c`，schema 0065，三服务 healthy。历史批次见 8.7，现网结论见 8.8／8.15）
 - 飞书同步：已追加本轮进展，回读 revision 83（文档 XV4ndItNmoONoIxQPWgcIyLbnJe），未覆盖历史内容；后续修订见 8.14
 - 真实页面验收：在**本机新代码**（API + Web，同一提交）完成，截图见本目录；**79 实页验收仍未做**（证书与登录需本人接管，见 8.9）
 
@@ -345,3 +345,28 @@ UI 已如实写明范围：「资料加密保存在你名下……还没有把�
 - 测试：前端全量 **1613 通过**（失败仍是与基线同一组 7 条既有失败）、`npx tsc --noEmit` 通过。
 
 **仍未做**：79 实页验收（自签证书 + 登录需本人），与 8.9 一致，未冒充完成。
+
+## 8.16 第八批（web `93c6e05c`）：页头与侧栏共用同一个资料弹窗
+
+**本人要求**：页头点名称进编辑时也要保留头像并可修改，和侧栏「···」的编辑保持一致；两边「都只需要这些」；
+侧栏编辑里关于执行与权限的部分可以去掉。
+
+**做法**
+- 资料弹窗 `bot-profile-dialog.tsx` 扩成完整资料表单：**外观（12 色 × 14 形，取色表仍由服务端下发）+ 姓名 + 标题（可选）+ 描述 + 保存**。
+- 侧栏「···→编辑资料」改用**同一个**弹窗；旧的 `bot-edit-dialog.tsx` 与「交办与执行方式 / 首次试运行 / 本地能力授权 / 凭据」四个段落一并删除（`88` 行→删除）。
+- **没有把能力一起删掉**：本地能力授权与凭据在主会话内联卡（`handover-row.tsx` 的「待你授权本地能力」与凭据卡）与资料库授权里仍可达；
+  但「启用 / 暂停 / 恢复接单」原本**只**在这个弹窗里，直接删会让暂停的 Bot 永远恢复不了 —— 因此移进侧栏「···」菜单，
+  按当前状态显示 启用助理 / 暂停接单 / 恢复接单（`data-action` 可测）。试运行仍然后端可用，只是界面不再暴露（本人明确要求移除）。
+- 一并删掉已无使用者的 `local-tool-permissions.tsx` 组件；`lib/local-tool-permissions.ts` 仍被内联卡使用，保留。
+
+**测试**
+- 新增/改写：`tests/bot-profile-dialog.spec.tsx`（外观取色、保存带 appearance、且源码不含四个被移除段落）、
+  `tests/bot-rail-menu.spec.tsx`（三种状态各自的菜单动作、needs_input 不显示）。
+- 删除：`bot-edit-dialog-trial/paused/enable/local-tool-permission` 四个旧弹窗测试；`specialist-credentials` 里只留组件测试；
+  原「查看即上报」断言迁到 `tests/assistant-viewed-marks.spec.tsx`。
+- 结果：`npx tsc --noEmit` 通过；全量 `1613 → 1598 passed`（总数变少是因为删掉了随 UI 移除的用例），失败仍是基线同一组 7 条。
+  另观察到 `builder-conversation.spec.tsx` 在全量并发跑时失败一次、**单跑 45/45 通过**，判为并发抖动，与本批改动无关。
+
+**发布**：只换 web。发布前线上 compose `sha256 d1aab571…`（第七批后的值）作为 CAS 基准，备份 `compose.private.before-web-93c6e05c.json`；
+滚动后 web healthy、镜像 `93c6e05c`，新 compose `sha256 de3c0aa1…`。
+**产物指纹**：容器内 `.next` 检索——「交办与执行方式」「首次试运行」旧段落 **0 处**，「编辑助理资料」6 处，「启用助理」「恢复接单」各 4 处。
