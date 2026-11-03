@@ -4,6 +4,7 @@ import { AssistantChatTime } from "./assistant-chat-time";
 import { responseTextForDisplay } from "../lib/process-response";
 import { sendComposerWithRecovery } from "../lib/composer-send";
 import { TerminalResponseNotice } from "./terminal-response-notice";
+import { BotRunNotice } from "./bot-run-notice";
 import { TurnCompletionControl } from "./turn-completion";
 import { FollowupInputPlacement } from "./followup-input-placement";
 import { conversationInputDisplay, conversationInputIntro, latestConversationInput } from "../lib/conversation-input";
@@ -1791,8 +1792,12 @@ export function HarnessAssistantMessage() {
         publicMessagesVisible={chatBubbles.length > 0}
       /> : null}
       <div className="followup-input-anchor" data-followup-for={messageId} />
-      {!hasVideoGeneration && <TerminalResponseNotice activity={terminalActivity}
-        hasResponse={Boolean(displayedText.trim()) || showingInputCard || turnPresentations.length > 0 || turnArtifacts.length > 0} />}
+      {!hasVideoGeneration && (assistantSurface ? <BotRunNotice activity={terminalActivity}
+        incomplete={showIncompleteRecovery}
+        hasResponse={Boolean(displayedText.trim()) || showingInputCard || turnPresentations.length > 0 || turnArtifacts.length > 0}
+        retry={<ActionBarPrimitive.Reload aria-label="重试回复" title="重试回复">重试</ActionBarPrimitive.Reload>}
+      /> : <TerminalResponseNotice activity={terminalActivity}
+        hasResponse={Boolean(displayedText.trim()) || showingInputCard || turnPresentations.length > 0 || turnArtifacts.length > 0} />)}
       {turnPresentations.length > 0 ? (
         <div className="intelligent-ui-blocks">
           {turnPresentations.map((presentation) => (
@@ -1816,8 +1821,7 @@ export function HarnessAssistantMessage() {
       {answerCitations.length > 0 ? (
         <KnowledgeCitations citations={answerCitations} showSources={false} />
       ) : null}
-      {showIncompleteRecovery ? (
-        <div className="aui-message-error">
+      {showIncompleteRecovery ? (assistantSurface ? null : <div className="aui-message-error">
           <span>{incompleteRunGuidance(isLast)}</span>
           <ActionBarPrimitive.Reload
             className="run-retry-button"
