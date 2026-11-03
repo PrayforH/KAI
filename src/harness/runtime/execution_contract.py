@@ -54,10 +54,9 @@ def visible_execution_contract(*, require_public_preface: bool = True) -> str:
         if require_public_preface
         else """## User-visible execution contract
 
-- Start the assigned work directly; do not repeat the assignment or send a generic
-  acknowledgement before using tools. Report concise observable findings, real blockers
-  and results when available. Preserve useful progress and multiple messages without
-  exposing private chain-of-thought.
+- Choose actions, tools and necessary questions from the current request, available capabilities
+  and observed results. Provide concise factual progress and answers. Do not expose private
+  chain-of-thought or describe queued or unverified work as completed.
 """.strip()
     )
     return f"{progress}\n{_BASE_CONTRACT}\n\n{UI_BLOCK_CONTRACT}"

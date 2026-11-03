@@ -188,12 +188,8 @@ async def test_user_switch_off_is_respected_for_assistants(tmp_path: Path) -> No
 
 
 @pytest.mark.asyncio
-async def test_assistant_scope_states_the_search_first_contract(tmp_path: Path) -> None:
-    """继承来的联网工具必须配一条"先检索再说"的契约。
-
-    宿主 Agent 的自述职责常常与当下问题无关（归档 Agent 被问天气时，
-    它会把"取不到"当默认答案，工具装上也不用）。
-    """
+async def test_assistant_scope_describes_available_web_capabilities(tmp_path: Path) -> None:
+    """联网继承与工具事实不要求特定业务步骤。"""
     from harness.runtime.web_tools import WEB_ASSISTANT_CONTRACT
 
     options = await _options(
@@ -215,7 +211,7 @@ async def test_task_surface_keeps_the_plain_web_contract(tmp_path: Path) -> None
 
 @pytest.mark.asyncio
 async def test_contract_applies_when_the_agent_already_declares_web(tmp_path: Path) -> None:
-    """工具来自 Agent 声明时同样要有"先检索再说"的契约，不只是注入那一路。"""
+    """声明与继承的工具具有相同的能力说明。"""
     from harness.runtime.web_tools import WEB_ASSISTANT_CONTRACT
 
     options = await _options(
@@ -229,12 +225,8 @@ async def test_contract_applies_when_the_agent_already_declares_web(tmp_path: Pa
 
 
 @pytest.mark.asyncio
-async def test_assistant_web_directive_precedes_the_host_agent_persona(tmp_path: Path) -> None:
-    """要求必须放在最前面并声明优先级。
-
-    归档 Agent 的自述职责与"今天上海天气"无关；只把工具挂上、把要求追加在末尾，
-    模型会顺着自己的角色和会话历史直接回"取不到"。
-    """
+async def test_assistant_web_capability_facts_do_not_impose_a_business_workflow(tmp_path: Path) -> None:
+    """能力描述不得夹带天气关键词、必经步骤或角色优先级补丁。"""
     from harness.runtime.web_tools import WEB_ASSISTANT_CONTRACT
 
     options = await _options(
@@ -242,5 +234,7 @@ async def test_assistant_web_directive_precedes_the_host_agent_persona(tmp_path:
     )
     prompt = options.system_prompt or ""
     assert prompt.startswith(WEB_ASSISTANT_CONTRACT)
-    assert "不因联网能力而扩大权限" in prompt
-    assert "翻译和改写不要求联网" in prompt
+    assert "公开联网不扩大权限" in prompt
+    assert "天气" not in WEB_ASSISTANT_CONTRACT
+    assert "先检索" not in WEB_ASSISTANT_CONTRACT
+    assert "是否使用" in WEB_ASSISTANT_CONTRACT

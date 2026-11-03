@@ -42,9 +42,8 @@ async def test_resolved_bot_role_survives_overlay_composition(monkeypatch, role,
         "harness.studio.runtime_builder.builder_overlay",
         AsyncMock(return_value=PlatformToolOverlay()),
     )
-    workflow = SimpleNamespace(before_tool=lambda _: None, before_finish=lambda: None)
-    routing = AsyncMock(return_value=PlatformToolOverlay(workflow=workflow))
-    monkeypatch.setattr("harness.composition.assistant_routing_overlay", routing)
+    messaging = AsyncMock(return_value=PlatformToolOverlay(require_public_preface=False))
+    monkeypatch.setattr("harness.composition.assistant_messaging_overlay", messaging)
     container = build_production_container(production_settings())
     monkeypatch.setattr(container.assistant, "primary_profile", AsyncMock(return_value=profile))
     monkeypatch.setattr(
@@ -80,12 +79,12 @@ async def test_resolved_bot_role_survives_overlay_composition(monkeypatch, role,
             None,
         )
         routed = coordinator and surface == "assistant" and project is None
-        assert (overlay.workflow is workflow) is routed
-        assert routing.await_count == int(routed)
+        assert not hasattr(overlay, "workflow")
+        assert messaging.await_count == int(routed)
         if routed:
             assert "简单问答直接回答" not in overlay.instructions
         assert overlay.require_public_preface is (role != "specialist" and not routed)
-        assert ("直接开始执行，不先复述任务" in overlay.instructions) is (role == "specialist")
+        assert "直接开始执行，不先复述任务" not in overlay.instructions
         if role == "specialist":
             assert "assistant_delegate_to_specialist" not in {tool.name for tool in overlay.tools}
     finally:

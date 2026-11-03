@@ -354,6 +354,7 @@ class SpecialistHandover(StudioModel):
     target_thread_id: str | None = Field(default=None, alias="targetThreadId")
     run_id: str | None = Field(default=None, alias="runId")
     request_hash: str | None = Field(default=None, alias="requestHash")
+    reply_to_run_id: str | None = Field(default=None, alias="replyToRunId")
     sent_at: AwareDatetime | None = Field(default=None, alias="sentAt")
     status: HandoverStatus = HandoverStatus.SENT
     created_at: AwareDatetime = Field(alias="createdAt")

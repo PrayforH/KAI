@@ -979,9 +979,8 @@ class ClaudeSdkRuntime:
         if web_builtins and not await self._tool_resolver.web_allowed(context.identity):
             web_builtins.clear()
             builtin_tools = [name for name in builtin_tools if name not in WEB_BUILTINS]
-        # 联网工具不论来自 Agent 声明、工具目录还是助理范围注入，只要本轮真的可用，
-        # 助理面就要配那条"先检索再作答"的契约：宿主 Agent 的自述职责常常与当下
-        # 问题无关（归档 Agent 被问天气），光把工具挂上，模型也会直接回"取不到"。
+        # Describe available capabilities without overriding the Bot profile
+        # or imposing a domain-specific action sequence.
         assistant_web = bool(context.run.input.get("assistant_scope") and web_builtins)
         if web_builtins:
             if remote_transport:
@@ -1137,13 +1136,10 @@ class ClaudeSdkRuntime:
             allowed_tools=[] if permission_mode == "auto" else allowed_tools,
             mcp_servers=mcp_servers,
             system_prompt=(
-                f"{context.platform_tools.system_prefix}"
-                # 助理面的联网要求放在最前面并声明优先级：宿主 Agent 的自述职责
-                # 常常与当下问题无关（归档 Agent 被问天气），只把工具挂上、把要求
-                # 追加在末尾，模型仍会顺着自己的角色和会话历史直接回"取不到"。
                 f"{WEB_ASSISTANT_CONTRACT if assistant_web else ''}"
                 f"{self._snapshot.system_prompt.rstrip()}\n\n"
-                f"{visible_execution_contract(require_public_preface=context.platform_tools.require_public_preface)}\n{WEB_CONTRACT}"
+                f"{visible_execution_contract(require_public_preface=context.platform_tools.require_public_preface)}\n"
+                f"{'' if assistant_web else WEB_CONTRACT}"
                 f"{delegation_contract}{_knowledge_mode_contract(context)}"
                 f"{_sandbox_tool_contract(allowed_tools, workspace=context.remote_workspace)}"
                 f"\n{context.platform_tools.instructions}"

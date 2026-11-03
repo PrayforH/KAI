@@ -1251,11 +1251,18 @@ async def get_agui_thread_history(
             mid = item.message_id if isinstance(item, MentionMessage) else notice_message_id(item)
             source_key = mid if isinstance(item, MentionMessage) else item.item_id
             source_id = f"source-{source_key}"
+            is_answer = isinstance(item, MentionMessage) and bool(
+                item.source.get("replyToRunId") and item.source.get("direction") == "sent"
+            )
+            if is_answer:
+                messages.append(AguiHistoryMessage(
+                    id=f"answer-{mid}", role="user", content=item.text,
+                ))
             messages.append(
                 AguiHistoryMessage(
-                    id=mid,
-                    role="assistant",
-                    content=item.text if isinstance(item, MentionMessage) else notice_text(item),
+                    id=mid, role="assistant",
+                    content="" if is_answer else item.text if isinstance(item, MentionMessage)
+                    else notice_text(item),
                     tool_calls=[
                         AguiHistoryToolCall(
                             id=source_id,

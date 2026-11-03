@@ -1,5 +1,6 @@
 "use client";
 import { z } from "zod";
+import { BotConversationControls } from "./bot-conversation-controls";
 import { AssistantEventLine } from "./assistant-event-line";
 
 const sourceSchema = z.object({
@@ -10,6 +11,10 @@ const sourceSchema = z.object({
   avatar: z.string().max(40).optional(),
   timestamp: z.string().datetime({ offset: true }).optional(),
   direction: z.enum(["sent", "received"]).optional(),
+  runId: z.string().max(128).optional(),
+  threadId: z.string().max(128).optional(),
+  sourceThreadId: z.string().max(128).optional(),
+  handoverId: z.string().max(128).optional(),
 });
 export function noticeSource(parts: readonly {type: string; toolName?: string; args?: unknown}[]) {
   const part = parts.find(item => item.type === "tool-call" && item.toolName === "harness_notice_source");
@@ -42,10 +47,13 @@ export function AssistantNoticeSource({parts, exchange}: {parts: Parameters<type
   const source = noticeSource(parts);
   if (!source) return null;
   if (source.direction === "sent") return <AssistantEventLine label="已发送消息给" {...source} />;
-  if (exchange?.hidden) return null;
-  if (exchange && exchange.count > 1) return <div className="assistant-exchange-line">
-    <span>{exchange.count} 条消息往来：</span>
-    {exchange.sources.map(item => <AssistantEventLine key={item.href} label="" {...item} />)}
-  </div>;
-  return <AssistantEventLine label="消息来自" {...source} />;
+  const controls = source.direction === "received" && source.botId && source.runId && source.threadId && source.sourceThreadId
+    ? <BotConversationControls key={source.runId} specialistId={source.botId} specialistName={source.name}
+        runId={source.runId} threadId={source.threadId} sourceThreadId={source.sourceThreadId} /> : null;
+  if (exchange?.hidden) return controls;
+  if (exchange && exchange.count > 1) return <>
+    <div className="assistant-exchange-line"><span>{exchange.count} 条消息往来：</span>
+      {exchange.sources.map(item => <AssistantEventLine key={item.href} label="" {...item} />)}
+    </div>{controls}</>;
+  return <><AssistantEventLine label="消息来自" {...source} />{controls}</>;
 }

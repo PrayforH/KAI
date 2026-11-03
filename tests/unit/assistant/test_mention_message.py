@@ -204,7 +204,8 @@ async def test_completed_reply_is_brief_and_links_back_to_named_bot():
         [
             (
                 SimpleNamespace(
-                    handover_id="handover-one", target_thread_id="assistant_specialist_a"
+                    handover_id="handover-one", target_thread_id="assistant_specialist_a",
+                    reply_to_run_id=None
                 ),
                 SimpleNamespace(run_id="real-run", updated_at=now, status=RunStatus.SUCCEEDED),
                 _specialist(),
@@ -325,3 +326,45 @@ async def test_recipient_token_is_not_a_second_delegation_instruction():
     request = service._agui.create_run_with_result.call_args.kwargs["request"]
     assert request.messages[0].content == "今天有什么快报 ；只总结"
     assert repo.record_handover.call_args.args[0].summary == text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", [SpecialistStatus.NEEDS_INPUT, SpecialistStatus.BLOCKED])
+async def test_new_message_is_not_rejected_by_an_old_execution_state(state):
+    from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD as MAIN
+
+    service, repo = _service(_specialist(state))
+    service.specialist_thread = AsyncMock(return_value="assistant_specialist_a")
+    service._agui.create_run_with_result.return_value = SimpleNamespace(
+        run=SimpleNamespace(run_id="new-request")
+    )
+    await service.send_mention_message(
+        "t",
+        "u",
+        "specialist_a",
+        text="这是新信息",
+        idempotency_key="new-info-12345678",
+        source_thread_id=MAIN,
+        dispatched=True,
+    )
+    service._agui.create_run_with_result.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_declared_capability_permissions_still_gate_model_delegation():
+    from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD as MAIN
+
+    bot = _specialist().model_copy(update={"config": {"required_local_tools": ["run_commands"]}})
+    service, repo = _service(bot)
+    with pytest.raises(ConflictError, match="待授权"):
+        await service.send_mention_message(
+            "t",
+            "u",
+            "specialist_a",
+            text="检查资料",
+            idempotency_key="needs-grant-12345678",
+            source_thread_id=MAIN,
+            dispatched=True,
+        )
+    repo.record_handover.assert_not_awaited()
+    service._agui.create_run_with_result.assert_not_awaited()

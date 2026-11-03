@@ -358,39 +358,15 @@ class RunOrchestrator:
             self._observability.annotate_current_io(output_value=text)
 
     async def _interaction_guidance(
-        self, run: Run, platform_tools: PlatformToolOverlay | None = None,
+        self, run: Run,
     ) -> str:
         if (
             run.input.get("conversation_surface") == "assistant"
             and not run.input.get("studio_builder")
         ):
-            # Avoid a serial auxiliary model call before a chat response. The existing
-            # main-model UI contract still owns forms, artifacts and interactive content.
-            if platform_tools is not None and platform_tools.workflow is not None:
-                return (
-                    "## 当前主助理路由交互\n"
-                    "先提交职责路由，再按实际投递结果给一句简短回执并结束；"
-                    "不在路由前解释，不复述工作，不附历史故障或兜底代做承诺。"
-                    "结果由子助理自动回传。需要澄清时只问必要问题，直接处理时遵守既有权限。"
-                    "真实失败如实说明，不将未送达说成成功；内部决定与编号不进入正文。"
-                )
-            if platform_tools is not None and not platform_tools.require_public_preface:
-                return (
-                    "## 当前子助理聊天约定\n"
-                    "直接开始工作并答复，不先复述任务或发送收到、我会处理等占位消息。"
-                    "有实际重要进展再发短消息，最后给结论；必要问题与授权沿用已有交互。"
-                    "只报告实际观察，不暴露内部编号，不把排队或未验证结果说成完成。"
-                )
-            return (
-                "## 当前助理聊天约定\n"
-                "简单问答直接回答，不先检索文件、不创建任务，也不额外发占位话。"
-                "需要工具或多步处理时，先向用户发送一句简短的公开回应（说明准备核对的范围），"
-                "再调用工具；不要先静默调用工具，等工具执行时才补上开场说明。"
-                "每取得一个重要结果再发一条短消息，最后给结论；允许多条消息，不把过程全挤在最后。"
-                "只说实际观察到的进展，不暴露私有思考或内部编号，不把排队说成已执行。"
-                "确认、授权和必要输入沿用已有交互卡；普通进展不制作额外卡片。"
-                "需要交互或图片时遵循现有交互协议，内容由主模型直接判断，无须等待额外展示分类。"
-            )
+            # Bot behavior comes from its identity and current request. Avoid a
+            # second planner or another layer of mandatory business steps.
+            return ""
         if self._interaction_planner is None or run.input.get("studio_builder"):
             return ""
         with self._stage("harness.presentation.plan", {"run.id": run.run_id}):
@@ -1663,7 +1639,7 @@ class RunOrchestrator:
                 if self._platform_tools_factory
                 else PlatformToolOverlay()
             )
-            interaction_guidance = await self._interaction_guidance(run, platform_tools)
+            interaction_guidance = await self._interaction_guidance(run)
             artifact_publisher = (
                 ArtifactPublisher(
                     workspace=handle.path,
@@ -1675,7 +1651,8 @@ class RunOrchestrator:
                     sync_workspace=sync_workspace,
                     max_file_bytes=self._output_artifact_max_bytes,
                     observability=self._observability,
-                    validate_generated_html=bool(interaction_guidance),
+                    validate_generated_html=(bool(interaction_guidance)
+                        or run.input.get("conversation_surface") == "assistant"),
                     read_workspace_file=read_workspace_file if artifact_file_plane else None,
                 )
                 if self._artifacts is not None

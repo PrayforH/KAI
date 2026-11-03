@@ -1449,7 +1449,8 @@ class PostgresAssistantRepository:
             )
             if existing is not None:
                 recovered = SpecialistHandover.model_validate(existing.payload)
-                if recovered.source_thread_id != handover.source_thread_id or (
+                if (recovered.source_thread_id != handover.source_thread_id
+                    or recovered.reply_to_run_id != handover.reply_to_run_id) or (
                     recovered.request_hash and recovered.request_hash != handover.request_hash
                 ):
                     raise ConflictError("同一发送请求不能变更来源会话或正文")
@@ -1486,6 +1487,7 @@ class PostgresAssistantRepository:
                 if (
                     recovered.source_thread_id != handover.source_thread_id
                     or recovered.request_hash != handover.request_hash
+                    or recovered.reply_to_run_id != handover.reply_to_run_id
                 ):
                     raise ConflictError("同一发送请求不能变更来源会话或正文") from error
                 return recovered
@@ -1570,7 +1572,8 @@ class PostgresAssistantRepository:
         if direction == "received":
             query = query.where(
                 h.payload["targetThreadId"].as_string() != source_thread_id,
-                RunRow.status.in_([s.value for s in RunStatus if s.is_terminal]),
+                RunRow.status.in_([s.value for s in RunStatus
+                                   if s.is_terminal or s is RunStatus.WAITING_APPROVAL]),
             )
         if message_id is not None:
             query = query.where(key == message_id)

@@ -596,8 +596,8 @@ async def test_delegate_to_specialist_reports_missing_config_without_starting():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("surface", [None, "assistant"])
-async def test_applied_delegate_receipt_matches_the_enqueued_execution(surface):
+async def test_applied_delegate_receipt_matches_the_enqueued_execution():
+    surface = None
     """applied 的回执只描述真实入队：带执行与线程，且不再出现"待补充配置"。"""
     gateway = FakeGateway()
     gateway.delegate_outcome = {
@@ -901,14 +901,14 @@ async def test_standalone_bot_conversation_uses_its_owned_profile_and_domain_mem
     from harness.assistant.delegation import specialist_role_overlay
 
     child = specialist_role_overlay(bot)
-    primary = specialist_role_overlay(bot, coordinator=True)
+    primary = specialist_role_overlay(bot)
     assert child.require_public_preface is False
-    assert primary.require_public_preface is True
+    assert primary.require_public_preface is False
     assert child.tools == primary.tools == ()
-    assert "直接开始执行，不先复述任务" in child.instructions
-    assert "不要再次创建同一任务" in child.instructions
-    assert "真实缺少信息、权限" in child.instructions
-    assert "不要再次创建同一任务" not in primary.instructions
+    assert child.instructions == primary.instructions
+    assert "编码协同" in child.instructions
+    assert "直接开始执行" not in child.instructions
+    assert "不要再次创建" not in child.instructions
     repo.get_specialist.side_effect = NotFoundError("not owned")
     assert await specialist_memory_scope(SimpleNamespace(repository=repo), agui, session) is None
 
@@ -967,8 +967,8 @@ async def test_main_bot_chat_can_create_explicit_work_without_duplicating_specia
     tools = {tool.name: tool.handler for tool in chat.tools}
     assert "assistant_create_task" in tools
     assert "assistant_specialist_status" in tools and "assistant_manage_work" in tools
-    await tools["assistant_delegate_to_specialist"]({"name": "编码协同", "task": "实现侧栏"})
-    assert len(gateway.delegate_calls) == 1
+    assert "assistant_delegate_to_specialist" not in tools
+    assert not gateway.delegate_calls
     assert not gateway.created
     args = {"title": "新建盯梢", "task": "每4小时核对", "interval_minutes": 240}
     await tools["assistant_create_task"](args)

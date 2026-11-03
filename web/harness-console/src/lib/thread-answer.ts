@@ -2,7 +2,7 @@ import { parseConversationInput, type ConversationInput } from "./conversation-i
 
 export type ThreadAsk = { messageId: string; input: ConversationInput };
 
-type HistoryMessage = {
+export type HistoryMessage = {
   id?: string;
   role?: string;
   content?: unknown;
@@ -29,7 +29,7 @@ export function pendingThreadAsk(messages: readonly HistoryMessage[]): ThreadAsk
     if (message.role === "user") return null;
     if (message.role !== "assistant") continue;
     const input = parseConversationInput(messageText(message.content));
-    if (input) return { messageId: String(message.id ?? `assistant-${index}`), input };
+    return input ? { messageId: String(message.id ?? `assistant-${index}`), input } : null;
   }
   return null;
 }

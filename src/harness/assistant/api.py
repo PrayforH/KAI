@@ -369,6 +369,8 @@ class SpecialistMessageRequest(StudioModel):
         default=None, alias="sourceThreadId", min_length=1, max_length=128
     )
     model_route: str | None = Field(default=None, alias="modelRoute", min_length=1, max_length=128)
+    reply_to_run_id: str | None = Field(
+        default=None, alias="replyToRunId", min_length=1, max_length=128)
 
 
 @router.get("/vault")
@@ -459,7 +461,9 @@ async def send_specialist_message(
         text=body.text,
         idempotency_key=idempotency_key,
         **(
-            {"source_thread_id": body.source_thread_id, "model_route": body.model_route}
+            {"source_thread_id": body.source_thread_id, "model_route": body.model_route,
+             **({"reply_to_run_id": body.reply_to_run_id}
+                if body.reply_to_run_id else {})}
             if body.source_thread_id
             else {}
         ),

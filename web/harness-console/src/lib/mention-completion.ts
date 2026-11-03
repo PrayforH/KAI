@@ -1,7 +1,7 @@
 import { requireAuthenticatedResponse } from "./client-auth";
 
 /** Observe the existing child Run stream. No polling, new Run, or replayed work. */
-export async function watchMentionCompletion(runId: string, signal: AbortSignal): Promise<boolean> {
+export async function watchMentionCompletion(runId: string, signal: AbortSignal, onEvent?: (event: {type?: string; toolCallName?: string}) => void): Promise<boolean> {
   const response = requireAuthenticatedResponse(await fetch(
     `/api/agui/runs/${encodeURIComponent(runId)}/events`,
     { signal, cache: "no-store", headers: { Accept: "text/event-stream" } },
@@ -23,7 +23,8 @@ export async function watchMentionCompletion(runId: string, signal: AbortSignal)
           .map(line => line.slice(5).trimStart()).join("\n");
         if (!data) continue;
         try {
-          const event = JSON.parse(data) as { type?: string };
+          const event = JSON.parse(data) as { type?: string; toolCallName?: string };
+          onEvent?.(event);
           if (event.type === "RUN_FINISHED" || event.type === "RUN_ERROR") return true;
         } catch { /* SSE heartbeats and unrelated frames are not completion. */ }
       }

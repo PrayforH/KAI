@@ -190,7 +190,7 @@ async def test_tasks_and_specialists_do_not_require_a_preface(
 
     async def fake_query(_prompt: str, options: ClaudeAgentOptions) -> AsyncIterator[object]:
         if not require_preface:
-            assert "Start the assigned work directly" in options.system_prompt
+            assert "Choose actions, tools" in options.system_prompt
             assert "begin with one short factual progress" not in options.system_prompt
             assert "existing tool approvals remain separate" in options.system_prompt
         # The real gate only nudges when the runtime enabled it.
@@ -233,11 +233,11 @@ async def test_tasks_and_specialists_do_not_require_a_preface(
 
 
 @pytest.mark.asyncio
-async def test_router_role_is_first_and_does_not_require_an_acknowledgement(tmp_path: Path):
+async def test_bot_can_act_without_a_mandatory_acknowledgement(tmp_path: Path):
     gate = _WithholdingGate()
 
     async def query(_prompt: str, options: ClaudeAgentOptions) -> AsyncIterator[object]:
-        assert options.system_prompt.startswith("本轮只做职责路由\n")
+        assert "本轮只做职责路由" not in options.system_prompt
         hook = options.hooks["PreToolUse"][0].hooks[0]
         assert await hook({"tool_use_id": "route-now"}, "route-now", {"signal": None}) == {}
         yield UserMessage(
@@ -254,7 +254,7 @@ async def test_router_role_is_first_and_does_not_require_an_acknowledgement(tmp_
     context = _context(tmp_path, conversation_surface="assistant").model_copy(
         update={
             "platform_tools": PlatformToolOverlay(
-                require_public_preface=False, system_prefix="本轮只做职责路由\n"
+                require_public_preface=False
             )
         }
     )

@@ -43,6 +43,8 @@ const detail = {
     updatedAt: "2026-11-01T00:00:00Z",
   },
   threadId,
+  agentName: "archive-assistant-agent",
+  agentVersion: "0.1.1",
   primaryObjectiveId: "objective_1",
   duties: [],
 };

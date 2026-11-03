@@ -30,7 +30,6 @@ from harness.application.sessions import SessionService
 from harness.application.workspaces import WorkspacePolicy, WorkspaceService
 from harness.assistant.conversation import PersonalConversation
 from harness.assistant.delegation import (
-    COMMON_INSTRUCTIONS,
     AssistantDelegationGateway,
     assistant_delegation_overlay,
     coordinator_session,
@@ -42,8 +41,8 @@ from harness.assistant.delegation import (
 )
 from harness.assistant.file_delivery import ChannelFiles
 from harness.assistant.memory_tools import MemoryBankGateway, assistant_memory_overlay
+from harness.assistant.messaging import assistant_messaging_overlay
 from harness.assistant.repository import PostgresAssistantRepository
-from harness.assistant.routing import assistant_routing_overlay
 from harness.assistant.service import AssistantService
 from harness.auth.api_access import ApiAccessService
 from harness.auth.audit import AuditService
@@ -1672,15 +1671,9 @@ def build_production_container(
             if (run.input.get("conversation_surface") == "assistant"
                     and run.business_project_id is None
                     and session.runtime_type in {"claude-agent-sdk", "deepagents"}):
-                directory_overlay = await assistant_routing_overlay(
+                directory_overlay = await assistant_messaging_overlay(
                     container.assistant, events, run, session
                 )
-                if directory_overlay.workflow is not None:
-                    # Replace the old "simple requests run here" routing rule;
-                    # appending a contradictory preference leaves it ambiguous.
-                    delegation_overlay = PlatformToolOverlay(
-                        tools=delegation_overlay.tools, instructions=COMMON_INSTRUCTIONS,
-                    )
             else:
                 directory_overlay = PlatformToolOverlay(
                     instructions=specialist_directory_instructions(
@@ -1695,7 +1688,7 @@ def build_production_container(
             if container.assistant is not None and session.agent_name else None
         )
         role_overlay = (
-            specialist_role_overlay(specialist or primary_profile, coordinator=coordinator)
+            specialist_role_overlay(specialist or primary_profile)
             if specialist or primary_profile else PlatformToolOverlay()
         )
         if container.memory_bank is not None and session.agent_name:
@@ -1729,10 +1722,11 @@ def build_production_container(
             tools=merged,
             instructions=instructions,
             require_public_preface=(
-                role_overlay.require_public_preface and directory_overlay.workflow is None
+                role_overlay.require_public_preface if specialist or (
+                    coordinator and run.input.get("conversation_surface") == "assistant"
+                    and run.business_project_id is None
+                ) else True
             ),
-            workflow=directory_overlay.workflow,
-            system_prefix=directory_overlay.system_prefix,
         )
 
     worker = RunOrchestrator(
@@ -1956,6 +1950,7 @@ def build_production_container(
         agui=agui,
         runs=run_service,
         events=raw_event_repository,
+        event_service=events,
         quotas=enforced_quotas,
         team_spaces=team_spaces,
         unviewed_pause_hours=settings.assistant_unviewed_pause_hours,

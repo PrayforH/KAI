@@ -150,7 +150,7 @@ async def test_stopped_routing_parent_cannot_launch_new_work(state):
     service, _, _, _, agui, runs, run = setup()
     runs.get.return_value = run.model_copy(update={"status": state})
     with pytest.raises(ConflictError, match="已停止"):
-        await service.validate_routing_parent("t", "u", "run")
+        await service.validate_assistant_control_run("t", "u", "run")
     agui.get_thread_record_for_session.assert_not_awaited()
 
 
@@ -161,11 +161,11 @@ async def test_routing_parent_must_be_the_owned_main_conversation():
     runs.get.return_value = run
     agui.get_thread_record_for_session.return_value = SimpleNamespace(thread_id="ordinary-task")
     with pytest.raises(PermissionDeniedError):
-        await service.validate_routing_parent("t", "u", "run")
+        await service.validate_assistant_control_run("t", "u", "run")
     agui.get_thread_record_for_session.return_value = SimpleNamespace(
         thread_id=PERSONAL_ASSISTANT_THREAD
     )
-    await service.validate_routing_parent("t", "u", "run")
+    await service.validate_assistant_control_run("t", "u", "run")
     agui.get_thread_record_for_session.assert_awaited_with(
         tenant_id="t", user_id="u", session_id="session"
     )

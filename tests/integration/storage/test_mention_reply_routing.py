@@ -15,7 +15,7 @@ from tests.unit.assistant.test_mention_message import _specialist
 
 
 @pytest.mark.asyncio
-async def test_results_are_terminal_origin_owned_and_cursor_stable(database):
+async def test_results_and_pending_approvals_are_origin_owned_and_cursor_stable(database):
     repo = PostgresAssistantRepository(database[1])
     await repo.create_specialist(
         _specialist().model_copy(update={"tenant_id": "tenant-a", "user_id": "user-a"})
@@ -36,6 +36,7 @@ async def test_results_are_terminal_origin_owned_and_cursor_stable(database):
                 ("rest", RunStatus.SUCCEEDED),
                 ("main", RunStatus.RUNNING),
                 ("main", RunStatus.FAILED),
+                ("main", RunStatus.WAITING_APPROVAL),
             ]
         ):
             run = make_run(session).model_copy(
@@ -57,7 +58,7 @@ async def test_results_are_terminal_origin_owned_and_cursor_stable(database):
                     payload=run.model_dump(mode="json"),
                 )
             )
-    for index, origin in enumerate(["main", "rest", "main", "main"]):
+    for index, origin in enumerate(["main", "rest", "main", "main", "main"]):
         await repo.record_handover(
             SpecialistHandover(
                 handoverId=f"handover-{index}",
@@ -77,10 +78,10 @@ async def test_results_are_terminal_origin_owned_and_cursor_stable(database):
             )
         )
     rows, count = await repo.mention_message_runs("tenant-a", "user-a", "main", limit=1)
-    assert count == 2 and rows[0][1].run_id == "run-3"
+    assert count == 3 and rows[0][1].run_id == "run-4"
     cursor = (rows[0][1].updated_at, "mention-result-" + rows[0][0].handover_id)
     more, _ = await repo.mention_message_runs("tenant-a", "user-a", "main", before=cursor)
-    assert [row[1].run_id for row in more] == ["run-0"]
+    assert [row[1].run_id for row in more] == ["run-3", "run-0"]
     rest, count = await repo.mention_message_runs("tenant-a", "user-a", "rest")
     assert count == 1 and rest[0][1].run_id == "run-1"
     for tenant, user in [("other", "user-a"), ("tenant-a", "other")]:
@@ -94,7 +95,7 @@ async def test_results_are_terminal_origin_owned_and_cursor_stable(database):
     sent, count = await repo.mention_message_runs(
         "tenant-a", "user-a", "main", direction="sent", limit=2
     )
-    assert count == 3  # The running child already has a genuine sent event.
+    assert count == 4  # Running and waiting children both have genuine sent events.
     cursor = (
         sent[-1][0].sent_at or sent[-1][0].created_at,
         "mention-sent-" + sent[-1][0].handover_id,
@@ -102,8 +103,8 @@ async def test_results_are_terminal_origin_owned_and_cursor_stable(database):
     more, _ = await repo.mention_message_runs(
         "tenant-a", "user-a", "main", direction="sent", before=cursor
     )
-    assert len(more) == 1
-    assert len({item[0].handover_id for item in [*sent, *more]}) == 3
+    assert len(more) == 2
+    assert len({item[0].handover_id for item in [*sent, *more]}) == 4
     assert await repo.mention_message_runs("tenant-a", "other", "main", direction="sent") == ([], 0)
 
 
@@ -126,7 +127,8 @@ async def test_receipt_idempotency_rejects_changed_origin_and_body(database):
         updatedAt=NOW,
     )
     await repo.record_handover(first)
-    for changes in ({"source_thread_id": "rest"}, {"request_hash": "other"}):
+    for changes in ({"source_thread_id": "rest"}, {"request_hash": "other"},
+                    {"reply_to_run_id": "another-question"}):
         with pytest.raises(ConflictError):
             await repo.record_handover(
                 first.model_copy(update={"handover_id": uuid4().hex, **changes})

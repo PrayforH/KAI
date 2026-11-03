@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import re
 import unicodedata
@@ -13,12 +14,19 @@ from typing import Any, Literal
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
-from ag_ui.core import RunAgentInput, UserMessage
+from ag_ui.core import (
+    DocumentInputContent,
+    InputContentDataSource,
+    RunAgentInput,
+    TextInputContent,
+    UserMessage,
+)
 from pydantic import SecretStr
 
 from harness.agui.response import final_response_text
 from harness.agui.service import AguiRunService
 from harness.application.agents import AgentService
+from harness.application.events import EventService
 from harness.application.runs import RunService
 from harness.assistant.appearance import (
     APPEARANCE_COLORS,
@@ -72,6 +80,7 @@ class AssistantService:
         agui: AguiRunService,
         runs: RunService,
         events: EventRepository,
+        event_service: EventService | None = None,
         quotas: Any = None,
         team_spaces: TeamSpaceService | None = None,
         unviewed_pause_hours: int = 24,
@@ -79,6 +88,7 @@ class AssistantService:
         self.repository = repository
         self._agents, self._auth, self._projects = agents, auth, projects
         self._agui, self._runs, self._events = agui, runs, events
+        self._event_service = event_service
         # 计量：只有配置了配额服务才可能拿到真实用量；None 时如实标记未知。
         self._quotas = quotas
         self._team_spaces = team_spaces
@@ -94,6 +104,7 @@ class AssistantService:
             agui=self._agui,
             runs=self._runs,
             events=self._events,
+            event_service=self._event_service,
             quotas=self._quotas,
             team_spaces=self._team_spaces,
             unviewed_pause_hours=self._unviewed_pause_hours,
@@ -477,6 +488,8 @@ class AssistantService:
         idempotency_key: str,
         source_thread_id: str | None = None,
         target_thread_id: str | None = None,
+        input_artifact_ids: Sequence[str] = (),
+        reply_to_run_id: str | None = None,
     ) -> SpecialistHandover:
         """用户明确 @某个 Bot 时的持久回执。
 
@@ -490,12 +503,16 @@ class AssistantService:
         if specialist.status is SpecialistStatus.PAUSED:
             raise ConflictError("这个 Bot 已暂停接单，先恢复再发消息")
         message_id = f"mention-specialist:{idempotency_key}:{specialist_id}"
-        request_hash = hashlib.sha256(text.encode()).hexdigest()
+        packet = (json.dumps({"text": text, "input_artifact_ids": sorted(set(input_artifact_ids))},
+                             ensure_ascii=False, sort_keys=True)
+                  if input_artifact_ids else text)
+        request_hash = hashlib.sha256(packet.encode()).hexdigest()
         for item in await self.repository.handovers(
             tenant_id, user_id, specialist_id=specialist_id
         ):
             if item.message_id == message_id:
-                if item.source_thread_id != source_thread_id or (
+                if (item.source_thread_id != source_thread_id
+                    or item.reply_to_run_id != reply_to_run_id) or (
                     item.request_hash and item.request_hash != request_hash
                 ):
                     raise ConflictError("同一发送请求不能变更来源会话或正文")
@@ -512,14 +529,17 @@ class AssistantService:
                 sourceThreadId=source_thread_id,
                 targetThreadId=target_thread_id,
                 requestHash=request_hash,
+                replyToRunId=reply_to_run_id,
                 status=HandoverStatus.SENT,
                 createdAt=now,
                 updatedAt=now,
             )
         )
 
-    async def validate_routing_parent(self, tenant_id: str, user_id: str, run_id: str) -> None:
-        """Recheck the live origin before launching work from a routing turn."""
+    async def validate_assistant_control_run(
+        self, tenant_id: str, user_id: str, run_id: str,
+    ) -> None:
+        """Lifecycle and ownership admission for model-facing Bot control operations."""
         parent = await self._runs.get(tenant_id, run_id)
         if parent.status is not RunStatus.RUNNING:
             raise ConflictError("主助理本轮已停止，不能再派发新工作")
@@ -527,7 +547,7 @@ class AssistantService:
             tenant_id=tenant_id, user_id=user_id, session_id=parent.session_id,
         )
         if origin.thread_id != PERSONAL_ASSISTANT_THREAD or parent.business_project_id is not None:
-            raise PermissionDeniedError("只有主助理聊天可以使用本次职责路由")
+            raise PermissionDeniedError("当前会话没有Bot管理权限")
 
     async def send_mention_message(
         self,
@@ -536,11 +556,13 @@ class AssistantService:
         specialist_id: str,
         *,
         text: str,
+        input_artifact_ids: Sequence[str] = (),
         idempotency_key: str,
         source_thread_id: str,
         model_route: str | None = None,
         dispatched: bool = False,
         quoted_message_context: str = "",
+        reply_to_run_id: str | None = None,
     ) -> SpecialistHandover:
         # A client supplies the origin, never another user's identity. Reserve
         # the personal address for this authenticated user; other origins must
@@ -555,8 +577,6 @@ class AssistantService:
             )
         specialist = await self.repository.get_specialist(tenant_id, user_id, specialist_id)
         if dispatched:
-            if specialist.status not in {SpecialistStatus.READY, SpecialistStatus.ACTIVE}:
-                raise ConflictError("这个子助理当前不能接单")
             require_local_tools(specialist.config)
         target = await self.specialist_conversation(tenant_id, user_id, specialist)
         connection_mode = "service_owned"
@@ -570,6 +590,39 @@ class AssistantService:
             connection_mode = release.connection_mode.value
         elif target.agent_owner_user_id != user_id:
             raise PermissionDeniedError("该助理的共享授权不可用")
+        if reply_to_run_id is not None:
+            # A reply is bound to an owned, actually delivered child request.
+            # Client metadata cannot retarget another conversation or another owner.
+            history = await self.repository.handovers(tenant_id, user_id,
+                specialist_id=specialist_id)
+            source = next((item for item in history if item.run_id == reply_to_run_id
+                and item.source_thread_id == source_thread_id
+                and item.target_thread_id == target.thread_id), None)
+            if source is None:
+                raise NotFoundError("原问题已不可用，请刷新会话")
+            # A successful retry must return its canonical receipt even when that
+            # continuation is now the newest Run. Never repeat the accepted answer.
+            prior = next((item for item in history if item.message_id ==
+                f"mention-specialist:{idempotency_key}:{specialist_id}"), None)
+            if prior is None:
+                binding = await self._agui.get_binding(tenant_id=tenant_id,
+                    user_id=user_id, thread_id=target.thread_id)
+                latest = await self._runs.list_for_sessions(tenant_id,
+                    list(binding.session_ids), limit=1)
+                if not latest or latest[0].run_id != reply_to_run_id:
+                    raise ConflictError("这个问题已有后续消息，请刷新后回答")
+                if not latest[0].status.is_terminal:
+                    raise ConflictError("这次执行仍在进行；操作授权请使用对应授权卡")
+                question_run = latest[0]
+                if self._event_service is None:
+                    raise ConflictError("消息回传服务暂不可用")
+                await self._event_service.append_once(
+                    event_id=f"assistant-reply-{reply_to_run_id}", tenant_id=tenant_id,
+                    run_id=reply_to_run_id, session_id=question_run.session_id,
+                    event_type="assistant.reply.accepted", timestamp=datetime.now(UTC).isoformat(),
+                    payload={"requestKey": idempotency_key, "sourceThreadId": source_thread_id,
+                             "contentHash": hashlib.sha256(text.encode()).hexdigest()},
+                )
         receipt = await self.record_mention_handover(
             tenant_id,
             user_id,
@@ -578,9 +631,18 @@ class AssistantService:
             idempotency_key=idempotency_key,
             source_thread_id=source_thread_id,
             target_thread_id=target.thread_id,
+            input_artifact_ids=input_artifact_ids,
+            reply_to_run_id=reply_to_run_id,
         )
         if receipt.run_id:
             return receipt
+        body = (re.sub(rf"@{re.escape(specialist.name)}(?!\w)", "", text).strip() or "你好")
+        content = ([TextInputContent(text=body), *(
+            DocumentInputContent(source=InputContentDataSource(
+                value=identifier, mimeType="application/octet-stream"),
+                metadata={"inputArtifactId": identifier})
+            for identifier in dict.fromkeys(input_artifact_ids)
+        )] if input_artifact_ids else body)
         creation = await self._agui.create_run_with_result(
             tenant_id=tenant_id,
             user_id=user_id,
@@ -601,8 +663,7 @@ class AssistantService:
                 # the receiving Bot. Keep the original text in the receipt/hash.
                 messages=[UserMessage(
                     id=receipt.handover_id,
-                    content=(re.sub(rf"@{re.escape(specialist.name)}(?!\w)", "", text).strip()
-                             or "你好"),
+                    content=content,
                 )],
                 tools=[],
                 context=[],
@@ -647,11 +708,14 @@ class AssistantService:
             timestamp = (
                 (handover.sent_at or handover.created_at) if direction == "sent" else run.updated_at
             )
-            text = ""
+            text = (str(run.input.get("prompt", handover.summary))
+                    if direction == "sent" and handover.reply_to_run_id else "")
             if direction == "received":
                 events = await self._events.list_after(tenant_id, run.run_id, 0)
-                text = brief_notice(final_response_text(events)) or "本次处理已结束，尚无结果正文。"
-                if run.status is not RunStatus.SUCCEEDED:
+                text = ("有一项操作需要你确认" if run.status is RunStatus.WAITING_APPROVAL
+                        else brief_notice(final_response_text(events))
+                        or "本次处理已结束，尚无结果正文。")
+                if run.status not in {RunStatus.SUCCEEDED, RunStatus.WAITING_APPROVAL}:
                     text = "本次处理未完成。\n\n" + text
             source = {
                 "name": specialist.name,
@@ -659,6 +723,10 @@ class AssistantService:
                 "href": "/assistant?bot=" + specialist.specialist_id,
                 "timestamp": timestamp.isoformat(),
                 "direction": direction,
+                "runId": run.run_id, "threadId": handover.target_thread_id or "",
+                "sourceThreadId": source_thread_id, "handoverId": handover.handover_id,
+                **({"replyToRunId": handover.reply_to_run_id}
+                   if handover.reply_to_run_id else {}),
             }
             appearance = specialist.config.get("appearance")
             if isinstance(appearance, dict):

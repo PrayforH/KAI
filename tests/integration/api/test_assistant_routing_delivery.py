@@ -6,12 +6,18 @@ from dataclasses import replace
 from unittest.mock import AsyncMock
 
 import pytest
-from ag_ui.core import RunAgentInput, UserMessage
+from ag_ui.core import (
+    DocumentInputContent,
+    InputContentDataSource,
+    RunAgentInput,
+    TextInputContent,
+    UserMessage,
+)
 from httpx import ASGITransport, AsyncClient
 
 from harness.api.app import create_memory_app
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD as MAIN
-from harness.assistant.routing import assistant_routing_overlay
+from harness.assistant.messaging import assistant_messaging_overlay
 from harness.assistant.service import AssistantService, _specialist_slug
 from harness.core.models import RunStatus
 from tests.integration.api.test_agui_history_pagination import (
@@ -23,8 +29,8 @@ from tests.unit.assistant.test_mention_message import _specialist
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("creation", [False, True])
-async def test_route_reuses_pinned_bot_history_and_returns_result_only_to_origin(creation):
+@pytest.mark.parametrize("creation,attached", [(False, False), (True, True)])
+async def test_messages_reuse_pinned_history_and_return_only_to_origin(creation, attached):
     app = create_memory_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
@@ -75,12 +81,30 @@ async def test_route_reuses_pinned_bot_history_and_returns_result_only_to_origin
             agui=c.agui,
             runs=c.runs,
             events=c.events,
+            event_service=c.worker._events,
         )
         service.specialist_thread = AsyncMock(return_value=thread)
         service.primary_profile = AsyncMock(return_value=None)
         app.state.container = replace(c, assistant=service)
         repo.conversation_notices.return_value = ([], 0)
         repo.conversation_notice_sources.return_value = {}
+        content = "武汉明天需要带伞吗"
+        artifact_id = None
+        if attached:
+            upload = await client.post(
+                "/v1/input-artifacts",
+                headers=HEADERS,
+                files={"file": ("locations.txt", b"Wuhan", "text/plain")},
+            )
+            assert upload.status_code == 201, upload.text
+            artifact_id = upload.json()["input_artifact_id"]
+            content = [
+                TextInputContent(text=content),
+                DocumentInputContent(
+                    source=InputContentDataSource(value=artifact_id, mimeType="text/plain"),
+                    metadata={"inputArtifactId": artifact_id},
+                ),
+            ]
         parent = await c.agui.create_run_with_result(
             tenant_id="tenant-a",
             user_id="user-1",
@@ -92,7 +116,7 @@ async def test_route_reuses_pinned_bot_history_and_returns_result_only_to_origin
                 state={},
                 tools=[],
                 context=[],
-                messages=[UserMessage(id="natural", content="武汉明天需要带伞吗")],
+                messages=[UserMessage(id="natural", content=content)],
                 forwarded_props={"conversationSurface": "assistant"},
             ),
         )
@@ -104,26 +128,29 @@ async def test_route_reuses_pinned_bot_history_and_returns_result_only_to_origin
         )
         assert await c.worker._runs.compare_and_set(parent.run.status, active_parent)
         session = await c.sessions.get("tenant-a", active_parent.session_id)
-        overlay = await assistant_routing_overlay(service, c.worker._events, active_parent, session)
-        args = {"action": "dispatch", "specialist_id": bot.specialist_id, "reason": "天气职责匹配"}
-        if creation:
-            await overlay.tools[0].handler({"action": "direct", "direct_kind": "management",
-                "reason": "用户明确创建或复用天气Bot，由它承接原话"})
-            tool_index = 1
-            args = {"name": bot.name, "description": bot.description}
-        else:
-            tool_index = 0
-        await asyncio.gather(*(overlay.tools[tool_index].handler(args) for _ in range(2)))
-        recovered = await assistant_routing_overlay(
+        overlay = await assistant_messaging_overlay(
             service, c.worker._events, active_parent, session
         )
-        await recovered.tools[tool_index].handler(args)
+        tools = {t.name: t.handler for t in overlay.tools}
+        if creation:
+            created = await tools["assistant_create_specialist"](
+                {"request_key": "create", "name": bot.name, "description": bot.description}
+            )
+            assert not created.get("isError"), created
+            assert not receipts  # A contact is not an execution or an implicit message.
+        args = {"request_key": "send", "specialist_id": bot.specialist_id}
+        await asyncio.gather(*(tools["assistant_send_message"](args) for _ in range(2)))
+        recovered = await assistant_messaging_overlay(
+            service, c.worker._events, active_parent, session
+        )
+        await next(t for t in recovered.tools if t.name == "assistant_send_message").handler(args)
         assert len(receipts) == 1
         receipt = next(iter(receipts.values()))
         child = await c.runs.get("tenant-a", receipt.run_id)
         assert child.session_id == before.session_id
         assert child.input["conversation_prompts"] == ["previous forecast", "武汉明天需要带伞吗"]
         assert child.input["assistant_dispatch"] is True
+        assert child.input.get("input_artifact_ids", []) == ([artifact_id] if attached else [])
         await c.worker.execute("tenant-a", child.run_id)
         child = await c.runs.get("tenant-a", child.run_id)
         assert child.status.value == "succeeded"
@@ -158,6 +185,44 @@ async def test_route_reuses_pinned_bot_history_and_returns_result_only_to_origin
             for call in msg.get("toolCalls") or []
             if call["function"]["name"] == "harness_notice_source"
         )
+        # Answering from the main chat continues the same child conversation and
+        # creates its own source-bound receipt; it never turns into a main Run.
+        reply_headers = {**HEADERS, "Idempotency-Key": "answer-key-12345678"}
+        reply_body = {
+            "text": "只总结武汉这一项",
+            "sourceThreadId": MAIN,
+            "replyToRunId": child.run_id,
+        }
+        answer = await client.post(
+            f"/v1/studio/assistant/specialists/{bot.specialist_id}/messages",
+            headers=reply_headers,
+            json=reply_body,
+        )
+        assert answer.status_code == 202, answer.text
+        replay = await client.post(
+            f"/v1/studio/assistant/specialists/{bot.specialist_id}/messages",
+            headers=reply_headers,
+            json=reply_body,
+        )
+        assert replay.json() == answer.json()
+        assert len(receipts) == 2
+        continued = await c.runs.get("tenant-a", answer.json()["runId"])
+        assert continued.session_id == child.session_id
+        assert continued.input["prompt"] == reply_body["text"]
+        assert continued.input["conversation_prompts"][-1] == reply_body["text"]
+        stale = await client.post(
+            f"/v1/studio/assistant/specialists/{bot.specialist_id}/messages",
+            headers={**HEADERS, "Idempotency-Key": "different-answer-12345678"},
+            json=reply_body,
+        )
+        assert stale.status_code == 409
+        foreign = await client.post(
+            f"/v1/studio/assistant/specialists/{bot.specialist_id}/messages",
+            headers={**HEADERS, "Idempotency-Key": "foreign-source-12345678"},
+            json=reply_body | {"sourceThreadId": "assistant_unrelated"},
+        )
+        assert foreign.status_code in {404, 409}
+        assert len(receipts) == 2
         forbidden = await client.get(
             f"/v1/agui/threads/{thread}/history", headers={**HEADERS, "X-User-ID": "other-user"}
         )

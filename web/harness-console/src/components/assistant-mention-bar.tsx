@@ -20,7 +20,9 @@ export function useMentionHistoryUpdates(threadId: string | undefined, onChange:
     for (const receipt of owned) {
       if (!receipt.runId || completed.current.has(receipt.runId)) continue;
       const runId = receipt.runId;
-      void watchMentionCompletion(runId, controller.signal).then(terminal => {
+      void watchMentionCompletion(runId, controller.signal, event => {
+        if (event.type === "TOOL_CALL_START" && event.toolCallName === "harness_request_approval") onChange();
+      }).then(terminal => {
         if (!terminal || controller.signal.aborted) return;
         completed.current.add(runId);
         onChange();
