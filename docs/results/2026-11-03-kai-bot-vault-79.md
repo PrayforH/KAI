@@ -4,7 +4,7 @@
 - 分支：`auto/kai-bot-vault-20261103`（基线 `60ef9143`，代码 `0db1e0b7`）
 - 提交：`08ceba23`（P13）、`e5916955`（P14）、`40e8f0df`（P15）、`<本文件提交>`（验收与缺陷修复）
 - schema：新增迁移 `0065_assistant_vault_items`
-- 79 发布：**已发布**（八批；**唯一当前版本** api/worker `kai/superagent-api:20261102-a6a29662`、web `kai/superagent-web:20261103-93c6e05c`，schema 0065，三服务 healthy。历史批次见 8.7，现网结论见 8.8／8.15）
+- 79 发布：**已发布**（八批；**唯一当前版本** api/worker `kai/superagent-api:20261102-a6a29662`、web `kai/superagent-web:20261103-7d16f59b`，schema 0065，三服务 healthy。历史批次见 8.7，现网结论见 8.8／8.15）
 - 飞书同步：已追加本轮进展，回读 revision 83（文档 XV4ndItNmoONoIxQPWgcIyLbnJe），未覆盖历史内容；后续修订见 8.14
 - 真实页面验收：在**本机新代码**（API + Web，同一提交）完成，截图见本目录；**79 实页验收仍未做**（证书与登录需本人接管，见 8.9）
 
@@ -370,3 +370,25 @@ UI 已如实写明范围：「资料加密保存在你名下……还没有把�
 **发布**：只换 web。发布前线上 compose `sha256 d1aab571…`（第七批后的值）作为 CAS 基准，备份 `compose.private.before-web-93c6e05c.json`；
 滚动后 web healthy、镜像 `93c6e05c`，新 compose `sha256 de3c0aa1…`。
 **产物指纹**：容器内 `.next` 检索——「交办与执行方式」「首次试运行」旧段落 **0 处**，「编辑助理资料」6 处，「启用助理」「恢复接单」各 4 处。
+
+## 8.17 第九批（web `7d16f59b`）+ 「天气提醒 取不到天气」的取证
+
+**现象**：本人问「今天上海天气」，天气提醒回「【上海 · 2026-11-03】今日预报未获取到。」
+
+**逐条取证（79 真实运行，读 run_events 与 runs.input）**
+
+| 运行 | 时间(UTC) | assistant_scope | 实际工具调用 | 结果 |
+| --- | --- | --- | --- | --- |
+| `run_2f937d70…` | 02:24 | ✓ | WebFetch ×2（wttr.in 失败 → 换 Open-Meteo 成功） | 给出真实预报：19.0°C、湿度 66%、今天降水概率 29%、明天 100% |
+| `run_294e0caa…`（经 @ 提及投递） | 02:26 | ✗ **漏标记** | 无 | 「今日预报未获取到」 |
+| `run_dd6ea3de…`（直接对话） | 02:34 | ✓ | **零次**（事件里查得到 harness-web 已装配） | 仍回模板句 |
+
+**两个不同的问题**
+1. **@ 提及投递漏了助理范围**（真 bug，已修）：`submitThreadAnswer` 提交时 `forwardedProps: {}`，运行时因此不装配平台联网。
+   修法：提交时带 `{conversationSurface:"assistant", assistantScope:true}`，新增 `tests/thread-answer-scope.spec.ts`。
+2. **模型自己没调用工具**（不是通道问题）：02:34 那次范围已带、`harness-web` 已装配、`WEB_CONTRACT` 也已进系统提示，
+   但模型一次都没调用，直接用了它职责里写的兜底「取不到就回今日预报未获取到」。这属于模型行为与它自己的指令口径问题，
+   不是装配缺陷；已在结果里如实标注，未通过改提示词硬掰。
+
+**发布**：只换 web，CAS 基准为第八批后的 `sha256 de3c0aa1…`，滚动后 web healthy、镜像 `7d16f59b`（compose `91a0fb0b…`）。
+产物指纹：新 bundle 里 3 个 chunk 含 `assistantScope`。前端全量 1600 通过（失败仍是基线同一组 7 条），tsc 通过。
