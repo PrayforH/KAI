@@ -1305,6 +1305,15 @@ class PostgresAssistantRepository:
     async def create_specialist(self, specialist: Specialist) -> Specialist:
         """Create a specialist; the slug is the dedupe key inside one user."""
         async with self._context(write=True) as session:
+            previous = await session.get(SpecialistRow, specialist.specialist_id)
+            if (previous is not None and previous.tenant_id == specialist.tenant_id
+                    and previous.user_id == specialist.user_id):
+                if Specialist.model_validate(previous.payload).deleted_at is not None:
+                    # A deleted contact keeps its audit identity. Explicitly
+                    # creating its replacement must not resurrect old grants.
+                    specialist = specialist.model_copy(update={
+                        "specialist_id": f"specialist_{uuid4().hex}",
+                    })
             existing = await session.scalar(
                 select(SpecialistRow).where(
                     SpecialistRow.tenant_id == specialist.tenant_id,
@@ -1313,7 +1322,10 @@ class PostgresAssistantRepository:
                 )
             )
             if existing is not None:
-                return Specialist.model_validate(existing.payload)
+                saved = Specialist.model_validate(existing.payload)
+                if saved.deleted_at is not None:
+                    raise ConflictError("已删除的助理标识不能复用")
+                return saved
             try:
                 async with session.begin_nested():
                     session.add(
@@ -1354,14 +1366,18 @@ class PostgresAssistantRepository:
             )
             if row is None:
                 raise NotFoundError("Specialist not found")
-            return Specialist.model_validate(row.payload)
+            specialist = Specialist.model_validate(row.payload)
+            if specialist.deleted_at is not None:
+                raise NotFoundError("Specialist not found")
+            return specialist
 
     async def list_specialists(
         self, tenant_id: str, user_id: str, *, query: str | None = None,
     ) -> list[Specialist]:
         async with self._context() as session:
             statement = select(SpecialistRow).where(
-                SpecialistRow.tenant_id == tenant_id, SpecialistRow.user_id == user_id
+                SpecialistRow.tenant_id == tenant_id, SpecialistRow.user_id == user_id,
+                SpecialistRow.payload["deletedAt"].as_string().is_(None),
             )
             if query:
                 statement = statement.where(or_(
@@ -1404,6 +1420,8 @@ class PostgresAssistantRepository:
             if row is None:
                 raise NotFoundError("Specialist not found")
             current = Specialist.model_validate(row.payload)
+            if current.deleted_at is not None:
+                raise NotFoundError("Specialist not found")
             if current.revision != expected_revision:
                 raise ConflictError("Specialist changed; reload before applying this change")
             changes: dict[str, object] = {"revision": current.revision + 1, "updated_at": now}
@@ -1520,6 +1538,58 @@ class PostgresAssistantRepository:
             })
             row.payload = updated.model_dump(mode="json", by_alias=True)
             return updated
+
+    async def delete_specialist(
+        self, tenant_id: str, user_id: str, specialist_id: str, *,
+        expected_revision: int, confirm_name: str, now: datetime,
+    ) -> None:
+        """Remove an archived Bot's identity and grants; retain its audit history.
+
+        Keep a tombstone instead of cascading through conversations, objective
+        executions or the owner's shared Vault. All live lookup paths exclude it.
+        """
+        async with self._context(write=True) as session:
+            row = await session.scalar(select(SpecialistRow).where(
+                SpecialistRow.tenant_id == tenant_id, SpecialistRow.user_id == user_id,
+                SpecialistRow.specialist_id == specialist_id,
+            ).with_for_update())
+            if row is None:
+                raise NotFoundError("Specialist not found")
+            current = Specialist.model_validate(row.payload)
+            if current.deleted_at is not None:
+                return
+            if current.revision != expected_revision or current.name != confirm_name:
+                raise ConflictError("助理已更新，请刷新后再删除")
+            if current.status is not SpecialistStatus.ARCHIVED:
+                raise ConflictError("请先归档助理，再删除")
+            duties = (await session.scalars(select(ObjectiveRow).where(
+                ObjectiveRow.tenant_id == tenant_id, ObjectiveRow.user_id == user_id,
+                ObjectiveRow.payload["specialistId"].as_string() == specialist_id,
+            ).order_by(ObjectiveRow.objective_id).with_for_update())).all()
+            if duties and await session.scalar(select(ObjectiveExecutionRow.execution_id).where(
+                ObjectiveExecutionRow.objective_id.in_([d.objective_id for d in duties]),
+                ObjectiveExecutionRow.status == ObjectiveExecutionStatus.RUNNING.value,
+            ).limit(1)):
+                raise ConflictError("助理还有工作正在执行，请完成后再删除")
+            for duty in duties:
+                objective = Objective.model_validate(duty.payload)
+                if objective.status is ObjectiveStatus.ACTIVE:
+                    paused = objective.model_copy(update={
+                        "status": transition(objective.status, ObjectiveAction.PAUSE),
+                        "revision": objective.revision + 1,
+                        "updated_at": now, "next_check_at": None,
+                    })
+                    _store(duty, paused)
+                    _event(session, paused, "pause", "Bot deleted", now)
+            slug = "deleted-" + hashlib.sha256(specialist_id.encode()).hexdigest()[:40]
+            updated = current.model_copy(update={
+                "deleted_at": now, "updated_at": now, "revision": current.revision + 1,
+                "slug": slug,
+                "config": {key: value for key, value in current.config.items()
+                           if not key.startswith("credential_ref:")},
+            })
+            row.slug, row.revision, row.updated_at = slug, updated.revision, now
+            row.payload = updated.model_dump(mode="json", by_alias=True)
 
     async def mention_message_runs(
         self,

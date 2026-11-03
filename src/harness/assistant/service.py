@@ -1331,6 +1331,11 @@ class AssistantService:
         try:
             return await self.repository.get_specialist(tenant_id, user_id, specialist_id)
         except NotFoundError:
+            # A recreated main contact has a fresh identity; its conversation
+            # still belongs to the same canonical main thread.
+            for candidate in await self.repository.list_specialists(tenant_id, user_id):
+                if candidate.config.get("conversation_thread_id") == PERSONAL_ASSISTANT_THREAD:
+                    return candidate
             if not initialize:
                 return None
         try:

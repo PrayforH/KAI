@@ -86,7 +86,7 @@ export function BotRailMenu({ bot, groups, onUpdate, onEdit, onArchive, onStatus
       </form>}
       {mode === "archive" && <>
         <strong>归档“{bot.name}”？</strong>
-        <p>不再接受新的职责执行，聊天与成果保留，可从已归档中恢复。已开始的任务不会被强制中断。</p>
+        <p>不再接受新的职责执行，聊天与成果保留，可在设置的「机器人」中恢复。已开始的任务不会被强制中断。</p>
         <div className={styles.actions}><button type="button" disabled={busy} onClick={close}>取消</button>
           <button type="button" disabled={busy} className={styles.danger} onClick={() => void apply(onArchive)}>归档</button></div>
       </>}

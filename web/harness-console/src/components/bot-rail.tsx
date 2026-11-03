@@ -117,8 +117,6 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
   const expanded = groupsView.has("bots:all");
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
-  const [showHidden, setShowHidden] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
   const [railError, setRailError] = useState("");
 
   const load = useCallback(async () => {
@@ -188,8 +186,6 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
   // Availability and organization are orthogonal; pinning never enables a Bot.
   const ungrouped = unpinned.filter(item => !botSidebar(item).group);
   const contacts = ungrouped;
-  const hidden = specialists.filter(item => item.status !== "archived" && botSidebar(item).hidden);
-  const archived = specialists.filter(item => item.status === "archived");
   const collapsedLimit = 5;
   const contactOrder = [...pinned, ...grouped.flatMap(group => group.items), ...contacts];
   const visible = new Set((expanded ? contactOrder : contactOrder.slice(0, collapsedLimit)).map(item => item.specialistId));
@@ -257,18 +253,6 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
       {editing && <BotProfileDialog specialistId={editing} onClose={() => setEditing(null)} onSaved={() => {
         setEditing(null); void load(); window.dispatchEvent(new CustomEvent("kai:specialists-changed"));
       }} />}
-      {hidden.length > 0 && <>
-        <button type="button" className="bot-rail-more" aria-expanded={showHidden} onClick={() => setShowHidden(value => !value)}>隐藏的 Bot（{hidden.length}）</button>
-        {showHidden && <ul className="bot-rail-list">{hidden.map(item => <li className="bot-rail-recover" key={item.specialistId}>
-          <span>{item.name}</span><button type="button" onClick={() => void saveSidebar(item, {hidden: false}).catch(error => setRailError(String(error.message)))}>恢复显示</button>
-        </li>)}</ul>}
-      </>}
-      {archived.length > 0 && <>
-        <button type="button" className="bot-rail-more" aria-expanded={showArchived} onClick={() => setShowArchived(value => !value)}>已归档（{archived.length}）</button>
-        {showArchived && <ul className="bot-rail-list">{archived.map(item => <li className="bot-rail-recover" key={item.specialistId}>
-          <span>{item.name}</span><button type="button" onClick={() => void changeStatus(item, "paused").catch(error => setRailError(String(error.message)))}>恢复显示，保持暂停</button>
-        </li>)}</ul>}
-      </>}
       </div>
       {creating && (
         <CreateBotDialog

@@ -317,6 +317,7 @@ class Specialist(StudioModel):
     routine_paused_reason: dict[str, object] | None = Field(
         default=None, alias="routinePausedReason"
     )
+    deleted_at: AwareDatetime | None = Field(default=None, alias="deletedAt")
     created_at: AwareDatetime = Field(alias="createdAt")
     updated_at: AwareDatetime = Field(alias="updatedAt")
 

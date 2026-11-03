@@ -48,6 +48,11 @@ class SpecialistStatusRequest(StudioModel):
     expected_revision: int = Field(alias="expectedRevision", ge=1)
 
 
+class SpecialistDeleteRequest(StudioModel):
+    expected_revision: int = Field(alias="expectedRevision", ge=1)
+    confirm_name: str = Field(alias="confirmName", min_length=1, max_length=80)
+
+
 class SpecialistCredentialRequest(StudioModel):
     name: str = Field(min_length=1, max_length=64)
     secret: str = Field(min_length=1, max_length=8_000)
@@ -242,6 +247,18 @@ async def list_specialists(identity: Reader, assistant: Service) -> list[Special
 async def appearance_palette(identity: Reader, assistant: Service) -> dict[str, list[str]]:
     """外观清单由服务端给出：前端不再各写一份取色表，新建时也不会漏项。"""
     return assistant.appearance_palette()
+
+
+@router.delete("/specialists/{specialist_id}", status_code=204)
+async def delete_specialist(
+    specialist_id: str, body: SpecialistDeleteRequest, identity: Writer, assistant: Service,
+) -> None:
+    await assistant.repository.delete_specialist(
+        identity.tenant_id, identity.user_id, specialist_id,
+        expected_revision=body.expected_revision,
+        confirm_name=body.confirm_name,
+        now=datetime.now(UTC),
+    )
 
 
 class SpecialistAppearance(StudioModel):

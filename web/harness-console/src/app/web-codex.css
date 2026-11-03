@@ -3408,10 +3408,15 @@ body.codex-theme-v1:has(.console-shell) .bot-rail {
 
 body.codex-theme-v1:has(.console-shell) .bot-rail-toolbar {
   margin: 0 -14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 12px;
 }
 
 /* 沿用项目区「+」的图标尺寸与悬停行为 */
 body.codex-theme-v1:has(.console-shell) .bot-rail-add {
+  margin-left: auto;
   display: grid;
   place-items: center;
   width: 26px;

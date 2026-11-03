@@ -30,7 +30,8 @@ async def context(database, *, memory=False):
     async def binding(**coordinates):
         item = await record(**coordinates)
         return SimpleNamespace(session_id=item.session_id, project_id=item.project_id,
-                               agent_name="audit-agent", agent_version="1.0.0")
+                               agent_name="audit-agent", agent_version="1.0.0",
+                               agent_owner_user_id=item.user_id, space_id=None)
 
     async def listing(*, tenant_id, user_id, **kwargs):
         return await records.list_for_user(tenant_id, user_id, **kwargs)
