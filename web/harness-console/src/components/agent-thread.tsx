@@ -960,7 +960,6 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       {inputError && <p className="composer-input-error" role="alert">{inputError}</p>}
       {!conversationScope?.compactComposer && <TaskKnowledgeSelection disabled={busy || Boolean(conversationScope)} />}
       <ReplyComposerBar />
-      {assistantSurface && <AssistantMentionReceipts />}
       <Composer.Root onSubmitCapture={(event: FormEvent) => { event.preventDefault(); event.stopPropagation(); if (!composingRef.current) submitComposer(); }}>
         <ComposerAssist options={options} index={suggestionIndex} onChoose={chooseSuggestion} />
         {wikiSlug ? (
@@ -1595,6 +1594,16 @@ export function responseTextForTurn(messageId: string, nativeText: string, direc
   return nativeText;
 }
 
+/**
+ * 会话流末尾的一行回执：`已发送消息给 X` 要长在对话里，不是贴在输入框上方。
+ * 数据来自持久 handover，刷新后仍在。
+ */
+function HarnessMessagesFooter() {
+  const assistantSurface = useAssistantSurface();
+  if (!assistantSurface) return null;
+  return <AssistantMentionReceipts />;
+}
+
 export function HarnessAssistantMessage() {
   const redact = useConversationRedactor();
   const assistantSurface = useAssistantSurface();
@@ -2154,6 +2163,7 @@ export function AgentThread({
             composer={{ allowAttachments: true }}
             components={{
               AssistantMessage: HarnessAssistantMessage,
+              MessagesFooter: HarnessMessagesFooter,
               UserMessage: HarnessUserMessage,
               Composer: ComposerComponent,
               ThreadWelcome: UserTaskWelcome,

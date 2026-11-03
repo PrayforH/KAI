@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -42,5 +44,18 @@ describe("mention receipts", () => {
     expect(line?.textContent).toContain("资料 Bot");
     // 点了名字直接去那个 Bot 的会话。
     expect(host.querySelector("a")?.getAttribute("href")).toBe("/assistant?bot=specialist_a");
+  });
+});
+
+describe("回执的位置", () => {
+  const thread = readFileSync(join(process.cwd(), "src/components/agent-thread.tsx"), "utf8");
+
+  it("renders inside the conversation stream, not above the composer", () => {
+    // MessagesFooter 在滚动区里（Thread.Messages 之后），Composer 在它之外；
+    // 回执贴在输入框上方会看起来像"发送到"工具栏。
+    expect(thread).toContain("MessagesFooter: HarnessMessagesFooter");
+    expect(thread).toContain("return <AssistantMentionReceipts />");
+    // 输入区上方不再挂回执。
+    expect(thread).not.toContain("{assistantSurface && <AssistantMentionReceipts />}");
   });
 });
