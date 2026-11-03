@@ -1,0 +1,30 @@
+{
+  "compose_sha256": "9755d0ee61bd2034568a129a230ecd39b04a04300749257f520c9bb32f1d5bf1",
+  "images": {
+    "api": {
+      "tag": "kai/superagent-api:20261104-files-v1",
+      "id": "sha256:54c267ab4d3b5364c999baab8b21abedc72f85fe4f189e664e5d900182e77602",
+      "status": "healthy"
+    },
+    "worker": {
+      "tag": "kai/superagent-api:20261104-files-v1",
+      "id": "sha256:54c267ab4d3b5364c999baab8b21abedc72f85fe4f189e664e5d900182e77602",
+      "status": "healthy"
+    },
+    "web": {
+      "tag": "kai/superagent-web:20261104-files-v1",
+      "id": "sha256:e91719e80dda0577991574ecdb3a34f1b11c2f6ffb0d89bd5be3939596dd79e9",
+      "status": "healthy"
+    },
+    "computer-control": {
+      "tag": "kai/superagent-api:20261103-native-desktop-v2",
+      "id": "sha256:6cc1e8f94ede73fc7d71a7d97e2f1c7f68776860d440e1828de44e4f57a09262",
+      "status": "healthy"
+    },
+    "computer-viewer": {
+      "tag": "kai/computer-viewer:20261103-native-desktop-v2",
+      "id": "sha256:fedc42e9ddd8d92be9668b0c129adba6a74794a08761a66704844f607e084bd6",
+      "status": "running"
+    }
+  }
+}

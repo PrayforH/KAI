@@ -1,6 +1,8 @@
 # Remote Computer 与 Ubuntu 24.04 验收记录
 
-当前最新增量：API／Worker followup-v1、Web followup-v3已发布并健康，/assistant HTTP 200；连续消息、SDK中断调整与具体实时状态见[continuous-followups.md](continuous-followups.md)。原生电脑Control／Viewer继续native-desktop-v2。飞书已单独整理为11.15，回读revision118。
+2026-11-04更新：历史文件显式投递、消息滚动区和自动历史加载已部署，HTML的飞书sent回执已确认；最新版本与边界见[本批报告](../2026-11-04-files-and-chat/acceptance.md)。以下保留前一批证据。
+
+此前增量：API／Worker followup-v1、Web followup-v3已发布并健康，/assistant HTTP 200；连续消息、SDK中断调整与具体实时状态见[continuous-followups.md](continuous-followups.md)。原生电脑Control／Viewer继续native-desktop-v2。飞书已单独整理为11.15，回读revision118。
 
 当前版本已部署79。用户最新要求自行手动验收；以下旧版本RFB现场证据保留，不能代替本次原生控件、消息和分页的真实网页验收。
 

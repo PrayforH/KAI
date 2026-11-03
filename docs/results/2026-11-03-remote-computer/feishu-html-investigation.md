@@ -1,5 +1,7 @@
 # 跨渠道HTML未投递：只读调查
 
+此为先前诊断；2026-11-04已实现显式历史文件投递并补发，飞书sent回执已确认。最新结果见[修复报告](../2026-11-04-files-and-chat/acceptance.md)。以下保留调查时的结论。
+
 定位文件为AI应用长期记忆接入调研-2026-11.html，artifact_1132586d20e044e2bd261f4563f05a90，37659字节。对象存储真实读取成功，SHA256与登记值完全一致，文件未丢失。
 
 原运行run_eaa0c63a66bb4426b14188b991037dad在Web助理生成并发布成果，不存在对应feishu_incoming。随后飞书消息run_698fc5c5a7434c5e88f686164f3d0ac8与run_df656a96c635414aa548436d03244386有status=sent的文字回执，但这些新运行没有自己的artifact。该HTML没有assistant_channel_files行，因此没有进入上传阶段，也没有飞书上传拒绝记录。
