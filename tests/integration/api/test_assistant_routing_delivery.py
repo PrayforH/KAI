@@ -12,7 +12,7 @@ from httpx import ASGITransport, AsyncClient
 from harness.api.app import create_memory_app
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD as MAIN
 from harness.assistant.routing import assistant_routing_overlay
-from harness.assistant.service import AssistantService
+from harness.assistant.service import AssistantService, _specialist_slug
 from harness.core.models import RunStatus
 from tests.integration.api.test_agui_history_pagination import (
     FIXTURE_MANIFEST,
@@ -23,7 +23,8 @@ from tests.unit.assistant.test_mention_message import _specialist
 
 
 @pytest.mark.asyncio
-async def test_route_reuses_pinned_bot_history_and_returns_result_only_to_origin():
+@pytest.mark.parametrize("creation", [False, True])
+async def test_route_reuses_pinned_bot_history_and_returns_result_only_to_origin(creation):
     app = create_memory_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
@@ -36,6 +37,7 @@ async def test_route_reuses_pinned_bot_history_and_returns_result_only_to_origin
                 "tenant_id": "tenant-a",
                 "user_id": "user-1",
                 "name": "天气提醒",
+                "slug": _specialist_slug("天气提醒"),
                 "description": "查询天气预报",
                 "agent_name": "archive-assistant-agent",
                 "agent_version": "different-default",
@@ -104,11 +106,18 @@ async def test_route_reuses_pinned_bot_history_and_returns_result_only_to_origin
         session = await c.sessions.get("tenant-a", active_parent.session_id)
         overlay = await assistant_routing_overlay(service, c.worker._events, active_parent, session)
         args = {"action": "dispatch", "specialist_id": bot.specialist_id, "reason": "天气职责匹配"}
-        await asyncio.gather(*(overlay.tools[0].handler(args) for _ in range(2)))
+        if creation:
+            await overlay.tools[0].handler({"action": "direct", "direct_kind": "management",
+                "reason": "用户明确创建或复用天气Bot，由它承接原话"})
+            tool_index = 1
+            args = {"name": bot.name, "description": bot.description}
+        else:
+            tool_index = 0
+        await asyncio.gather(*(overlay.tools[tool_index].handler(args) for _ in range(2)))
         recovered = await assistant_routing_overlay(
             service, c.worker._events, active_parent, session
         )
-        await recovered.tools[0].handler(args)
+        await recovered.tools[tool_index].handler(args)
         assert len(receipts) == 1
         receipt = next(iter(receipts.values()))
         child = await c.runs.get("tenant-a", receipt.run_id)

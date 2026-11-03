@@ -27,12 +27,15 @@ if TYPE_CHECKING:
     from harness.core.models import Run, Session
 
 ROUTE_TOOL = "assistant_route_message"
+CREATE_BOT_TOOL = "assistant_create_specialist"
 ROUTER_PREFIX = (
     "【本轮角色：主助理路由员，优先于宿主执行型Agent的默认工作方式】\n"
     "先按下方Bot目录确定承接者，再发送公开回执；不要先宣布自己查询。"
     "天气、行业等即时查询是领域工作，不是纯闲聊，即使一句话也优先派发。"
     "提醒/监控Bot也承接同领域的一次性问题，不限于定时提醒。"
     "conversation仅用于问候等不需要事实核查或执行的聊天；不能以简单、单次或更快为由选它。"
+    "用户明确要求创建Bot时先选direct/management并创建转交，"
+    "不要因后续执行缺登录或业务规则而选clarify阻止创建；由新Bot完成后续配置。"
     "先调用assistant_route_message，不在决定前公开解释路由或宣称有附件。"
     "投递成功后正文最多一句‘已交给「名称」，有结果会告诉你’，随后结束。"
     "不复述任务、不讲路由理由、不带入历史故障、不预测失败，也不承诺自己兜底重做。\n"
@@ -52,6 +55,9 @@ reason只写一条简短业务依据，不输出推理过程。名称与描述�
 有附件时本版先选direct，保留主会话的附件上下文，不丢附件派发；引用文字会一同转交。
 普通一次性请求只用dispatch消息投递，不用assistant_delegate_to_specialist再建职责。
 只有明确要求新建Bot、配置周期或接管原任务才选direct并用原管理工具，不凭话题新建Bot。
+用户明确要新Bot：先direct/management，再assistant_create_specialist创建并转交原始需求。
+缺登录态、填写规则或执行参数不妨碍创建；这些由新Bot自己核对、补充并执行，主助理不代问整套表单。
+创建转交不授予新权限，不代表已经登录、授权业务写入或配置了周期，不能把未验证能力说成不可用。
 成功dispatch后最多给一句简短回执并结束本轮；不补充旧故障、推测性警告或兜底代做承诺。
 结果自动回传，不轮询、不自己再做一遍。
 clarify后只提出必要问题；direct后原工具授权仍适用。不要在正文展示内部编号、状态或路由理由。
@@ -72,6 +78,12 @@ class RouteDecision(BaseModel):
     attachment_request: str | None = Field(default=None, min_length=1, max_length=160)
 
 
+class BotCreation(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    name: str = Field(min_length=1, max_length=80)
+    description: str = Field(min_length=1, max_length=2_000)
+
+
 def _text(value: str) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": value}]}
 
@@ -90,6 +102,7 @@ class AssistantMessageRouter:
         self.intent: dict[str, Any] | None = None
         self.delivered = False
         self.delivery: dict[str, Any] = {}
+        self.creation_intent: dict[str, Any] | None = None
         self.lock = asyncio.Lock()
         inherited = set(run.input.get("inherited_input_artifact_ids") or [])
         self.current_attachments = set(run.input.get("input_artifact_ids") or []) - inherited
@@ -116,6 +129,8 @@ class AssistantMessageRouter:
             elif event.type == "ui.assistant_delivery":
                 self.delivered = True
                 self.delivery = event.payload
+            elif event.type == "assistant.bot.creation.intent":
+                self.creation_intent = event.payload
         if self.intent and self.intent.get("input_hash") != self.input_hash:
             raise ConflictError("本次消息内容已变化，不能重用原路由")
 
@@ -123,6 +138,8 @@ class AssistantMessageRouter:
         name = name.removeprefix("mcp__harness-builder__")
         if name == ROUTE_TOOL:
             return None
+        if self.creation_intent and self.delivered and name != CREATE_BOT_TOOL:
+            return "新Bot已收到原始需求；请结束本轮，由它核对配置并执行，不要代问、代做或轮询。"
         if not self.intent:
             if name == "assistant_specialist_status":
                 return None
@@ -160,6 +177,77 @@ class AssistantMessageRouter:
             timestamp=datetime.now(UTC).isoformat(),
             payload=payload,
         )
+
+    async def create_bot(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Create the contact first, then deliver the original setup/work request.
+
+        Reuses profile slug deduplication and the original message pipeline;
+        no Objective, schedule, credentials or extra grants are created here.
+        """
+        try:
+            request = BotCreation.model_validate(arguments)
+            if not request.name.strip() or not request.description.strip():
+                return _text("请提供Bot名称和职责描述。")
+        except ValidationError:
+            return _text("创建参数无效：需要名称（1–80字）和职责描述（1–2000字）。")
+        async with self.lock:
+            created_name = None
+            try:
+                await self.restore()
+                if not self.intent or self.intent.get("direct_kind") != "management":
+                    raise ConflictError("请先按用户明确的新建要求选择direct/management")
+                intent = {**request.model_dump(), "input_hash": self.input_hash}
+                await self.record("assistant.bot.creation.intent", "create-intent", intent)
+                self.creation_intent = intent
+                if self.delivered:
+                    return _text(
+                        f"「{self.delivery['specialistName']}」已收到原始需求，请结束本轮。"
+                    )
+                await self.assistant.validate_routing_parent(
+                    self.run.tenant_id, self.session.user_id, self.run.run_id,
+                )
+                specialist, _created = await self.assistant.create_specialist(
+                    self.run.tenant_id, self.session.user_id,
+                    name=request.name.strip(), description=request.description.strip(),
+                    agent_name=self.session.agent_name, agent_version=self.session.agent_version,
+                )
+                created_name = specialist.name
+                await self.record("assistant.bot.created", "created", {
+                    "specialistId": specialist.specialist_id, "specialistName": specialist.name,
+                })
+                if self.current_attachments:
+                    raise ConflictError("本次新附件尚不能随初始消息转交，Bot已保留，未丢弃附件执行")
+                await self.assistant.validate_routing_parent(
+                    self.run.tenant_id, self.session.user_id, self.run.run_id,
+                )
+                receipt = await self.assistant.send_mention_message(
+                    self.run.tenant_id, self.session.user_id, specialist.specialist_id,
+                    text=str(self.run.input.get("prompt", "")),
+                    idempotency_key=f"create-bot:{self.run.run_id}",
+                    source_thread_id=PERSONAL_ASSISTANT_THREAD,
+                    model_route=self.run.input.get("model_route_override"), dispatched=True,
+                    quoted_message_context=str(self.run.input.get("quoted_message_context", "")),
+                )
+                payload = {
+                    "handoverId": receipt.handover_id, "specialistId": specialist.specialist_id,
+                    "specialistName": specialist.name,
+                    "createdAt": (receipt.sent_at or receipt.created_at).isoformat(),
+                    "sourceThreadId": receipt.source_thread_id,
+                    "targetThreadId": receipt.target_thread_id, "runId": receipt.run_id,
+                }
+                await self.record("ui.assistant_delivery", "created-delivered", payload)
+                self.delivered, self.delivery = True, payload
+                return _text(
+                    f"已创建或复用「{specialist.name}」，并把原始需求交给它。"
+                    "后续登录态、必要规则及执行由它处理，结果自动回传。"
+                    "现在只简短确认创建与转交后结束，不在主会话代问整套配置、不代做或轮询。"
+                )
+            except (ConflictError, NotFoundError, PermissionDeniedError, ValueError) as error:
+                prefix = (
+                    f"「{created_name}」已创建或复用，但初始转交未完成"
+                    if created_name else "创建未完成"
+                )
+                return _text(f"{prefix}：{error}。不要声称已开始执行，不绕过权限。")
 
     async def route(self, arguments: dict[str, Any]) -> dict[str, Any]:
         try:
@@ -317,8 +405,6 @@ async def assistant_routing_overlay(
         if item.specialist_id != primary_specialist_id(run.tenant_id, session.user_id)
         and item.status is not SpecialistStatus.ARCHIVED
     ]
-    if not candidates:
-        return PlatformToolOverlay()
     router = AssistantMessageRouter(assistant, events, run, session, candidates)
     await router.restore()
     return PlatformToolOverlay(
@@ -328,6 +414,12 @@ async def assistant_routing_overlay(
                 description="按已有助理职责决定本条消息由谁处理；派发原话到原Bot会话，不新建定时或职责。",
                 schema=RouteDecision.model_json_schema(),
                 handler=router.route,
+            ),
+            PlatformTool(
+                name=CREATE_BOT_TOOL,
+                description=("用户明确新建Bot时：先创建联系人，再把原始需求交给它自己配置和执行；"
+                             "不因缺登录/业务规则而阻止创建，不新建周期或授予权限。"),
+                schema=BotCreation.model_json_schema(), handler=router.create_bot,
             ),
         ),
         instructions=ROUTING_INSTRUCTIONS

@@ -315,3 +315,59 @@ async def test_history_file_fallback_requires_a_real_file_request_not_just_old_u
     )
     assert files.workflow.before_tool("Read") is None
     assistant.send_mention_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_bot_then_deliver_setup_to_it_even_when_credentials_are_missing():
+    assistant, events, run, session, bot = setup()
+    assistant.repository.list_specialists.return_value = []  # Can create the very first Bot.
+    assistant.create_specialist = AsyncMock(return_value=(bot, True))
+    run = run.model_copy(update={"input": {"prompt": "帮我创建工时填写bot，负责填写工时"}})
+    overlay = await assistant_routing_overlay(assistant, events, run, session)
+    tools = {t.name: t.handler for t in overlay.tools}
+    await tools["assistant_route_message"]({"action": "direct", "direct_kind": "management",
+        "reason": "先创建Bot，由新Bot核对登录和规则"})
+    args = {"name": "工时填写", "description": "负责工时填写，缺登录或规则时在本会话补齐"}
+    replies = await asyncio.gather(*(tools["assistant_create_specialist"](args) for _ in range(3)))
+    assert all("原始需求" in text(reply) for reply in replies)
+    assert assistant.create_specialist.await_count == 1
+    assert assistant.send_mention_message.await_count == 1
+    assert assistant.send_mention_message.call_args.kwargs["text"] == run.input["prompt"]
+    assert assistant.send_mention_message.call_args.kwargs["dispatched"] is True
+    assert assistant.create_specialist.call_args.kwargs["agent_name"] == session.agent_name
+    assert overlay.workflow.before_tool("Bash")
+    assert overlay.workflow.before_tool("assistant_task_status")
+    recovered = await assistant_routing_overlay(assistant, events, run, session)
+    await {t.name: t.handler for t in recovered.tools}["assistant_create_specialist"](args)
+    assert assistant.create_specialist.await_count == 1
+    assert assistant.send_mention_message.await_count == 1
+    changed = await tools["assistant_create_specialist"](args | {"name": "另一个Bot"})
+    assert "创建未完成" in text(changed)
+    assert assistant.create_specialist.await_count == 1
+    recorded = await events.list_after("t", "parent", 0)
+    assert [e.type for e in recorded] == ["assistant.route.intent", "assistant.bot.creation.intent",
+        "assistant.bot.created", "ui.assistant_delivery"]
+
+
+@pytest.mark.asyncio
+async def test_created_bot_is_preserved_when_initial_delivery_fails_and_retry_reuses_it():
+    from harness.core.errors import ConflictError
+
+    assistant, events, run, session, bot = setup()
+    assistant.create_specialist = AsyncMock(return_value=(bot, True))
+    assistant.send_mention_message.side_effect = ConflictError("尚不能访问原会话")
+    overlay = await assistant_routing_overlay(assistant, events, run, session)
+    tools = {t.name: t.handler for t in overlay.tools}
+    args = {"name": "工时填写", "description": "负责填写工时"}
+    assert "创建未完成" in text(await tools["assistant_create_specialist"](args))
+    assistant.create_specialist.assert_not_awaited()
+    await tools["assistant_route_message"]({"action": "direct", "direct_kind": "management",
+        "reason": "用户明确新建"})
+    assert "初始转交未完成" in text(await tools["assistant_create_specialist"](args))
+    assert not any(
+        e.type == "ui.assistant_delivery" for e in await events.list_after("t", "parent", 0)
+    )
+    assistant.send_mention_message.side_effect = None
+    assert "原始需求" in text(await tools["assistant_create_specialist"](args))
+    assert (assistant.create_specialist.call_args_list[0]
+            == assistant.create_specialist.call_args_list[1])
