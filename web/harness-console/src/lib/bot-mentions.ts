@@ -45,6 +45,41 @@ export function useMentionableAssistants(enabled: boolean): MentionedAssistant[]
   return items;
 }
 
+function mentionTokenPattern(name: string): RegExp {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // 名字后面不能再跟文字或数字：@研究Bot 不该命中 @研究Bot2。
+  return new RegExp(`@${escaped}(?![\\p{L}\\p{N}_])`, "gu");
+}
+
+/**
+ * 从输入文本里解析被 @ 的助理：和普通聊天一样，@ 名字就写在文本行里，可以有多个。
+ * 删掉文本里的 @ 名字，提及就跟着消失；不单独维护一份选中状态。
+ */
+export function parseMentions(
+  text: string,
+  assistants: readonly MentionedAssistant[],
+): MentionedAssistant[] {
+  if (!text.includes("@") || !assistants.length) return [];
+  const found: MentionedAssistant[] = [];
+  // 长名字先匹配，避免「研究Bot2」被误认成「研究Bot」。
+  for (const bot of [...assistants].sort((a, b) => b.name.length - a.name.length)) {
+    if (found.some((item) => item.specialistId === bot.specialistId)) continue;
+    if (!mentionTokenPattern(bot.name).test(text)) continue;
+    found.push(bot);
+  }
+  return found;
+}
+
+/** 把已送达的 @ 名字从文本里拿掉（局部失败时保留没送出去的那些，便于重试）。 */
+export function removeMentionTokens(
+  text: string,
+  bots: readonly MentionedAssistant[],
+): string {
+  let next = text;
+  for (const bot of bots) next = next.replace(mentionTokenPattern(bot.name), "");
+  return next.replace(/ {2,}/g, " ").trim();
+}
+
 /** 幂等键：同一把钥匙重复提交只会留下一条回执。 */
 export function mentionIdempotencyKey(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();

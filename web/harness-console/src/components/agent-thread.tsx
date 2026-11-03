@@ -62,13 +62,14 @@ import { useAssistantBot, useAssistantSurface } from "./assistant-bot-context";
 import { AssistantProgress } from "./assistant-progress";
 import { shouldShowChatActivityRow } from "../lib/assistant-progress";
 import { HandoverInlineRows, shouldShowHandoverRows } from "./handover-row";
-import { AssistantMentionReceipts, MentionChips } from "./assistant-mention-bar";
+import { AssistantMentionReceipts } from "./assistant-mention-bar";
 import {
   MENTION_PREFIX,
   deliverMentions,
   mentionIdempotencyKey,
+  parseMentions,
+  removeMentionTokens,
   useMentionableAssistants,
-  type MentionedAssistant,
 } from "../lib/bot-mentions";
 import { handoverStore } from "../lib/handover-store";
 import { submitThreadAnswer } from "../lib/thread-answer";
@@ -456,7 +457,12 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const knowledge = useTaskKnowledge();
   // @ 候选只出现在助理面：普通任务与项目任务保持原来的输入行为。
   const mentionableAssistants = useMentionableAssistants(assistantSurface);
-  const [mentions, setMentions] = useState<MentionedAssistant[]>([]);
+  // 和普通聊天一样：@ 名字直接写在文本行里，可以有多个；
+  // 提及从输入文本里解析出来，删掉文字提及就跟着消失。
+  const mentions = useMemo(
+    () => parseMentions(composerText, mentionableAssistants),
+    [composerText, mentionableAssistants],
+  );
   const [wikiSlug, setWikiSlug] = useState<string | null>(null);
   useEffect(() => {
     const onOpenWiki = (event: Event) => {
@@ -530,18 +536,15 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     const trigger = composerTrigger(composerText, caret);
     if (!trigger) return;
     if (option.id.startsWith("/")) { command(option.id); return; }
-    // `@` 先选助理：按稳定 ID 记住选择，只是选中，不提交。
+    // `@` 先选助理：名字直接留在文本行里（和普通聊天一样），只是插入，不提交。
     if (trigger.symbol === "@" && option.id.startsWith(MENTION_PREFIX)) {
       const specialistId = option.id.slice(MENTION_PREFIX.length);
       const bot = mentionableAssistants.find((item) => item.specialistId === specialistId);
       if (!bot || busy) return;
-      setMentions((current) =>
-        current.some((item) => item.specialistId === specialistId) ? current : [...current, bot],
-      );
-      const next = composerText.slice(0, trigger.start) + composerText.slice(trigger.end);
+      const next = composerText.slice(0, trigger.start) + `@${bot.name} ` + composerText.slice(trigger.end);
       aui.composer().setText(next);
-      setDismissedText(null);
-      setCaret(trigger.start);
+      setDismissedText(next);
+      setCaret(trigger.start + bot.name.length + 2);
       inputRef.current?.focus();
       return;
     }
@@ -719,23 +722,22 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       });
     });
     if (failed.length) {
-      setMentions((current) => current.filter((item) => failed.some((entry) => entry.specialistId === item.specialistId)));
+      // 已送达的 @ 名字从文本里拿掉，失败的留在行里，改完可以再发一次。
+      const deliveredBots = mentions.filter((item) => delivered.includes(item.specialistId));
+      aui.composer().setText(removeMentionTokens(composerText, deliveredBots));
       setInputError(
         failed.map((entry) => `${entry.reason}`).join("\n") +
         (delivered.length ? `\n已送达 ${delivered.length} 个助理。` : ""),
       );
+      composerSendLock.current = false;
+      return;
     }
-    if (!failed.length) {
-      mentionKeyRef.current = null;
-      setMentions([]);
-      aui.composer().setText("");
-      // 消息已经投给被 @ 的助理：当前会话里的引用就此作废，
-      // 不能在下一条消息里又挂上那条被引用的内容。
-      replyScope?.cancelReply();
-      onSubmitted?.();
-    } else if (delivered.length) {
-      aui.composer().setText("");
-    }
+    mentionKeyRef.current = null;
+    aui.composer().setText("");
+    // 消息已经投给被 @ 的助理：当前会话里的引用就此作废，
+    // 不能在下一条消息里又挂上那条被引用的内容。
+    replyScope?.cancelReply();
+    onSubmitted?.();
     composerSendLock.current = false;
   }
 
@@ -958,13 +960,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       {inputError && <p className="composer-input-error" role="alert">{inputError}</p>}
       {!conversationScope?.compactComposer && <TaskKnowledgeSelection disabled={busy || Boolean(conversationScope)} />}
       <ReplyComposerBar />
-      {assistantSurface && <>
-        <MentionChips
-          mentions={mentions}
-          onRemove={(specialistId) => setMentions((current) => current.filter((item) => item.specialistId !== specialistId))}
-        />
-        <AssistantMentionReceipts />
-      </>}
+      {assistantSurface && <AssistantMentionReceipts />}
       <Composer.Root onSubmitCapture={(event: FormEvent) => { event.preventDefault(); event.stopPropagation(); if (!composingRef.current) submitComposer(); }}>
         <ComposerAssist options={options} index={suggestionIndex} onChoose={chooseSuggestion} />
         {wikiSlug ? (

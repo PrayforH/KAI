@@ -7,7 +7,7 @@ vi.mock("next/link", () => ({
   default: ({ children, ...props }: { children?: unknown }) => <a {...props}>{children as never}</a>,
 }));
 
-import { AssistantMentionReceipts, MentionChips } from "../src/components/assistant-mention-bar";
+import { AssistantMentionReceipts } from "../src/components/assistant-mention-bar";
 import { handoverStore } from "../src/lib/handover-store";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -27,28 +27,7 @@ afterEach(async () => {
   host.remove();
 });
 
-describe("mention chips and receipts", () => {
-  it("shows the selected assistants and removes one on demand", async () => {
-    const removed: string[] = [];
-    await act(async () => {
-      root!.render(
-        <MentionChips
-          mentions={[
-            { specialistId: "specialist_a", name: "资料 Bot" },
-            { specialistId: "specialist_b", name: "研究 Bot" },
-          ]}
-          onRemove={(id) => removed.push(id)}
-        />,
-      );
-    });
-    expect(host.textContent).toContain("@资料 Bot");
-    expect(host.textContent).toContain("@研究 Bot");
-    await act(async () => {
-      host.querySelector<HTMLButtonElement>('button[aria-label="移除 @研究 Bot"]')!.click();
-    });
-    expect(removed).toEqual(["specialist_b"]);
-  });
-
+describe("mention receipts", () => {
   it("renders a durable receipt line for a sent mention", async () => {
     handoverStore.ingestMention({
       handoverId: "handover_mention_1",
