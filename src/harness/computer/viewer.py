@@ -383,7 +383,7 @@ def create_viewer_app(
 
     app.add_api_route("/computer/status", status, methods=["GET"])
 
-    async def desktop_state(token: str | None) -> dict[str, str | int]:
+    async def desktop_state(token: str | None, *, refresh: bool = True) -> dict[str, str | int]:
         """The shared desktop lease decides who may type or click."""
 
         observe: dict[str, str | int] = {"state": "observe", "epoch": 0}
@@ -399,7 +399,7 @@ def create_viewer_app(
                 return observe
             value: dict[str, Any] = response.json()
             state = str(value.get("state", "observe"))
-            if state == "human":
+            if state == "human" and refresh:
                 # An open viewer is proof the owner is present; refresh the
                 # takeover TTL so an active session never lapses mid-work.
                 with contextlib.suppress(httpx.HTTPError, ValueError):
@@ -486,6 +486,14 @@ def create_viewer_app(
                         ):
                             if kind == RFB_DISCARD:
                                 continue
+                            if kind in {RFB_KEYBOARD, RFB_POINTER, RFB_CUT}:
+                                # Observation polls are cached, but an input must
+                                # prove its current epoch before reaching a PC.
+                                # Returning or switching elsewhere invalidates a
+                                # previously granted socket immediately.
+                                latest = await desktop_state(token, refresh=False)
+                                if latest["state"] != "human" or latest["epoch"] != granted_epoch:
+                                    raise ValueError("desktop input ownership changed")
                             if kind == RFB_KEYBOARD:
                                 input_frames["keyboard"] += 1
                             elif kind == RFB_POINTER:

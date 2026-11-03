@@ -2,6 +2,7 @@
 
 import asyncio
 import sys
+import time
 from pathlib import Path
 
 import httpx
@@ -24,7 +25,13 @@ def selected_viewer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         if request.url.path.endswith("/targets"):
             return httpx.Response(200, json={"active_target": selected["target"]})
         if request.url.path.endswith("/desktop"):
-            return httpx.Response(200, json={"state": "observe", "epoch": 1})
+            return httpx.Response(
+                200,
+                json={
+                    "state": selected.get("control", "observe"),
+                    "epoch": selected.get("epoch", 1),
+                },
+            )
         return httpx.Response(
             200, json={"user": {"user_id": "owner"}, "membership": {"tenant_id": "tenant"}}
         )
@@ -36,7 +43,8 @@ def selected_viewer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
             sys.executable,
             "-u",
             "-c",
-            "import os;os.write(1,b'RFB 003.008\\n');os.read(0,1)",
+            "import os\nos.write(1,b'RFB 003.008\\n')\n"
+            "while True:\n data=os.read(0,4096)\n if not data:break\n os.write(1,data)",
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
         )
@@ -91,3 +99,21 @@ def test_unserved_selection_never_opens_an_ssh_connection(selected_viewer):
         with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}):
             pytest.fail("unserved desktop was accepted")
     assert opened == []
+
+
+def test_old_human_epoch_cannot_send_input_while_observation_poll_is_waiting(
+    selected_viewer, monkeypatch
+):
+    client, selected, _ = selected_viewer
+    selected["control"] = "human"
+    with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}) as socket:
+        assert socket.receive_bytes() == b"RFB 003.008\n"
+        time.sleep(0.05)
+        monkeypatch.setattr(viewer, "AUTH_CHECK_SECONDS", 100)
+        time.sleep(0.05)
+        handshake = b"RFB 003.008\n" + b"\x01\x01"
+        socket.send_bytes(handshake)
+        assert socket.receive_bytes() == handshake
+        selected["epoch"] = 2
+        socket.send_bytes(b"\x04\x01\x00\x00\x00\x00\x00\x41")
+        assert socket.receive()["type"] == "websocket.close"
