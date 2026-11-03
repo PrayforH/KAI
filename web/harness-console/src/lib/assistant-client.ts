@@ -67,7 +67,9 @@ export async function assistantRequest<T>(path: string, method = "GET", body?: u
       // 服务端的冲突理由（缺项、无职责、版本过期…）比通用文案更有用，优先展示。
       const value = await response.json().catch(() => null);
       const message = value?.detail?.message ?? value?.error?.message ?? value?.message ?? (typeof value?.detail === "string" ? value.detail : undefined);
-      throw new Error(typeof message === "string" && message ? message : "操作冲突，请刷新后重试。");
+      const publicMessage = typeof message === "string" && /^AG-UI thread .* is already bound to /u.test(message)
+        ? "这个助理的会话已更新，请重新进入后再发送。" : message;
+      throw new Error(typeof publicMessage === "string" && publicMessage ? publicMessage : "操作冲突，请刷新后重试。");
     }
     if (response.status === 422) {
       const value = await response.json().catch(() => null);

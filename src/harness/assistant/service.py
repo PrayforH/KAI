@@ -42,6 +42,7 @@ from harness.assistant.models import (
     ObjectiveSchedule,
     ObjectiveStatus,
     Specialist,
+    SpecialistConversation,
     SpecialistHandover,
     SpecialistStatus,
 )
@@ -55,6 +56,7 @@ from harness.core.events import RunEvent
 from harness.core.models import Run, RunStatus
 from harness.core.ports import EventRepository
 from harness.projects.service import ProjectService
+from harness.sharing.service import TeamSpaceService
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +73,7 @@ class AssistantService:
         runs: RunService,
         events: EventRepository,
         quotas: Any = None,
+        team_spaces: TeamSpaceService | None = None,
         unviewed_pause_hours: int = 24,
     ) -> None:
         self.repository = repository
@@ -78,6 +81,7 @@ class AssistantService:
         self._agui, self._runs, self._events = agui, runs, events
         # 计量：只有配置了配额服务才可能拿到真实用量；None 时如实标记未知。
         self._quotas = quotas
+        self._team_spaces = team_spaces
         # 例行程序闸门：距上次打开 Bot 会话超过该小时数则跳过调度（可观察暂停）。
         self._unviewed_pause_hours = unviewed_pause_hours
 
@@ -91,6 +95,7 @@ class AssistantService:
             runs=self._runs,
             events=self._events,
             quotas=self._quotas,
+            team_spaces=self._team_spaces,
             unviewed_pause_hours=self._unviewed_pause_hours,
         )
 
@@ -506,7 +511,18 @@ class AssistantService:
                 thread_id=source_thread_id,
             )
         specialist = await self.repository.get_specialist(tenant_id, user_id, specialist_id)
-        target = await self.specialist_thread(tenant_id, user_id, specialist)
+        target = await self.specialist_conversation(tenant_id, user_id, specialist)
+        connection_mode = "service_owned"
+        if target.space_id is not None:
+            if self._team_spaces is None:
+                raise PermissionDeniedError("暂时无法核实共享助理的使用权限")
+            release = await self._team_spaces.require_agent_access(
+                tenant_id, user_id, target.space_id, target.agent_owner_user_id,
+                target.agent_name, target.agent_version,
+            )
+            connection_mode = release.connection_mode.value
+        elif target.agent_owner_user_id != user_id:
+            raise PermissionDeniedError("该助理的共享授权不可用")
         receipt = await self.record_mention_handover(
             tenant_id,
             user_id,
@@ -514,18 +530,22 @@ class AssistantService:
             text=text,
             idempotency_key=idempotency_key,
             source_thread_id=source_thread_id,
-            target_thread_id=target,
+            target_thread_id=target.thread_id,
         )
         if receipt.run_id:
             return receipt
         creation = await self._agui.create_run_with_result(
             tenant_id=tenant_id,
             user_id=user_id,
-            agent_name=specialist.agent_name,
-            agent_version=specialist.agent_version,
-            connection_mode="service_owned",
+            agent_name=target.agent_name,
+            agent_version=target.agent_version,
+            agent_owner_user_id=target.agent_owner_user_id,
+            space_id=target.space_id,
+            connection_mode=connection_mode,
+            append_to_history=True,
+            deduplicate_active_input=False,
             request=RunAgentInput(
-                thread_id=target,
+                thread_id=target.thread_id,
                 run_id=f"mention-{receipt.handover_id}",
                 state={},
                 messages=[UserMessage(id=receipt.handover_id, content=text)],
@@ -620,6 +640,30 @@ class AssistantService:
             tenant_id, user_id, objective_id=primary.objective_id
         )
         return bindings[0].thread_id if bindings else f"assistant_{primary.objective_id}"
+
+    async def specialist_conversation(
+        self, tenant_id: str, user_id: str, specialist: Specialist,
+        *, duties: list[Objective] | None = None,
+    ) -> SpecialistConversation:
+        """Resume the owned thread's pinned Agent; defaults apply only before its first run.
+
+        Legacy duties may use a different Agent than the later Bot profile. Do
+        not rebind their history or relax AG-UI's identity/ownership checks.
+        """
+        thread = await self.specialist_thread(tenant_id, user_id, specialist, duties=duties)
+        try:
+            binding = await self._agui.get_binding(
+                tenant_id=tenant_id, user_id=user_id, thread_id=thread,
+            )
+        except NotFoundError:
+            return SpecialistConversation(
+                threadId=thread, agentName=specialist.agent_name,
+                agentVersion=specialist.agent_version, agentOwnerUserId=user_id,
+            )
+        return SpecialistConversation(
+            threadId=thread, agentName=binding.agent_name, agentVersion=binding.agent_version,
+            agentOwnerUserId=binding.agent_owner_user_id, spaceId=binding.space_id,
+        )
 
     async def resolve_targets(self, tenant_id: str, user_id: str, query: str, *, limit: int = 5):
         """Resolve owned contacts and tasks without manufacturing a replacement thread."""

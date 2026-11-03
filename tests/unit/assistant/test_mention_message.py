@@ -47,7 +47,13 @@ def _service(
     repo.handovers.return_value = handovers or []
     repo.record_handover.side_effect = lambda value: value
     auth.profile.return_value = (SimpleNamespace(disabled=False), SimpleNamespace(role="member"))
-    agui.get_binding.return_value = SimpleNamespace(session_id="session")
+    agui.get_binding.return_value = SimpleNamespace(
+        session_id="session",
+        agent_name="agent",
+        agent_version="1.0",
+        agent_owner_user_id="u",
+        space_id=None,
+    )
     service = AssistantService(
         repo, agents=agents, auth=auth, projects=projects, agui=agui, runs=runs, events=events
     )
@@ -216,3 +222,83 @@ async def test_completed_reply_is_brief_and_links_back_to_named_bot():
     repo.mention_reply_runs.assert_awaited_once_with(
         "t", "u", "main", before=None, limit=100, message_id=None
     )
+
+
+@pytest.mark.asyncio
+async def test_legacy_conversation_uses_pinned_identity_not_bot_defaults():
+    service, _ = _service(_specialist())
+    service.specialist_thread = AsyncMock(return_value="assistant_legacy")
+    service._agui.get_binding.return_value = SimpleNamespace(
+        agent_name="lead-agent",
+        agent_version="pinned-version",
+        agent_owner_user_id="shared-owner",
+        space_id="team-space",
+    )
+    target = await service.specialist_conversation("t", "u", _specialist())
+    assert target.thread_id == "assistant_legacy"
+    assert (target.agent_name, target.agent_version) == ("lead-agent", "pinned-version")
+    assert (target.agent_owner_user_id, target.space_id) == ("shared-owner", "team-space")
+    service._agui.get_binding.assert_awaited_once_with(
+        tenant_id="t",
+        user_id="u",
+        thread_id="assistant_legacy",
+    )
+
+
+@pytest.mark.asyncio
+async def test_new_conversation_uses_defaults_without_creating_a_session_on_read():
+    service, repo = _service(_specialist())
+    service.specialist_thread = AsyncMock(return_value="assistant_new")
+    service._agui.get_binding.side_effect = NotFoundError("not yet bound")
+    target = await service.specialist_conversation("t", "u", _specialist())
+    assert target.agent_name == "agent" and target.agent_version == "1.0"
+    assert target.agent_owner_user_id == "u" and target.space_id is None
+    service._agui.create_run_with_result.assert_not_awaited()
+    repo.record_handover.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_conversation_lookup_does_not_hide_permission_errors():
+    from harness.core.errors import PermissionDeniedError
+
+    service, _ = _service(_specialist())
+    service.specialist_thread = AsyncMock(return_value="assistant_denied")
+    service._agui.get_binding.side_effect = PermissionDeniedError("denied")
+    with pytest.raises(PermissionDeniedError):
+        await service.specialist_conversation("t", "u", _specialist())
+
+
+@pytest.mark.asyncio
+async def test_shared_legacy_conversation_rechecks_access_before_sending():
+    from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD as MAIN
+    from harness.core.errors import PermissionDeniedError
+
+    service, repo = _service(_specialist())
+    service.specialist_thread = AsyncMock(return_value="assistant_shared")
+    service._agui.get_binding.return_value = SimpleNamespace(
+        agent_name="lead-agent",
+        agent_version="pinned",
+        agent_owner_user_id="owner",
+        space_id="team",
+    )
+    service._team_spaces = AsyncMock()
+    service._team_spaces.require_agent_access.side_effect = PermissionDeniedError("grant revoked")
+    with pytest.raises(PermissionDeniedError):
+        await service.send_mention_message(
+            "t",
+            "u",
+            "specialist_a",
+            text="继续",
+            idempotency_key="shared-retry-key",
+            source_thread_id=MAIN,
+        )
+    service._team_spaces.require_agent_access.assert_awaited_once_with(
+        "t",
+        "u",
+        "team",
+        "owner",
+        "lead-agent",
+        "pinned",
+    )
+    service._agui.create_run_with_result.assert_not_awaited()
+    repo.record_handover.assert_not_awaited()

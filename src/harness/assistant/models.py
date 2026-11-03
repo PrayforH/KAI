@@ -332,6 +332,16 @@ class HandoverStatus(StrEnum):
     FAILED = "failed"
 
 
+class SpecialistConversation(StudioModel):
+    """Owned conversation coordinates, separate from a Bot's default configuration."""
+
+    thread_id: str = Field(alias="threadId")
+    agent_name: str = Field(alias="agentName")
+    agent_version: str = Field(alias="agentVersion")
+    agent_owner_user_id: str = Field(alias="agentOwnerUserId")
+    space_id: str | None = Field(default=None, alias="spaceId")
+
+
 class SpecialistHandover(StudioModel):
     handover_id: str = Field(alias="handoverId")
     tenant_id: str = Field(alias="tenantId")

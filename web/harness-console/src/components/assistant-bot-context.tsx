@@ -9,6 +9,8 @@ export type AssistantBot = {
   description: string;
   agentName?: string;
   agentVersion?: string;
+  agentOwnerUserId?: string;
+  spaceId?: string | null;
   status: string;
   threadId: string | null;
   objectiveId: string | null;

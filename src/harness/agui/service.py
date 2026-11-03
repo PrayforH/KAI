@@ -383,6 +383,7 @@ class AguiRunService:
         project_id: str | None = None,
         quoted_message_context: str = "",
         deduplicate_active_input: bool = True,
+        append_to_history: bool = False,
     ) -> AguiRunCreation:
         prompt, input_artifact_ids = _latest_user_input(request)
         conversation_prompts = _user_prompts(request)
@@ -422,9 +423,12 @@ class AguiRunService:
                 prefix = branch_snapshot.user_prompts()
                 if prefix and conversation_prompts[: len(prefix)] == prefix:
                     conversation_prompts = conversation_prompts[len(prefix) :]
-            conversation_prompts = await self._restore_history_prefix(
-                tenant_id, binding, request, conversation_prompts
-            )
+            if append_to_history:
+                conversation_prompts = await self._append_history_prompt(tenant_id, binding, prompt)
+            else:
+                conversation_prompts = await self._restore_history_prefix(
+                    tenant_id, binding, request, conversation_prompts
+                )
             captured_skills = []
             if project_context is not None and project_context.skill_references:
                 if self._project_skill_snapshots is None:
@@ -600,6 +604,26 @@ class AguiRunService:
             reused=not creation.created,
             deduplicated=creation.deduplicated,
         )
+
+    async def _append_history_prompt(
+        self, tenant_id: str, binding: AguiThreadBinding, prompt: str,
+    ) -> list[str]:
+        """Server-delivered Bot messages append rather than edit the visible branch."""
+        runs = await self._run_service.list_for_sessions(
+            tenant_id, list(binding.session_ids), limit=200,
+        )
+        if not runs:
+            return [prompt]
+        latest = max(runs, key=lambda run: (run.created_at, run.run_id))
+        stored = latest.input.get("conversation_prompts")
+        if (isinstance(stored, list) and stored
+                and all(isinstance(item, str) for item in stored)
+                and stored[-1] == latest.input.get("prompt")):
+            return [*stored, prompt]
+        ordered = sorted(runs, key=lambda run: (run.created_at, run.run_id))
+        prefix = [str(run.input["prompt"]) for run in ordered
+                  if isinstance(run.input.get("prompt"), str) and run.input["prompt"].strip()]
+        return [*prefix, prompt]
 
     async def _restore_history_prefix(
         self,

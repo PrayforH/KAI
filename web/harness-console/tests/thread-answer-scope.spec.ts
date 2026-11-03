@@ -27,6 +27,15 @@ describe("投递给助理线程的消息", () => {
     expect(body?.forwardedProps).toEqual({
       conversationSurface: "assistant",
       assistantScope: true,
+      appendToHistory: true,
     });
   });
+});
+
+it("keeps the original shared owner and space when answering a Bot question", async () => {
+  await submitThreadAnswer({ threadId: "assistant_legacy", agentName: "lead-agent",
+    agentVersion: "pinned", agentOwnerUserId: "shared-owner", spaceId: "team-space", text: "继续" });
+  const url = String(vi.mocked(fetch).mock.calls[0][0]);
+  expect(url).toContain("agent_owner_user_id=shared-owner");
+  expect(url).toContain("space_id=team-space");
 });

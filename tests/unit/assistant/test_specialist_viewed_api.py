@@ -9,7 +9,7 @@ import pytest
 
 from harness.api.dependencies import Identity
 from harness.assistant import api as assistant_api
-from harness.assistant.models import Specialist, SpecialistStatus
+from harness.assistant.models import Specialist, SpecialistConversation, SpecialistStatus
 from harness.core.errors import NotFoundError
 
 NOW = datetime(2026, 10, 31, 12, 0, tzinfo=UTC)
@@ -46,9 +46,7 @@ class _Repo:
     def __init__(self, specialist: Specialist) -> None:
         self.specialist = specialist
 
-    async def get_specialist(
-        self, tenant_id: str, user_id: str, specialist_id: str
-    ) -> Specialist:
+    async def get_specialist(self, tenant_id: str, user_id: str, specialist_id: str) -> Specialist:
         return self.specialist
 
     async def list(self, tenant_id: str, user_id: str) -> list[Any]:
@@ -68,10 +66,20 @@ class _Service:
         self.found = found
         self.touches = 0
 
-    async def specialist_thread(
-        self, tenant_id: str, user_id: str, specialist: Specialist, *, duties: list[Any],
-    ) -> str:
-        return f"assistant_{specialist.specialist_id}"
+    async def specialist_conversation(
+        self,
+        tenant_id: str,
+        user_id: str,
+        specialist: Specialist,
+        *,
+        duties: list[Any],
+    ) -> SpecialistConversation:
+        return SpecialistConversation(
+            threadId=f"assistant_{specialist.specialist_id}",
+            agentName=specialist.agent_name,
+            agentVersion=specialist.agent_version,
+            agentOwnerUserId=user_id,
+        )
 
     async def touch_specialist_viewed(
         self, tenant_id: str, user_id: str, specialist_id: str

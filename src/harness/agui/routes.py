@@ -644,6 +644,8 @@ async def run_agui_agent(
         connection_mode=connection_mode,
         project_id=project_id,
         quoted_message_context=quoted_context,
+        append_to_history=(props.get("appendToHistory") is True
+                           and props.get("conversationSurface") == "assistant"),
     )
     run = creation.run
     worker_task = (

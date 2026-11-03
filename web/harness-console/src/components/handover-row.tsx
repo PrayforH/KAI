@@ -194,6 +194,8 @@ function HandoverAskCard({
     threadId: string;
     agentName: string;
     agentVersion: string;
+    agentOwnerUserId?: string;
+    spaceId?: string | null;
   } | null>(null);
 
   useEffect(() => {
@@ -203,12 +205,18 @@ function HandoverAskCard({
         const detail = await assistantRequest<{
           specialist: Specialist;
           threadId: string | null;
+          agentName: string;
+          agentVersion: string;
+          agentOwnerUserId?: string;
+          spaceId?: string | null;
         }>(`specialists/${encodeURIComponent(specialistId)}`);
         if (!alive || !detail.threadId) return;
         setTarget({
           threadId: detail.threadId,
-          agentName: detail.specialist.agentName,
-          agentVersion: detail.specialist.agentVersion,
+          agentName: detail.agentName,
+          agentVersion: detail.agentVersion,
+          agentOwnerUserId: detail.agentOwnerUserId,
+          spaceId: detail.spaceId,
         });
         const response = await fetch(
           `/api/agui/threads/${encodeURIComponent(detail.threadId)}/history?limit=4`,

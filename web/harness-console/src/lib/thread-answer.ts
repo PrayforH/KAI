@@ -56,6 +56,8 @@ export async function submitThreadAnswer(input: {
   threadId: string;
   agentName: string;
   agentVersion: string;
+  agentOwnerUserId?: string;
+  spaceId?: string | null;
   text: string;
 }): Promise<void> {
   const runId = typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -65,6 +67,8 @@ export async function submitThreadAnswer(input: {
     agent_name: input.agentName,
     agent_version: input.agentVersion,
   });
+  if (input.agentOwnerUserId) query.set("agent_owner_user_id", input.agentOwnerUserId);
+  if (input.spaceId) query.set("space_id", input.spaceId);
   const response = await fetch(`/api/agui?${query.toString()}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -84,7 +88,7 @@ export async function submitThreadAnswer(input: {
       context: [],
       // 投给助理线程的消息也属于助理范围：漏了这个标记，运行时就不给它装配
       // 平台联网，被 @ 的 Bot 只能回「取不到」。
-      forwardedProps: { conversationSurface: "assistant", assistantScope: true },
+      forwardedProps: { conversationSurface: "assistant", assistantScope: true, appendToHistory: true },
     }),
   });
   if (!response.ok) {

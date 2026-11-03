@@ -304,14 +304,14 @@ async def get_specialist(specialist_id: str, identity: Reader, assistant: Servic
         for item in await assistant.repository.list(identity.tenant_id, identity.user_id)
         if item.specialist_id == specialist_id
     ]
-    thread_id = await assistant.specialist_thread(
+    conversation = await assistant.specialist_conversation(
         identity.tenant_id, identity.user_id, specialist, duties=duties
     )
     # 纯读：详情/编辑弹窗不算"查看"，不能在这里清掉 routinePausedReason。
     # 真正的查看走 POST /specialists/{id}/viewed（进入该 Bot 会话时调用一次）。
     return {
         "specialist": specialist,
-        "threadId": thread_id,
+        **conversation.model_dump(by_alias=True),
         "primaryObjectiveId": duties[0].objective_id if duties else None,
         "duties": [
             {
@@ -328,8 +328,6 @@ async def get_specialist(specialist_id: str, identity: Reader, assistant: Servic
             }
             for item in duties
         ],
-        "agentName": specialist.agent_name,
-        "agentVersion": specialist.agent_version,
     }
 
 

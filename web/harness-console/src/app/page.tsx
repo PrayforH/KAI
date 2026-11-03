@@ -292,6 +292,10 @@ function AuthenticatedHome() {
         config?: { appearance?: { color?: string; avatar?: string } };
       };
       threadId: string | null;
+      agentName: string;
+      agentVersion: string;
+      agentOwnerUserId: string;
+      spaceId: string | null;
       primaryObjectiveId: string | null;
     }>(`specialists/${encodeURIComponent(botId)}`)
       .then((data) => {
@@ -306,8 +310,10 @@ function AuthenticatedHome() {
           specialistId: data.specialist.specialistId,
           name: data.specialist.name,
           description: data.specialist.description,
-          agentName: data.specialist.agentName,
-          agentVersion: data.specialist.agentVersion,
+          agentName: data.agentName,
+          agentVersion: data.agentVersion,
+          agentOwnerUserId: data.agentOwnerUserId,
+          spaceId: data.spaceId,
           status: data.specialist.status,
           threadId: data.threadId,
           objectiveId: data.primaryObjectiveId,
@@ -345,11 +351,13 @@ function AuthenticatedHome() {
   const [selectedAgent, setSelectedAgent] = useState<TaskAgent | null>(null);
   useEffect(() => {
     if (!botParam || !bot?.agentName || !bot.agentVersion) return;
+    const ownerUserId = bot.agentOwnerUserId ?? user.user_id;
+    const spaceId = bot.spaceId ?? undefined;
     if (selectedAgent?.name === bot.agentName && selectedAgent.version === bot.agentVersion
-      && selectedAgent.ownerUserId === user.user_id && !selectedAgent.spaceId) return;
+      && selectedAgent.ownerUserId === ownerUserId && selectedAgent.spaceId === spaceId) return;
     setSelectedAgent({
       name: bot.agentName, version: bot.agentVersion, displayName: bot.name,
-      ownerUserId: user.user_id, scope: "personal", domain: "assistant",
+      ownerUserId, spaceId, scope: spaceId ? "team" : "personal", domain: "assistant",
     });
   }, [bot, botParam, selectedAgent, user.user_id]);
 
