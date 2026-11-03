@@ -56,3 +56,5 @@ G：最后给工时填写发送“演示结束，不要凭证”后，续轮run_
 [合成凭证补充卡截图](2026-11-03-bot-autonomy/main-credential-card.png)
 
 [演示收尾截图](2026-11-03-bot-autonomy/demo-settled.png)
+
+[Bot 轻量状态行实页截图](2026-11-03-bot-autonomy/compact-status.png)
