@@ -1104,13 +1104,22 @@ class AssistantService:
                     )
                 except Exception:
                     logger.exception("managed overview failed; continuing without it")
+                specialist_dispatch = bool(
+                    objective.specialist_id and not objective.managed_thread_id
+                    and execution.brief.project_id is None
+                )
                 prompt = (
-                    f"持续事项：{execution.brief.title}\n\n{execution.brief.instructions}"
+                    f"{'本次任务' if specialist_dispatch else '持续事项'}：{execution.brief.title}"
+                    f"\n\n{execution.brief.instructions}"
                     f"\n\n完成标准：{criteria}"
                     f"\n\n用户后续补充：\n{execution.context or '暂无'}"
                     + (f"\n\n{managed_section}" if managed_section else "")
-                    + "\n\n请完成本次检查，报告进展、结果和需要用户决定的问题。"
-                    "一次执行结束不代表持续事项结束。"
+                    + (
+                        "\n\n直接执行本次交办并答复结果，仅在真实缺项时提问。"
+                        if specialist_dispatch else
+                        "\n\n请完成本次检查，报告进展、结果和需要用户决定的问题。"
+                        "一次执行结束不代表持续事项结束。"
+                    )
                 )
                 creation = await self._agui.create_run_with_result(
                     tenant_id=execution.tenant_id,
@@ -1118,6 +1127,7 @@ class AssistantService:
                     agent_name=execution.brief.agent_name,
                     agent_version=execution.brief.agent_version,
                     project_id=execution.brief.project_id,
+                    assistant_dispatch=specialist_dispatch,
                     connection_mode="service_owned",
                     request=RunAgentInput(
                         thread_id=execution.thread_id,

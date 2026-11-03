@@ -46,7 +46,7 @@ from harness.api.dependencies import (
 )
 from harness.api.event_streaming import wait_for_run_event
 from harness.assistant.chat_notices import NOTICE_MESSAGE_PREFIX, notice_message_id, notice_text
-from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
+from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD, primary_specialist_id
 from harness.assistant.models import AssistantInboxItem, MentionMessage
 from harness.context.compaction_view import CompactionDetail, compaction_detail
 from harness.context.models import SessionContextDigest, SessionContextOverview
@@ -1603,6 +1603,33 @@ async def _history_messages_for_run(
     tenant_id = identity.tenant_id
     messages: list[AguiHistoryMessage] = []
     prompt = run.input.get("prompt")
+    dispatch_source = None
+    if run.input.get("assistant_dispatch") is True and run.business_project_id is None:
+        # This marker is set by server-side dispatch only, never forwarded props.
+        # The complete brief remains in Run input and model context.
+        prompt = None
+        profile = (
+            await container.assistant.primary_profile(tenant_id, identity.user_id)
+            if container.assistant is not None else None
+        )
+        primary_id = primary_specialist_id(tenant_id, identity.user_id)
+        source = {
+            "name": profile.name if profile is not None else "主助理",
+            "botId": primary_id,
+            "href": "/assistant?bot=" + primary_id,
+            "timestamp": run.created_at.isoformat(),
+            "direction": "received",
+        }
+        appearance = profile.config.get("appearance") if profile is not None else None
+        if isinstance(appearance, dict):
+            source.update({k: v for k, v in appearance.items()
+                           if k in {"avatar", "color"} and isinstance(v, str)})
+        dispatch_source = AguiHistoryToolCall(
+            id=f"dispatch-source-{run.run_id}",
+            function=AguiHistoryFunction(
+                name="harness_notice_source", arguments=json.dumps(source, ensure_ascii=False)
+            ),
+        )
     if run.input.get("ui_action_request_id") and isinstance(
         run.input.get("ui_action_display"), str
     ):
@@ -1742,6 +1769,7 @@ async def _history_messages_for_run(
         if isinstance(block.get("presentation_id"), str)
     ]
     tool_calls = [
+        *([dispatch_source] if dispatch_source is not None else []),
         *([activity_tool_call] if activity_tool_call is not None else []),
         *artifact_tool_calls,
         *ui_tool_calls,
@@ -1764,6 +1792,11 @@ async def _history_messages_for_run(
                 tool_call_id=activity_tool_call.id,
             )
         )
+    if dispatch_source is not None:
+        messages.append(AguiHistoryMessage(
+            id=f"dispatch-source-result-{run.run_id}", role="tool",
+            content='{"status":"ready"}', tool_call_id=dispatch_source.id,
+        ))
     messages.extend(
         AguiHistoryMessage(
             id=f"tool-artifact-{artifact.artifact_id}",

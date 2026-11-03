@@ -384,6 +384,7 @@ class AguiRunService:
         quoted_message_context: str = "",
         deduplicate_active_input: bool = True,
         append_to_history: bool = False,
+        assistant_dispatch: bool = False,
     ) -> AguiRunCreation:
         prompt, input_artifact_ids = _latest_user_input(request)
         conversation_prompts = _user_prompts(request)
@@ -482,6 +483,10 @@ class AguiRunService:
                     raise ConflictError("当前运行时不支持知识问答，请切换支持知识检索的智能体")
             run_input: dict[str, object] = {
                 "prompt": prompt,
+                # Internal dispatch context stays available to execution, without
+                # being repeated as a user-authored message in the Bot UI.
+                **({"assistant_dispatch": True} if assistant_dispatch
+                   and binding.project_id is None else {}),
                 # Presentation guidance is opt-in per send, never inherited from a thread name.
                 **({"conversation_surface": "assistant"} if (
                     isinstance(request.forwarded_props, dict)

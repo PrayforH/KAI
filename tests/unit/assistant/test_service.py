@@ -115,3 +115,29 @@ async def test_success_is_execution_completion_not_objective_completion():
     assert result.status.value == "succeeded" and result.finished_at is not None
     repo.update.assert_not_called()
     agui.create_run_with_result.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["specialist", "ordinary", "managed", "project"])
+async def test_generated_brief_presentation_is_only_for_specialist_dispatch(scope):
+    service, execution, repo, _, agui, runs, run = setup()
+    updates = {}
+    if scope != "ordinary":
+        updates["specialist_id"] = "bot"
+    if scope == "managed":
+        updates["managed_thread_id"] = "some-original-thread"
+    if scope == "project":
+        updates["project_id"] = "project-a"
+        execution = execution.model_copy(update={"brief": execution.brief.model_copy(
+            update={"project_id": "project-a"}
+        )})
+    repo.get.return_value = repo.get.return_value.model_copy(update=updates)
+    repo.get_specialist.return_value = SimpleNamespace(config={}, status="ready")
+    runs.find_by_idempotency_key.return_value = None
+    agui.create_run_with_result.return_value = SimpleNamespace(run=run)
+    await service._reconcile(execution)
+    args = agui.create_run_with_result.call_args.kwargs
+    assert args["assistant_dispatch"] is (scope == "specialist")
+    prompt = args["request"].messages[0].content
+    assert ("本次任务：" in prompt) is (scope == "specialist")
+    assert ("一次执行结束不代表持续事项结束" in prompt) is (scope != "specialist")
