@@ -550,7 +550,8 @@ async def test_delegate_to_specialist_reports_missing_config_without_starting():
 
 
 @pytest.mark.asyncio
-async def test_applied_delegate_receipt_matches_the_enqueued_execution():
+@pytest.mark.parametrize("surface", [None, "assistant"])
+async def test_applied_delegate_receipt_matches_the_enqueued_execution(surface):
     """applied 的回执只描述真实入队：带执行与线程，且不再出现"待补充配置"。"""
     gateway = FakeGateway()
     gateway.delegate_outcome = {
@@ -563,7 +564,8 @@ async def test_applied_delegate_receipt_matches_the_enqueued_execution():
         "execution_id": "objective_run_abc",
         "thread_id": "assistant_objective-9",
     }
-    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    delegation = overlay(gateway, conversation_surface=surface)
+    tools = {tool.name: tool.handler for tool in delegation.tools}
     result = await tools["assistant_delegate_to_specialist"](
         {"name": "费用监控", "task": "长期关注花费"}
     )
@@ -572,6 +574,11 @@ async def test_applied_delegate_receipt_matches_the_enqueued_execution():
     assert "首次执行已入队" in body
     assert "objective_run_abc" in body and "assistant_objective-9" in body
     assert "待补充配置" not in body
+    assert ("现在只向用户简短确认已转交并结束本轮" in body) is (surface == "assistant")
+    if surface == "assistant":
+        assert "不要因后台结果暂未返回而自己再查一遍" in delegation.instructions
+    assert len(gateway.delegate_calls) == 1
+    assert not gateway.created
 
 
 @pytest.mark.asyncio

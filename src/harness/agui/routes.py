@@ -1616,7 +1616,7 @@ async def _history_messages_for_run(
         source = {
             "name": profile.name if profile is not None else "主助理",
             "botId": primary_id,
-            "href": "/assistant?bot=" + primary_id,
+            "href": "/assistant",
             "timestamp": run.created_at.isoformat(),
             "direction": "received",
         }

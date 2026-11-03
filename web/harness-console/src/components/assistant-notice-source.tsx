@@ -4,7 +4,7 @@ import { AssistantEventLine } from "./assistant-event-line";
 
 const sourceSchema = z.object({
   name: z.string().min(1).max(160),
-  href: z.string().refine(value => /^\/(?:assistant\?|\?)/.test(value)),
+  href: z.string().refine(value => /^\/(?:assistant(?:\?|$)|\?)/.test(value)),
   botId: z.string().max(128).optional(),
   color: z.string().regex(/^#[0-9a-f]{6}$/i).optional(),
   avatar: z.string().max(40).optional(),

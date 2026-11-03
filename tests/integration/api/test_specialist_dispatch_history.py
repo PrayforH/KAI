@@ -54,7 +54,7 @@ async def test_only_internal_dispatch_replaces_brief_with_main_source(server_dis
         if server_dispatch:
             assert len(sources) == 1
             assert sources[0]["name"] == "主助理"
-            assert sources[0]["href"].startswith("/assistant?bot=")
+            assert sources[0]["href"] == "/assistant"
             assert sources[0]["direction"] == "received"
         else:
             assert sources == []

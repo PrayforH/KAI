@@ -16,6 +16,13 @@ describe("source attribution",()=>{
   for(const href of ["https://example.com","//example.com","javascript:alert(1)","/assistant/other"])
    expect(noticeSource([{...parts[0],args:{...parts[0].args,href}}])).toBeNull();
  });
+ it("links a dispatched assignment back to the main assistant",()=>{
+  const mainParts=[{...parts[0],args:{name:"主助理",href:"/assistant",direction:"received"}}];
+  const host=document.createElement("div");
+  host.innerHTML=renderToStaticMarkup(<AssistantNoticeSource parts={mainParts}/>);
+  expect(host.textContent).toBe("消息来自主助理");
+  expect(host.querySelector("a")?.getAttribute("href")).toBe("/assistant");
+ });
 });
 it("renders sent events with the same centered identity line and no reply body", () => {
  const host=document.createElement("div");
