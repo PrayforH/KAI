@@ -10,7 +10,7 @@ import { BotGlyph } from "./bot-glyph";
 import { SidebarIcon } from "./sidebar-icon";
 import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
 import { BotRailMenu } from "./bot-rail-menu";
-import { BotEditDialog } from "./bot-edit-dialog";
+import { BotProfileDialog } from "./bot-profile-dialog";
 import { botSidebar, type BotSidebar } from "../lib/bot-sidebar";
 import { stableBotOrder, isPrimaryBot, botConversationHref } from "../lib/bot-sidebar";
 import { peekClientRead, rememberClientRead } from "../lib/client-read-cache";
@@ -172,7 +172,7 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
     setSpecialists(items => items.map(bot => bot.specialistId === updated.specialistId ? updated : bot));
     window.dispatchEvent(new CustomEvent("kai:specialists-changed"));
   }
-  async function changeArchive(item: Specialist, status: "archived" | "paused") {
+  async function changeStatus(item: Specialist, status: "active" | "paused" | "archived") {
     setRailError("");
     const latest = await assistantRequest<{specialist: Specialist}>(`specialists/${encodeURIComponent(item.specialistId)}`);
     await assistantRequest(`specialists/${encodeURIComponent(item.specialistId)}/status`, "POST", {status, expectedRevision: latest.specialist.revision});
@@ -207,7 +207,8 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
         {botSidebar(item).unread && <span className="bot-rail-unread" aria-label="未读" />}
       </Link>
       <BotRailMenu bot={item} groups={groups} onUpdate={patch => saveSidebar(item, patch)}
-        onEdit={() => setEditing(item.specialistId)} onArchive={() => changeArchive(item, "archived")} />
+        onEdit={() => setEditing(item.specialistId)} onArchive={() => changeStatus(item, "archived")}
+        onStatus={next => changeStatus(item, next)} />
     </li>;
   }
   return (
@@ -253,7 +254,7 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
         {visibleContacts.map(row)}
       </ul>
       {railError && <p role="alert">{railError}</p>}
-      {editing && <BotEditDialog specialistId={editing} onClose={() => setEditing(null)} onSaved={() => {
+      {editing && <BotProfileDialog specialistId={editing} onClose={() => setEditing(null)} onSaved={() => {
         setEditing(null); void load(); window.dispatchEvent(new CustomEvent("kai:specialists-changed"));
       }} />}
       {hidden.length > 0 && <>
@@ -265,7 +266,7 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
       {archived.length > 0 && <>
         <button type="button" className="bot-rail-more" aria-expanded={showArchived} onClick={() => setShowArchived(value => !value)}>已归档（{archived.length}）</button>
         {showArchived && <ul className="bot-rail-list">{archived.map(item => <li className="bot-rail-recover" key={item.specialistId}>
-          <span>{item.name}</span><button type="button" onClick={() => void changeArchive(item, "paused").catch(error => setRailError(String(error.message)))}>恢复显示，保持暂停</button>
+          <span>{item.name}</span><button type="button" onClick={() => void changeStatus(item, "paused").catch(error => setRailError(String(error.message)))}>恢复显示，保持暂停</button>
         </li>)}</ul>}
       </>}
       </div>

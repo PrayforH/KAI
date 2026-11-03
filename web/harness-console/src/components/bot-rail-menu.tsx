@@ -5,10 +5,11 @@ import type { Specialist } from "../lib/assistant-client";
 import { botSidebar, type BotSidebar } from "../lib/bot-sidebar";
 import styles from "./bot-rail-menu.module.css";
 
-export function BotRailMenu({ bot, groups, onUpdate, onEdit, onArchive }: {
+export function BotRailMenu({ bot, groups, onUpdate, onEdit, onArchive, onStatus }: {
   bot: Specialist; groups: string[];
   onUpdate: (patch: Partial<BotSidebar>) => Promise<void>;
   onEdit: () => void; onArchive: () => Promise<void>;
+  onStatus: (next: "active" | "paused") => Promise<void>;
 }) {
   const anchor = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
@@ -66,6 +67,11 @@ export function BotRailMenu({ bot, groups, onUpdate, onEdit, onArchive }: {
         <hr />
         {item("编辑资料", () => { setPosition(null); onEdit(); })}
         {item("从侧边栏隐藏", () => void apply(() => onUpdate({hidden: true})))}
+        <hr />
+        {/* 资料弹窗只留外观与三项资料，接单状态放在这里，暂停的 Bot 才恢复得回来。 */}
+        {bot.status === "ready" && item("启用助理", () => void apply(() => onStatus("active")))}
+        {bot.status === "active" && item("暂停接单", () => void apply(() => onStatus("paused")))}
+        {bot.status === "paused" && item("恢复接单", () => void apply(() => onStatus("active")))}
         <hr />{item("归档 Bot…", () => setMode("archive"), true)}
       </>}
       {mode === "groups" && <>{item("‹ 返回", () => setMode("main"))}

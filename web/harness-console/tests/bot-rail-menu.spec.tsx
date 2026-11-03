@@ -6,12 +6,12 @@ import { BotRailMenu } from "../src/components/bot-rail-menu";
 import type { Specialist } from "../src/lib/assistant-client";
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root, host: HTMLDivElement;
-const update = vi.fn(), edit = vi.fn(), archive = vi.fn();
+const update = vi.fn(), edit = vi.fn(), archive = vi.fn(), status = vi.fn();
 const bot = {specialistId: "qa-bot", name: "测试 Bot", config: {}} as Specialist;
 beforeEach(async () => {
-  vi.clearAllMocks(); update.mockResolvedValue(undefined); archive.mockResolvedValue(undefined);
+  vi.clearAllMocks(); update.mockResolvedValue(undefined); archive.mockResolvedValue(undefined); status.mockResolvedValue(undefined);
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
-  await act(async () => root.render(<BotRailMenu bot={bot} groups={["工作"]} onUpdate={update} onEdit={edit} onArchive={archive} />));
+  await act(async () => root.render(<BotRailMenu bot={bot} groups={["工作"]} onUpdate={update} onEdit={edit} onArchive={archive} onStatus={status} />));
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
 async function click(text: string) {
@@ -36,4 +36,26 @@ it("opens editing without changing runtime state, and supports Escape", async ()
   await open(); await click("编辑资料"); expect(edit).toHaveBeenCalledOnce(); expect(update).not.toHaveBeenCalled();
   await open(); await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape"})));
   expect(document.querySelector('[role="menu"]')).toBeNull(); expect(document.activeElement).toBe(host.querySelector("button"));
+});
+
+it("offers the lifecycle action that matches the bot status", async () => {
+  // 资料弹窗只剩外观与三项资料，接单状态改在这里：暂停的 Bot 必须恢复得回来。
+  const ready = { ...bot, status: "ready" } as Specialist;
+  await act(async () => root.render(<BotRailMenu bot={ready} groups={[]} onUpdate={update} onEdit={edit} onArchive={archive} onStatus={status} />));
+  await open(); await click("启用助理"); expect(status).toHaveBeenLastCalledWith("active");
+
+  const active = { ...bot, status: "active" } as Specialist;
+  await act(async () => root.render(<BotRailMenu bot={active} groups={[]} onUpdate={update} onEdit={edit} onArchive={archive} onStatus={status} />));
+  await open(); await click("暂停接单"); expect(status).toHaveBeenLastCalledWith("paused");
+
+  const paused = { ...bot, status: "paused" } as Specialist;
+  await act(async () => root.render(<BotRailMenu bot={paused} groups={[]} onUpdate={update} onEdit={edit} onArchive={archive} onStatus={status} />));
+  await open(); await click("恢复接单"); expect(status).toHaveBeenLastCalledWith("active");
+});
+
+it("shows no lifecycle action for a bot that still needs configuration", async () => {
+  const pending = { ...bot, status: "needs_input" } as Specialist;
+  await act(async () => root.render(<BotRailMenu bot={pending} groups={[]} onUpdate={update} onEdit={edit} onArchive={archive} onStatus={status} />));
+  await open();
+  expect([...document.querySelectorAll("button")].map(node => node.textContent)).not.toContain("启用助理");
 });

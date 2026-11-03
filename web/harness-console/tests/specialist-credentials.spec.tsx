@@ -11,7 +11,6 @@ vi.mock("../src/lib/assistant-client", () => ({
   saveSpecialistCredential: (...args: unknown[]) => saveCredential(...args),
 }));
 
-import { BotEditDialog } from "../src/components/bot-edit-dialog";
 import { SpecialistCredentials } from "../src/components/specialist-credentials";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -154,26 +153,5 @@ describe("specialist credentials", () => {
     expect(host.querySelector<HTMLInputElement>('input[aria-label="凭据内容"]')!.value).toBe(
       "sk-live-123",
     );
-  });
-});
-
-describe("bot edit dialog credentials section", () => {
-  it("renders the credential area from the specialist detail", async () => {
-    assistantRequest.mockResolvedValue({
-      specialist: withCredential,
-      threadId: "assistant_objective_1",
-      primaryObjectiveId: "objective_1",
-      duties: [],
-    });
-    await act(async () => {
-      root!.render(
-        <BotEditDialog specialistId="specialist_cred" onClose={() => {}} onSaved={() => {}} />,
-      );
-    });
-    await flush();
-    expect(host.textContent).toContain("凭据");
-    expect(host.textContent).toContain("已配置 · api_key");
-    expect(host.textContent).not.toContain(reference);
-    expect(button("保存凭据")).not.toBeNull();
   });
 });

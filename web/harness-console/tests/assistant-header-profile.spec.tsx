@@ -111,7 +111,7 @@ describe("bot profile dialog", () => {
     expect(host.textContent).not.toContain("凭据");
   });
 
-  it("saves only the three profile fields", async () => {
+  it("saves the three profile fields plus appearance", async () => {
     await mount();
     const title = host.querySelector<HTMLInputElement>('input[aria-label="标题"]')!;
     await act(async () => {
@@ -131,10 +131,12 @@ describe("bot profile dialog", () => {
     );
     expect(call).toBeTruthy();
     expect(call![1]).toBe("POST");
+    // 资料弹窗现在也带外观（页头与侧栏共用同一个弹窗）；除这三项资料外不再提交别的配置。
     expect(call![2]).toEqual({
       name: "演示 Bot",
       title: "营销",
       description: "盯信号",
+      appearance: { color: "#126fd4", avatar: "blob" },
       expectedRevision: 3,
     });
   });

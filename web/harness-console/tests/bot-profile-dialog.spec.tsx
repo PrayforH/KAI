@@ -12,10 +12,10 @@ vi.mock("../src/lib/assistant-client", () => ({
   saveSpecialistCredential: vi.fn(),
 }));
 
-import { BotEditDialog } from "../src/components/bot-edit-dialog";
+import { BotProfileDialog } from "../src/components/bot-profile-dialog";
 import { BOT_SHAPES } from "../src/lib/bot-appearance";
 
-const source = readFileSync(join(process.cwd(), "src/components/bot-edit-dialog.tsx"), "utf8");
+const source = readFileSync(join(process.cwd(), "src/components/bot-profile-dialog.tsx"), "utf8");
 
 const PALETTE = {
   colors: [
@@ -83,13 +83,13 @@ async function mount() {
   });
   await act(async () => {
     root!.render(
-      <BotEditDialog specialistId="specialist_demo" onClose={() => {}} onSaved={() => {}} />,
+      <BotProfileDialog specialistId="specialist_demo" onClose={() => {}} onSaved={() => {}} />,
     );
   });
   await flush();
 }
 
-describe("bot edit dialog appearance picker", () => {
+describe("助理资料弹窗：外观可改，页头与侧栏共用同一个", () => {
   it("renders the palette the server published", async () => {
     await mount();
     const swatches = [...host.querySelectorAll("button[aria-label^='颜色 ']")];
@@ -120,5 +120,19 @@ describe("bot edit dialog appearance picker", () => {
   it("reads the palette from the server instead of a second local colour list", () => {
     expect(source).toContain("useAppearancePalette");
     expect(source).not.toContain("BOT_COLORS");
+  });
+});
+
+describe("资料弹窗只放外观与三项资料", () => {
+  it("leaves execution and permission sections out", () => {
+    // 执行方式、试运行与权限（本地能力/凭据）已从资料弹窗移除；
+    // 它们各自的入口在主会话内联卡、资料库与侧栏「···」菜单里。
+    // 只查组件与分区标题，不查注释里的说明文字。
+    for (const removed of ["<LocalToolPermissions", "<SpecialistCredentials", "DutyScheduleControl", "交办与执行方式", "首次试运行"]) {
+      expect(source).not.toContain(removed);
+    }
+    for (const kept of ["姓名", "标题（可选）", "描述", "appearance"]) {
+      expect(source).toContain(kept);
+    }
   });
 });
