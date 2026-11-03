@@ -4,7 +4,7 @@
 - 分支：`auto/kai-bot-vault-20261103`（基线 `60ef9143`，代码 `0db1e0b7`）
 - 提交：`08ceba23`（P13）、`e5916955`（P14）、`40e8f0df`（P15）、`<本文件提交>`（验收与缺陷修复）
 - schema：新增迁移 `0065_assistant_vault_items`
-- 79 发布：**已发布**（六批；**唯一当前版本** api/worker `kai/superagent-api:20261103-e27f8e46`、web `kai/superagent-web:20261103-e27f8e46`，schema 0065，三服务 healthy。历史批次见 8.7，现网结论见 8.8）
+- 79 发布：**已发布**（七批；**唯一当前版本** api/worker `kai/superagent-api:20261102-a6a29662`、web `kai/superagent-web:20261103-f79adb54`，schema 0065，三服务 healthy。历史批次见 8.7，现网结论见 8.8／8.15）
 - 飞书同步：已追加本轮进展，回读 revision 83（文档 XV4ndItNmoONoIxQPWgcIyLbnJe），未覆盖历史内容；后续修订见 8.14
 - 真实页面验收：在**本机新代码**（API + Web，同一提交）完成，截图见本目录；**79 实页验收仍未做**（证书与登录需本人接管，见 8.9）
 
@@ -75,7 +75,7 @@
 
 ## 7. 未完成与阻塞（不得当作已完成）
 
-1. **79 发布已完成**（见第 8 节）：六批发布、schema 0065、三服务 healthy；发布过程与回退点见 8.2/8.7。**唯一仍未完成的是 79 真实页面验收**（证书与 Secure Cookie，见 8.9）。
+1. **79 发布已完成**（见第 8 节）：七批发布、schema 0065、三服务 healthy；发布过程与回退点见 8.2/8.7。**唯一仍未完成的是 79 真实页面验收**（证书与 Secure Cookie，见 8.9）。
 2. **79 schema 已升级到 0065**（第一批发布时 0064→0065 迁移成功，见 8.2）；本机库另有一份独立验证，不影响 79。
 3. **P15 的「已接工具」一层未实现**：资料**已保存**、可**按 Bot 授权**、有**按授权解析**的进程内读取，但这三层都**没有接到任何工具**上——运行时没有消费 `credential_ref` 的通道（见 8.9a 的四层区分与 8.9c 的原因核实）。按合同如实标注「不支持」，未声称可自动填充。
 4. **P14 回传路径的边界**：Bot 结果回到主会话依赖既有 notice 机制（有交办/职责时成立）；纯对话型 Bot 的回复留在它自己的会话，需从回执点名称进入。未额外造第二套回传通道。
@@ -111,7 +111,8 @@
 | 3 | api/worker + web `…-12a3d523` | 补齐 P14/P15 自己漏掉的覆盖项（停用拒收、删除即收回授权、多目标互不阻断） | 滚动成功；healthy |
 | 4 | api/worker `…-24212a54`（web 同第 3 批） | 收回授权容忍并发编辑 | 滚动成功；healthy；**随后被旧首段任务的 02:4x 发布覆盖**（8.9b） |
 | 5 | api/worker + web `…-b68e88eb` | 合并对方最新提交后重发；凭据按授权解析、@ 引用作废 | 滚动成功；healthy |
-| 6 | api/worker + web `…-e27f8e46` | 改名搬动授权引用；列表给出授权状态；如实标出「已接工具」缺口 | 滚动成功；healthy；**当前唯一版本**（8.8） |
+| 6 | api/worker + web `…-e27f8e46` | 改名搬动授权引用；列表给出授权状态；如实标出「已接工具」缺口 | 滚动成功；healthy |
+| 7 | web `…-f79adb54`（api/worker 沿用他方 `a6a29662`） | @ 提及改为行内文本；修回主助理页头的 IM 通道状态 | 滚动成功；healthy；**当前唯一版本**（8.15） |
 
 - 证据目录：`/data/kai-bot-vault-20261103-67ef9304/`（`api-build*.log`、`web-build.log`、`rollout*.log`、`release-result.json`）。
 - API 镜像在**现网运行镜像**上叠加（`FROM kai/superagent-api:20261102-842adcfd`），依赖集与现网一致；web 用干净 `node:22-alpine` 两段构建（9 层），不继承旧 bundle。
@@ -174,14 +175,15 @@
 | ③ `12a3d523` | `kai/superagent-api:20261103-12a3d523` | `kai/superagent-web:20261103-12a3d523` | 0065 | healthy |
 | ④ `24212a54` | `kai/superagent-api:20261103-24212a54` | 同上 | 0065 | healthy（收回授权时容忍并发编辑）；随后被旧首段任务的 02:4x 发布覆盖，见 8.9b |
 | ⑤ `b68e88eb` | `kai/superagent-api:20261103-b68e88eb` | `kai/superagent-web:20261103-b68e88eb` | 0065 | healthy（合并对方最新提交后重发；含凭据按授权解析与 @ 引用作废） |
-| ⑥ `e27f8e46` | `kai/superagent-api:20261103-e27f8e46` | `kai/superagent-web:20261103-e27f8e46` | 0065 | healthy（**当前唯一版本**；改名搬动授权引用 + 列表给出授权状态 + 如实标出「已接工具」缺口） |
+| ⑥ `e27f8e46` | `kai/superagent-api:20261103-e27f8e46` | `kai/superagent-web:20261103-e27f8e46` | 0065 | healthy（改名搬动授权引用 + 列表给出授权状态 + 如实标出「已接工具」缺口） |
+| ⑦ `f79adb54` | 沿用他方 `kai/superagent-api:20261102-a6a29662` | `kai/superagent-web:20261103-f79adb54` | 0065 | healthy（**当前唯一版本**；行内 @ 提及 + 主助理 IM 状态修复） |
 
 - 每批均在切换前核对 `active_runs=0`、`active_objectives=0` 与 schema；失败即按 `compose.private.before-kai-bot-20261103.json` 逐服务回滚。
 - 79 现网前端产物已确认含新代码（静态 chunk 中可检出「助理资料库」「外观由服务端随机分配」「已发送消息给」）。
 
-## 8.8 79 唯一当前版本（第六批 `e27f8e46` 发布后）
+## 8.8 79 唯一当前版本（第七批 `f79adb54` 发布后）
 
-- **当前线上的唯一版本**：`api`/`worker` = `kai/superagent-api:20261103-e27f8e46`，`web` = `kai/superagent-web:20261103-e27f8e46`，schema `0065`，三服务 healthy。
+- **当前线上的唯一版本**：`api`/`worker` = `kai/superagent-api:20261102-a6a29662`（他方在含我第六批的基础上继续发的，见 8.15），`web` = `kai/superagent-web:20261103-f79adb54`，schema `0065`，三服务 healthy。
 - **历史说明**：本文件早期版本把第四批（`24212a54` / web `12a3d523`）写成「最终状态」。那是**历史**，不是当前状态：
   第四批随后被旧首段任务 02:4x 的发布覆盖（8.9b），第五批 `b68e88eb`、第六批 `e27f8e46` 又在其上重发。
   引用本文件结论时以本节为准，不要再把第四批当现网。
@@ -310,3 +312,36 @@ UI 已如实写明范围：「资料加密保存在你名下……还没有把�
 - rev 88 追加本轮三项更正：① 79 现网唯一版本为第六批 `e27f8e46`（第四批标为历史）；
   ② 资料库四层能力如实区分（第④层「已接工具」= 未支持）；③ 记录临时复制智能体版本的事实与后续只用正常产品 API 的规则。
 
+
+## 8.15 第七批（web `f79adb54`）：行内 @ 提及 + 主助理 IM 状态修复
+
+**背景（先核对，不覆盖）**：本轮恢复 79 连接后发现现网已被他方切到 `kai/superagent-api:20261102-a6a29662` / `kai/superagent-web:20261102-bf85856a`
+（`/data/kai-superagent-20261102-a6a29662/`，08:06）。核对祖先关系：`e27f8e46` **是** `a6a29662` 的祖先，即他方构建**包含**我第六批，没有丢工作；
+按合同先 `merge a6a29662`（`55f8a21a`，无冲突）再发我自己的改动，只换 `web` 一个服务，api/worker 保持他方版本。
+
+**改动一：@ 提及改成行内文本**（本人反馈：要和正常聊天一样写在文本行里、可以多个）
+- 选中候选后把 `@名字` **插进输入文本**，不再收进输入框上方的 chip 栏；一行里可以出现多个。
+- 提及**从输入文本解析**（`parseMentions`）：删掉文字即取消提及；长名字优先匹配，`@研究Bot2` 不会被误判为 `@研究Bot`。
+- 部分失败时把**已送达**的 `@名字` 从文本里移除，失败的留在行里可重试（`removeMentionTokens`）。
+- chip 组件与相关 CSS 删除。新增 `tests/bot-mentions-inline.spec.ts`（6 条）。
+
+**改动二：修回主助理页头的 IM 通道状态（本人反馈：之前主助理上的 IM 没了）**
+- 根因：`src/app/page.tsx` 里通道状态的条件是 `!bot`。而 `bot` 在主助理视图下等于「主助理资料记录」——
+  我本轮修掉既有缺陷 `_default_agent` 之后，主助理资料**才**第一次真正建出来，于是 `bot` 由 null 变真值，条件不再成立，飞书／微信整行消失。
+  也就是说：这个布局缺陷一直在，只是被「主助理资料从来建不出来」掩盖了；我的修复把它暴露出来。
+- 修法：通道状态属于主助理的**跨渠道会话**，与资料记录存不存在无关 → 条件改成 `!botParam`（只有进到某个子 Bot 会话才不显示）。
+- 新增断言：`tests/assistant-header-profile.spec.tsx` 里「keeps the IM channel status on the main assistant header」，
+  直接断言源码用 `{!botParam && <AssistantChannelStatus />}` 且不再用 `{!bot && ...}`。
+
+**发布与验收**
+- 构建：79 上从干净 `node:22-alpine` 两段构建（9 层），镜像 `kai/superagent-web:20261103-f79adb54`。
+- 发布前核对：真实库是 `harness_174_20260908`（compose 里 `HARNESS_DATABASE_URL`），`alembic_version=0065`、`assistant_vault_items` 存在、进行中的 run = 0；
+  线上 compose `sha256 4ed60be6…` 与他方 `release-result.json` 记录一致（无并发编辑），CAS 通过后才切换；备份 `compose.private.before-web-f79adb54.json`。
+- 切换后：`docker inspect` 显示 web healthy 且镜像为 `f79adb54`；新 compose `sha256 d1aab571…`。
+- **产物指纹**（把容器内 `.next` 拷出后检索）：`移除 @`（旧 chip 的无障碍标签）**0 处**、`assistant-mention-chips`（旧 chip 容器）**0 处**、
+  `已送达 `（行内局部失败文案）**3 处**、`编辑助理资料`（新页头）**2 处** → 线上确实是行内版。
+- **IM 状态接口**（容器内用合成账户 token）：`GET /v1/studio/assistant/feishu/status` 200 `{enabled:true,bound:false,receiverState:"awaiting_event"}`；
+  `weixin` 200 `{enabled:false,bound:false}` —— 接口正常，合成账户未绑定所以是「待绑定」；本人账户的绑定关系未动。
+- 测试：前端全量 **1613 通过**（失败仍是与基线同一组 7 条既有失败）、`npx tsc --noEmit` 通过。
+
+**仍未做**：79 实页验收（自签证书 + 登录需本人），与 8.9 一致，未冒充完成。
