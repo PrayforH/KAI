@@ -91,7 +91,7 @@ import { ArtifactCard, isImageArtifact, type ArtifactDetails } from "./artifact-
 import { AssistantResults } from "./assistant-results";
 import { assistantControlSummary } from "../lib/assistant-control-receipt";
 import { assistantCopy, assistantPresentation, compactAssistantProgress, compactAssistantReceipt } from "../lib/assistant-copy";
-import { AssistantNoticeSource, noticeExchangeForMessage } from "./assistant-notice-source";
+import { AssistantNoticeSource, noticeExchangeForMessage, noticeSource } from "./assistant-notice-source";
 import { replyWebImages } from "../lib/reply-web-images";
 import { ReplyWebImages } from "./reply-web-images";
 import { ReplyArtifactImages } from "./reply-artifact-images";
@@ -1632,7 +1632,7 @@ export function HarnessAssistantMessage() {
   );
   const responseCandidate = responseTextForTurn(messageId, nativeText, directStream, live, capturedResponse, pendingLive);
   const feedbackRun = feedbackRunId(messageId, isLast, runView?.runId);
-  const isNotice = messageId.startsWith("notice-");
+  const isNotice = messageId.startsWith("notice-") || noticeSource(content) !== null;
   // Select the immutable source, then derive outside the external-store selector.
   // A new grouping object per getSnapshot causes an update loop on notice turns.
   const noticeMessages = useAuiState(state => state.thread.messages);
