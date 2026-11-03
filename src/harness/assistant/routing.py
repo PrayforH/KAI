@@ -178,6 +178,32 @@ class AssistantMessageRouter:
             payload=payload,
         )
 
+    async def _deliver(self, specialist_id: str, *, request_key: str, suffix: str) -> str:
+        """One original-message delivery path for existing and newly created Bots."""
+        await self.assistant.validate_routing_parent(
+            self.run.tenant_id, self.session.user_id, self.run.run_id,
+        )
+        receipt = await self.assistant.send_mention_message(
+            self.run.tenant_id, self.session.user_id, specialist_id,
+            text=str(self.run.input.get("prompt", "")),
+            idempotency_key=request_key, source_thread_id=PERSONAL_ASSISTANT_THREAD,
+            model_route=self.run.input.get("model_route_override"), dispatched=True,
+            quoted_message_context=str(self.run.input.get("quoted_message_context", "")),
+        )
+        specialist = await self.assistant.repository.get_specialist(
+            self.run.tenant_id, self.session.user_id, receipt.specialist_id,
+        )
+        payload = {
+            "handoverId": receipt.handover_id, "specialistId": receipt.specialist_id,
+            "specialistName": specialist.name,
+            "createdAt": (receipt.sent_at or receipt.created_at).isoformat(),
+            "sourceThreadId": receipt.source_thread_id,
+            "targetThreadId": receipt.target_thread_id, "runId": receipt.run_id,
+        }
+        await self.record("ui.assistant_delivery", suffix, payload)
+        self.delivered, self.delivery = True, payload
+        return specialist.name
+
     async def create_bot(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Create the contact first, then deliver the original setup/work request.
 
@@ -206,7 +232,7 @@ class AssistantMessageRouter:
                 await self.assistant.validate_routing_parent(
                     self.run.tenant_id, self.session.user_id, self.run.run_id,
                 )
-                specialist, _created = await self.assistant.create_specialist(
+                specialist, _ = await self.assistant.create_specialist(
                     self.run.tenant_id, self.session.user_id,
                     name=request.name.strip(), description=request.description.strip(),
                     agent_name=self.session.agent_name, agent_version=self.session.agent_version,
@@ -217,26 +243,10 @@ class AssistantMessageRouter:
                 })
                 if self.current_attachments:
                     raise ConflictError("本次新附件尚不能随初始消息转交，Bot已保留，未丢弃附件执行")
-                await self.assistant.validate_routing_parent(
-                    self.run.tenant_id, self.session.user_id, self.run.run_id,
+                await self._deliver(
+                    specialist.specialist_id,
+                    request_key=f"create-bot:{self.run.run_id}", suffix="created-delivered",
                 )
-                receipt = await self.assistant.send_mention_message(
-                    self.run.tenant_id, self.session.user_id, specialist.specialist_id,
-                    text=str(self.run.input.get("prompt", "")),
-                    idempotency_key=f"create-bot:{self.run.run_id}",
-                    source_thread_id=PERSONAL_ASSISTANT_THREAD,
-                    model_route=self.run.input.get("model_route_override"), dispatched=True,
-                    quoted_message_context=str(self.run.input.get("quoted_message_context", "")),
-                )
-                payload = {
-                    "handoverId": receipt.handover_id, "specialistId": specialist.specialist_id,
-                    "specialistName": specialist.name,
-                    "createdAt": (receipt.sent_at or receipt.created_at).isoformat(),
-                    "sourceThreadId": receipt.source_thread_id,
-                    "targetThreadId": receipt.target_thread_id, "runId": receipt.run_id,
-                }
-                await self.record("ui.assistant_delivery", "created-delivered", payload)
-                self.delivered, self.delivery = True, payload
                 return _text(
                     f"已创建或复用「{specialist.name}」，并把原始需求交给它。"
                     "后续登录态、必要规则及执行由它处理，结果自动回传。"
@@ -317,40 +327,13 @@ class AssistantMessageRouter:
                     return _text(
                         f"已交给「{self.delivery['specialistName']}」，完成后会自动回报结果，请结束本轮。"
                     )
-                await self.assistant.validate_routing_parent(
-                    self.run.tenant_id, self.session.user_id, self.run.run_id
-                )
-                # Service delivery rechecks current ownership/grants and resumes
-                # the original pinned conversation. Its stable request key also
-                # recovers a Run created before the reply/event was persisted.
-                receipt = await self.assistant.send_mention_message(
-                    self.run.tenant_id,
-                    self.session.user_id,
+                assert decision.specialist_id is not None
+                name = await self._deliver(
                     decision.specialist_id,
-                    text=str(self.run.input.get("prompt", "")),
-                    source_thread_id=PERSONAL_ASSISTANT_THREAD,
-                    idempotency_key=f"route:{self.run.run_id}",
-                    model_route=self.run.input.get("model_route_override"),
-                    dispatched=True,
-                    quoted_message_context=str(self.run.input.get("quoted_message_context", "")),
+                    request_key=f"route:{self.run.run_id}", suffix="delivered",
                 )
-                specialist = await self.assistant.repository.get_specialist(
-                    self.run.tenant_id, self.session.user_id, decision.specialist_id
-                )
-                payload = {
-                    "handoverId": receipt.handover_id,
-                    "specialistId": receipt.specialist_id,
-                    "specialistName": specialist.name,
-                    "createdAt": (receipt.sent_at or receipt.created_at).isoformat(),
-                    "sourceThreadId": receipt.source_thread_id,
-                    "targetThreadId": receipt.target_thread_id,
-                    "runId": receipt.run_id,
-                }
-                await self.record("ui.assistant_delivery", "delivered", payload)
-                self.delivered = True
-                self.delivery = payload
                 return _text(
-                    f"已交给「{specialist.name}」，完成后会自动回报结果。请简短确认并结束本轮，不重复执行或等待。"
+                    f"已交给「{name}」，完成后会自动回报结果。请简短确认并结束本轮，不重复执行或等待。"
                 )
             except (ConflictError, NotFoundError, PermissionDeniedError, ValueError) as error:
                 return _text(f"本次路由未完成：{error}。不能声称已派发，也不要绕过原权限代做。")
