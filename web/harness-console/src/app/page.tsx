@@ -960,7 +960,9 @@ function AuthenticatedHome() {
                 >
                   {bot ? bot.name : "我的助理"}
                 </button>
-                {!bot && <AssistantChannelStatus />}
+                {/* 主助理页头保留 IM 通道状态（飞书/微信）：它属于主助理的跨渠道会话，
+                    与资料记录在不在无关；只有进到某个子 Bot 会话（?bot=）才不显示。 */}
+                {!botParam && <AssistantChannelStatus />}
               </div> : <TaskContextBar
                 taskTitle={currentTaskTitle}
                 onForked={switchTask}

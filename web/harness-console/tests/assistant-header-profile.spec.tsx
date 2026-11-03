@@ -91,6 +91,13 @@ describe("assistant session header", () => {
     expect(pageSource).toContain("BotProfileDialog");
     expect(pageSource).toContain("onClick={() => setBotProfileOpen(true)}");
   });
+
+  it("keeps the IM channel status on the main assistant header", () => {
+    // 通道状态属于主助理的跨渠道会话，不能挂在「资料记录建出来没有」这个条件上：
+    // 主助理资料一旦存在，用 !bot 判断就会把飞书/微信状态整行丢掉。
+    expect(pageSource).toContain("{!botParam && <AssistantChannelStatus />}");
+    expect(pageSource).not.toContain("{!bot && <AssistantChannelStatus />}");
+  });
 });
 
 describe("bot profile dialog", () => {
