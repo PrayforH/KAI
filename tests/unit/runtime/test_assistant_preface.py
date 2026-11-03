@@ -35,6 +35,7 @@ from harness.core.models import (
 from harness.runtime.assistant_preface import PREFACE_NUDGE_REASON, AssistantPreface
 from harness.runtime.base import RuntimeContext
 from harness.runtime.claude_sdk import ClaudeSdkRuntime
+from harness.runtime.platform_tools import PlatformToolOverlay
 
 
 def _route() -> ModelRoute:
@@ -75,9 +76,7 @@ class _WithholdingGate:
         preface: AssistantPreface | None = None,
         **_kwargs: Any,
     ) -> dict[str, list[HookMatcher]]:
-        async def hook(
-            hook_input: Any, tool_use_id: str, _hook_context: Any
-        ) -> dict[str, Any]:
+        async def hook(hook_input: Any, tool_use_id: str, _hook_context: Any) -> dict[str, Any]:
             if preface is None or not preface.should_nudge():
                 return {}
             self.withheld.append(tool_use_id)
@@ -124,9 +123,7 @@ async def test_the_withheld_tool_result_never_reaches_the_public_events(
 ) -> None:
     gate = _WithholdingGate()
 
-    async def fake_query(
-        _prompt: str, options: ClaudeAgentOptions
-    ) -> AsyncIterator[object]:
+    async def fake_query(_prompt: str, options: ClaudeAgentOptions) -> AsyncIterator[object]:
         matcher = options.hooks["PreToolUse"][0]
         await matcher.hooks[0](  # type: ignore[misc]
             {"tool_use_id": "tool-nudged"},
@@ -169,40 +166,33 @@ async def test_the_withheld_tool_result_never_reaches_the_public_events(
 
     events = [
         event
-        async for event in runtime.execute(
-            _context(tmp_path, conversation_surface="assistant")
-        )
+        async for event in runtime.execute(_context(tmp_path, conversation_surface="assistant"))
     ]
 
     assert gate.withheld == ["tool-nudged"]
     # The public sentence the model produced is kept.
     public_text = "".join(
-        str(event.payload.get("text", ""))
-        for event in events
-        if event.type == "message.delta"
+        str(event.payload.get("text", "")) for event in events if event.type == "message.delta"
     )
     assert "先只读核对工作区。" in public_text
     # The withheld call is not a step; a real tool result still is.
-    results = [
-        event
-        for event in events
-        if event.type == "tool.result"
-    ]
-    assert [str(event.payload.get("tool_call_id", "")) for event in results] == [
-        "tool-real"
-    ]
-    assert not [
-        event for event in events if event.type == "tool.request"
-    ]
+    results = [event for event in events if event.type == "tool.result"]
+    assert [str(event.payload.get("tool_call_id", "")) for event in results] == ["tool-real"]
+    assert not [event for event in events if event.type == "tool.request"]
 
 
 @pytest.mark.asyncio
-async def test_a_task_surface_run_never_asks_for_a_preface(tmp_path: Path) -> None:
+@pytest.mark.parametrize(("surface", "require_preface"), [("task", True), ("assistant", False)])
+async def test_tasks_and_specialists_do_not_require_a_preface(
+    tmp_path: Path, surface: str, require_preface: bool
+) -> None:
     gate = _WithholdingGate()
 
-    async def fake_query(
-        _prompt: str, options: ClaudeAgentOptions
-    ) -> AsyncIterator[object]:
+    async def fake_query(_prompt: str, options: ClaudeAgentOptions) -> AsyncIterator[object]:
+        if not require_preface:
+            assert "Start the assigned work directly" in options.system_prompt
+            assert "begin with one short factual progress" not in options.system_prompt
+            assert "existing tool approvals remain separate" in options.system_prompt
         # The real gate only nudges when the runtime enabled it.
         matcher = options.hooks["PreToolUse"][0]
         await matcher.hooks[0](  # type: ignore[misc]
@@ -228,14 +218,13 @@ async def test_a_task_surface_run_never_asks_for_a_preface(tmp_path: Path) -> No
         tool_gate=cast(Any, gate),
     )
 
-    events = [
-        event
-        async for event in runtime.execute(
-            _context(tmp_path, conversation_surface="task")
-        )
-    ]
+    context = _context(tmp_path, conversation_surface=surface).model_copy(
+        update={"platform_tools": PlatformToolOverlay(require_public_preface=require_preface)}
+    )
+    events = [event async for event in runtime.execute(context)]
 
-    # A task surface keeps the tool result: no preface, no hidden step.
+    assert gate.withheld == []
+    # Keep the actual tool result: no acknowledgement gate, no hidden step.
     assert [
         str(event.payload.get("tool_call_id", ""))
         for event in events

@@ -25,7 +25,7 @@ from harness.runtime.codex_runtime import (
     CodexRuntimeConfig,
     CodexServerRequestHandler,
 )
-from harness.runtime.execution_contract import VISIBLE_EXECUTION_CONTRACT
+from harness.runtime.execution_contract import visible_execution_contract
 from harness.runtime.installed import INSTALLED_AGENT_RUNTIMES
 from harness.runtime.tools import (
     ResolvedTools,
@@ -262,7 +262,7 @@ class RegistryCodexRuntime:
                 model=model,
                 model_provider=provider,
                 developer_instructions=(
-                    f"{snapshot.system_prompt.rstrip()}\n\n{VISIBLE_EXECUTION_CONTRACT}"
+                    f"{snapshot.system_prompt.rstrip()}\n\n{visible_execution_contract(require_public_preface=context.platform_tools.require_public_preface)}"
                 ),
                 environment=environment,
                 config_overrides=(

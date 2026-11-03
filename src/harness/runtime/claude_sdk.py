@@ -73,7 +73,10 @@ from harness.runtime.base import (
     RuntimeExecutionTimeoutError,
     RuntimeResultError,
 )
-from harness.runtime.execution_contract import VISIBLE_EXECUTION_CONTRACT
+from harness.runtime.execution_contract import (
+    VISIBLE_EXECUTION_CONTRACT,
+    visible_execution_contract,
+)
 from harness.runtime.hooks import SdkDiagnosticTail, sdk_diagnostic_summary
 from harness.runtime.mcp_credentials import redact_mcp_credentials
 from harness.runtime.memory_tools import create_memory_mcp_server, memory_execution_context
@@ -1138,7 +1141,8 @@ class ClaudeSdkRuntime:
                 # 常常与当下问题无关（归档 Agent 被问天气），只把工具挂上、把要求
                 # 追加在末尾，模型仍会顺着自己的角色和会话历史直接回"取不到"。
                 f"{WEB_ASSISTANT_CONTRACT if assistant_web else ''}"
-                f"{self._snapshot.system_prompt.rstrip()}\n\n{VISIBLE_EXECUTION_CONTRACT}\n{WEB_CONTRACT}"
+                f"{self._snapshot.system_prompt.rstrip()}\n\n"
+                f"{visible_execution_contract(require_public_preface=context.platform_tools.require_public_preface)}\n{WEB_CONTRACT}"
                 f"{delegation_contract}{_knowledge_mode_contract(context)}"
                 f"{_sandbox_tool_contract(allowed_tools, workspace=context.remote_workspace)}"
                 f"\n{context.platform_tools.instructions}"
@@ -1308,6 +1312,7 @@ class ClaudeSdkRuntime:
         ):
             preface = AssistantPreface(
                 enabled=context.run.input.get("conversation_surface") == "assistant"
+                and context.platform_tools.require_public_preface
                 and not context.run.input.get("studio_builder")
             )
             options, resolved_tools = await self._options(

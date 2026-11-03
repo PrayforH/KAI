@@ -841,6 +841,17 @@ async def test_standalone_bot_conversation_uses_its_owned_profile_and_domain_mem
     instructions = specialist_instructions(bot)
     assert "编码协同" in instructions and "按需" in instructions
     assert "internal-only" not in instructions
+    from harness.assistant.delegation import specialist_role_overlay
+
+    child = specialist_role_overlay(bot)
+    primary = specialist_role_overlay(bot, coordinator=True)
+    assert child.require_public_preface is False
+    assert primary.require_public_preface is True
+    assert child.tools == primary.tools == ()
+    assert "直接开始执行，不先复述任务" in child.instructions
+    assert "不要再次创建同一任务" in child.instructions
+    assert "真实缺少信息、权限" in child.instructions
+    assert "不要再次创建同一任务" not in primary.instructions
     repo.get_specialist.side_effect = NotFoundError("not owned")
     assert await specialist_memory_scope(SimpleNamespace(repository=repo), agui, session) is None
 
