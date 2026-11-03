@@ -16,6 +16,26 @@ remote-computer执行复用原supervisor的UID28000、PID/mount namespace和执�
 
 ## 验证进展
 
-机器/网络检查、私有反向通道和Unix桌面传输已完成。已通过177相关单元、25数据库集成、8相关前端测试、TypeScript、Pyright相关文件0错误。最终发布与真实GUI操作/接管、云本地来回切换、飞书同步继续验收，以最终报告为准。
+机器/网络检查、私有反向通道和Unix桌面传输已完成。已通过180相关单元、25数据库集成、8相关前端测试、TypeScript、Pyright相关文件0错误。最终发布与真实GUI操作/接管、云本地来回切换、飞书同步继续验收，以最终报告为准。
 
-agent-desktop的辅助功能定位可作为后续适配器。本机Ubuntu22.04与其当前官方Linux支持要求不匹配，本轮复用现有RFB协议，不为接入强制升级用户OS。
+agent-desktop的辅助功能定位作为后续适配器：接入本地电脑本身复用现有RFB协议；用户随后单独授权将32.45升级到24.04，以满足当前官方Linux支持要求。CLI安装、可访问性探测与模型工具接入分别验收。
+
+## 用户追加：将32.45升级至24.04 LTS
+
+用户已确认保存工作，允许升级期间中断服务和重启32.45。前置22.04更新、配置/软件/服务备份及一次重启已完成；官方24.04.5 LTS升级器的签名已校验。计划下载3792MB，151旧包移除、617新装、1891升级，已按授权开始。发行版升级在root tmux会话kai-ubuntu-2404内持久运行。
+
+升级后检查NVIDIA RTX3090、SSH、Docker及原运行容器、X11桌面、反向连接和KAI观测/操作。注意FUSE兼容库（AppImage）、中文输入法和原第三方源。随后核实agent-desktop在本机24.04的实际支持能力，保留当前RFB观测/输入作为通用适配和回退。不得把安装CLI等同已具备模型端辅助功能树操作。
+
+## 运维边界与当前进度
+
+79的control与viewer保留cap_drop ALL。反向Unix socket目录使用专用link用户、root组、2750；sshd该用户StreamLocalBindMask=0117，socket为link:root、0660。容器通过组访问，不新增DAC能力，不开放TCP桌面端口。Viewer v2每次键盘、指针或剪贴板输入都重新核验当前人工控制epoch，拒绝交还后旧连接继续输入。
+
+32.45重启后Docker的172.20/16网段覆盖79目标路由，且公司VPN尚未恢复，当前不能将远端连接标为通过。必须在真实VPN恢复后核对通道、实际桌面与人工接管；临时路由探测不是交付证据。用户已明确虎盾VPN并授权本次登录，凭证不进入仓库或文档。
+
+## 24.04与辅助功能树的实际边界
+
+32.45已完成24.04.5升级并重启进入6.8.0-147，RTX3090/580.178.04、SSH、X11和Docker验证正常。Files46.4真实窗口可读，agent-desktop 1.1.0由官方npm包安装到独立/opt/kai-agent-desktop。status报告AT-SPI权限与窗口等surface可用，完整Files树及搜索框的语义展开/收起已复核。GTK4搜索框的无焦点type被明确拒绝，不把拒绝误报输入成功；CLI launch对D-Bus转交的返回值也不能代替实际窗口检查。
+
+这证明本机可运行原生agent-desktop，不代表KAI已新增AX模型工具。后续AX适配应放在既有DesktopService协调器内，与RFB输入共享租约/epoch、取消和人工接管屏障；不得让模型通过普通命令直接连接用户session bus，不得另起一套生命周期或按业务写死流程。
+
+真实部署发现两项环境问题并修复：远端HOME原为777，OpenSSH StrictModes拒绝其viewer密钥，只移除组/其他用户的写权限为755，不递归变更文件、不关闭StrictModes；本地SSH代理改用shlex.join组织的绝对sys.executable，在桌面通道的精简PATH下同样可执行。新增Unix socket真正收发、空PATH回归，相关181项单元测试通过。

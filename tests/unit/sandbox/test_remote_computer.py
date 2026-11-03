@@ -1,7 +1,12 @@
 """Remote enrollment and recovery must fail closed without powering off a PC."""
 
+import asyncio
 import json
+import shlex
+import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -49,9 +54,42 @@ def test_private_ssh_uses_host_pin_and_no_password_fallback():
     assert "StrictHostKeyChecking=yes" in argv
     assert "BatchMode=yes" in argv
     assert argv[-1] == "kai-control@remote-node"
-    assert any(
-        a.startswith("ProxyCommand=python3 -I ") and a.endswith("/transport/ssh.sock") for a in argv
-    )
+    proxy = next(a.removeprefix("ProxyCommand=") for a in argv if a.startswith("ProxyCommand="))
+    assert shlex.split(proxy)[0] == sys.executable
+    assert shlex.split(proxy)[-1] == "/transport/ssh.sock"
+
+
+@pytest.mark.asyncio
+async def test_reverse_proxy_works_without_python_on_desktop_path(tmp_path: Path):
+    async def exchange(reader, writer):
+        writer.write(b"reply:" + await reader.readexactly(4))
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    # macOS pytest paths can exceed the Unix socket name limit.
+    with TemporaryDirectory(prefix="kai-ssh-", dir="/tmp") as directory:
+        socket_path = Path(directory) / "ssh.sock"
+        server = await asyncio.start_unix_server(exchange, path=socket_path)
+        configured = endpoint().model_copy(update={"proxy_socket": str(socket_path)})
+        proxy = next(
+            a.removeprefix("ProxyCommand=")
+            for a in configured.argv()
+            if a.startswith("ProxyCommand=")
+        )
+        async with server:
+            process = await asyncio.create_subprocess_exec(
+                "/bin/sh",
+                "-c",
+                proxy,
+                env={"PATH": str(tmp_path / "empty-path")},
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(b"ping"), timeout=5)
+    assert process.returncode == 0, stderr.decode()
+    assert stdout == b"reply:ping"
 
 
 @pytest.mark.asyncio

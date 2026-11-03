@@ -430,11 +430,17 @@ def create_viewer_app(
 
     async def stream(websocket: WebSocket) -> None:
         token = websocket.cookies.get(settings.cookie_name)
-        if websocket.headers.get("origin") not in settings.origins or not await authorized(token):
+        if websocket.headers.get("origin") not in settings.origins:
+            logging.getLogger(__name__).warning("desktop connection refused: untrusted origin")
+            await websocket.close(code=1008)
+            return
+        if not await authorized(token):
+            logging.getLogger(__name__).warning("desktop connection refused: owner login required")
             await websocket.close(code=1008)
             return
         # One viewer for this preview. No Agent GUI endpoint exists yet.
         if busy.locked():
+            logging.getLogger(__name__).warning("desktop connection refused: viewer already active")
             await websocket.close(code=1013)
             return
         async with busy:
@@ -558,8 +564,12 @@ def create_viewer_app(
                 TimeoutError,
                 asyncio.IncompleteReadError,
                 WebSocketDisconnect,
-            ):
-                pass
+            ) as error:
+                # Transport errors may include node paths or host details; keep
+                # only the exception type in the operator log.
+                logging.getLogger(__name__).warning(
+                    "desktop connection setup failed: %s", type(error).__name__
+                )
             finally:
                 # Teardown is bounded and terminates the transport first: a
                 # cancelled pipe reader must never hold the exclusive lock

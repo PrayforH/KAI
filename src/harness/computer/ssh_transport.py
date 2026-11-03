@@ -3,6 +3,8 @@
 Endpoints are node configuration, never model or browser arguments.
 """
 
+import shlex
+import sys
 from pathlib import Path
 from typing import Literal, Protocol
 
@@ -57,7 +59,10 @@ class SshEndpoint(BaseModel):
         ]
         if self.proxy_socket is not None:
             proxy = str(Path(__file__).with_name("socket_proxy.py"))
-            argv[1:1] = ["-o", "ProxyCommand=python3 -I " + proxy + " " + self.proxy_socket]
+            # Desktop transports deliberately use a minimal PATH. Reuse this
+            # interpreter by absolute path, including when its path has spaces.
+            command = shlex.join([sys.executable, "-I", proxy, self.proxy_socket])
+            argv[1:1] = ["-o", "ProxyCommand=" + command]
         return argv
 
 
