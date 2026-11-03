@@ -352,6 +352,16 @@ class SdkToolGate:
                     selected_policy_id = "unknown-subagent"
                     selected_policy = implicit_deny
             canonical_name = canonical_tool_name(typed_input["tool_name"])
+            if context.platform_tools.workflow is not None:
+                reason = context.platform_tools.workflow.before_tool(canonical_name)
+                if reason:
+                    await self._events.append(
+                        tenant_id=context.run.tenant_id, run_id=context.run.run_id,
+                        session_id=context.run.session_id,
+                        event_type="assistant.routing.blocked",
+                        payload={"tool": canonical_name, "reason": reason},
+                    )
+                    return _hook_output("deny", reason)
             catalog_result_trust = declared_result_trust.get(
                 typed_input["tool_name"],
                 declared_result_trust.get(canonical_name, ContextTrust.SAFE),
@@ -568,6 +578,13 @@ class SdkToolGate:
             _hook_context: HookContext,
         ) -> HookJSONOutput:
             typed_input = cast(StopHookInput, hook_input)
+            workflow = context.platform_tools.workflow
+            if workflow is not None:
+                reason = workflow.before_finish()
+                if reason and not typed_input.get("stop_hook_active", False):
+                    return cast(HookJSONOutput, {"decision": "block", "reason": reason})
+                if workflow.before_tool("WebFetch") is not None:
+                    return cast(HookJSONOutput, {})
             if not web_evidence.needs_verification(
                 typed_input.get("last_assistant_message", ""),
                 stop_hook_active=typed_input.get("stop_hook_active", False),
@@ -602,7 +619,7 @@ class SdkToolGate:
                 HookMatcher(matcher=None, hooks=[trace_tool_failure]),
             ],
         }
-        if web_evidence.enabled:
+        if web_evidence.enabled or context.platform_tools.workflow is not None:
             hooks["Stop"] = [HookMatcher(matcher=None, hooks=[verify_web_failure], timeout=10.0)]
         return hooks
 

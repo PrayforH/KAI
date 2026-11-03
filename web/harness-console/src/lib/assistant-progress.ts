@@ -44,6 +44,7 @@ function publicNotes(activity: ProgressActivity): Array<ChatActivityStep & { ind
 }
 
 function toolStage(name: string): [string, string] {
+  if (/assistant_route_message/i.test(name)) return ["正在安排处理。", "已确定处理方式。"];
   if (/^(?:Task|Agent)$/.test(name)) return ["子助理正在处理请求。", "已收到子助理结果，正在核对。"];
   if (/assistant_(?:delegate|create|send_instruction)/i.test(name)) return ["正在联系子助理。", "已收到交办回执，正在核对。"];
   if (/assistant_|managed_|objective_/i.test(name)) return ["正在核对子助理和原任务。", "已收到查询结果，正在整理。"];

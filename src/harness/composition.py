@@ -42,6 +42,7 @@ from harness.assistant.delegation import (
 from harness.assistant.file_delivery import ChannelFiles
 from harness.assistant.memory_tools import MemoryBankGateway, assistant_memory_overlay
 from harness.assistant.repository import PostgresAssistantRepository
+from harness.assistant.routing import assistant_routing_overlay
 from harness.assistant.service import AssistantService
 from harness.auth.api_access import ApiAccessService
 from harness.auth.audit import AuditService
@@ -1667,11 +1668,20 @@ def build_production_container(
         )
         directory_overlay = PlatformToolOverlay()
         if coordinator and container.assistant is not None:
-            directory_overlay = PlatformToolOverlay(instructions=specialist_directory_instructions(
-                await container.assistant.repository.list_specialists(
-                    session.tenant_id, session.user_id
-                ), session.tenant_id, session.user_id,
-            ))
+            if (run.input.get("conversation_surface") == "assistant"
+                    and run.business_project_id is None
+                    and session.runtime_type in {"claude-agent-sdk", "deepagents"}):
+                directory_overlay = await assistant_routing_overlay(
+                    container.assistant, events, run, session
+                )
+            else:
+                directory_overlay = PlatformToolOverlay(
+                    instructions=specialist_directory_instructions(
+                        await container.assistant.repository.list_specialists(
+                            session.tenant_id, session.user_id
+                        ), session.tenant_id, session.user_id,
+                    )
+                )
         memory_overlay = PlatformToolOverlay()
         specialist = (
             await session_specialist(container.assistant, container.agui, session)
@@ -1692,6 +1702,7 @@ def build_production_container(
             + office_overlay.tools
             + delegation_overlay.tools
             + memory_overlay.tools
+            + directory_overlay.tools
         )
         instructions = "\n\n".join(
             layer.instructions
@@ -1711,6 +1722,7 @@ def build_production_container(
             tools=merged,
             instructions=instructions,
             require_public_preface=role_overlay.require_public_preface,
+            workflow=directory_overlay.workflow,
         )
 
     worker = RunOrchestrator(

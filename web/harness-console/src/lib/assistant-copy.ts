@@ -22,7 +22,7 @@ export function assistantCopy(text: string): string {
     .replace(/`?\b(?:expected_)?revision`?\s*(?:仍|为|是|[=:：])?\s*`?\d+`?/gi, "")
     .replace(/`?(?:\b(?:thread|objective|managed|specialist|execution|checkpoint|run|artifact)(?:_id|Id| ID)?)`?\s*[=:：]\s*(?=`?(?:assistant_|specialist_|objective_|managed_|execution_|run_|thread_|artifact_))/gi, "")
     .replace(internalId(), "")
-    .replace(/\b(?:assistant_resolve_target|assistant_manage_work|assistant_delegate_to_specialist|assistant_work_notifications|assistant_update_task|assistant_task_status|assistant_send_instruction|assistant_create_task)\b/g, "")
+    .replace(/\b(?:assistant_route_message|assistant_resolve_target|assistant_manage_work|assistant_delegate_to_specialist|assistant_work_notifications|assistant_update_task|assistant_task_status|assistant_send_instruction|assistant_create_task)\b/g, "")
     .replace(/\bfollow_only\b/g, "只跟进").replace(/\bautonomous\b/g, "自动推进")
     .replace(/`?\[?(?:needs_input|pending_input)\]?`?/g, "等你补充信息")
     .replace(/\[ready\]/g, "可接单")

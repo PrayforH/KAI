@@ -488,6 +488,17 @@ class AssistantService:
             )
         )
 
+    async def validate_routing_parent(self, tenant_id: str, user_id: str, run_id: str) -> None:
+        """Recheck the live origin before launching work from a routing turn."""
+        parent = await self._runs.get(tenant_id, run_id)
+        if parent.status is not RunStatus.RUNNING:
+            raise ConflictError("主助理本轮已停止，不能再派发新工作")
+        origin = await self._agui.get_thread_record_for_session(
+            tenant_id=tenant_id, user_id=user_id, session_id=parent.session_id,
+        )
+        if origin.thread_id != PERSONAL_ASSISTANT_THREAD or parent.business_project_id is not None:
+            raise PermissionDeniedError("只有主助理聊天可以使用本次职责路由")
+
     async def send_mention_message(
         self,
         tenant_id: str,
@@ -498,6 +509,8 @@ class AssistantService:
         idempotency_key: str,
         source_thread_id: str,
         model_route: str | None = None,
+        dispatched: bool = False,
+        quoted_message_context: str = "",
     ) -> SpecialistHandover:
         # A client supplies the origin, never another user's identity. Reserve
         # the personal address for this authenticated user; other origins must
@@ -511,6 +524,10 @@ class AssistantService:
                 thread_id=source_thread_id,
             )
         specialist = await self.repository.get_specialist(tenant_id, user_id, specialist_id)
+        if dispatched:
+            if specialist.status not in {SpecialistStatus.READY, SpecialistStatus.ACTIVE}:
+                raise ConflictError("这个子助理当前不能接单")
+            require_local_tools(specialist.config)
         target = await self.specialist_conversation(tenant_id, user_id, specialist)
         connection_mode = "service_owned"
         if target.space_id is not None:
@@ -544,6 +561,8 @@ class AssistantService:
             connection_mode=connection_mode,
             append_to_history=True,
             deduplicate_active_input=False,
+            assistant_dispatch=dispatched,
+            quoted_message_context=quoted_message_context,
             request=RunAgentInput(
                 thread_id=target.thread_id,
                 run_id=f"mention-{receipt.handover_id}",

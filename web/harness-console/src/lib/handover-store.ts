@@ -104,6 +104,21 @@ export const handoverStore = {
     });
   },
   /** 用户 @某个 Bot 后的即时回执；刷新后由 seed() 从持久 handover 还原。 */
+  ingestDelivery(payload: unknown) {
+    if (typeof payload !== "object" || payload === null) return;
+    const raw = payload as Record<string, unknown>;
+    const required = ["handoverId", "specialistId", "specialistName", "sourceThreadId", "targetThreadId", "runId"];
+    if (required.some(key => typeof raw[key] !== "string" || !raw[key])) return;
+    handoverStore.ingestMention({
+      handoverId: raw.handoverId as string,
+      specialistId: raw.specialistId as string,
+      specialistName: raw.specialistName as string,
+      sourceThreadId: raw.sourceThreadId as string,
+      targetThreadId: raw.targetThreadId as string,
+      runId: raw.runId as string,
+      createdAt: typeof raw.createdAt === "string" ? raw.createdAt : undefined,
+    });
+  },
   ingestMention(payload: {
     handoverId: string;
     specialistId: string;

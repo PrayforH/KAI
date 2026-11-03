@@ -349,6 +349,9 @@ export class HarnessHttpAgent extends HttpAgent {
         if (params.event.name === "ui.handover" && typeof window !== "undefined") {
           handoverStore.ingest(params.event.value);
         }
+        if (params.event.name === "ui.assistant_delivery" && typeof window !== "undefined") {
+          handoverStore.ingestDelivery(params.event.value);
+        }
         return subscriber?.onCustomEvent?.(params);
       },
       onRunFinishedEvent: async (params) => {

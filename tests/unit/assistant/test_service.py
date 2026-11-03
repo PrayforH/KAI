@@ -141,3 +141,31 @@ async def test_generated_brief_presentation_is_only_for_specialist_dispatch(scop
     prompt = args["request"].messages[0].content
     assert ("本次任务：" in prompt) is (scope == "specialist")
     assert ("一次执行结束不代表持续事项结束" in prompt) is (scope != "specialist")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", [RunStatus.CANCELLED, RunStatus.CANCELLING, RunStatus.SUCCEEDED])
+async def test_stopped_routing_parent_cannot_launch_new_work(state):
+    from harness.core.errors import ConflictError
+    service, _, _, _, agui, runs, run = setup()
+    runs.get.return_value = run.model_copy(update={"status": state})
+    with pytest.raises(ConflictError, match="已停止"):
+        await service.validate_routing_parent("t", "u", "run")
+    agui.get_thread_record_for_session.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_routing_parent_must_be_the_owned_main_conversation():
+    from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
+    service, _, _, _, agui, runs, run = setup()
+    runs.get.return_value = run
+    agui.get_thread_record_for_session.return_value = SimpleNamespace(thread_id="ordinary-task")
+    with pytest.raises(PermissionDeniedError):
+        await service.validate_routing_parent("t", "u", "run")
+    agui.get_thread_record_for_session.return_value = SimpleNamespace(
+        thread_id=PERSONAL_ASSISTANT_THREAD
+    )
+    await service.validate_routing_parent("t", "u", "run")
+    agui.get_thread_record_for_session.assert_awaited_with(
+        tenant_id="t", user_id="u", session_id="session"
+    )

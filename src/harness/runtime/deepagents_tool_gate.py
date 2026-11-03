@@ -140,6 +140,13 @@ class DeepagentsToolGate(AgentMiddleware):
         # `ToolCall.args` is a required mapping in the middleware contract, so read
         # it directly rather than re-validating a shape the caller already promised.
         arguments: dict[str, Any] = dict(tool_call.get("args") or {})
+        if context.platform_tools.workflow is not None:
+            reason = context.platform_tools.workflow.before_tool(tool_name)
+            if reason:
+                await self._append(
+                    "assistant.routing.blocked", {"tool": tool_name, "reason": reason}
+                )
+                return self._denied(tool_call_id, raw_name, reason)
         invalid_path = False
         if raw_name in FILESYSTEM_TOOL_TO_BUILTIN:
             for key in ("file_path", "path"):

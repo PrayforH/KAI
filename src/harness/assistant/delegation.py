@@ -191,6 +191,7 @@ def specialist_directory_instructions(
             configuration_error = True
         entries.append({
             "name": item.name, "specialist_id": item.specialist_id,
+            "description": getattr(item, "description", ""),
             "availability": item.status.value,
             "missing_local_permissions": missing,
             "configuration_error": configuration_error,

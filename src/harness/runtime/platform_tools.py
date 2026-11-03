@@ -2,7 +2,7 @@
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from claude_agent_sdk import SdkMcpTool, create_sdk_mcp_server
 
@@ -15,6 +15,15 @@ class PlatformTool:
     handler: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 
 
+@runtime_checkable
+class ToolWorkflow(Protocol):
+    """Per-run workflow admission, in addition to normal tool authorization."""
+
+    def before_tool(self, name: str) -> str | None: ...
+
+    def before_finish(self) -> str | None: ...
+
+
 @dataclass(frozen=True)
 class PlatformToolOverlay:
     tools: tuple[PlatformTool, ...] = ()
@@ -22,6 +31,7 @@ class PlatformToolOverlay:
     # Server-resolved Bot roles may execute without a mandatory acknowledgement.
     # This is presentation guidance, never a tool permission or client override.
     require_public_preface: bool = True
+    workflow: ToolWorkflow | None = None
 
     @property
     def names(self) -> tuple[str, ...]:
