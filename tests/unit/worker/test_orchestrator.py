@@ -2545,6 +2545,8 @@ async def test_planner_provider_failure_preserves_runtime_execution(tmp_path: Pa
 async def test_assistant_chat_owns_progress_without_a_serial_display_model(tmp_path: Path):
     from unittest.mock import AsyncMock, Mock
 
+    from harness.runtime.platform_tools import PlatformToolOverlay
+
     planner = Mock()
     planner.model = "test-display-model"
     planner.plan = AsyncMock(side_effect=AssertionError("chat must not wait for UI classification"))
@@ -2557,6 +2559,16 @@ async def test_assistant_chat_owns_progress_without_a_serial_display_model(tmp_p
     guidance = await orchestrator._interaction_guidance(chat)  # pyright: ignore[reportPrivateUsage]
     assert "先向用户发送一句简短的公开回应" in guidance
     assert "不暴露私有思考" in guidance
+    router = await orchestrator._interaction_guidance(
+        chat, PlatformToolOverlay(workflow=Mock()),
+    )
+    child = await orchestrator._interaction_guidance(
+        chat, PlatformToolOverlay(require_public_preface=False),
+    )
+    assert "先向用户发送一句简短的公开回应" not in router + child
+    assert "简单问答直接回答" not in router
+    assert "不附历史故障" in router
+    assert "不先复述任务" in child
     planner.plan.assert_not_awaited()
     # The same historical thread, opened as a task, keeps the old planning path.
     planner.plan = AsyncMock(return_value=None)

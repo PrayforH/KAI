@@ -357,13 +357,30 @@ class RunOrchestrator:
         ):
             self._observability.annotate_current_io(output_value=text)
 
-    async def _interaction_guidance(self, run: Run) -> str:
+    async def _interaction_guidance(
+        self, run: Run, platform_tools: PlatformToolOverlay | None = None,
+    ) -> str:
         if (
             run.input.get("conversation_surface") == "assistant"
             and not run.input.get("studio_builder")
         ):
             # Avoid a serial auxiliary model call before a chat response. The existing
             # main-model UI contract still owns forms, artifacts and interactive content.
+            if platform_tools is not None and platform_tools.workflow is not None:
+                return (
+                    "## 当前主助理路由交互\n"
+                    "先提交职责路由，再按实际投递结果给一句简短回执并结束；"
+                    "不在路由前解释，不复述工作，不附历史故障或兜底代做承诺。"
+                    "结果由子助理自动回传。需要澄清时只问必要问题，直接处理时遵守既有权限。"
+                    "真实失败如实说明，不将未送达说成成功；内部决定与编号不进入正文。"
+                )
+            if platform_tools is not None and not platform_tools.require_public_preface:
+                return (
+                    "## 当前子助理聊天约定\n"
+                    "直接开始工作并答复，不先复述任务或发送收到、我会处理等占位消息。"
+                    "有实际重要进展再发短消息，最后给结论；必要问题与授权沿用已有交互。"
+                    "只报告实际观察，不暴露内部编号，不把排队或未验证结果说成完成。"
+                )
             return (
                 "## 当前助理聊天约定\n"
                 "简单问答直接回答，不先检索文件、不创建任务，也不额外发占位话。"
@@ -1641,7 +1658,12 @@ class RunOrchestrator:
                 assert artifact_file_plane is not None
                 return await artifact_file_plane.download_file(path, max_bytes=max_bytes)
 
-            interaction_guidance = await self._interaction_guidance(run)
+            platform_tools = (
+                await self._platform_tools_factory(run, session, handle, active_sandbox)
+                if self._platform_tools_factory
+                else PlatformToolOverlay()
+            )
+            interaction_guidance = await self._interaction_guidance(run, platform_tools)
             artifact_publisher = (
                 ArtifactPublisher(
                     workspace=handle.path,
@@ -1717,11 +1739,7 @@ class RunOrchestrator:
                     },
                 )
             context = RuntimeContext(
-                platform_tools=(
-                    await self._platform_tools_factory(run, session, handle, active_sandbox)
-                    if self._platform_tools_factory
-                    else PlatformToolOverlay()
-                ),
+                platform_tools=platform_tools,
                 run=run,
                 session=session,
                 workspace=handle.path,
