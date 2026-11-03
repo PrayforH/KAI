@@ -22,6 +22,8 @@ import { BotProfileDialog } from "../components/bot-profile-dialog";
 import { AuthProvider, useAuth } from "../components/auth-provider";
 import { AssistantChannelStatus } from "../components/assistant-channel-status";
 import { assistantRequest } from "../lib/assistant-client";
+import { readClientResource } from "../lib/client-read-cache";
+import { prefetchThreadHistory } from "../lib/task-history";
 import {
   AssistantBotProvider,
   ConversationSurfaceProvider,
@@ -281,7 +283,7 @@ function AuthenticatedHome() {
     const botId = botParam;
     if (!botId) { setBot(null); botViewedRef.current = null; return; }
     let active = true;
-    void assistantRequest<{
+    void readClientResource(`assistant-detail:${user.user_id}:${botId}:${botRevision}`, () => assistantRequest<{
       specialist: {
         specialistId: string;
         name: string;
@@ -289,6 +291,7 @@ function AuthenticatedHome() {
         agentName: string;
         agentVersion: string;
         status: string;
+        routinePausedReason?: { reason?: string } | null;
         config?: { appearance?: { color?: string; avatar?: string } };
       };
       threadId: string | null;
@@ -297,7 +300,7 @@ function AuthenticatedHome() {
       agentOwnerUserId: string;
       spaceId: string | null;
       primaryObjectiveId: string | null;
-    }>(`specialists/${encodeURIComponent(botId)}`)
+    }>(`specialists/${encodeURIComponent(botId)}`), 15_000)
       .then((data) => {
         if (!active) return;
         if (data.threadId === PERSONAL_ASSISTANT_THREAD) {
@@ -322,6 +325,7 @@ function AuthenticatedHome() {
         // 子助理没有替身会话：直接进入承接职责的原线程，结果就在这条对话里。
         if (data.threadId) {
           setThreadId(data.threadId);
+          void prefetchThreadHistory(data.threadId).catch(() => { /* Runtime reports its own read error. */ });
           // 进入该 Bot 的会话＝一次显式查看：清掉"无人查看已暂停"，闸门恢复。
           // 只打开「…」编辑弹窗不算查看（详情 GET 是纯读）。
           if (botViewedRef.current !== botId) {
@@ -333,6 +337,7 @@ function AuthenticatedHome() {
               // 服务端已清掉 routinePausedReason：让侧栏立刻重拉列表，
               // 不必等 30s 轮询（失败保持旧列表，轮询兜底）。
               .then(() => {
+                if (!data.specialist.routinePausedReason) return;
                 window.dispatchEvent(
                   new CustomEvent("kai:specialists-changed", {
                     detail: { specialistId: botId, reason: "viewed" },

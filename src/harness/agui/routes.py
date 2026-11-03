@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import hashlib
 import json
 import logging
 import time
@@ -20,7 +21,7 @@ from ag_ui.core import (
     TextMessageStartEvent,
 )
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from harness.agui.activity import build_run_activity
@@ -1152,7 +1153,8 @@ async def get_agui_thread_history(
     background_tasks: BackgroundTasks,
     limit: Annotated[int, Query(ge=1, le=_HISTORY_RUN_PAGE_MAX)] = _HISTORY_RUN_PAGE_DEFAULT,
     before: str | None = Query(default=None),
-) -> JSONResponse:
+    if_none_match: str | None = Header(default=None),
+) -> Response:
     ensure_permission(identity, "tasks:read")
     try:
         binding = await container.agui.get_binding(
@@ -1226,6 +1228,28 @@ async def get_agui_thread_history(
     page = window[-limit:]
     has_more = len(window) > len(page)
     page_runs = [item for _, _, item in page if isinstance(item, Run)]
+
+    # An unchanged idle page need not rehydrate tool traces, presentations and
+    # Markdown every time the assistant checks for an incoming message. Auth
+    # and ownership are still checked above; live runs are never conditional.
+    etag = None
+    if all(run.status.is_terminal for run in runs):
+        fingerprint = json.dumps({
+            "version": _HISTORY_SNAPSHOT_VERSION,
+            "owner": [identity.tenant_id, identity.user_id, thread_id],
+            "binding": [binding.session_ids, binding.branch_snapshot_id] if binding else None,
+            "runs": [(r.run_id, r.updated_at.isoformat(), r.status.value) for r in runs],
+            "notices": [item.model_dump(mode="json") for item in notices],
+            "sources": notice_sources,
+            "mentions": [item.model_dump(mode="json") for item in mention_messages],
+            "totals": [notice_total, mention_total],
+            "page": [limit, before],
+        }, sort_keys=True)
+        etag = '"' + hashlib.sha256(fingerprint.encode()).hexdigest() + '"'
+        if if_none_match == etag:
+            return Response(status_code=304, headers={
+                "ETag": etag, "Cache-Control": "private, no-cache",
+            })
 
     semaphore = asyncio.Semaphore(_HISTORY_RUN_CONCURRENCY)
 
@@ -1320,7 +1344,10 @@ async def get_agui_thread_history(
         total=len(runs) + notice_total + mention_total,
         replies=replies or None,
     )
-    return JSONResponse(content=body.model_dump(mode="json", by_alias=True, exclude_none=True))
+    return JSONResponse(
+        content=body.model_dump(mode="json", by_alias=True, exclude_none=True),
+        headers={"ETag": etag, "Cache-Control": "private, no-cache"} if etag else {},
+    )
 
 
 class AguiMessageContext(BaseModel):

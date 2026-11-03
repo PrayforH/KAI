@@ -723,3 +723,29 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .grok-
     -webkit-text-fill-color: currentColor;
   }
 }
+/* History stays quiet while a page is fetched; only an explicit reading action
+   exposes older messages. Pending sends use the same bubble as sent messages. */
+.chat-stage[data-surface="assistant"] .assistant-history-earlier {
+  align-self: center;
+  margin: 6px auto;
+  padding: 4px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--codex-muted, #8f8f8f);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.chat-stage[data-surface="assistant"] .assistant-history-earlier:hover { color: var(--codex-ink, #ededed); }
+.chat-stage[data-surface="assistant"] .assistant-pending-messages { display: grid; gap: 12px; }
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .steering-user-message-bubble {
+  padding: 10px 14px;
+  border-radius: 18px;
+  background: var(--kai-bot-bubble, #126fd4);
+  color: var(--kai-bot-bubble-ink, #fff);
+  font-size: inherit;
+  line-height: 1.6;
+}
+.chat-stage[data-surface="assistant"] .assistant-message-receipt,
+.chat-stage[data-surface="assistant"] .assistant-message-retry { display: block; margin: 4px 0 0 auto; color: var(--codex-muted, #8f8f8f); font-size: 12px; }
+.chat-stage[data-surface="assistant"] .assistant-message-retry { border: 0; background: transparent; cursor: pointer; }

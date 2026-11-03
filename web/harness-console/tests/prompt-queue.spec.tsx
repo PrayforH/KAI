@@ -49,3 +49,12 @@ it("shows pending guidance without queue pause or action controls", () => {
   expect(host.querySelector("button")).toBeNull();
   expect(host.textContent).not.toContain("已暂停");
 });
+
+it("shows successive assistant sends as independent bubbles before a run is ready", () => {
+  host = document.createElement("div"); document.body.append(host); root = createRoot(host);
+  act(() => root.render(<PromptQueue chat items={seed.map(item => ({ ...item, intent: "steer" }))}
+    paused={false} busy canSteer={false} sendingIds={[]} onChange={vi.fn()} onPause={vi.fn()} onGuide={vi.fn()} onSend={vi.fn()} />));
+  expect([...host.querySelectorAll(".steering-user-message-bubble")].map(node => node.textContent)).toEqual(["first", "second"]);
+  expect(host.querySelector(".prompt-queue")).toBeNull();
+  expect(host.querySelector("button")).toBeNull();
+});

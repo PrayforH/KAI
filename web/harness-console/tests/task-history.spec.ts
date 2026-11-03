@@ -10,6 +10,20 @@ import {
 } from "../src/lib/task-history";
 
 describe("thread history activity restoration", () => {
+  it("reuses the first assistant snapshot and conditionally refreshes later snapshots", async () => {
+    const first = historyResponse("succeeded", "不变的回答");
+    first.headers.set("ETag", '"first-page"');
+    const fetcher = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(new Response(null, { status: 304 }));
+    vi.stubGlobal("fetch", fetcher);
+    const adapter = createThreadHistoryAdapter("assistant-conditional", { reuseInitialSnapshot: true });
+    await adapter.load();
+    await adapter.loadSnapshot();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    const refreshed = await adapter.loadSnapshot();
+    expect(fetcher.mock.calls[1][1]?.headers).toEqual({ "If-None-Match": '"first-page"' });
+    expect(refreshed.messages.at(-1)?.message.content).toEqual([{ type: "text", text: "不变的回答" }]);
+    adapter.dispose();
+  });
   afterEach(() => {
     activityStore.clear();
     vi.useRealTimers();

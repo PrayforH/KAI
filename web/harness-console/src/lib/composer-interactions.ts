@@ -14,7 +14,7 @@ export function composerTrigger(text: string, caret: number) {
   if (!match || (match[1] === "/" && before.trimStart() !== match[0].trimStart())) return null;
   return { symbol: match[1], query: match[2].toLowerCase(), start: caret - match[2].length - 1, end: caret };
 }
-export interface QueuedPrompt { id: string; text: string; attachments: CompleteAttachment[]; steerRunId?: string }
+export interface QueuedPrompt { id: string; text: string; attachments: CompleteAttachment[]; steerRunId?: string; intent?: "steer" | "next" }
 export function queueAttachments(attachments: readonly Attachment[]): CompleteAttachment[] {
   return attachments.map((attachment) => {
     if (attachment.status.type === "complete") return attachment as CompleteAttachment;

@@ -79,14 +79,14 @@ export function AssistantRuntimeShell({
   )?.id ?? null;
   const refreshDurableHistory = useCallback(() => {
     localOnlyRef.current = false;
-    invalidateThreadHistory(threadId);
+    invalidateThreadHistory(threadId, { keepPages: conversationSurface === "assistant" });
     // Let the terminal live answer paint before reconciling the durable snapshot.
     // History remains the recovery source; this only moves its cache refresh off
     // the immediate terminal event path.
     window.setTimeout(() => {
       setHistoryRevision((current) => current + 1);
     }, 250);
-  }, [threadId]);
+  }, [threadId, conversationSurface]);
   const previousLocalOnly = useRef(localOnly);
   useMentionHistoryUpdates(conversationSurface === "assistant" ? threadId : undefined, refreshDurableHistory);
   useEffect(() => {
@@ -132,6 +132,7 @@ export function AssistantRuntimeShell({
   const history = useMemo(
     () =>
       createThreadHistoryAdapter(threadId, {
+        reuseInitialSnapshot: conversationSurface === "assistant",
         // Feishu can create the personal conversation while this page is open.
         isLocalOnly: () => localOnlyRef.current && threadId !== PERSONAL_ASSISTANT_THREAD,
         onActiveRun: (serverRunId) =>

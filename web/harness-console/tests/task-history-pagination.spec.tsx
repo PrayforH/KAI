@@ -175,14 +175,47 @@ describe("thread history pagination", () => {
     expect(importRepositoryMock).not.toHaveBeenCalled();
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
+
+  it("retains an expanded window and cursor when the latest page refreshes", async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(page([message("user-3", "user", "third")], { next_cursor: "second", has_more: true }))
+      .mockResolvedValueOnce(page([message("user-2", "user", "second")], { next_cursor: "first", has_more: true }))
+      .mockResolvedValueOnce(page([message("user-3", "user", "third"), message("user-4", "user", "fourth")], { next_cursor: "second", has_more: true }))
+      // A moving cursor can overlap one previously loaded message.
+      .mockResolvedValueOnce(page([message("user-1", "user", "first"), message("user-2", "user", "second")], { has_more: false }));
+    vi.stubGlobal("fetch", fetcher);
+    await render();
+    await bootstrapLatestPage();
+    await act(async () => { await state.loadEarlier(); });
+    await bootstrapLatestPage();
+    await act(async () => { await state.loadEarlier(); });
+    expect(fetcher.mock.calls[3][0]).toContain("before=first");
+    expect(importRepositoryMock.mock.lastCall?.[0].messages.map((entry: { message: { id: string } }) => entry.message.id))
+      .toEqual(["user-1", "user-2", "user-3", "user-4"]);
+  });
+
+  it("never imports an in-flight earlier page into a newly selected assistant", async () => {
+    let resolvePage!: (response: Response) => void;
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(page([message("user-2", "user", "second")], { next_cursor: "first", has_more: true }))
+      .mockImplementationOnce(() => new Promise<Response>(resolve => { resolvePage = resolve; })));
+    await render();
+    await bootstrapLatestPage();
+    let pending!: Promise<void>;
+    await act(async () => { pending = state.loadEarlier(); });
+    await render("other-assistant");
+    await act(async () => { resolvePage(page([message("user-1", "user", "first")])); await pending; });
+    expect(importRepositoryMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("auto load earlier on scroll", () => {
-  function Harness({ frameRef, pagination }: {
+  function Harness({ frameRef, pagination, readerDriven = false }: {
     frameRef: { current: HTMLElement | null };
     pagination: Parameters<typeof useAutoLoadEarlierMessages>[1];
+    readerDriven?: boolean;
   }) {
-    useAutoLoadEarlierMessages(frameRef, pagination);
+    useAutoLoadEarlierMessages(frameRef, pagination, { readerDriven });
     return null;
   }
 
@@ -261,6 +294,18 @@ describe("auto load earlier on scroll", () => {
         pagination={{ hasMore: true, loading: false, loadEarlier }} />);
       await new Promise((resolve) => setTimeout(resolve, 40));
     });
+    expect(loadEarlier).toHaveBeenCalledTimes(1);
+    frame.remove();
+  });
+
+  it("opens an assistant without auto-filling or reacting to programmatic scrolls", async () => {
+    const { frame, viewport } = viewportWithMetrics(300, 600);
+    const loadEarlier = vi.fn(async () => undefined);
+    await act(async () => root.render(<Harness frameRef={{ current: frame }} readerDriven
+      pagination={{ hasMore: true, loading: false, loadEarlier }} />));
+    await act(async () => { viewport.dispatchEvent(new Event("scroll")); });
+    expect(loadEarlier).not.toHaveBeenCalled();
+    await act(async () => { viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -50 })); });
     expect(loadEarlier).toHaveBeenCalledTimes(1);
     frame.remove();
   });

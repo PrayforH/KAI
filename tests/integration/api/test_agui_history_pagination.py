@@ -1,9 +1,11 @@
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 from ag_ui.core import RunAgentInput, UserMessage
 from httpx import ASGITransport, AsyncClient
 
+from harness.agui import routes as history_routes
 from harness.agui.routes import _HISTORY_SNAPSHOT_VERSION as HISTORY_SNAPSHOT_VERSION
 from harness.api.app import create_memory_app
 from harness.api.dependencies import ApiContainer
@@ -11,6 +13,31 @@ from harness.core.models import Run
 
 FIXTURE_MANIFEST = Path("tests/fixtures/agents/echo-agent/agent.yaml")
 HEADERS = {"X-Tenant-ID": "tenant-a", "X-User-ID": "user-1"}
+
+
+@pytest.mark.asyncio
+async def test_idle_history_validator_skips_projection_but_never_skips_ownership(monkeypatch):
+    app = create_memory_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        await _drive_turn(app.state.container, "conditional-history", ["first"])
+        path = "/v1/agui/threads/conditional-history/history?limit=1"
+        first = await client.get(path, headers=HEADERS)
+        assert first.status_code == 200
+        tag = first.headers["etag"]
+        reconstruct = AsyncMock(wraps=history_routes._history_messages_for_run)
+        monkeypatch.setattr(history_routes, "_history_messages_for_run", reconstruct)
+        unchanged = await client.get(path, headers={**HEADERS, "If-None-Match": tag})
+        assert unchanged.status_code == 304 and unchanged.content == b""
+        reconstruct.assert_not_awaited()
+        other = await client.get(
+            path, headers={**HEADERS, "X-User-ID": "other", "If-None-Match": tag}
+        )
+        assert other.status_code in (403, 404)
+        await _drive_turn(app.state.container, "conditional-history", ["first", "second"])
+        changed = await client.get(path, headers={**HEADERS, "If-None-Match": tag})
+        assert changed.status_code == 200 and changed.headers["etag"] != tag
+        assert _texts(changed.json(), "user") == ["second"]
 
 
 async def _drive_turn(container: ApiContainer, thread_id: str, prompts: list[str]) -> str:
@@ -153,27 +180,35 @@ async def test_submit_from_partial_history_preserves_unloaded_prefix(edit_last: 
         container = app.state.container
         for length in range(1, 5):
             await _drive_turn(container, thread, [f"turn {i}" for i in range(length)])
-        page = (await client.get(
-            f"/v1/agui/threads/{thread}/history?limit=2", headers=HEADERS
-        )).json()
+        page = (
+            await client.get(f"/v1/agui/threads/{thread}/history?limit=2", headers=HEADERS)
+        ).json()
         assert page["total"] == 4 and page["has_more"]
         messages = [message for message in page["messages"] if message["role"] == "user"]
         if edit_last:
             messages.pop()
         messages.append({"id": "new-client-message", "role": "user", "content": "new turn"})
         creation = await container.agui.create_run_with_result(
-            tenant_id="tenant-a", user_id="user-1", agent_name="echo-agent",
-            agent_version="0.1.0", request=RunAgentInput(
-                thread_id=thread, run_id="new-client-run", messages=messages,
-                tools=[], state={}, context=[], forwarded_props={},
+            tenant_id="tenant-a",
+            user_id="user-1",
+            agent_name="echo-agent",
+            agent_version="0.1.0",
+            request=RunAgentInput(
+                thread_id=thread,
+                run_id="new-client-run",
+                messages=messages,
+                tools=[],
+                state={},
+                context=[],
+                forwarded_props={},
             ),
         )
         expected = [f"turn {i}" for i in range(3 if edit_last else 4)] + ["new turn"]
         assert creation.run.input["conversation_prompts"] == expected
         await container.worker.execute("tenant-a", creation.run.run_id)
-        full = (await client.get(
-            f"/v1/agui/threads/{thread}/history?limit=100", headers=HEADERS
-        )).json()
+        full = (
+            await client.get(f"/v1/agui/threads/{thread}/history?limit=100", headers=HEADERS)
+        ).json()
         assert _texts(full, "user") == expected
         assert full["total"] == len(expected)
 
@@ -187,12 +222,21 @@ async def test_partial_history_anchor_cannot_import_another_threads_prefix() -> 
         await _drive_turn(container, "other-thread", ["hidden", "shared"])
         foreign = (await _thread_runs(container, "other-thread"))[0]
         creation = await container.agui.create_run_with_result(
-            tenant_id="tenant-a", user_id="user-1", agent_name="echo-agent",
-            agent_version="0.1.0", request=RunAgentInput(
-                thread_id="own-thread", run_id="new-client-run",
-                messages=[UserMessage(id=f"user-{foreign.run_id}", content="shared"),
-                          UserMessage(id="new", content="followup")],
-                tools=[], state={}, context=[], forwarded_props={},
+            tenant_id="tenant-a",
+            user_id="user-1",
+            agent_name="echo-agent",
+            agent_version="0.1.0",
+            request=RunAgentInput(
+                thread_id="own-thread",
+                run_id="new-client-run",
+                messages=[
+                    UserMessage(id=f"user-{foreign.run_id}", content="shared"),
+                    UserMessage(id="new", content="followup"),
+                ],
+                tools=[],
+                state={},
+                context=[],
+                forwarded_props={},
             ),
         )
         assert creation.run.input["conversation_prompts"] == ["shared", "followup"]

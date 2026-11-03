@@ -29,6 +29,18 @@ const config: HarnessServerConfig = {
 };
 
 describe("Harness same-origin proxies", () => {
+  it("forwards conditional history reads without inventing a body for 304", async () => {
+    const fetcher: typeof fetch = async (_url, init) => {
+      expect(new Headers(init?.headers).get("if-none-match")).toBe('"page-1"');
+      return new Response(null, { status: 304, headers: { ETag: '"page-1"' } });
+    };
+    const response = await proxyAguiRequest(new Request("http://console/api/agui/threads/assistant/history", {
+      headers: { "If-None-Match": '"page-1"' },
+    }), config, fetcher, "threads/assistant/history");
+    expect(response.status).toBe(304);
+    expect(await response.text()).toBe("");
+    expect(response.headers.get("etag")).toBe('"page-1"');
+  });
   it("preserves the sandbox and security headers on an authenticated HTML presentation", async () => {
     const policy = "sandbox allow-scripts; connect-src 'none'";
     const fetcher: typeof fetch = async () => new Response("<html>fixture</html>", {

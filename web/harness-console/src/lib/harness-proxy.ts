@@ -64,7 +64,7 @@ function upstreamHeaders(
     ...config.serviceHeaders,
   });
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
-  for (const name of ["accept", "content-type", "last-event-id", "idempotency-key"]) {
+  for (const name of ["accept", "content-type", "last-event-id", "idempotency-key", "if-none-match"]) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }

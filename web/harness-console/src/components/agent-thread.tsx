@@ -432,7 +432,8 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const scope = useContext(ComposerDraftContext);
   const queueKey = scope ? `harness:prompt-queue:${scope.userId}:${scope.threadId}` : null;
   const [queue, setQueue] = useState<QueuedPrompt[]>([]);
-  const [followUpBehavior] = useFollowUpPreference();
+  const [taskFollowUpBehavior] = useFollowUpPreference();
+  const followUpBehavior = assistantSurface ? "steer" : taskFollowUpBehavior;
   const [queueLoaded, setQueueLoaded] = useState(false);
   const [queuePaused, setQueuePaused] = useState(false);
   const [inputError, setInputError] = useState("");
@@ -449,6 +450,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const [stopPending, setStopPending] = useState(false);
   const stopInFlight = useRef(false);
   const steeringSentAt = useRef<Record<string, number>>({});
+  const steeringInFlight = useRef(new Set<string>());
   const steeringRunId = queue.find((item) => item.steerRunId)?.steerRunId ?? runView?.runId;
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
@@ -571,12 +573,13 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     if (!composerText.trim() && !composerAttachments.length) return;
     if (queue.length >= 50) { setInputError("队列已满，请先处理或删除部分消息。"); return; }
     try {
-      const next: QueuedPrompt = { id: createRandomId(), text: composerText.trim(), attachments: queueAttachments(composerAttachments) };
+      const next: QueuedPrompt = { id: createRandomId(), text: composerText.trim(), attachments: queueAttachments(composerAttachments),
+        ...(assistantSurface ? { intent: steer ? "steer" as const : "next" as const } : {}) };
       setQueue((current) => [...current, next]);
       setInputError("");
       aui.composer().setText("");
       await threadRuntime.composer.clearAttachments();
-      if (steer && !next.attachments.length) await guide(next);
+      if (steer && !next.attachments.length && !assistantSurface) await guide(next);
 
     } catch (error) { setInputError(error instanceof Error ? error.message : "无法加入队列"); }
   }
@@ -628,8 +631,9 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   }, [steeringRunId, busy, hasPendingSteering]);
 
   async function guide(item: QueuedPrompt) {
-    if (!runView?.runId || steeringIds.includes(item.id)) return;
+    if (!runView?.runId || steeringIds.includes(item.id) || steeringInFlight.current.has(item.id)) return;
     if (item.attachments.length) { setInputError("带附件的补充请加入队列；实时引导目前支持文本。"); return; }
+    steeringInFlight.current.add(item.id);
     setSteeringIds((ids) => [...ids, item.id]);
     steeringSentAt.current[item.id] = Date.now();
     setQueue((items) => items.map((entry) => entry.id === item.id ? { ...entry, steerRunId: runView.runId } : entry));
@@ -646,7 +650,15 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
         setInputError("当前运行无法接收引导，内容仍保留在队列中。");
       }
     } catch { setInputError("引导请求状态待确认，正在核对接收结果；请勿重复发送。"); }
+    finally { steeringInFlight.current.delete(item.id); }
   }
+  // Startup may not have a steering channel yet. Keep each sent message visible
+  // and deliver it once the current run is ready, rather than failing a 409.
+  useEffect(() => {
+    if (!assistantSurface || !busy || !steerAvailable || queuePaused) return;
+    const next = queue.find(item => item.intent === "steer" && !item.steerRunId && !item.attachments.length);
+    if (next && !steeringIds.length) void guide(next);
+  }, [assistantSurface, busy, steerAvailable, queuePaused, queue, steeringIds.length]);
   useEffect(() => {
     if (queueLoaded && queue.length === 0 && steeringIds.length === 0) setQueuePaused(false);
   }, [queueLoaded, queue.length, steeringIds.length]);
@@ -747,7 +759,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       return;
     }
     if (busy || queue.length) {
-      const steer = alternate ? followUpBehavior !== "steer" : followUpBehavior === "steer";
+      const steer = assistantSurface || (alternate ? followUpBehavior !== "steer" : followUpBehavior === "steer");
       void enqueue(busy && steer); return;
     }
     if (composerSendLock.current) return;
@@ -940,7 +952,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
           ) : null}
         </>
       ) : null}
-      <PromptQueue items={queue.filter(item => !item.steerRunId || !runView?.items.some(event =>
+      <PromptQueue chat={assistantSurface} items={queue.filter(item => !item.steerRunId || !runView?.items.some(event =>
         ["run.steer.requested", "run.steer.accepted"].includes(event.event_type) && event.metadata.request_id === item.id))} paused={queuePaused} busy={busy} canSteer={steerAvailable} sendingIds={steeringIds}
         onChange={setQueue} onPause={(value) => { dispatching.current = false; setQueuePaused(value); }} onGuide={(item) => void guide(item)}
         onSend={(item) => {
@@ -968,7 +980,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
         {helpOpen && <div className="composer-assist composer-help-popover" role="dialog" aria-label="输入帮助">
           <button type="button" onClick={() => setHelpOpen(false)}>关闭</button>
           <p>/ 执行命令 · @ 提及助理或选择知识库（可多选） · $ 引用技能</p>
-          <p>运行中 Enter {followUpBehavior === "steer" ? "补充说明" : "加入队列"}，Alt Enter 使用另一种方式，Shift Enter 换行。可在个人设置的配置中更改默认行为。</p>
+          <p>{assistantSurface ? "Enter 发送消息，Shift Enter 换行。运行中发送的文字会直接补充到当前工作；附件在当前回复结束后发送。" : <>运行中 Enter {followUpBehavior === "steer" ? "补充说明" : "加入队列"}，Alt Enter 使用另一种方式，Shift Enter 换行。可在个人设置的配置中更改默认行为。</>}</p>
         </div>}
         {activeSkillLaunch && selectedSkill && (
           <div className="composer-skill-context" aria-label="已识别的 Skill 提示" title="直接输入 $技能名 即可，无需额外点选；也可以直接描述需求。">
@@ -1062,7 +1074,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
             aria-label={videoGenerating ? "视频生成中" : "生成视频"}
             onClick={() => void generateVideo()} />
         ) : (
-          <ConversationControl action="send" aria-label={busy ? followUpBehavior === "steer" && steerAvailable && !composerAttachments.length ? "补充说明" : "加入队列" : queue.length ? "加入队列" : "发送消息"} title={busy ? `Enter ${followUpBehavior === "steer" ? "补充说明" : "加入队列"} · Alt Enter 切换` : "发送消息"} disabled={voiceActive || followupVoiceActive || (!composerText.trim() && !composerAttachments.length)} onClick={() => submitComposer()} />
+          <ConversationControl action="send" aria-label={assistantSurface ? "发送消息" : busy ? followUpBehavior === "steer" && steerAvailable && !composerAttachments.length ? "补充说明" : "加入队列" : queue.length ? "加入队列" : "发送消息"} title={assistantSurface ? "发送消息" : busy ? `Enter ${followUpBehavior === "steer" ? "补充说明" : "加入队列"} · Alt Enter 切换` : "发送消息"} disabled={voiceActive || followupVoiceActive || (!composerText.trim() && !composerAttachments.length)} onClick={() => submitComposer()} />
         )}
         </div>
       </Composer.Root>
@@ -2079,6 +2091,7 @@ export function AgentThread({
   onForked?: (task: TaskSummary) => void;
 }) {
   const frame = useRef<HTMLDivElement>(null);
+  const assistantSurface = useAssistantSurface();
   const [editor, setEditor] = useState<MessageEditorState>(null);
   // Optional: AgentThread is also rendered by config tests without a runtime
   // provider; without a runtime there is nothing to import earlier pages into.
@@ -2086,7 +2099,7 @@ export function AgentThread({
   const historyPagination = useThreadHistoryPagination(threadId, {
     importRepository: (repository) => threadRuntime?.import(repository),
   });
-  useAutoLoadEarlierMessages(frame, historyPagination);
+  const loadEarlierMessages = useAutoLoadEarlierMessages(frame, historyPagination, { readerDriven: assistantSurface });
   const composerDraftScope = useMemo(
     () => ({ userId, threadId }),
     [threadId, userId],
@@ -2138,7 +2151,8 @@ export function AgentThread({
             } : undefined}>
             <div className="harness-thread-frame" ref={frame}>
             <ConversationIndex frame={frame} threadId={threadId} pagination={historyPagination} />
-            {historyPagination.loading ? (
+            {assistantSurface && historyPagination.hasMore && <button type="button" className="assistant-history-earlier" disabled={historyPagination.loading} onClick={() => void loadEarlierMessages()}>查看更早的消息</button>}
+            {!assistantSurface && historyPagination.loading ? (
               <div className="history-load-earlier" role="status" aria-live="polite">
                 <span className="history-load-earlier-status">正在加载更早的消息…</span>
               </div>
