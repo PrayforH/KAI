@@ -5,10 +5,11 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 const request=vi.fn(), summary=vi.fn(), save=vi.fn(), ingest=vi.fn();
 vi.mock("../src/lib/assistant-client",()=>({assistantRequest:(...args:unknown[])=>request(...args),saveSpecialistCredential:(...args:unknown[])=>save(...args)}));
 vi.mock("../src/lib/project-space",()=>({loadTaskSummary:(...args:unknown[])=>summary(...args)}));
-vi.mock("../src/lib/handover-store",()=>({handoverStore:{ingestMention:(...args:unknown[])=>ingest(...args)}}));
+vi.mock("../src/lib/handover-store",()=>({handoverStore:{ingestMention:(...args:unknown[])=>ingest(...args)},useHandoverNotices:()=>deliveries}));
 import { BotConversationControls } from "../src/components/bot-conversation-controls";
 import { ConversationSurfaceProvider } from "../src/components/assistant-bot-context";
 (globalThis as Record<string,unknown>).IS_REACT_ACT_ENVIRONMENT=true;
+let deliveries: Array<{targetThreadId:string;createdAt:number;runId:string}> = [];
 let host:HTMLDivElement,root:Root,fetcher:ReturnType<typeof vi.fn>,questions:unknown[],bot:Record<string,unknown>;
 const target={specialistId:"specialist-test",specialistName:"资料Bot",runId:"child-1",threadId:"assistant_child",sourceThreadId:"kai-personal-assistant-v1"};
 async function flush(){for(let i=0;i<8;i++)await act(async()=>{await Promise.resolve();});}
@@ -16,7 +17,7 @@ async function mount(){await act(async()=>root.render(<ConversationSurfaceProvid
 function fill(input:HTMLInputElement,value:string){Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value")!.set!.call(input,value);input.dispatchEvent(new Event("input",{bubbles:true}));}
 function button(text:string){return [...host.querySelectorAll("button")].find(b=>b.textContent?.includes(text))!;}
 beforeEach(()=>{
- request.mockReset();summary.mockReset();save.mockReset();ingest.mockReset();
+ request.mockReset();summary.mockReset();save.mockReset();ingest.mockReset();deliveries=[];
  host=document.createElement("div");document.body.append(host);root=createRoot(host);
  questions=[{id:"scope",label:"核对范围",type:"text"}];
  bot={specialistId:target.specialistId,name:target.specialistName,revision:1,config:{}};
@@ -56,4 +57,12 @@ it("saves secrets through the credential channel and sends only a reference",asy
  await act(async()=>button("凭证已保存，继续").click());await flush();
  const sent=request.mock.calls.find(c=>String(c[0]).endsWith("/messages"))!;
  expect(sent[2].text).toContain("site_password");expect(JSON.stringify(sent)).not.toContain("Synthetic-Only-42");
+});
+
+it("retires a question when another reply advances its child conversation",async()=>{
+ await mount();expect(host.textContent).toContain("核对范围");
+ summary.mockResolvedValue({run_id:"child-2",status:"succeeded"});
+ deliveries=[{targetThreadId:target.threadId,runId:"child-2",createdAt:Date.now()}];
+ await act(async()=>root.render(<ConversationSurfaceProvider surface="assistant"><BotConversationControls {...target}/></ConversationSurfaceProvider>));await flush();
+ expect(host.textContent).toBe("");
 });

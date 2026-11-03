@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { assistantRequest, type Specialist } from "../lib/assistant-client";
 import { isSensitiveQuestion } from "../lib/conversation-input";
 import { pendingThreadAsk, type HistoryMessage, type ThreadAsk } from "../lib/thread-answer";
-import { handoverStore } from "../lib/handover-store";
+import { handoverStore, useHandoverNotices } from "../lib/handover-store";
 import { loadTaskSummary } from "../lib/project-space";
 import { ApprovalCard, type ApprovalDetails } from "./approval-card";
 import { ConversationInputCard } from "./conversation-input-card";
@@ -16,6 +16,10 @@ type Target = { specialistId: string; specialistName: string; runId: string; thr
 /** Project an owned Bot's current interaction; answering stays on the originating timeline. */
 export function BotConversationControls(target: Target) {
   const { specialistId, specialistName, runId, threadId, sourceThreadId } = target;
+  const deliveries = useHandoverNotices();
+  const latestKnownRun = deliveries.filter(item => item.targetThreadId === threadId)
+    .reduce<(typeof deliveries)[number] | undefined>((latest, item) =>
+      !latest || item.createdAt > latest.createdAt ? item : latest, undefined)?.runId;
   const [ask, setAsk] = useState<ThreadAsk | null>(null);
   const [bot, setBot] = useState<Specialist | null>(null);
   const [approval, setApproval] = useState<(ApprovalDetails & {status: string}) | null>(null);
@@ -52,7 +56,7 @@ export function BotConversationControls(target: Target) {
     window.addEventListener("focus", update);
     window.addEventListener("kai:specialists-changed", update);
     return () => { controller.abort(); window.removeEventListener("focus", update); window.removeEventListener("kai:specialists-changed", update); };
-  }, [refresh]);
+  }, [refresh, latestKnownRun]);
 
   async function answer(text: string) {
     // A network retry reuses the accepted operation rather than making a second child Run.
