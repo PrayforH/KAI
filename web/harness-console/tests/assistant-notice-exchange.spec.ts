@@ -13,3 +13,10 @@ it("does not merge over a user turn, a time gap, or an unknown historical timest
   expect(noticeExchangeForMessage([first, notice("n2", "b", "2026-11-02T08:05:00+08:00")], "n1")?.count).toBe(1);
   expect(noticeExchangeForMessage([notice("old", "a"), first], "old")).toBeNull();
 });
+it("never merges sent receipts with received replies", () => {
+ const sent = notice("sent", "a", "2026-11-02T08:00:00+08:00");
+ const message = {...sent, content: [{...sent.content[0], args: {...sent.content[0].args, direction: "sent"}}]};
+ const received = notice("received", "a", "2026-11-02T08:01:00+08:00");
+ expect(noticeExchangeForMessage([message,received],"sent")).toBeNull();
+ expect(noticeExchangeForMessage([message,received],"received")).toMatchObject({hidden:false,count:1});
+});

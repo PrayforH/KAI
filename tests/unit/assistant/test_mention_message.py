@@ -200,7 +200,7 @@ async def test_completed_reply_is_brief_and_links_back_to_named_bot():
 
     service, repo = _service(_specialist())
     now = datetime(2026, 11, 3, tzinfo=UTC)
-    repo.mention_reply_runs.return_value = (
+    repo.mention_message_runs.return_value = (
         [
             (
                 SimpleNamespace(
@@ -213,14 +213,14 @@ async def test_completed_reply_is_brief_and_links_back_to_named_bot():
         1,
     )
     service._events.list_after.return_value = []
-    replies, total = await service.mention_replies("t", "u", "main")
+    replies, total = await service.mention_messages("t", "u", "main")
     assert total == 1 and len(replies) == 1
     assert replies[0].message_id == "mention-result-handover-one"
     assert replies[0].source["name"] == "资料 Bot"
     assert replies[0].source["href"] == "/assistant?bot=specialist_a"
     assert replies[0].run_id == "real-run"
-    repo.mention_reply_runs.assert_awaited_once_with(
-        "t", "u", "main", before=None, limit=100, message_id=None
+    repo.mention_message_runs.assert_awaited_once_with(
+        "t", "u", "main", before=None, limit=100, message_id=None, direction="received"
     )
 
 

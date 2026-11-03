@@ -17,10 +17,6 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
   padding-top: 12px;
 }
 
-/* @ 提及：@ 名字直接写在文本行里；这里只留「已发送消息给」回执行（只出现在助理面）。 */
-body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-mention-receipts {
-  display: grid;
-}
 
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message {
   padding: 6px 0 2px;
@@ -264,6 +260,14 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .aui-md h2,
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .aui-md h3 {
   color: #f5f5f5;
+}
+
+/* 气泡内的首尾块不带额外外边距，上下留白统一由气泡 padding 决定。 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .aui-md > :first-child {
+  margin-top: 0;
+}
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .aui-md > :last-child {
+  margin-bottom: 0;
 }
 
 /* 输入框：更大的圆角、更轻的边框，像聊天输入条 */

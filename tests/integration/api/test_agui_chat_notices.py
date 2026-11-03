@@ -58,7 +58,9 @@ def attach(app, items):
     )
     app.state.container = replace(
         app.state.container,
-        assistant=SimpleNamespace(repository=repo, mention_replies=AsyncMock(return_value=([], 0))),
+        assistant=SimpleNamespace(
+            repository=repo, mention_messages=AsyncMock(return_value=([], 0))
+        ),
     )
     return repo
 
@@ -197,11 +199,11 @@ async def test_history_carries_source_identity_without_a_body_navigation_link():
 
 @pytest.mark.asyncio
 async def test_mention_result_is_a_source_message_and_quote_resolves_server_text():
-    from harness.assistant.models import MentionReply
+    from harness.assistant.models import MentionMessage
 
     app = create_memory_app()
     attach(app, [])
-    reply = MentionReply(
+    reply = MentionMessage(
         message_id="mention-result-handover-one",
         text="检查完成，未发现异常。",
         source={"name": "资料 Bot", "botId": "specialist_a", "href": "/assistant?bot=specialist_a"},
@@ -211,10 +213,12 @@ async def test_mention_result_is_a_source_message_and_quote_resolves_server_text
     )
 
     async def replies(tenant, user, thread, **kwargs):
-        owned = (tenant, user, thread) == ("tenant-a", "user-1", MAIN)
+        owned = (tenant, user, thread) == ("tenant-a", "user-1", MAIN) and kwargs.get(
+            "direction"
+        ) != "sent"
         return ([reply], 1) if owned else ([], 0)
 
-    app.state.container.assistant.mention_replies = AsyncMock(side_effect=replies)
+    app.state.container.assistant.mention_messages = AsyncMock(side_effect=replies)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         base = f"/v1/agui/threads/{MAIN}"
         first = (await client.get(base + "/history", headers=HEADERS)).json()
@@ -225,11 +229,60 @@ async def test_mention_result_is_a_source_message_and_quote_resolves_server_text
         assert message["content"] == reply.text and message["id"] == reply.message_id
         assert message["toolCalls"][0]["function"]["name"] == "harness_notice_source"
         assert tool["toolCallId"] == message["toolCalls"][0]["id"]
-        context = (
-            await client.get(base + f"/messages/{reply.message_id}", headers=HEADERS)
-        ).json()
+        context = (await client.get(base + f"/messages/{reply.message_id}", headers=HEADERS)).json()
         assert context["found"] and context["excerpt"] == reply.text
         other = (
             await client.get(base + "/history", headers={**HEADERS, "X-User-ID": "other"})
         ).json()
         assert other["messages"] == []
+
+
+@pytest.mark.asyncio
+async def test_sent_receipt_stays_at_send_time_between_original_and_later_turns():
+    from harness.assistant.models import MentionMessage
+
+    app = create_memory_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        container = app.state.container
+        first_id = await _drive_turn(container, MAIN, ["original"])
+        later_id = await _drive_turn(container, MAIN, ["original", "later conversation"])
+        first, later = [await container.runs.get("tenant-a", rid) for rid in (first_id, later_id)]
+        interval = (later.created_at - first.created_at) / 3
+        sent = MentionMessage(
+            message_id="mention-sent-handover-one",
+            text="",
+            source={"name": "资料 Bot", "href": "/assistant?bot=specialist_a", "direction": "sent"},
+            created_at=first.created_at + interval,
+            run_id="child",
+            target_thread_id="assistant_specialist_a",
+        )
+        received = sent.model_copy(
+            update={
+                "message_id": "mention-result-handover-one",
+                "text": "简短结果",
+                "source": {**sent.source, "direction": "received"},
+                "created_at": first.created_at + 2 * interval,
+            }
+        )
+        attach(app, [])
+
+        async def timeline(tenant, user, thread, **kwargs):
+            if (tenant, user, thread) != ("tenant-a", "user-1", MAIN):
+                return [], 0
+            return ([sent] if kwargs.get("direction") == "sent" else [received]), 1
+
+        app.state.container.assistant.mention_messages = AsyncMock(side_effect=timeline)
+        response = (await client.get(f"/v1/agui/threads/{MAIN}/history", headers=HEADERS)).json()
+        messages = [m for m in response["messages"] if m["role"] != "tool"]
+        assert [m["id"] for m in messages] == [
+            f"user-{first_id}",
+            f"assistant-{first_id}",
+            sent.message_id,
+            received.message_id,
+            f"user-{later_id}",
+            f"assistant-{later_id}",
+        ]
+        assert messages[2]["content"] == "" and response["total"] == 4
+        again = (await client.get(f"/v1/agui/threads/{MAIN}/history", headers=HEADERS)).json()
+        assert response == again

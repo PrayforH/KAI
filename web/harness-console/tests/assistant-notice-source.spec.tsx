@@ -17,3 +17,10 @@ describe("source attribution",()=>{
    expect(noticeSource([{...parts[0],args:{...parts[0].args,href}}])).toBeNull();
  });
 });
+it("renders sent events with the same centered identity line and no reply body", () => {
+ const host=document.createElement("div");
+ host.innerHTML=renderToStaticMarkup(<AssistantNoticeSource parts={[{...parts[0],args:{...parts[0].args,direction:"sent"}}]}/>);
+ expect(host.textContent).toBe("已发送消息给编码协同");
+ expect(host.querySelector("a")?.getAttribute("href")).toBe(parts[0].args.href);
+ expect(host.querySelector(".assistant-answer")).toBeNull();
+});

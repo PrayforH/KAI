@@ -62,7 +62,6 @@ import { useAssistantBot, useAssistantSurface } from "./assistant-bot-context";
 import { AssistantProgress } from "./assistant-progress";
 import { shouldShowChatActivityRow } from "../lib/assistant-progress";
 import { HandoverInlineRows, shouldShowHandoverRows } from "./handover-row";
-import { AssistantMentionReceipts } from "./assistant-mention-bar";
 import {
   MENTION_PREFIX,
   deliverMentions,
@@ -1589,18 +1588,6 @@ export function responseTextForTurn(messageId: string, nativeText: string, direc
   return nativeText;
 }
 
-/**
- * 会话流末尾的一行回执：`已发送消息给 X` 要长在对话里，不是贴在输入框上方。
- * 数据来自持久 handover，刷新后仍在。
- */
-function HarnessMessagesFooter() {
-  const assistantSurface = useAssistantSurface();
-  const reply = useComposerReply();
-  const bot = useAssistantBot();
-  if (!assistantSurface) return null;
-  return <AssistantMentionReceipts threadId={reply?.threadId ?? bot?.threadId ?? PERSONAL_ASSISTANT_THREAD} />;
-}
-
 export function HarnessAssistantMessage() {
   const redact = useConversationRedactor();
   const assistantSurface = useAssistantSurface();
@@ -1733,6 +1720,12 @@ export function HarnessAssistantMessage() {
   }, [actionHistory, threadRuntime]);
   const actionBusy = ["running", "queued", "waiting_approval"].includes(runView?.phase ?? "");
   // 历史/重试偶尔把同一条回答写成相邻两条 assistant；只保留第一条。
+  if (assistantSurface && noticeSource(content)?.direction === "sent") {
+    return <AssistantMessage.Root className="harness-assistant-message assistant-message-event" data-turn-id={messageId}>
+      <AssistantChatTime />
+      <AssistantNoticeSource parts={content} />
+    </AssistantMessage.Root>;
+  }
   if (duplicateAssistantReply && !isNotice && !controlSummary && !showingInputCard) return null;
   const responseActions = !hasVideoGeneration ? (
     <div className="assistant-message-controls">
@@ -2160,7 +2153,6 @@ export function AgentThread({
             composer={{ allowAttachments: true }}
             components={{
               AssistantMessage: HarnessAssistantMessage,
-              MessagesFooter: HarnessMessagesFooter,
               UserMessage: HarnessUserMessage,
               Composer: ComposerComponent,
               ThreadWelcome: UserTaskWelcome,

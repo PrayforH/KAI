@@ -9,7 +9,7 @@ import re
 import unicodedata
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
@@ -34,7 +34,7 @@ from harness.assistant.models import (
     ManagedTask,
     ManagedTaskRole,
     ManagedTaskSource,
-    MentionReply,
+    MentionMessage,
     Objective,
     ObjectiveBrief,
     ObjectiveExecution,
@@ -565,7 +565,7 @@ class AssistantService:
             creation.run.run_id,
         )
 
-    async def mention_replies(
+    async def mention_messages(
         self,
         tenant_id: str,
         user_id: str,
@@ -574,28 +574,36 @@ class AssistantService:
         before: tuple[datetime, str] | None = None,
         limit: int = 100,
         message_id: str | None = None,
-    ) -> tuple[list[MentionReply], int]:
+        direction: Literal["sent", "received"] = "received",
+    ) -> tuple[list[MentionMessage], int]:
         from harness.assistant.chat_notices import brief_notice
 
-        rows, total = await self.repository.mention_reply_runs(
+        rows, total = await self.repository.mention_message_runs(
             tenant_id,
             user_id,
             source_thread_id,
             before=before,
             limit=limit,
             message_id=message_id,
+            direction=direction,
         )
         replies = []
         for handover, run, specialist in rows:
-            events = await self._events.list_after(tenant_id, run.run_id, 0)
-            text = brief_notice(final_response_text(events)) or "本次处理已结束，尚无结果正文。"
-            if run.status is not RunStatus.SUCCEEDED:
-                text = "本次处理未完成。\n\n" + text
+            timestamp = (
+                (handover.sent_at or handover.created_at) if direction == "sent" else run.updated_at
+            )
+            text = ""
+            if direction == "received":
+                events = await self._events.list_after(tenant_id, run.run_id, 0)
+                text = brief_notice(final_response_text(events)) or "本次处理已结束，尚无结果正文。"
+                if run.status is not RunStatus.SUCCEEDED:
+                    text = "本次处理未完成。\n\n" + text
             source = {
                 "name": specialist.name,
                 "botId": specialist.specialist_id,
                 "href": "/assistant?bot=" + specialist.specialist_id,
-                "timestamp": run.updated_at.isoformat(),
+                "timestamp": timestamp.isoformat(),
+                "direction": direction,
             }
             appearance = specialist.config.get("appearance")
             if isinstance(appearance, dict):
@@ -607,11 +615,12 @@ class AssistantService:
                     }
                 )
             replies.append(
-                MentionReply(
-                    message_id="mention-result-" + handover.handover_id,
+                MentionMessage(
+                    message_id=("mention-sent-" if direction == "sent" else "mention-result-")
+                    + handover.handover_id,
                     text=text,
                     source=source,
-                    created_at=run.updated_at,
+                    created_at=timestamp,
                     run_id=run.run_id,
                     target_thread_id=handover.target_thread_id or "",
                 )

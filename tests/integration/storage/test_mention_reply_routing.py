@@ -70,22 +70,41 @@ async def test_results_are_terminal_origin_owned_and_cursor_stable(database):
                 targetThreadId="assistant_specialist_a",
                 runId=f"run-{index}",
                 requestHash="hash",
+                sentAt=NOW + timedelta(seconds=index + 2),
                 status=HandoverStatus.SENT,
                 createdAt=NOW,
                 updatedAt=NOW,
             )
         )
-    rows, count = await repo.mention_reply_runs("tenant-a", "user-a", "main", limit=1)
+    rows, count = await repo.mention_message_runs("tenant-a", "user-a", "main", limit=1)
     assert count == 2 and rows[0][1].run_id == "run-3"
     cursor = (rows[0][1].updated_at, "mention-result-" + rows[0][0].handover_id)
-    more, _ = await repo.mention_reply_runs("tenant-a", "user-a", "main", before=cursor)
+    more, _ = await repo.mention_message_runs("tenant-a", "user-a", "main", before=cursor)
     assert [row[1].run_id for row in more] == ["run-0"]
-    rest, count = await repo.mention_reply_runs("tenant-a", "user-a", "rest")
+    rest, count = await repo.mention_message_runs("tenant-a", "user-a", "rest")
     assert count == 1 and rest[0][1].run_id == "run-1"
     for tenant, user in [("other", "user-a"), ("tenant-a", "other")]:
-        assert await repo.mention_reply_runs(tenant, user, "main") == ([], 0)
-    assert await repo.mention_reply_runs("tenant-a", "user-a", "task-unrelated") == ([], 0)
-    assert await repo.mention_reply_runs("tenant-a", "user-a", "assistant_specialist_a") == ([], 0)
+        assert await repo.mention_message_runs(tenant, user, "main") == ([], 0)
+    assert await repo.mention_message_runs("tenant-a", "user-a", "task-unrelated") == ([], 0)
+    assert await repo.mention_message_runs("tenant-a", "user-a", "assistant_specialist_a") == (
+        [],
+        0,
+    )
+
+    sent, count = await repo.mention_message_runs(
+        "tenant-a", "user-a", "main", direction="sent", limit=2
+    )
+    assert count == 3  # The running child already has a genuine sent event.
+    cursor = (
+        sent[-1][0].sent_at or sent[-1][0].created_at,
+        "mention-sent-" + sent[-1][0].handover_id,
+    )
+    more, _ = await repo.mention_message_runs(
+        "tenant-a", "user-a", "main", direction="sent", before=cursor
+    )
+    assert len(more) == 1
+    assert len({item[0].handover_id for item in [*sent, *more]}) == 3
+    assert await repo.mention_message_runs("tenant-a", "other", "main", direction="sent") == ([], 0)
 
 
 @pytest.mark.asyncio
@@ -115,6 +134,8 @@ async def test_receipt_idempotency_rejects_changed_origin_and_body(database):
     again = await repo.record_handover(first.model_copy(update={"handover_id": "retry"}))
     assert again.handover_id == first.handover_id
     linked = await repo.link_mention_run("t", "u", first.handover_id, "actual-run")
-    assert linked.run_id == "actual-run"
+    assert linked.run_id == "actual-run" and linked.sent_at is not None
+    replayed = await repo.link_mention_run("t", "u", first.handover_id, "actual-run")
+    assert replayed.sent_at == linked.sent_at
     with pytest.raises(ConflictError):
         await repo.link_mention_run("t", "u", first.handover_id, "wrong-run")

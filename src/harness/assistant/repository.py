@@ -5,7 +5,8 @@ from __future__ import annotations
 import hashlib
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from typing import Literal
 from typing import cast as type_cast
 from urllib.parse import urlencode
 from uuid import uuid4
@@ -1512,11 +1513,13 @@ class PostgresAssistantRepository:
             current = SpecialistHandover.model_validate(row.payload)
             if current.run_id and current.run_id != run_id:
                 raise ConflictError("这条消息已关联其他执行")
-            updated = current.model_copy(update={"run_id": run_id})
+            updated = current.model_copy(update={
+                "run_id": run_id, "sent_at": current.sent_at or datetime.now(UTC),
+            })
             row.payload = updated.model_dump(mode="json", by_alias=True)
             return updated
 
-    async def mention_reply_runs(
+    async def mention_message_runs(
         self,
         tenant_id: str,
         user_id: str,
@@ -1525,10 +1528,14 @@ class PostgresAssistantRepository:
         before: tuple[datetime, str] | None = None,
         limit: int = 100,
         message_id: str | None = None,
+        direction: Literal["sent", "received"] = "received",
     ) -> tuple[list[tuple[SpecialistHandover, Run, Specialist]], int]:
-        """Read completed replies from their original Runs; no synthetic task or model."""
+        """Owner-scoped timeline events: send time and completion time stay distinct."""
         h = SpecialistHandoverRow
-        key = literal("mention-result-") + h.handover_id
+        key = literal("mention-sent-" if direction == "sent" else "mention-result-") + h.handover_id
+        timestamp = (func.coalesce(
+            cast(h.payload["sentAt"].as_string(), DateTime(timezone=True)), h.created_at,
+        ) if direction == "sent" else RunRow.updated_at)
         query = (
             select(h, RunRow, SpecialistRow)
             .join(
@@ -1558,10 +1565,13 @@ class PostgresAssistantRepository:
                 h.user_id == user_id,
                 h.message_id.startswith("mention-specialist:"),
                 h.payload["sourceThreadId"].as_string() == source_thread_id,
+            )
+        )
+        if direction == "received":
+            query = query.where(
                 h.payload["targetThreadId"].as_string() != source_thread_id,
                 RunRow.status.in_([s.value for s in RunStatus if s.is_terminal]),
             )
-        )
         if message_id is not None:
             query = query.where(key == message_id)
         async with self._context() as session:
@@ -1571,12 +1581,12 @@ class PostgresAssistantRepository:
             if before is not None:
                 at, mid = before
                 query = query.where(
-                    or_(RunRow.updated_at < at, and_(RunRow.updated_at == at, key < mid))
+                    or_(timestamp < at, and_(timestamp == at, key < mid))
                 )
             rows = (
                 await session.execute(
                     query.order_by(
-                        RunRow.updated_at.desc(),
+                        timestamp.desc(),
                         key.desc(),
                     ).limit(limit)
                 )

@@ -47,7 +47,7 @@ from harness.api.dependencies import (
 from harness.api.event_streaming import wait_for_run_event
 from harness.assistant.chat_notices import NOTICE_MESSAGE_PREFIX, notice_message_id, notice_text
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
-from harness.assistant.models import AssistantInboxItem, MentionReply
+from harness.assistant.models import AssistantInboxItem, MentionMessage
 from harness.context.compaction_view import CompactionDetail, compaction_detail
 from harness.context.models import SessionContextDigest, SessionContextOverview
 from harness.context.window import compaction_observation, context_window_view
@@ -586,7 +586,7 @@ async def run_agui_agent(
         message_id = reference.get("messageId")
         if isinstance(message_id, str) and message_id.startswith("mention-result-"):
             replies, _ = (
-                await container.assistant.mention_replies(
+                await container.assistant.mention_messages(
                     identity.tenant_id,
                     identity.user_id,
                     body.thread_id,
@@ -1200,22 +1200,24 @@ async def get_agui_thread_history(
             identity.user_id,
             notices,
         )
-    mention_replies, mention_total = (
-        await container.assistant.mention_replies(
-            identity.tenant_id,
-            identity.user_id,
-            thread_id,
-            before=cursor,
-            limit=limit + 1,
-        )
-        if container.assistant
-        and (thread_id == PERSONAL_ASSISTANT_THREAD or thread_id.startswith("assistant_"))
-        else ([], 0)
-    )
-    entries: list[tuple[datetime, str, Run | AssistantInboxItem | MentionReply]] = (
+    mention_messages: list[MentionMessage] = []
+    mention_total = 0
+    if container.assistant and (
+        thread_id == PERSONAL_ASSISTANT_THREAD or thread_id.startswith("assistant_")
+    ):
+        projections = await asyncio.gather(*(
+            container.assistant.mention_messages(
+                identity.tenant_id, identity.user_id, thread_id, before=cursor,
+                limit=limit + 1, direction=direction,
+            ) for direction in ("sent", "received")
+        ))
+        for items, count in projections:
+            mention_messages.extend(items)
+            mention_total += count
+    entries: list[tuple[datetime, str, Run | AssistantInboxItem | MentionMessage]] = (
         [(run.created_at, run.run_id, run) for run in runs]
         + [(item.created_at, notice_message_id(item), item) for item in notices]
-        + [(item.created_at, item.message_id, item) for item in mention_replies]
+        + [(item.created_at, item.message_id, item) for item in mention_messages]
     )
     window = sorted(
         (entry for entry in entries if cursor is None or entry[:2] < cursor),
@@ -1243,16 +1245,17 @@ async def get_agui_thread_history(
             messages.extend(run_messages[item.run_id])
         else:
             source = (
-                item.source if isinstance(item, MentionReply) else notice_sources.get(item.item_id)
+                item.source if isinstance(item, MentionMessage)
+                else notice_sources.get(item.item_id)
             )
-            mid = item.message_id if isinstance(item, MentionReply) else notice_message_id(item)
-            source_key = mid if isinstance(item, MentionReply) else item.item_id
+            mid = item.message_id if isinstance(item, MentionMessage) else notice_message_id(item)
+            source_key = mid if isinstance(item, MentionMessage) else item.item_id
             source_id = f"source-{source_key}"
             messages.append(
                 AguiHistoryMessage(
                     id=mid,
                     role="assistant",
-                    content=item.text if isinstance(item, MentionReply) else notice_text(item),
+                    content=item.text if isinstance(item, MentionMessage) else notice_text(item),
                     tool_calls=[
                         AguiHistoryToolCall(
                             id=source_id,
@@ -1343,7 +1346,7 @@ async def get_agui_message_context(
         raise HTTPException(status_code=400, detail="invalid message id")
     if message_id.startswith("mention-result-"):
         replies, _ = (
-            await container.assistant.mention_replies(
+            await container.assistant.mention_messages(
                 identity.tenant_id,
                 identity.user_id,
                 thread_id,

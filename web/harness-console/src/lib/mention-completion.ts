@@ -1,7 +1,5 @@
 import { requireAuthenticatedResponse } from "./client-auth";
 
-export const MENTION_RESULT_EVENT = "harness:mention-result";
-
 /** Observe the existing child Run stream. No polling, new Run, or replayed work. */
 export async function watchMentionCompletion(runId: string, signal: AbortSignal): Promise<boolean> {
   const response = requireAuthenticatedResponse(await fetch(
