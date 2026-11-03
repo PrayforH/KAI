@@ -71,8 +71,10 @@ class ObjectiveBudget(StudioModel):
     max_total_runs: int | None = Field(default=None, alias="maxTotalRuns", ge=1, le=100_000)
     # 无变化不唤起模型：按纳管任务的进展指纹比较，相同则跳过本次检查。
     skip_unchanged: bool = Field(default=False, alias="skipUnchanged")
-    # 共享可见桌面单执行者：声明需要桌面的职责按 FIFO 排队，等待时不空耗模型。
+    # 共享可见桌面单执行者：声明需要桌面的职责按优先级+FIFO 排队，等待时不空耗模型。
     requires_desktop: bool = Field(default=False, alias="requiresDesktop")
+    # 桌面排队优先级：同用户队列内高者先于低者 acquire（不抢占活 holder）；缺省 0 即纯 FIFO。
+    desktop_priority: int = Field(default=0, alias="desktopPriority", ge=0, le=100)
     # 新建任务授权范围：协调职责最多可派生多少个新任务；None 表示无权新建。
     max_new_tasks: int | None = Field(default=None, alias="maxNewTasks", ge=0, le=100)
     # 计量上限：只在平台能给出真实用量时生效；无计量时诚实报告不可用。

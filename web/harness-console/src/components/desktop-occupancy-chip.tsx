@@ -16,6 +16,9 @@ export type DesktopOccupancyWaiting = {
   objective_title?: string | null;
   position?: number;
   wait_reason?: string | null;
+  /** 桌面排队优先级（af0b4edf 投影透出；旧载荷缺省视为 0，不展示）。 */
+  desktop_priority?: number;
+  desktopPriority?: number;
 };
 
 export type DesktopOccupancy = {
@@ -30,6 +33,18 @@ function shortId(id: string): string {
   return id.length > 12 ? `${id.slice(0, 12)}…` : id;
 }
 
+/** 逐字段防御读取：缺字段/非数字（含布尔）一律 null，调用方按"无优先级"处理。 */
+function finiteNumberField(item: unknown, key: string): number | null {
+  if (typeof item !== "object" || item === null) return null;
+  const raw = (item as Record<string, unknown>)[key];
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
+}
+
+/** 队首桌面优先级：snake/camel 都认；缺字段安全回退 null（等价 0，不展示）。 */
+function headDesktopPriority(first: unknown): number | null {
+  return finiteNumberField(first, "desktop_priority") ?? finiteNumberField(first, "desktopPriority");
+}
+
 export type DesktopOccupancyView = {
   state: "held" | "queued";
   text: string;
@@ -38,6 +53,8 @@ export type DesktopOccupancyView = {
   position: number | null;
   /** 排队原因（中文，来自 P1-4 投影）；空则不加后缀。 */
   waitReason: string | null;
+  /** 队首桌面优先级（仅 >0 时透出；旧载荷/缺字段/0 均为 null，不刷屏）。 */
+  priority: number | null;
 };
 
 /**
@@ -58,6 +75,11 @@ export function desktopOccupancyLabel(data: DesktopOccupancy | null): DesktopOcc
       : null;
   const waitReason = first?.wait_reason?.trim() || null;
   const reasonSuffix = waiting && waitReason ? ` · ${waitReason}` : "";
+  // 优先级只在 >0 时轻量点名（af0b4edf 只改排序不改文案口径）；0/缺字段零噪音。
+  const priority = waiting ? headDesktopPriority(first) : null;
+  const priorityShown = priority != null && priority > 0 ? priority : null;
+  const prioritySuffix = priorityShown != null ? ` · 优 ${priorityShown}` : "";
+  const ariaPriority = priorityShown != null ? `，优先级 ${priorityShown}` : "";
 
   if (holder && title) {
     const queue = !waiting
@@ -73,10 +95,11 @@ export function desktopOccupancyLabel(data: DesktopOccupancy | null): DesktopOcc
     const ariaReason = waitReason ? `；等待原因：${waitReason}` : "";
     return {
       state: "held",
-      text: `占用：${title}${queue}${reasonSuffix}`,
-      aria: `共享桌面：${title} 正在使用${ariaQueue}${ariaReason}`,
+      text: `占用：${title}${queue}${prioritySuffix}${reasonSuffix}`,
+      aria: `共享桌面：${title} 正在使用${ariaQueue}${ariaPriority}${ariaReason}`,
       position,
       waitReason: waiting ? waitReason : null,
+      priority: priorityShown,
     };
   }
   if (waiting) {
@@ -91,10 +114,11 @@ export function desktopOccupancyLabel(data: DesktopOccupancy | null): DesktopOcc
     const ariaReason = waitReason ? `；等待原因：${waitReason}` : "";
     return {
       state: "queued",
-      text: `${queue}${reasonSuffix}`,
-      aria: `共享桌面：暂无人占用，${ariaQueue}${ariaReason}`,
+      text: `${queue}${prioritySuffix}${reasonSuffix}`,
+      aria: `共享桌面：暂无人占用，${ariaQueue}${ariaPriority}${ariaReason}`,
       position,
       waitReason,
+      priority: priorityShown,
     };
   }
   return null;
@@ -158,6 +182,7 @@ export function DesktopOccupancyChip() {
       data-occupancy={label.state}
       data-queue-position={label.position ?? undefined}
       data-wait-reason={label.waitReason ?? undefined}
+      data-desktop-priority={label.priority ?? undefined}
       role="status"
       aria-live="polite"
       aria-label={label.aria}

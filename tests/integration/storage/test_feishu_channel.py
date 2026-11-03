@@ -27,6 +27,7 @@ from harness.feishu.storage import (
     DeliveryRow,
     IncomingRow,
 )
+from harness.storage.models import ArtifactRow
 from tests.integration.storage.test_assistant_objectives import objective
 from tests.unit.test_input_artifacts import build_service
 
@@ -510,3 +511,81 @@ async def test_unbind_waits_for_inflight_send_then_blocks_future_delivery(databa
     await sending
     await unbinding
     assert not (await service.status("tenant-a", "user-a")).bound
+
+
+@pytest.mark.asyncio
+async def test_notification_dedup_follows_structured_substance_not_prose(database):
+    """重要通知去重看结构化实质：改写正文仍重复；新成果批/事件序号前进必须放行。"""
+    service, delivery, sender = setup(database)
+    await bind(service.repository)
+    await service.assistant.repository.create(objective())
+
+    async def notice(index, content, created, *, run_id=None, source_sequence=None):
+        item = AssistantInboxItem(
+            itemId=f"s{index}",
+            objectiveId="objective-a",
+            kind="succeeded",
+            title="结果",
+            content=content,
+            runId=run_id,
+            sourceSequence=source_sequence,
+            createdAt=created,
+        )
+        async with service.repository.sessions.begin() as session:
+            session.add(
+                AssistantInboxRow(
+                    item_id=item.item_id,
+                    objective_id="objective-a",
+                    tenant_id="tenant-a",
+                    user_id="user-a",
+                    dedup_key=item.item_id,
+                    created_at=created,
+                    payload=item.model_dump(mode="json"),
+                )
+            )
+
+    async def add_artifact(artifact_id, run_id, name, sha):
+        async with service.repository.sessions.begin() as session:
+            session.add(
+                ArtifactRow(
+                    tenant_id="tenant-a",
+                    artifact_id=artifact_id,
+                    run_id=run_id,
+                    payload={"name": name, "mediaType": "text/plain", "sha256": sha},
+                )
+            )
+
+    await add_artifact("art-1", "run-r1", "report.txt", "sha-a")
+    # 首条：成功通知，成为「上一条 notification」。
+    await notice(0, "已于 10:00 完成，结果无变化。", NOW, run_id="run-r1", source_sequence=7)
+    assert await delivery.collect(NOW) == 1
+    # 新增一批成果（新文件）→ 实质变化：正文再怎么改写都放行。
+    await add_artifact("art-2", "run-r1", "report-v2.txt", "sha-b")
+    await notice(
+        1, "已于 10:05 复核，一切照旧。", NOW + timedelta(seconds=1),
+        run_id="run-r1", source_sequence=7,
+    )
+    assert await delivery.collect(NOW + timedelta(seconds=1)) == 1
+    # 同实质（同 run、同成果集、同序号）正文再改写 → 仍判重复 skip。
+    await notice(
+        2, "10:06 又核对一次，仍然无变化。", NOW + timedelta(seconds=2),
+        run_id="run-r1", source_sequence=7,
+    )
+    assert await delivery.collect(NOW + timedelta(seconds=2)) == 1
+    # 事件序号前进 → 实质变化，放行。
+    await notice(3, "一切照旧。", NOW + timedelta(seconds=3), run_id="run-r1", source_sequence=8)
+    assert await delivery.collect(NOW + timedelta(seconds=3)) == 1
+
+    async with service.repository.sessions() as session:
+        rows = (
+            await session.scalars(
+                select(DeliveryRow)
+                .where(DeliveryRow.category == "notification")
+                .order_by(DeliveryRow.dedup_key)
+            )
+        ).all()
+    by_item = {row.dedup_key.rsplit(":", 1)[-1]: row.status for row in rows}
+    assert by_item["s0"] == "pending"
+    assert by_item["s1"] == "pending", "a new artifact batch must pass"
+    assert by_item["s2"] == "skipped", "reworded prose with unchanged structure stays duplicate"
+    assert by_item["s3"] == "pending", "an advanced event sequence must pass"

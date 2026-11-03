@@ -126,6 +126,56 @@ describe("desktop occupancy chip", () => {
     expect(chip?.textContent).not.toContain("排队");
   });
 
+  it("names the head priority when the queue head declares one", async () => {
+    respond({
+      holder,
+      waiting: [
+        { ...waiting(0), desktop_priority: 5 },
+        waiting(1),
+      ],
+    });
+    await mount();
+    const chip = host.querySelector(".desktop-occupancy-chip");
+    expect(chip?.textContent).toContain("优 5");
+    expect(chip?.getAttribute("data-desktop-priority")).toBe("5");
+    expect(chip?.getAttribute("aria-label")).toContain("优先级 5");
+    // 既有片段不回退：位次、原因照旧。
+    expect(chip?.textContent).toContain("排队中 #1");
+    expect(chip?.textContent).toContain("单执行者占用中");
+  });
+
+  it("reads the camelCase priority alias defensively", async () => {
+    respond({ holder: null, waiting: [{ ...waiting(0), desktopPriority: 3 }] });
+    await mount();
+    const chip = host.querySelector(".desktop-occupancy-chip");
+    expect(chip?.textContent).toContain("优 3");
+    expect(chip?.getAttribute("data-desktop-priority")).toBe("3");
+    expect(chip?.getAttribute("aria-label")).toContain("优先级 3");
+  });
+
+  it("stays silent for priority 0 and missing fields", async () => {
+    respond({ holder, waiting: [{ ...waiting(0), desktop_priority: 0 }, waiting(1)] });
+    await mount();
+    let chip = host.querySelector(".desktop-occupancy-chip");
+    expect(chip?.textContent).not.toContain("优 ");
+    expect(chip?.getAttribute("data-desktop-priority")).toBeNull();
+    expect(chip?.getAttribute("aria-label")).not.toContain("优先级");
+
+    const legacy = waiting(0);
+    delete (legacy as { desktop_priority?: number }).desktop_priority;
+    respond({ holder, waiting: [legacy, waiting(1)] });
+    await mount();
+    chip = host.querySelector(".desktop-occupancy-chip");
+    expect(chip?.textContent).not.toContain("优 ");
+    expect(chip?.getAttribute("data-desktop-priority")).toBeNull();
+    // 非数字回退同样静默。
+    respond({ holder, waiting: [{ ...waiting(0), desktop_priority: "high" }, waiting(1)] });
+    await mount();
+    chip = host.querySelector(".desktop-occupancy-chip");
+    expect(chip?.textContent).not.toContain("优 ");
+    expect(chip?.getAttribute("data-desktop-priority")).toBeNull();
+  });
+
   it("keeps the header quiet when the projection fails", async () => {
     fetchMock.mockRejectedValue(new Error("offline"));
     await mount();

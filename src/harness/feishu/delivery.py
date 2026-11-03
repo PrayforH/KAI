@@ -11,12 +11,14 @@ from uuid import uuid4
 from sqlalchemy import exists, or_, select
 
 from harness.assistant.models import AssistantInboxItem, NotificationMode, Objective
+from harness.assistant.notice_fingerprint import notice_fingerprint
 from harness.assistant.storage import AssistantInboxRow, ObjectiveRow
 from harness.core.errors import NotFoundError, PermissionDeniedError
 from harness.feishu.cards import card
 from harness.feishu.models import Actor, FeishuSettings, MessageContent
-from harness.feishu.repository import FeishuRepository, binding_value, digest
+from harness.feishu.repository import FeishuRepository, binding_value
 from harness.feishu.storage import BindingRow, DeliveryRow
+from harness.storage.models import ArtifactRow
 
 
 class Sender(Protocol):
@@ -74,7 +76,37 @@ class FeishuDelivery:
             for notice, binding, objective in rows:
                 item = AssistantInboxItem.model_validate(notice.payload)
                 obj = Objective.model_validate(objective.payload)
-                fingerprint = digest(item.kind + "\0" + " ".join(item.content.split()))
+                # 成果签名（名称+类型+内容哈希）在该 Run 有产物时纳入指纹；
+                # 查不到就不贡献，绝不伪造。
+                artifact_signatures: list[tuple[str, str, str]] = []
+                if item.run_id:
+                    artifact_rows = await session.scalars(
+                        select(ArtifactRow)
+                        .where(
+                            ArtifactRow.tenant_id == notice.tenant_id,
+                            ArtifactRow.run_id == item.run_id,
+                        )
+                        .order_by(ArtifactRow.artifact_id)
+                        .limit(20)
+                    )
+                    for artifact_row in artifact_rows:
+                        payload = artifact_row.payload or {}
+                        artifact_signatures.append(
+                            (
+                                str(payload.get("name", "")),
+                                str(payload.get("mediaType") or payload.get("media_type") or ""),
+                                str(payload.get("sha256") or ""),
+                            )
+                        )
+                fingerprint = notice_fingerprint(
+                    kind=item.kind,
+                    objective_status=obj.status.value,
+                    execution_id=item.execution_id,
+                    run_id=item.run_id,
+                    source_event_id=item.source_event_id,
+                    source_sequence=item.source_sequence,
+                    artifacts=artifact_signatures,
+                )
                 previous = await session.scalar(
                     select(DeliveryRow)
                     .where(

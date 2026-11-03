@@ -53,6 +53,10 @@ from harness.core.events import RunEvent
 from harness.storage.database import SessionFactory
 from harness.storage.models import AguiThreadBindingRow, EventRow, RunRow, SessionRow
 
+# 软抢占优雅窗口：高优排队时把低优 holder 的剩余 TTL 钳到该值（秒），
+# 让既有「过期→released→队头 acquire」路径尽快交接；不中途打断任何工具。
+DESKTOP_PREEMPT_GRACE_SECONDS = 30
+
 MANAGED_PROGRESS_EVENTS = (
     "run.succeeded",
     "run.failed",
@@ -459,6 +463,7 @@ class PostgresAssistantRepository:
         limit: int = 20,
         unviewed_pause_hours: int | None = None,
     ) -> None:
+        desktop_pairs: set[tuple[str, str]] = set()
         async with self._context(write=True) as session:
             rows = await session.scalars(
                 select(ObjectiveRow)
@@ -487,6 +492,9 @@ class PostgresAssistantRepository:
                         trigger_key=f"schedule:{current.next_check_at}",
                         now=now,
                     )
+                    if current.budget is not None and current.budget.requires_desktop:
+                        # 高优入队即触发软抢占评估；clamp 幂等且不拉长。
+                        desktop_pairs.add((row.tenant_id, row.user_id))
                 except ConflictError:
                     # A busy objective skips this interval, without a catch-up burst.
                     pass
@@ -498,6 +506,12 @@ class PostgresAssistantRepository:
                     }
                 )
                 _store(row, updated)
+        # 入队事务之外再评估一次软抢占（clamp 开自己的短事务，避免与上面的
+        # FOR UPDATE 行竞争）；无桌面排队时它是一次空查询。
+        for tenant_id, user_id in sorted(desktop_pairs):
+            await self.clamp_desktop_turn_for_priority(
+                tenant_id=tenant_id, user_id=user_id, now=now
+            )
 
     async def _routine_gate(
         self,
@@ -1629,6 +1643,67 @@ class PostgresAssistantRepository:
             await session.delete(row)
         return True
 
+    @staticmethod
+    def _desktop_priority(objective_row: ObjectiveRow) -> int:
+        """budget.desktopPriority；缺字段/非整数安全回退 0（纯 FIFO），不伪造。"""
+        budget = objective_row.payload.get("budget") or {}
+        raw_priority = budget.get("desktopPriority")
+        return (
+            raw_priority
+            if isinstance(raw_priority, int) and not isinstance(raw_priority, bool)
+            else 0
+        )
+
+    @classmethod
+    def _desktop_queue_key(
+        cls, execution_row: ObjectiveExecutionRow, objective_row: ObjectiveRow
+    ) -> tuple[int, datetime, datetime, str]:
+        """桌面队列的放行顺序：优先级降序 → 职责创建序 → 执行创建序 → id 兜底。
+
+        schedule_due 同批入队的 created_at 相同，仅按执行 id 排序会变成随机队头。
+        """
+        return (
+            -cls._desktop_priority(objective_row),
+            objective_row.created_at,
+            execution_row.created_at,
+            execution_row.execution_id,
+        )
+
+    async def _desktop_waiters(
+        self,
+        session: AsyncSession,
+        *,
+        tenant_id: str,
+        user_id: str,
+    ) -> list[tuple[ObjectiveExecutionRow, ObjectiveRow]]:
+        """pending 且 requiresDesktop 的执行，按放行顺序（优先级+FIFO）排列。"""
+        rows = (
+            await session.execute(
+                select(ObjectiveExecutionRow, ObjectiveRow)
+                .join(
+                    ObjectiveRow,
+                    and_(
+                        ObjectiveRow.objective_id == ObjectiveExecutionRow.objective_id,
+                        ObjectiveRow.tenant_id == ObjectiveExecutionRow.tenant_id,
+                        ObjectiveRow.user_id == ObjectiveExecutionRow.user_id,
+                    ),
+                )
+                .where(
+                    ObjectiveExecutionRow.tenant_id == tenant_id,
+                    ObjectiveExecutionRow.user_id == user_id,
+                    ObjectiveExecutionRow.status == ObjectiveExecutionStatus.PENDING.value,
+                )
+            )
+        ).all()
+        return sorted(
+            (
+                (execution_row, objective_row)
+                for execution_row, objective_row in rows
+                if (objective_row.payload.get("budget") or {}).get("requiresDesktop") is True
+            ),
+            key=lambda pair: self._desktop_queue_key(*pair),
+        )
+
     async def desktop_occupancy(
         self, *, tenant_id: str, user_id: str, now: datetime
     ) -> dict[str, object]:
@@ -1648,6 +1723,8 @@ class PostgresAssistantRepository:
             )
             holder: dict[str, object] | None = None
             holder_execution_id: str | None = None
+            holder_title = ""
+            holder_project: str | None = None
             if holder_row is not None:
                 holder_execution_id = holder_row.execution_id
                 objective_row = await session.scalar(
@@ -1657,54 +1734,50 @@ class PostgresAssistantRepository:
                         ObjectiveRow.user_id == user_id,
                     )
                 )
-                title = (
-                    str(objective_row.payload.get("title", "")) if objective_row is not None else ""
-                )
+                if objective_row is not None:
+                    holder_title = str(objective_row.payload.get("title", ""))
+                    raw_project = objective_row.payload.get("projectId")
+                    holder_project = raw_project if isinstance(raw_project, str) else None
                 holder = {
                     "objective_id": holder_row.objective_id,
                     "execution_id": holder_row.execution_id,
-                    "objective_title": title,
+                    "objective_title": holder_title,
                     "acquired_at": holder_row.acquired_at.isoformat(),
                     "expires_at": holder_row.expires_at.isoformat(),
                 }
-            rows = await session.execute(
-                select(ObjectiveExecutionRow, ObjectiveRow)
-                .join(
-                    ObjectiveRow,
-                    and_(
-                        ObjectiveRow.objective_id == ObjectiveExecutionRow.objective_id,
-                        ObjectiveRow.tenant_id == ObjectiveExecutionRow.tenant_id,
-                        ObjectiveRow.user_id == ObjectiveExecutionRow.user_id,
-                    ),
-                )
-                .where(
-                    ObjectiveExecutionRow.tenant_id == tenant_id,
-                    ObjectiveExecutionRow.user_id == user_id,
-                    ObjectiveExecutionRow.status == ObjectiveExecutionStatus.PENDING.value,
-                )
-                .order_by(ObjectiveExecutionRow.created_at)
+            rows = await self._desktop_waiters(
+                session, tenant_id=tenant_id, user_id=user_id
             )
             waiting: list[dict[str, object]] = []
             for execution_row, objective_row in rows:
-                budget = objective_row.payload.get("budget") or {}
-                if budget.get("requiresDesktop") is not True:
-                    continue
                 if (
                     holder_execution_id is not None
                     and execution_row.execution_id == holder_execution_id
                 ):
                     continue
+                wait_reason = (
+                    "单执行者占用中（另一项职责正在使用共享桌面）"
+                    if holder_row is not None
+                    else "等待桌面就绪"
+                )
+                if holder_row is not None:
+                    # 跨项目排队要一眼可读：project_id 不同（一侧为空另一侧非空也算）
+                    # 时点名跨项目并带上持有人职责标题；缺字段安全回退，不伪造项目名。
+                    raw_project = objective_row.payload.get("projectId")
+                    waiting_project = raw_project if isinstance(raw_project, str) else None
+                    if waiting_project != holder_project:
+                        occupant = f"「{holder_title}」" if holder_title else "其他职责"
+                        wait_reason = f"跨项目等待：桌面正被{occupant}占用"
+                priority = self._desktop_priority(objective_row)
                 waiting.append(
                     {
                         "objective_id": execution_row.objective_id,
                         "execution_id": execution_row.execution_id,
                         "objective_title": str(objective_row.payload.get("title", "")),
                         "position": len(waiting) + 1,
-                        "wait_reason": (
-                            "单执行者占用中（另一项职责正在使用共享桌面）"
-                            if holder_row is not None
-                            else "等待桌面就绪"
-                        ),
+                        "wait_reason": wait_reason,
+                        # 排队优先级只读透出：UI 可选展示，旧前端忽略即可。
+                        "desktop_priority": priority,
                     }
                 )
             return {"holder": holder, "waiting": waiting}
@@ -1722,7 +1795,10 @@ class PostgresAssistantRepository:
         """获取共享桌面的一次执行权；已有他人持有则返回 None（排队等待）。
 
         过期的持有先释放，避免崩溃残留永久堵住桌面。同一用户同一时刻只有
-        一个执行者，这个约束由部分唯一索引在数据库层兜底。
+        一个执行者，这个约束由部分唯一索引在数据库层兜底。桌面空闲时只允许
+        队头 acquire：队头按 desktopPriority 降序，再按职责/执行创建序（FIFO）；
+        高优先级只影响空闲时的下一个放行，绝不打断未过期的活 holder，也不
+        改 TTL 或唯一索引。缺 desktopPriority 的旧载荷按 0（纯 FIFO）排队。
         """
         async with self._context(write=True) as session:
             active = await session.scalar(
@@ -1750,6 +1826,16 @@ class PostgresAssistantRepository:
                 if active.expires_at > now:
                     return None
                 active.released_at = now
+            waiters = await self._desktop_waiters(
+                session, tenant_id=tenant_id, user_id=user_id
+            )
+            desktop_queue: list[str] = [
+                execution_row.execution_id for execution_row, _ in waiters
+            ]
+            if desktop_queue and execution_id in desktop_queue:
+                # 队头（优先级降序+FIFO）才可 acquire；队列外的调用（非桌面职责等）不受此约束。
+                if desktop_queue[0] != execution_id:
+                    return None
             turn = DesktopTurn(
                 desktopTurnId=f"desktop_turn_{uuid4().hex}",
                 objectiveId=objective_id,
@@ -1786,6 +1872,58 @@ class PostgresAssistantRepository:
             )
             if row is not None:
                 row.released_at = now
+
+    async def clamp_desktop_turn_for_priority(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        now: datetime,
+        grace_seconds: int = DESKTOP_PREEMPT_GRACE_SECONDS,
+    ) -> bool:
+        """软抢占：队首严格更高优时，把活 holder 的剩余 TTL 钳到优雅窗口。
+
+        只缩短、绝不拉长（幂等 min），不碰已过期行；acquire 路径本身仍然
+        不会打断任何未过期的 holder——高优等 holder 过期/释放后走既有队头
+        acquire。同优/更低优/无等待者时零行为变化。
+        """
+        async with self._context(write=True) as session:
+            holder_row = await session.scalar(
+                select(DesktopTurnRow)
+                .where(
+                    DesktopTurnRow.tenant_id == tenant_id,
+                    DesktopTurnRow.user_id == user_id,
+                    DesktopTurnRow.released_at.is_(None),
+                )
+                .with_for_update()
+            )
+            if holder_row is None or holder_row.expires_at <= now:
+                return False
+            holder_objective = await session.scalar(
+                select(ObjectiveRow).where(
+                    ObjectiveRow.objective_id == holder_row.objective_id,
+                    ObjectiveRow.tenant_id == tenant_id,
+                    ObjectiveRow.user_id == user_id,
+                )
+            )
+            holder_priority = (
+                self._desktop_priority(holder_objective)
+                if holder_objective is not None
+                else 0
+            )
+            waiters = await self._desktop_waiters(
+                session, tenant_id=tenant_id, user_id=user_id
+            )
+            if not waiters:
+                return False
+            head_objective = waiters[0][1]
+            if self._desktop_priority(head_objective) <= holder_priority:
+                return False
+            graceful_expiry = now + timedelta(seconds=grace_seconds)
+            if holder_row.expires_at <= graceful_expiry:
+                return False
+            holder_row.expires_at = graceful_expiry
+        return True
 
     async def active_desktop_turn(self, tenant_id: str, user_id: str) -> DesktopTurn | None:
         async with self._context() as session:
