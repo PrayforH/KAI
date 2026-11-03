@@ -715,11 +715,13 @@ class AssistantService:
                     if direction == "sent" and handover.reply_to_run_id else "")
             if direction == "received":
                 events = await self._events.list_after(tenant_id, run.run_id, 0)
-                text = ("有一项操作需要你确认" if run.status is RunStatus.WAITING_APPROVAL
-                        else brief_notice(final_response_text(events))
-                        or "本次处理已结束，尚无结果正文。")
-                if run.status not in {RunStatus.SUCCEEDED, RunStatus.WAITING_APPROVAL}:
-                    text = "本次处理未完成。\n\n" + text
+                text = brief_notice(final_response_text(events))
+                state = {
+                    RunStatus.WAITING_APPROVAL: "有一项操作需要你确认",
+                    RunStatus.CANCELLED: "已停止", RunStatus.TIMED_OUT: "处理超时",
+                    RunStatus.REJECTED: "请求被拒绝", RunStatus.FAILED: "这次处理未完成",
+                }.get(run.status, "")
+                text = "\n\n".join(part for part in (state, text) if part)
             source = {
                 "name": specialist.name,
                 "botId": specialist.specialist_id,

@@ -368,3 +368,22 @@ async def test_declared_capability_permissions_still_gate_model_delegation():
         )
     repo.record_handover.assert_not_awaited()
     service._agui.create_run_with_result.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state,expected", [
+    ("succeeded", ""), ("cancelled", "已停止"), ("failed", "这次处理未完成"),
+    ("timed_out", "处理超时"), ("waiting_approval", "有一项操作需要你确认"),
+])
+async def test_empty_child_receipt_reports_only_its_actual_lifecycle_state(state, expected):
+    from harness.core.models import RunStatus
+    service, repo = _service(_specialist())
+    repo.mention_message_runs.return_value = ([
+        (SimpleNamespace(handover_id="h", target_thread_id="assistant_specialist_a",
+                         reply_to_run_id=None),
+         SimpleNamespace(run_id="r", updated_at=datetime(2026, 11, 3, tzinfo=UTC),
+                         status=RunStatus(state)), _specialist())], 1)
+    service._events.list_after.return_value = []
+    messages, _ = await service.mention_messages("t", "u", "main")
+    assert messages[0].text == expected
+    assert "尚无结果正文" not in messages[0].text
