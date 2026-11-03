@@ -4,7 +4,7 @@
 - 分支：`auto/kai-bot-vault-20261103`（基线 `60ef9143`，代码 `0db1e0b7`）
 - 提交：`08ceba23`（P13）、`e5916955`（P14）、`40e8f0df`（P15）、`<本文件提交>`（验收与缺陷修复）
 - schema：新增迁移 `0065_assistant_vault_items`
-- 79 发布：**已发布**（八批；**唯一当前版本** api/worker `kai/superagent-api:20261102-a6a29662`、web `kai/superagent-web:20261103-7d16f59b`，schema 0065，三服务 healthy。历史批次见 8.7，现网结论见 8.8／8.15）
+- 79 发布：**已发布**（八批；**唯一当前版本** api/worker `kai/superagent-api:20261102-a6a29662`、web `kai/superagent-web:20261103-ae34a0d8`，schema 0065，三服务 healthy。历史批次见 8.7，现网结论见 8.8／8.15）
 - 飞书同步：已追加本轮进展，回读 revision 83（文档 XV4ndItNmoONoIxQPWgcIyLbnJe），未覆盖历史内容；后续修订见 8.14
 - 真实页面验收：在**本机新代码**（API + Web，同一提交）完成，截图见本目录；**79 实页验收仍未做**（证书与登录需本人接管，见 8.9）
 
@@ -392,3 +392,15 @@ UI 已如实写明范围：「资料加密保存在你名下……还没有把�
 
 **发布**：只换 web，CAS 基准为第八批后的 `sha256 de3c0aa1…`，滚动后 web healthy、镜像 `7d16f59b`（compose `91a0fb0b…`）。
 产物指纹：新 bundle 里 3 个 chunk 含 `assistantScope`。前端全量 1600 通过（失败仍是基线同一组 7 条），tsc 通过。
+
+## 8.18 第十批（web `ae34a0d8`）：回执行移进会话流
+
+**本人反馈**：`已发送消息给 X` 出现在输入区上方，像工具栏，不在中间对话区。
+
+**根因**：`AssistantMentionReceipts` 原来渲染在 `Composer` 之前的区块里（输入区），不在消息流内。
+**修法**：改用 `ConversationThread` 的 `MessagesFooter` 插槽（`Thread.Messages` 之后、滚动区内），
+并在其中按助理面渲染回执；输入区不再挂它。新增断言：`MessagesFooter: HarnessMessagesFooter` 存在、
+`{assistantSurface && <AssistantMentionReceipts />}` 不再出现在输入区。
+
+**发布**：只换 web，CAS 基准 `sha256 91a0fb0b…`，滚动后 web healthy、镜像 `ae34a0d8`（compose `3bd1605d…`）；
+产物指纹：`已发送消息给` 出现在 7 个 chunk、footer 插槽标记 3 个。前端全量 1601 通过（失败仍是基线同一组 7 条），tsc 通过。
