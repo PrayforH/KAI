@@ -59,6 +59,7 @@ from harness.computer.conventions import (
 )
 from harness.computer.desktop import DesktopControlService
 from harness.computer.runtime import ComputerRuntime
+from harness.computer.targets import ComputerTarget, ComputerTargetService
 from harness.config import Settings
 from harness.context.checkpoint import ContextCheckpointService
 from harness.context.service import ContextService
@@ -2046,6 +2047,10 @@ def build_production_container(
         automations=automation_service,
         assistant=assistant,
         computer_desktop=DesktopControlService(sessions),
+        computer_targets=ComputerTargetService(
+            computer_runtime.registry,
+            [ComputerTarget.model_validate(t) for t in settings.assistant_computer_targets],
+        ),
         weixin=WeixinService(
             sessions,
             mcp_credential_service.cipher,

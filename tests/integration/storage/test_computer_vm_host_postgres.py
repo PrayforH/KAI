@@ -5,6 +5,7 @@ are stubs. The registry runs on the isolated integration database, so the
 lease purposes and host-operation locking are real.
 """
 
+import json
 from datetime import timedelta
 from typing import Any
 
@@ -81,9 +82,7 @@ def inspect_payload(running: bool) -> dict[str, Any]:
                 "RW": True,
             },
         ],
-        "HostConfig": {
-            "Devices": [{"PathOnHost": "/dev-host/kvm", "PathInContainer": "/dev/kvm"}]
-        },
+        "HostConfig": {"Devices": [{"PathOnHost": "/dev-host/kvm", "PathInContainer": "/dev/kvm"}]},
     }
 
 
@@ -102,7 +101,17 @@ class FakeGate:
         self.calls.append(action)
         from harness.sandbox.base import SandboxCommandResult
 
-        return SandboxCommandResult(exit_code=0, stdout="{}", stderr="")
+        return SandboxCommandResult(
+            exit_code=0,
+            stdout=json.dumps(
+                {
+                    "epoch": spec["epoch"],
+                    "lease_id": spec["lease_id"],
+                    "active": action == "activate",
+                }
+            ),
+            stderr="",
+        )
 
 
 async def lifecycle(database: DatabaseFixture, state: dict[str, Any]) -> VmComputerLifecycle:
@@ -124,6 +133,7 @@ def gate_stub(monkeypatch: pytest.MonkeyPatch) -> type[FakeGate]:
     import harness.computer.vm_host as vm_host
 
     monkeypatch.setattr(vm_host, "GuestGate", FakeGate)
+
     async def instant(spec: VmComputerSpec, deadline: float) -> None:
         return None
 

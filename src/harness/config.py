@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     assistant_computer_control_url: str = ""
     assistant_computer_control_secret: SecretStr = SecretStr("")
     assistant_computer_image: str = ""
+    assistant_computer_targets: list[dict[str, str]] = Field(default_factory=list)
+    assistant_computer_remote_image: str = ""
     # A VM-based persistent computer shares the same control plane; its image
     # is the immutable guest base digest. Empty keeps VM routing disabled.
     assistant_computer_vm_image: str = ""

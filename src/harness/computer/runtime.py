@@ -12,6 +12,8 @@ from harness.computer.docker import DockerComputerDriver
 from harness.computer.gui_tools import computer_gui_overlay
 from harness.computer.models import AssistantComputer
 from harness.computer.registry import ComputerRegistry
+from harness.computer.remote import PROVIDER as REMOTE_PROVIDER
+from harness.computer.remote import RemoteComputerDriver
 from harness.computer.sandbox import ComputerSandboxProvider
 from harness.computer.vm import PROVIDER as VM_PROVIDER
 from harness.computer.vm import VmComputerDriver
@@ -55,7 +57,7 @@ class ComputerRuntime:
             or re.fullmatch(_IMAGE, image) is None
             or (vm_image and re.fullmatch(_IMAGE, vm_image) is None)
             or settings.assistant_computer_default_provider
-            not in {DOCKER_PROVIDER, *( {VM_PROVIDER} if vm_image else set() )}
+            not in {DOCKER_PROVIDER, *({VM_PROVIDER} if vm_image else set())}
         ):
             raise ValueError(
                 "personal Computer requires deferred execution, a private node and a fixed image"
@@ -67,7 +69,14 @@ class ComputerRuntime:
         self.drivers[DOCKER_PROVIDER] = DockerComputerDriver(control, image=image)
         if vm_image:
             self.drivers[VM_PROVIDER] = VmComputerDriver(control, image=vm_image)
+        if settings.assistant_computer_remote_image:
+            if re.fullmatch(_IMAGE, settings.assistant_computer_remote_image) is None:
+                raise ValueError("remote computer requires pinned components")
+            self.drivers[REMOTE_PROVIDER] = RemoteComputerDriver(
+                control, image=settings.assistant_computer_remote_image
+            )
         self.default_provider = settings.assistant_computer_default_provider
+
     async def matches(self, session: Session) -> bool:
         return self.enabled and await self.access.is_personal_session(session)
 

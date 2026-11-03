@@ -13,7 +13,7 @@ import json
 import re
 from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -44,6 +44,7 @@ from harness.computer.models import (
     LeasePurpose,
 )
 from harness.computer.registry import ComputerRegistry
+from harness.computer.ssh_transport import SshComputerSpec, SshEndpoint
 from harness.computer.vm_keys import ComputerVmSeed, VmSeedStore
 from harness.sandbox.base import SandboxCommandResult
 
@@ -78,6 +79,16 @@ class VmComputerSpec(BaseModel):
             raise ValueError("VM computer image must be an immutable sha256 digest")
         return value
 
+    def ssh_endpoint(self, kind: Literal["control", "viewer"]) -> SshEndpoint:
+        return SshEndpoint(
+            host=self.ssh_host,
+            port=self.ssh_port,
+            user="kai-control" if kind == "control" else "kai-view",
+            identity=str(Path(self.identity_dir) / kind),
+            known_hosts=str(Path(self.identity_dir) / "known_hosts"),
+            host_key_alias=self.seed().host_key_alias,
+        )
+
     def seed(self) -> ComputerVmSeed:
         directory = Path(self.identity_dir)
         match = IDENTITY_PATTERN.fullmatch(directory.name)
@@ -95,41 +106,9 @@ class GuestGate:
     latency low without persisting anything user-visible.
     """
 
-    def __init__(self, spec: VmComputerSpec) -> None:
+    def __init__(self, spec: SshComputerSpec) -> None:
         self.spec = spec
-        seed = spec.seed()
-        self._argv = [
-            "ssh",
-            "-T",
-            "-F",
-            "/dev/null",
-            "-p",
-            str(spec.ssh_port),
-            "-i",
-            str(Path(spec.identity_dir) / "control"),
-            "-o",
-            "IdentitiesOnly=yes",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "StrictHostKeyChecking=yes",
-            "-o",
-            "GlobalKnownHostsFile=/dev/null",
-            "-o",
-            "UserKnownHostsFile=" + str(Path(spec.identity_dir) / "known_hosts"),
-            "-o",
-            "HostKeyAlias=" + seed.host_key_alias,
-            "-o",
-            "CheckHostIP=no",
-            "-o",
-            "ConnectTimeout=10",
-            "-o",
-            "ServerAliveInterval=15",
-            "-o",
-            "ServerAliveCountMax=4",
-            "--",
-            f"kai-control@{spec.ssh_host}",
-        ]
+        self._argv = spec.ssh_endpoint("control").argv()
 
     async def call(
         self, action: str, spec: Mapping[str, object], *, timeout_seconds: float
@@ -239,19 +218,21 @@ def verify_vm_instance(info: dict[str, Any], spec: VmComputerSpec) -> str:
     return identifier
 
 
-class VmComputerControl:
+class SshComputerControl:
+    provider = "vm-computer"
+
     """Serves exec and lease actions for one VM computer through its gate."""
 
     def __init__(
         self,
         registry: ComputerRegistry,
-        specs: Mapping[str, VmComputerSpec],
+        specs: Mapping[str, SshComputerSpec],
         *,
         authorizer: ComputerAuthorizer | None = None,
     ) -> None:
         self.registry, self.specs, self.authorizer = registry, dict(specs), authorizer
 
-    def _spec(self, computer: AssistantComputer) -> VmComputerSpec:
+    def _spec(self, computer: AssistantComputer) -> SshComputerSpec:
         spec = self.specs.get(computer.volume_ref)
         if spec is None or spec.guest_base_digest != computer.image:
             raise RuntimeError("computer VM is not declared on this node")
@@ -261,7 +242,7 @@ class VmComputerControl:
         self, token: ComputerLease, action: str, payload: Mapping[str, object]
     ) -> SandboxCommandResult:
         computer, current = await self.registry.holder(token)
-        if computer.provider != "vm-computer":
+        if computer.provider != self.provider:
             raise ComputerLeaseLostError("computer control purpose does not match its lease")
         purposes = (
             {LeasePurpose.START, LeasePurpose.RECOVER}
@@ -283,6 +264,10 @@ class VmComputerControl:
         if not isinstance(duration, (int, float)) or not 0 < duration <= 3600:
             raise ValueError("computer execution duration is invalid")
         return await GuestGate(spec).call(action, request, timeout_seconds=float(duration))
+
+
+class VmComputerControl(SshComputerControl):
+    """VM specialization of the shared forced-command control transport."""
 
 
 class VmComputerLifecycle:
@@ -406,45 +391,9 @@ class DisplayTransport:
     uses; no VNC, X11 or CDP port is ever published.
     """
 
-    def __init__(self, spec: VmComputerSpec) -> None:
-        seed = spec.seed()
-        # The gate's first bytes are consumed here to fail fast on a dead
-        # desktop; the client must use them instead of reading again.
+    def __init__(self, spec: SshComputerSpec) -> None:
         self.banner: bytes | None = None
-        self._argv = [
-            "ssh",
-            "-T",
-            "-F",
-            "/dev/null",
-            "-p",
-            str(spec.ssh_port),
-            "-i",
-            str(Path(spec.identity_dir) / "viewer"),
-            "-o",
-            "IdentitiesOnly=yes",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "StrictHostKeyChecking=yes",
-            "-o",
-            "UpdateHostKeys=no",
-            "-o",
-            "GlobalKnownHostsFile=/dev/null",
-            "-o",
-            "UserKnownHostsFile=" + str(Path(spec.identity_dir) / "known_hosts"),
-            "-o",
-            "HostKeyAlias=" + seed.host_key_alias,
-            "-o",
-            "CheckHostIP=no",
-            "-o",
-            "ConnectTimeout=10",
-            "-o",
-            "ServerAliveInterval=15",
-            "-o",
-            "ServerAliveCountMax=4",
-            "--",
-            f"kai-view@{spec.ssh_host}",
-        ]
+        self._argv = spec.ssh_endpoint("viewer").argv()
 
     async def open(self) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
         process = await asyncio.create_subprocess_exec(
@@ -496,7 +445,7 @@ class VmDesktopService:
     then may the desktop lease publish human ownership.
     """
 
-    def __init__(self, specs: Mapping[str, VmComputerSpec]) -> None:
+    def __init__(self, specs: Mapping[str, SshComputerSpec]) -> None:
         self._specs = dict(specs)
         self._sessions: dict[str, RfbClient] = {}
         self._locks: dict[str, asyncio.Lock] = {}
@@ -507,7 +456,7 @@ class VmDesktopService:
     def served(self) -> list[str]:
         return list(self._specs)
 
-    def _spec(self, computer: AssistantComputer) -> VmComputerSpec:
+    def _spec(self, computer: AssistantComputer) -> SshComputerSpec:
         spec = self._specs.get(computer.volume_ref)
         if spec is None:
             raise RuntimeError("computer desktop is not declared on this node")
@@ -555,7 +504,7 @@ class VmDesktopService:
         operation: str,
         payload: Mapping[str, object],
         *,
-        revalidate: Callable[[], Awaitable[None]],
+        revalidate: Callable[[], Awaitable[object]],
     ) -> dict[str, object]:
         if operation not in GUI_OPERATIONS:
             raise ValueError("desktop operation is not supported")
@@ -604,9 +553,7 @@ class VmDesktopService:
             if not isinstance(scale, (int, float)) or isinstance(scale, bool):
                 raise ValueError("screenshot scale must be a number")
             left, top, box_width, box_height = client.resolve_region(region)
-            width, height, png = await client.screenshot(
-                region=region, scale=float(scale)
-            )
+            width, height, png = await client.screenshot(region=region, scale=float(scale))
             return {
                 "width": width,
                 "height": height,

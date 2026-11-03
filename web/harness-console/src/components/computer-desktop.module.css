@@ -29,3 +29,7 @@
   .split { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(220px, 1fr) 6px minmax(240px, 1fr); }
   .divider { cursor: default; pointer-events: none; border-inline: 0; border-block: 1px solid var(--codex-border, var(--line)); }
 }
+
+.targetSelect { max-width: 190px; min-width: 0; padding: 5px 7px; border: 1px solid var(--codex-border, var(--line)); border-radius: 5px; background: var(--codex-surface, var(--surface)); color: inherit; font: inherit; }
+.targetSelect:focus-visible { outline: 2px solid var(--rail); outline-offset: 2px; }
+.selectionError { position: absolute; z-index: 2; top: 48px; left: 12px; right: 12px; margin: 0; padding: 8px 12px; border-radius: 5px; background: var(--codex-surface, var(--surface)); color: var(--codex-ink, var(--ink)); font-size: 12px; }

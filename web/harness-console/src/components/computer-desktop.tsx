@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type RFB from "@novnc/novnc";
 import styles from "./computer-desktop.module.css";
 
+type TargetSelection = { active_target: string | null; targets: { target_id: string; label: string }[] };
 type ConnectionState = "connecting" | "connected" | "disconnected" | "unauthorized";
 type ControlState = "observe" | "agent" | "human" | "takeover_pending";
 const labels = { connecting: "正在连接", connected: "已连接", disconnected: "连接已断开", unauthorized: "请重新登录" };
@@ -23,6 +24,10 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
   const [state, setState] = useState<ConnectionState>("connecting");
   const [control, setControl] = useState<ControlState>("observe");
   const [revision, setRevision] = useState(0);
+  const targetRef = useRef<string | null>(null);
+  const [selection, setSelection] = useState<TargetSelection | null>(null);
+  const [switching, setSwitching] = useState(false);
+  const [selectionError, setSelectionError] = useState("");
   const applyControl = (value: ControlState) => {
     controlRef.current = value;
     setControl(value);
@@ -51,6 +56,16 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
           const value = (await response.json()) as { state?: ControlState };
           if (value.state && value.state !== controlRef.current) applyControl(value.state);
         }
+        if (targetRef.current) {
+          const targets = await fetch("/api/studio/assistant/computer/targets", { cache: "no-store", signal: controller.signal });
+          if (targets.ok && !disposed) {
+            const selected = await targets.json() as TargetSelection;
+            if (selected.active_target !== targetRef.current) {
+              targetRef.current = selected.active_target; setSelection(selected);
+              applyControl("observe"); setRevision(value => value + 1);
+            }
+          }
+        }
       } catch { /* transient; the next tick retries */ }
     }
     async function connect() {
@@ -60,6 +75,12 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
         if (!session.ok) { if (!disposed) setState("unauthorized"); return; }
         const status = await fetch("/api/computer/status", { cache: "no-store", signal: controller.signal });
         if (!status.ok) { if (!disposed) setState(status.status === 403 ? "unauthorized" : "disconnected"); return; }
+        const targets = await fetch("/api/studio/assistant/computer/targets", { cache: "no-store", signal: controller.signal });
+        if (targets.ok && !disposed) {
+          const value = await targets.json() as TargetSelection;
+          targetRef.current = value.active_target;
+          setSelection(value);
+        }
         await pollControl();
         const { default: RemoteFramebuffer } = await import("@novnc/novnc");
         if (disposed || !screen.current) return;
@@ -88,6 +109,23 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
     };
   }, [revision, embedded]);
 
+  async function selectComputer(targetId: string) {
+    setSwitching(true); setSelectionError("");
+    try {
+      const response = await fetch("/api/studio/assistant/computer/targets/select", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target_id: targetId }),
+      });
+      if (!response.ok) {
+        setSelectionError(response.status === 409 ? "请等待当前操作结束并交还控制后再切换" : "暂时无法切换电脑，请重试");
+        return;
+      }
+      const value = await response.json() as TargetSelection;
+      targetRef.current = value.active_target; setSelection(value);
+      applyControl("observe"); setRevision(value => value + 1);
+    } catch { setSelectionError("暂时无法切换电脑，请重试"); }
+    finally { setSwitching(false); }
+  }
+
   async function changeControl(action: "takeover" | "return") {
     const response = await fetch(`/api/studio/assistant/computer/desktop/${action}`, { method: "POST" });
     if (!response.ok) return;
@@ -99,7 +137,11 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
   return <section aria-label="我的电脑" className={`${styles.shell} ${embedded ? styles.embedded : ""}`} ref={shell}>
     <header className={styles.toolbar}>
       {!embedded && <Link href="/assistant" className={styles.back} aria-label="返回我的助理">←</Link>}
-      <strong>我的电脑</strong>
+      {selection && selection.targets.length > 1 ? <select className={styles.targetSelect} aria-label="选择电脑"
+        value={selection.active_target ?? ""} disabled={switching}
+        onChange={event => void selectComputer(event.target.value)}>
+        {selection.targets.map(target => <option key={target.target_id} value={target.target_id}>{target.label}</option>)}
+      </select> : <strong>我的电脑</strong>}
       <span className={styles.connection} data-connected={state === "connected"} role="status"><i />{labels[state]}</span>
       <span className={styles.connection} data-connected={control === "human"} role="status"><i />{controlLabels[control]}</span>
       <div className={styles.actions}>
@@ -111,6 +153,7 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
         {onClose && <button onClick={onClose} aria-label="收起电脑">×</button>}
       </div>
     </header>
+    {selectionError && <p className={styles.selectionError} role="alert">{selectionError}</p>}
     <div className={styles.screen} ref={screen} tabIndex={0} onPointerDown={() => client.current?.focus()} onFocus={() => client.current?.focus()} aria-label="远程电脑桌面" onPaste={event => {
       if (controlRef.current !== "human") { event.preventDefault(); return; }
       const text = event.clipboardData.getData("text/plain");

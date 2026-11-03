@@ -52,6 +52,7 @@ _SANDBOX_ENFORCEMENT_BY_PROVIDER: dict[str, SandboxEnforcement] = {
     # The VM provider reuses the same in-guest supervisor fence as Docker
     # computers; the hypervisor boundary is not claimed as platform isolation.
     "vm-computer": SandboxEnforcement.DELEGATED,
+    "remote-computer": SandboxEnforcement.DELEGATED,
 }
 
 

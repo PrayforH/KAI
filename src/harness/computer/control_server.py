@@ -41,6 +41,12 @@ from harness.computer.models import (
     LeasePurpose,
 )
 from harness.computer.registry import ComputerRegistry
+from harness.computer.remote import PROVIDER as REMOTE_PROVIDER
+from harness.computer.remote import (
+    RemoteComputerControl,
+    RemoteComputerLifecycle,
+    RemoteComputerSpec,
+)
 from harness.computer.storage import AssistantComputerRow, ComputerDesktopLeaseRow
 from harness.computer.vm import PROVIDER as VM_PROVIDER
 from harness.computer.vm_host import (
@@ -64,7 +70,8 @@ class ControllerSettings(BaseSettings):
     nano_cpus: int = 2_000_000_000
     docker_socket: str = "/var/run/docker.sock"
     # Node-private declarations for adopted QEMU computers, keyed by work disk.
-    vm_computers: list[VmComputerSpec] = Field(default_factory=list)
+    vm_computers: list[VmComputerSpec] = Field(default_factory=list[VmComputerSpec])
+    remote_computers: list[RemoteComputerSpec] = Field(default_factory=list[RemoteComputerSpec])
     port: int = 8840
 
 
@@ -112,26 +119,23 @@ async def drain_pending_takeovers(
         return 0
     async with sessions() as db:
         rows = (
-            (
-                await db.execute(
-                    select(ComputerDesktopLeaseRow, AssistantComputerRow)
-                    .join(
-                        AssistantComputerRow,
-                        and_(
-                            AssistantComputerRow.tenant_id == ComputerDesktopLeaseRow.tenant_id,
-                            AssistantComputerRow.user_id == ComputerDesktopLeaseRow.user_id,
-                        ),
-                    )
-                    .where(
-                        ComputerDesktopLeaseRow.state == DesktopState.TAKEOVER_PENDING.value,
-                        AssistantComputerRow.provider == VM_PROVIDER,
-                        AssistantComputerRow.volume_ref.in_(served),
-                    )
-                    .limit(limit)
+            await db.execute(
+                select(ComputerDesktopLeaseRow, AssistantComputerRow)
+                .join(
+                    AssistantComputerRow,
+                    and_(
+                        AssistantComputerRow.tenant_id == ComputerDesktopLeaseRow.tenant_id,
+                        AssistantComputerRow.user_id == ComputerDesktopLeaseRow.user_id,
+                    ),
                 )
+                .where(
+                    ComputerDesktopLeaseRow.state == DesktopState.TAKEOVER_PENDING.value,
+                    AssistantComputerRow.provider.in_((VM_PROVIDER, REMOTE_PROVIDER)),
+                    AssistantComputerRow.volume_ref.in_(served),
+                )
+                .limit(limit)
             )
-            .all()
-        )
+        ).all()
     confirmed = 0
     for lease, computer in rows:
         screen.cancel(computer.volume_ref)
@@ -178,10 +182,14 @@ def create_app(settings: ControllerSettings) -> FastAPI:
     )
     registry = ComputerRegistry(sessions)
     vm_specs = {spec.volume_ref: spec for spec in settings.vm_computers}
+    remote_specs = {spec.volume_ref: spec for spec in settings.remote_computers}
+    if len(remote_specs) != len(settings.remote_computers) or vm_specs.keys() & remote_specs.keys():
+        raise ValueError("computer declarations require distinct target workspaces")
     controller = ComputerControlRouter(
         registry,
         {
             "docker-computer": DockerComputerControl(registry, docker, authorizer=access),
+            REMOTE_PROVIDER: RemoteComputerControl(registry, remote_specs, authorizer=access),
             **(
                 {VM_PROVIDER: VmComputerControl(registry, vm_specs, authorizer=access)}
                 if vm_specs
@@ -190,10 +198,11 @@ def create_app(settings: ControllerSettings) -> FastAPI:
         },
     )
     desktop_service = DesktopControlService(sessions)
-    desktop_screen = VmDesktopService(vm_specs)
+    desktop_screen = VmDesktopService({**vm_specs, **remote_specs})
     host = ComputerLifecycleRouter(
         registry,
         {
+            REMOTE_PROVIDER: RemoteComputerLifecycle(registry, remote_specs, authorizer=access),
             "docker-computer": DockerComputerLifecycle(
                 controller.registry,
                 docker,
@@ -215,7 +224,7 @@ def create_app(settings: ControllerSettings) -> FastAPI:
 
         async def guard() -> AssistantComputer:
             computer, current = await registry.holder(token)
-            if computer.provider != VM_PROVIDER:
+            if computer.provider not in {VM_PROVIDER, REMOTE_PROVIDER}:
                 raise ValueError("this computer has no desktop control surface")
             if current.purpose is not LeasePurpose.EXECUTE:
                 raise ComputerLeaseLostError("desktop actions need a live execution lease")
@@ -256,9 +265,7 @@ def create_app(settings: ControllerSettings) -> FastAPI:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                logging.getLogger(__name__).warning(
-                    "computer takeover drain failed", exc_info=True
-                )
+                logging.getLogger(__name__).warning("computer takeover drain failed", exc_info=True)
             await asyncio.sleep(DRAIN_POLL_SECONDS)
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)

@@ -56,6 +56,7 @@ from harness.automations.repositories import (
 )
 from harness.automations.service import AutomationService
 from harness.computer.desktop import DesktopControlService
+from harness.computer.targets import ComputerTargetService
 from harness.config import Settings
 from harness.context.repositories import InMemoryContextRepository
 from harness.context.service import ContextService
@@ -296,6 +297,7 @@ class ApiContainer:
     presentations: PresentationService
     assistant: AssistantService | None = None
     computer_desktop: "DesktopControlService | None" = None
+    computer_targets: ComputerTargetService | None = None
     weixin: WeixinService | None = None
     feishu: FeishuService | None = None
     feishu_connections: FeishuConnectionControl | None = None

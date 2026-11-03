@@ -200,6 +200,22 @@ class ComputerRegistry:
                 volume_ref,
             ) and computer.provider_ref is not None:
                 return AssistantComputer.model_validate(computer)
+            from harness.computer.storage import ComputerDesktopLeaseRow
+
+            desktop = await session.get(
+                ComputerDesktopLeaseRow, (tenant, user), with_for_update=True
+            )
+            if desktop is not None:
+                if (
+                    desktop.state != "observe"
+                    and desktop.expires_at is not None
+                    and desktop.expires_at > moment
+                ):
+                    raise ComputerBusyError("return desktop control before switching computers")
+                desktop.state, desktop.owner, desktop.expires_at = "observe", None, None
+                desktop.epoch += 1
+                desktop.revision += 1
+                desktop.updated_at = moment
             computer.provider = provider
             if computer.image != image:
                 computer.retired_images = list(

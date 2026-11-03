@@ -23,6 +23,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field, field_validator
 
+from harness.computer.ssh_transport import SshEndpoint
 from harness.computer.vm_keys import VmSeedStore
 
 AUTH_CHECK_SECONDS = 1
@@ -103,7 +104,7 @@ class RfbClientFilter:
             if item is None:
                 break
             if item[0] is not None:
-                messages.append(item)
+                messages.append((item[0], item[1]))
         del self._buffer[: self._pos]
         self._pos = 0
         return messages
@@ -184,9 +185,7 @@ class RfbClientFilter:
             # ExtendedClipboard uses a *negative signed* ClientCutText length.
             # noVNC answers the server's capabilities even in view-only mode;
             # reading -8 as uint32 used to disconnect every actual browser.
-            length = int.from_bytes(
-                self._buffer[self._pos + 4 : self._pos + 8], "big", signed=True
-            )
+            length = int.from_bytes(self._buffer[self._pos + 4 : self._pos + 8], "big", signed=True)
             span = 8 + abs(length)
             label = RFB_CUT
             if length < 0:
@@ -240,6 +239,7 @@ class ViewerSettings(BaseModel):
     origins: frozenset[str]
     public_origin: str
     cookie_name: str = "harness_access_token"
+    targets: dict[str, SshEndpoint] = Field(default_factory=dict)
 
     @field_validator("public_origin")
     @classmethod
@@ -276,7 +276,15 @@ class DesktopSsh:
     def __init__(self, settings: ViewerSettings) -> None:
         self.settings = settings
 
-    async def connect(self) -> asyncio.subprocess.Process:
+    async def connect(self, endpoint: SshEndpoint | None = None) -> asyncio.subprocess.Process:
+        if endpoint is not None:
+            return await asyncio.create_subprocess_exec(
+                *endpoint.argv(),
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+                env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"},
+            )
         settings = self.settings
         # prepare is idempotent only for an existing, complete private identity.
         path = settings.identities / f"{settings.computer_id}-{settings.incarnation}"
@@ -404,6 +412,22 @@ def create_viewer_app(
         except (httpx.HTTPError, ValueError, TypeError):
             return observe
 
+    async def active_endpoint(token: str | None) -> tuple[str | None, SshEndpoint | None]:
+        if not settings.targets:
+            return None, None
+        response = await auth.get(
+            "/v1/studio/assistant/computer/targets",
+            headers={"Authorization": "Bearer " + (token or "")},
+            timeout=3,
+        )
+        if response.status_code != 200:
+            raise RuntimeError("desktop selection is unavailable")
+        target = response.json().get("active_target")
+        endpoint = settings.targets.get(target) if isinstance(target, str) else None
+        if endpoint is None:
+            raise RuntimeError("selected desktop is not served")
+        return target, endpoint
+
     async def stream(websocket: WebSocket) -> None:
         token = websocket.cookies.get(settings.cookie_name)
         if websocket.headers.get("origin") not in settings.origins or not await authorized(token):
@@ -423,7 +447,12 @@ def create_viewer_app(
             process: asyncio.subprocess.Process | None = None
             tasks: list[asyncio.Task[None]] = []
             try:
-                process = await desktop.connect()
+                target_id, endpoint = await active_endpoint(token)
+                process = (
+                    await desktop.connect(endpoint)
+                    if endpoint is not None
+                    else await desktop.connect()
+                )
                 assert process.stdout is not None and process.stdin is not None
                 output, input_stream = process.stdout, process.stdin
                 header = await asyncio.wait_for(output.readexactly(12), timeout=15)
@@ -452,8 +481,7 @@ def create_viewer_app(
                         for kind, chunk in policy.feed(
                             data,
                             input_allowed=(
-                                control["state"] == "human"
-                                and granted_epoch == control["epoch"]
+                                control["state"] == "human" and granted_epoch == control["epoch"]
                             ),
                         ):
                             if kind == RFB_DISCARD:
@@ -478,6 +506,9 @@ def create_viewer_app(
                     while True:
                         await asyncio.sleep(AUTH_CHECK_SECONDS)
                         if not await authorized(token):
+                            return
+                        selected, _ = await active_endpoint(token)
+                        if selected != target_id:
                             return
                         control.update(await desktop_state(token))
                         if control["state"] == "human":

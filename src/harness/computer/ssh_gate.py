@@ -12,6 +12,7 @@ import os
 import stat
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
@@ -94,7 +95,7 @@ def _require_workdisk() -> None:
         os.close(fd)
 
 
-def run() -> None:
+def run(*, require_workdisk: Callable[[], None] = _require_workdisk) -> None:
     if sys.platform != "linux" or os.geteuid() != 0:
         raise PermissionError("guest control requires its privileged entrypoint")
     action, spec = decode_request(sys.stdin.buffer.read(MAX_BYTES + 1))
@@ -107,7 +108,7 @@ def run() -> None:
     if action != "deactivate":
         # A failed shared mount must never fall back to the guest OS's old or
         # empty HOME. Cleanup stays available even if the data disk is lost.
-        _require_workdisk()
+        require_workdisk()
     body = json.dumps(spec).encode()
     if len(body) > MAX_BYTES:
         raise ValueError("guest request exceeds the allowed size")
