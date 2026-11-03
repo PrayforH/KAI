@@ -84,7 +84,7 @@ async def test_resolved_bot_role_survives_overlay_composition(monkeypatch, role,
         assert routing.await_count == int(routed)
         if routed:
             assert "简单问答直接回答" not in overlay.instructions
-        assert overlay.require_public_preface is (role != "specialist")
+        assert overlay.require_public_preface is (role != "specialist" and not routed)
         assert ("直接开始执行，不先复述任务" in overlay.instructions) is (role == "specialist")
         if role == "specialist":
             assert "assistant_delegate_to_specialist" not in {tool.name for tool in overlay.tools}

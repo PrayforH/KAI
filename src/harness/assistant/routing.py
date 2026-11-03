@@ -27,6 +27,14 @@ if TYPE_CHECKING:
     from harness.core.models import Run, Session
 
 ROUTE_TOOL = "assistant_route_message"
+ROUTER_PREFIX = (
+    "【本轮角色：主助理路由员，优先于宿主执行型Agent的默认工作方式】\n"
+    "先按下方Bot目录确定承接者，再发送公开回执；不要先宣布自己查询。"
+    "天气、行业等即时查询是领域工作，不是纯闲聊，即使一句话也优先派发。"
+    "提醒/监控Bot也承接同领域的一次性问题，不限于定时提醒。"
+    "conversation仅用于问候等不需要事实核查或执行的聊天；不能以简单、单次或更快为由选它。"
+    "先调用assistant_route_message；派发后结束，不等待、不自己重做。\n"
+)
 ROUTING_INSTRUCTIONS = """
 ## 主助理本轮职责路由（优先于简单问答直接执行的旧约定）
 先读下方本人Bot目录的名称、职责描述与可用性，按用户语义选承接者，不要求用户@或点名。
@@ -152,6 +160,7 @@ class AssistantMessageRouter:
         async with self.lock:
             try:
                 await self.restore()
+                refine = False
                 if self.intent:
                     if (
                         self.intent["action"],
@@ -162,10 +171,17 @@ class AssistantMessageRouter:
                         decision.specialist_id,
                         decision.direct_kind,
                     ):
-                        raise ConflictError(
-                            "本次消息已有路由决定，不能重复派发或改派；请沿用原决定"
+                        refine = (
+                            self.intent["action"] == "direct"
+                            and self.intent.get("direct_kind") == "conversation"
+                            and decision.action in {"dispatch", "clarify"}
+                            and not self.delivered
                         )
-                else:
+                        if not refine:
+                            raise ConflictError(
+                                "本次消息已有路由决定，不能重复派发或改派；请沿用原决定"
+                            )
+                if self.intent is None or refine:
                     if decision.action != "dispatch" and decision.specialist_id is not None:
                         raise ConflictError("只有派发决定可以指定承接者")
                     if decision.action == "direct":
@@ -187,7 +203,12 @@ class AssistantMessageRouter:
                             raise ConflictError("这个子助理当前不能接单，请澄清或恢复其接单状态")
                         require_local_tools(specialist.config)
                     intent = {**decision.model_dump(), "input_hash": self.input_hash}
-                    await self.record("assistant.route.intent", "intent", intent)
+                    # Conversation cannot run any external tool, so this
+                    # provisional classification can be refined safely. The
+                    # settled event has one stable identity across retries.
+                    await self.record(
+                        "assistant.route.intent", "settled" if refine else "intent", intent
+                    )
                     self.intent = intent
                 if decision.action == "direct":
                     return _text("本轮由主助理直接处理，原工具权限和数据范围保持不变。")
@@ -292,4 +313,5 @@ async def assistant_routing_overlay(
         + "\n"
         + specialist_directory_instructions(candidates, run.tenant_id, session.user_id),
         workflow=router,
+        system_prefix=ROUTER_PREFIX,
     )

@@ -230,3 +230,33 @@ async def test_tasks_and_specialists_do_not_require_a_preface(
         for event in events
         if event.type == "tool.result"
     ] == ["tool-nudged"]
+
+
+@pytest.mark.asyncio
+async def test_router_role_is_first_and_does_not_require_an_acknowledgement(tmp_path: Path):
+    gate = _WithholdingGate()
+
+    async def query(_prompt: str, options: ClaudeAgentOptions) -> AsyncIterator[object]:
+        assert options.system_prompt.startswith("本轮只做职责路由\n")
+        hook = options.hooks["PreToolUse"][0].hooks[0]
+        assert await hook({"tool_use_id": "route-now"}, "route-now", {"signal": None}) == {}
+        yield UserMessage(
+            content=[ToolResultBlock(tool_use_id="route-now", content="已派发", is_error=False)]
+        )
+
+    runtime = ClaudeSdkRuntime(
+        agent_version=_version(),
+        routes=[_route()],
+        route_secrets={"new-api-default": "secret"},
+        query_factory=query,
+        tool_gate=cast(Any, gate),
+    )
+    context = _context(tmp_path, conversation_surface="assistant").model_copy(
+        update={
+            "platform_tools": PlatformToolOverlay(
+                require_public_preface=False, system_prefix="本轮只做职责路由\n"
+            )
+        }
+    )
+    _events = [e async for e in runtime.execute(context)]
+    assert gate.withheld == []

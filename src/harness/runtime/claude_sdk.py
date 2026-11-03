@@ -1137,6 +1137,7 @@ class ClaudeSdkRuntime:
             allowed_tools=[] if permission_mode == "auto" else allowed_tools,
             mcp_servers=mcp_servers,
             system_prompt=(
+                f"{context.platform_tools.system_prefix}"
                 # 助理面的联网要求放在最前面并声明优先级：宿主 Agent 的自述职责
                 # 常常与当下问题无关（归档 Agent 被问天气），只把工具挂上、把要求
                 # 追加在末尾，模型仍会顺着自己的角色和会话历史直接回"取不到"。

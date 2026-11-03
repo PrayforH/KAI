@@ -32,6 +32,7 @@ class PlatformToolOverlay:
     # This is presentation guidance, never a tool permission or client override.
     require_public_preface: bool = True
     workflow: ToolWorkflow | None = None
+    system_prefix: str = ""
 
     @property
     def names(self) -> tuple[str, ...]:

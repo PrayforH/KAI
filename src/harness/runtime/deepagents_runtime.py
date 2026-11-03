@@ -535,6 +535,7 @@ class DeepagentsRuntime:
     def _system_prompt(self, context: RuntimeContext) -> str:
         config = self._config
         prompt = (
+            f"{context.platform_tools.system_prefix}"
             f"{config.snapshot.system_prompt.rstrip()}\n\n"
             f"{visible_execution_contract(require_public_preface=context.platform_tools.require_public_preface)}\n{context.platform_tools.instructions}"
         )

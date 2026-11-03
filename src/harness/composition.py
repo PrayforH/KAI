@@ -1728,8 +1728,11 @@ def build_production_container(
         return PlatformToolOverlay(
             tools=merged,
             instructions=instructions,
-            require_public_preface=role_overlay.require_public_preface,
+            require_public_preface=(
+                role_overlay.require_public_preface and directory_overlay.workflow is None
+            ),
             workflow=directory_overlay.workflow,
+            system_prefix=directory_overlay.system_prefix,
         )
 
     worker = RunOrchestrator(

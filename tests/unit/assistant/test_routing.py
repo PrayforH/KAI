@@ -239,3 +239,27 @@ async def test_claiming_attachments_or_self_preference_requires_original_evidenc
         }
     )
     assert requested_overlay.workflow.before_tool("WebFetch") is None
+
+
+@pytest.mark.asyncio
+async def test_provisional_chat_can_refine_to_one_dispatch_but_never_repeat_it():
+    assistant, events, run, session, bot = setup()
+    overlay = await assistant_routing_overlay(assistant, events, run, session)
+    await overlay.tools[0].handler(
+        {"action": "direct", "direct_kind": "conversation", "reason": "最初误判为闲聊"}
+    )
+    assert overlay.workflow.before_tool("WebFetch")  # No outside work was possible.
+    args = {"action": "dispatch", "specialist_id": bot.specialist_id, "reason": "需要天气核查"}
+    await overlay.tools[0].handler(args)
+    resumed = await assistant_routing_overlay(assistant, events, run, session)
+    await resumed.tools[0].handler(args)
+    assistant.send_mention_message.assert_awaited_once()
+    recorded = await events.list_after("t", "parent", 0)
+    assert len(recorded) == 3
+    assert [e.payload.get("action") for e in recorded[:2]] == ["direct", "dispatch"]
+    assert recorded[1].event_id.endswith("settled")
+    assert "不能重复派发" in text(
+        await resumed.tools[0].handler(
+            {"action": "direct", "direct_kind": "management", "reason": "不得改判"}
+        )
+    )
