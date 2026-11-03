@@ -177,3 +177,29 @@ async def test_user_switch_off_is_respected_for_assistants(tmp_path: Path) -> No
         tmp_path, assistant_scope=True, personal_web_enabled=False, with_directory=False
     )
     assert "harness-web" not in options.mcp_servers
+
+
+@pytest.mark.asyncio
+async def test_assistant_scope_states_the_search_first_contract(tmp_path: Path) -> None:
+    """继承来的联网工具必须配一条"先检索再说"的契约。
+
+    宿主 Agent 的自述职责常常与当下问题无关（归档 Agent 被问天气时，
+    它会把"取不到"当默认答案，工具装上也不用）。
+    """
+    from harness.runtime.web_tools import WEB_ASSISTANT_CONTRACT
+
+    options = await _options(
+        tmp_path, assistant_scope=True, personal_web_enabled=True, with_directory=False
+    )
+    assert WEB_ASSISTANT_CONTRACT in (options.system_prompt or "")
+    assert "mcp__harness-web__search" in (options.system_prompt or "")
+
+
+@pytest.mark.asyncio
+async def test_task_surface_keeps_the_plain_web_contract(tmp_path: Path) -> None:
+    from harness.runtime.web_tools import WEB_ASSISTANT_CONTRACT
+
+    options = await _options(
+        tmp_path, assistant_scope=False, personal_web_enabled=True, with_directory=False
+    )
+    assert WEB_ASSISTANT_CONTRACT not in (options.system_prompt or "")

@@ -108,7 +108,13 @@ from harness.runtime.tools import (
     enforce_published_tool_directory,
 )
 from harness.runtime.warm_sdk import WarmEntry, WarmSdkPool, WarmSdkRequest
-from harness.runtime.web_tools import WEB_BUILTINS, WEB_CONTRACT, WEB_SERVER, WEB_TOOL_NAMES
+from harness.runtime.web_tools import (
+    WEB_ASSISTANT_CONTRACT,
+    WEB_BUILTINS,
+    WEB_CONTRACT,
+    WEB_SERVER,
+    WEB_TOOL_NAMES,
+)
 
 # Compaction can mirror an entire image-heavy transcript in one JSON frame.
 # Keep a finite limit, with room for the aggregate frame rather than one image.
@@ -961,12 +967,14 @@ class ClaudeSdkRuntime:
                 for tool in snapshot.manifest.spec.tools
                 if tool.builtin in WEB_BUILTINS
             )
+        assistant_web = False
         if context.run.input.get("assistant_scope") and not web_builtins:
             # 助理默认跟随平台联网：平台配好联网、本人没关闭时，
             # 主助理与子助理都能搜索/抓取，不必逐个 Bot 重新发布带联网工具的智能体。
             # 密钥与开关仍是平台那一份；关掉即不装配，任务/项目面不受影响。
             if await self._tool_resolver.web_allowed(context.identity):
                 web_builtins.update(WEB_BUILTINS)
+                assistant_web = True
         if web_builtins and not await self._tool_resolver.web_allowed(context.identity):
             web_builtins.clear()
             builtin_tools = [name for name in builtin_tools if name not in WEB_BUILTINS]
@@ -1125,6 +1133,10 @@ class ClaudeSdkRuntime:
             mcp_servers=mcp_servers,
             system_prompt=(
                 f"{self._snapshot.system_prompt.rstrip()}\n\n{VISIBLE_EXECUTION_CONTRACT}\n{WEB_CONTRACT}"
+                # 助理范围继承来的联网工具要配一条明确的"先检索再说"契约：
+                # 宿主 Agent 的自述职责常常与当下问题无关（例如归档 Agent 被问天气），
+                # 没有这句话时模型会把"取不到"当默认答案，工具装上了也不用。
+                f"{WEB_ASSISTANT_CONTRACT if assistant_web else ''}"
                 f"{delegation_contract}{_knowledge_mode_contract(context)}"
                 f"{_sandbox_tool_contract(allowed_tools, workspace=context.remote_workspace)}"
                 f"\n{context.platform_tools.instructions}"
