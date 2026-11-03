@@ -263,3 +263,55 @@ async def test_provisional_chat_can_refine_to_one_dispatch_but_never_repeat_it()
             {"action": "direct", "direct_kind": "management", "reason": "不得改判"}
         )
     )
+
+
+@pytest.mark.asyncio
+async def test_inherited_files_do_not_block_a_new_text_domain_request():
+    assistant, events, run, session, bot = setup()
+    run = run.model_copy(
+        update={
+            "input": run.input
+            | {"input_artifact_ids": ["old-file"], "inherited_input_artifact_ids": ["old-file"]}
+        }
+    )
+    overlay = await assistant_routing_overlay(assistant, events, run, session)
+    assert "新附件数：0" in overlay.instructions
+    await overlay.tools[0].handler(
+        {
+            "action": "dispatch",
+            "specialist_id": bot.specialist_id,
+            "reason": "纯文字天气查询，不依赖旧文件",
+        }
+    )
+    assistant.send_mention_message.assert_awaited_once()
+    assert assistant.send_mention_message.call_args.kwargs["text"] == run.input["prompt"]
+    assert run.input["input_artifact_ids"] == ["old-file"]
+
+
+@pytest.mark.asyncio
+async def test_history_file_fallback_requires_a_real_file_request_not_just_old_uploads():
+    assistant, events, run, session, bot = setup()
+    run = run.model_copy(
+        update={
+            "input": run.input
+            | {"input_artifact_ids": ["old-file"], "inherited_input_artifact_ids": ["old-file"]}
+        }
+    )
+    overlay = await assistant_routing_overlay(assistant, events, run, session)
+    result = await overlay.tools[0].handler(
+        {"action": "direct", "direct_kind": "attachments", "reason": "以前传过文件"}
+    )
+    assert "历史文件不是本次上传" in text(result)
+    assert not await events.list_after("t", "parent", 0)
+    file_request = run.model_copy(update={"input": run.input | {"prompt": "总结刚才的PDF文件"}})
+    files = await assistant_routing_overlay(assistant, events, file_request, session)
+    await files.tools[0].handler(
+        {
+            "action": "direct",
+            "direct_kind": "attachments",
+            "attachment_request": "刚才的PDF文件",
+            "reason": "明确处理历史文件",
+        }
+    )
+    assert files.workflow.before_tool("Read") is None
+    assistant.send_mention_message.assert_not_awaited()

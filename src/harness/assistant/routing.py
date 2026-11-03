@@ -66,6 +66,7 @@ class RouteDecision(BaseModel):
     ) = None
     unmatched: dict[str, Annotated[str, Field(min_length=1, max_length=100)]] | None = None
     self_request: str | None = Field(default=None, min_length=1, max_length=160)
+    attachment_request: str | None = Field(default=None, min_length=1, max_length=160)
 
 
 def _text(value: str) -> dict[str, Any]:
@@ -87,11 +88,18 @@ class AssistantMessageRouter:
         self.delivered = False
         self.delivery: dict[str, Any] = {}
         self.lock = asyncio.Lock()
+        inherited = set(run.input.get("inherited_input_artifact_ids") or [])
+        self.current_attachments = set(run.input.get("input_artifact_ids") or []) - inherited
+        self.inherited_attachments = inherited
         self.input_hash = hashlib.sha256(
             json.dumps(
                 {
                     key: run.input.get(key)
-                    for key in ("prompt", "quoted_message_context", "input_artifact_ids")
+                    for key in (
+                        "prompt",
+                        "quoted_message_context",
+                        "input_artifact_ids",
+                    )
                 },
                 ensure_ascii=False,
                 sort_keys=True,
@@ -191,7 +199,7 @@ class AssistantMessageRouter:
                     if decision.action == "dispatch":
                         if decision.specialist_id not in self.candidate_ids:
                             raise ConflictError("请选择本人目录中的现有子助理")
-                        if self.run.input.get("input_artifact_ids"):
+                        if self.current_attachments:
                             raise ConflictError("本条消息有附件，请选择直接处理以保留附件上下文")
                         specialist = await self.assistant.repository.get_specialist(
                             self.run.tenant_id, self.session.user_id, decision.specialist_id
@@ -268,8 +276,18 @@ class AssistantMessageRouter:
             and set(decision.unmatched or {}) != self.candidate_ids
         ):
             raise ConflictError("无匹配必须在unmatched逐项说明目录中每个Bot的领域为什么不相关")
-        if decision.direct_kind == "attachments" and not self.run.input.get("input_artifact_ids"):
-            raise ConflictError("本条消息没有附件，不能以附件为由直接处理")
+        if decision.direct_kind == "attachments" and not self.current_attachments:
+            reference = decision.attachment_request or ""
+            if not (
+                self.inherited_attachments
+                and reference
+                and reference in str(self.run.input.get("prompt", ""))
+                and re.search(r"附件|文件|图片|PDF|文档|上传|材料|截图", reference, re.IGNORECASE)
+            ):
+                raise ConflictError(
+                    "本条没有新附件；会话历史文件不是本次上传。纯文字领域查询应派发，"
+                    "只有原话明确要处理历史文件时，才能提供attachment_request选择附件处理"
+                )
         if decision.direct_kind == "user_requested_self":
             quote = decision.self_request or ""
             explicit = re.search(
@@ -310,6 +328,9 @@ async def assistant_routing_overlay(
             ),
         ),
         instructions=ROUTING_INSTRUCTIONS
+        + f"\n本条消息新附件数：{len(router.current_attachments)}。"
+        "历史文件不是本次新上传，不阻断纯文字领域查询；若原话明确要求处理历史文件，"
+        "可在direct附件类填写attachment_request引用原话，保留文件上下文。\n"
         + "\n"
         + specialist_directory_instructions(candidates, run.tenant_id, session.user_id),
         workflow=router,
