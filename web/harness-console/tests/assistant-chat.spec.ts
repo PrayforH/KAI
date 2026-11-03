@@ -12,10 +12,36 @@ describe("Bot public message chronology", () => {
       {id: "e0", text: "我先核对", timestamp: "2026-11-02T00:00:00Z", streaming: true},
     ]);
   });
-  it("keeps pre-tool messages and streams the next one even with a reused ID", () => {
-    const a = activity([["message.delta", "先核对。", "m"], ["tool.request"], ["tool.result"], ["message.delta", "核对完了。", "m"]]);
+  it("keeps legacy unidentified pre-tool messages separate from the next answer", () => {
+    const a = activity([["message.delta", "先核对。"], ["tool.request"], ["tool.result"], ["message.delta", "核对完了。"]]);
     expect(assistantChatReplies(a).map(x => [x.text, x.streaming])).toEqual([["先核对。", false], ["核对完了。", true]]);
     expect(assistantChatReplies({...a, status: "succeeded"}).map(x => [x.text, x.streaming])).toEqual([["先核对。", false], ["核对完了。", false]]);
+  });
+  it("grows the first token in place when a tool hook interleaves the same message", () => {
+    const events: [string, string?, string?][] = [
+      ["message.start", undefined, "m"], ["message.delta", "先", "m"], ["tool.request"],
+    ];
+    const first = assistantChatReplies(activity(events));
+    expect(first.map(x => x.text)).toEqual(["先"]);
+    const resumed = assistantChatReplies(activity([...events,
+      ["message.delta", "停用旧的那条盯梢，保留它的历史记录。", "m"], ["tool.result"],
+      ["message.delta", "再调整周期。", "m"], ["message.completed", undefined, "m"],
+    ], "succeeded"));
+    expect(resumed).toEqual([{ ...first[0],
+      text: "先停用旧的那条盯梢，保留它的历史记录。再调整周期。", streaming: false,
+    }]);
+    expect(assistantChatReplies(JSON.parse(JSON.stringify(activity([
+      ...events, ["message.delta", "停用旧的那条盯梢。", "m"],
+    ], "succeeded"))))).toHaveLength(1);
+  });
+  it("keeps real completed messages separate even when a provider reuses its ID", () => {
+    const a = activity([["message.delta", "先核对。", "m"], ["message.completed", undefined, "m"],
+      ["tool.request"], ["message.start", undefined, "m"], ["message.delta", "核对完了。", "m"]]);
+    expect(assistantChatReplies(a).map(x => [x.text, x.streaming])).toEqual([["先核对。", false], ["核对完了。", true]]);
+  });
+  it("does not let a delayed completion from another message split the active one", () => {
+    expect(assistantChatReplies(activity([["message.delta", "处理", "b"],
+      ["message.completed", undefined, "a"], ["message.delta", "完成。", "b"]])).map(x => x.text)).toEqual(["处理完成。"]);
   });
   it("splits actual message boundaries but does not turn paragraphs or tokens into messages", () => {
     const a = activity([["message.start", undefined, "a"], ["message.delta", "第一段\n\n第二段", "a"], ["message.delta", "补充", "a"],

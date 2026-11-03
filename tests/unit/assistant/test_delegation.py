@@ -410,6 +410,52 @@ async def test_update_task_requires_fresh_revision():
 
 
 @pytest.mark.asyncio
+async def test_chat_reschedule_uses_the_existing_task_without_pausing_or_recreating():
+    from unittest.mock import AsyncMock
+
+    gateway = FakeGateway()
+    original = await gateway.create(
+        "t", "u", ObjectiveBrief(title="盯梢", instructions="保留原任务",
+        agentName="assistant", agentVersion="1", schedule=ObjectiveSchedule(intervalMinutes=120)),
+        idempotency_key="original",
+    )
+    gateway.reschedule = AsyncMock(return_value=original.model_copy(update={
+        "schedule": ObjectiveSchedule(intervalMinutes=240), "revision": 2,
+        "next_check_at": NOW + timedelta(hours=4),
+    }))
+    tools = {tool.name: tool.handler for tool in
+             overlay(gateway, conversation_surface="assistant").tools}
+    assert "assistant_create_task" in tools
+    status = text_of(await tools["assistant_task_status"]({}))
+    assert "每120分钟" in status
+    result = text_of(await tools["assistant_update_task"]({
+        "objective_id": original.objective_id, "expected_revision": 1,
+        "action": "reschedule", "interval_minutes": 240,
+    }))
+    gateway.reschedule.assert_awaited_once_with("t", "u", original.objective_id,
+        expected_revision=1, interval_minutes=240, timezone=None)
+    assert "每4小时" in result and "下次检查" in result
+    assert len(gateway.created) == 1 and gateway.objectives[original.objective_id] == original
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fields", [
+    {}, {"interval_minutes": True}, {"interval_minutes": 14}, {"interval_minutes": 525601},
+    {"interval_minutes": "240"}, {"interval_minutes": 240, "timezone": ""},
+    {"interval_minutes": 240, "expected_revision": True},
+])
+async def test_invalid_schedule_tool_request_never_changes_a_task(fields):
+    from unittest.mock import AsyncMock
+
+    gateway = FakeGateway()
+    gateway.reschedule = AsyncMock(side_effect=AssertionError("must not write"))
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    await tools["assistant_update_task"]({"action": "reschedule", "objective_id": "o",
+        "expected_revision": 1, **fields})
+    gateway.reschedule.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_add_context_records_a_note_for_the_next_execution():
     gateway = FakeGateway()
     tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
@@ -915,13 +961,18 @@ async def test_notification_tool_rejects_ambiguous_mutations(fields):
 
 
 @pytest.mark.asyncio
-async def test_main_bot_chat_has_one_specialist_delegation_path_without_a_duplicate_task():
+async def test_main_bot_chat_can_create_explicit_work_without_duplicating_specialist_dispatch():
     gateway = FakeGateway()
     chat = overlay(gateway, conversation_surface="assistant")
     tools = {tool.name: tool.handler for tool in chat.tools}
-    assert "assistant_create_task" not in tools
+    assert "assistant_create_task" in tools
     assert "assistant_specialist_status" in tools and "assistant_manage_work" in tools
     await tools["assistant_delegate_to_specialist"]({"name": "编码协同", "task": "实现侧栏"})
     assert len(gateway.delegate_calls) == 1
     assert not gateway.created
+    args = {"title": "新建盯梢", "task": "每4小时核对", "interval_minutes": 240}
+    await tools["assistant_create_task"](args)
+    await tools["assistant_create_task"](args)
+    assert len(gateway.created) == 1 and gateway.created[0].schedule.interval_minutes == 240
+    assert len(gateway.records["objective_0001"]) == 1
     assert "assistant_create_task" in {tool.name for tool in overlay(gateway).tools}

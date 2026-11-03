@@ -198,6 +198,36 @@ class AssistantService:
             )
         return objective
 
+    async def reschedule(
+        self,
+        tenant_id: str,
+        user_id: str,
+        objective_id: str,
+        *,
+        expected_revision: int,
+        interval_minutes: int | None,
+        timezone: str | None = None,
+    ) -> Objective:
+        """Change the existing cadence; preserve identity, history and active work."""
+        current = await self.repository.get(tenant_id, user_id, objective_id)
+        schedule = (
+            ObjectiveSchedule.model_validate({
+                "intervalMinutes": interval_minutes,
+                "timezone": timezone or (
+                    current.schedule.timezone if current.schedule else "Asia/Shanghai"
+                ),
+            })
+            if interval_minutes is not None else None
+        )
+        brief = ObjectiveBrief.model_validate(
+            current.model_dump(include=set(ObjectiveBrief.model_fields)) | {"schedule": schedule}
+        )
+        await self.validate(tenant_id, user_id, brief)
+        return await self.repository.update(
+            tenant_id, user_id, objective_id, expected_revision=expected_revision,
+            now=datetime.now(UTC), brief=brief,
+        )
+
     async def progress_fingerprint(
         self, tenant_id: str, user_id: str, objective_id: str
     ) -> str | None:

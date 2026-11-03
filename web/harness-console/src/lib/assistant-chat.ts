@@ -5,25 +5,32 @@ import { isResponseBoundary } from "./process-boundary";
 export type ChatReply = { id: string; text: string; timestamp?: string; streaming: boolean };
 const active = new Set(["queued", "provisioning", "running", "waiting_approval", "cancelling"]);
 
-/** Project public messages, not paragraphs or private reasoning, from durable events.
- * Tools close a message even when a provider reuses its message ID afterwards. */
+/** Project public messages, not transport chunks, from durable events.
+ * Tool hooks may arrive between two deltas of the same provider message.
+ * Only streams without an identity need the legacy tool-boundary fallback. */
 export function assistantChatReplies(activity?: RunActivity): ChatReply[] {
   if (!activity) return [];
   const replies: ChatReply[] = [];
-  let current: (ChatReply & { sourceId: unknown }) | undefined;
+  let current: (ChatReply & { sourceId: string | undefined }) | undefined;
   for (const item of [...activity.items].sort((a, b) => a.sequence - b.sequence)) {
-    if (item.event_type === "message.start" || item.event_type === "message.completed" || isResponseBoundary(item.event_type)) {
+    const sourceId = typeof item.metadata.message_id === "string" && item.metadata.message_id.trim()
+      ? item.metadata.message_id : undefined;
+    if (item.event_type === "message.start" ||
+      (item.event_type === "message.completed" && (!sourceId || !current?.sourceId || current.sourceId === sourceId))) {
       if (current) current.streaming = false;
       current = undefined;
+    } else if (isResponseBoundary(item.event_type)) {
+      if (current) current.streaming = false;
+      if (!current?.sourceId) current = undefined;
     }
     if (item.event_type !== "message.delta" || !item.summary) continue;
-    const sourceId = item.metadata.message_id;
     if (!current || current.sourceId !== sourceId) {
       if (current) current.streaming = false;
       current = { id: item.id, sourceId, text: "", timestamp: item.timestamp, streaming: active.has(activity.status) };
       replies.push(current);
     }
     current.text += item.summary;
+    current.streaming = active.has(activity.status);
   }
   return replies.filter(reply => reply.text.trim()).map(({ id, text, timestamp, streaming }) => ({ id, text, timestamp, streaming }));
 }

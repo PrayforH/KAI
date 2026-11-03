@@ -117,18 +117,11 @@ class ObjectiveScheduleRequest(StudioModel):
 async def update_objective_schedule(
     objective_id: str, body: ObjectiveScheduleRequest, identity: Writer, assistant: Service
 ) -> Objective:
-    current = await assistant.repository.get(identity.tenant_id, identity.user_id, objective_id)
-    brief = ObjectiveBrief.model_validate(
-        current.model_dump(include=set(ObjectiveBrief.model_fields)) | {"schedule": body.schedule}
-    )
-    await assistant.validate(identity.tenant_id, identity.user_id, brief)
-    return await assistant.repository.update(
-        identity.tenant_id,
-        identity.user_id,
-        objective_id,
+    return await assistant.reschedule(
+        identity.tenant_id, identity.user_id, objective_id,
         expected_revision=body.expected_revision,
-        now=datetime.now(UTC),
-        brief=brief,
+        interval_minutes=body.schedule.interval_minutes if body.schedule else None,
+        timezone=body.schedule.timezone if body.schedule else None,
     )
 
 

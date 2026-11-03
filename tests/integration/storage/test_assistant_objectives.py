@@ -328,3 +328,56 @@ async def test_agent_or_project_cannot_change_under_existing_thread(database: Da
         await repo.update(
             "tenant-a", "user-a", "objective-a", expected_revision=1, now=NOW, brief=changed
         )
+
+
+@pytest.mark.asyncio
+async def test_reschedule_preserves_task_history_current_execution_and_scope(database):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from harness.assistant.service import AssistantService
+
+    repo = PostgresAssistantRepository(database[1])
+    original = objective().model_copy(update={"managed_thread_id": "original-thread"})
+    await repo.create(original)
+    pending = await repo.enqueue(
+        "tenant-a", "user-a", "objective-a", trigger_key="original", now=NOW,
+    )
+    auth = AsyncMock()
+    auth.profile.return_value = (SimpleNamespace(disabled=False), SimpleNamespace(role="member"))
+    service = AssistantService(repo, agents=AsyncMock(), auth=auth, projects=AsyncMock(),
+        agui=AsyncMock(), runs=AsyncMock(), events=AsyncMock())
+    updated = await service.reschedule("tenant-a", "user-a", "objective-a",
+        expected_revision=1, interval_minutes=240)
+    assert updated.objective_id == original.objective_id
+    assert updated.created_at == original.created_at
+    assert updated.managed_thread_id == "original-thread"
+    assert updated.instructions == original.instructions
+    assert updated.status is ObjectiveStatus.ACTIVE and updated.revision == 2
+    assert updated.schedule.interval_minutes == 240
+    assert updated.next_check_at == updated.updated_at + timedelta(hours=4)
+    assert await repo.executions("tenant-a", "user-a", "objective-a") == [pending]
+    assert len(await repo.list("tenant-a", "user-a")) == 1
+    with pytest.raises(ConflictError, match="changed"):
+        await service.reschedule("tenant-a", "user-a", "objective-a",
+            expected_revision=1, interval_minutes=30)
+    for tenant, user in (("tenant-b", "user-a"), ("tenant-a", "user-b")):
+        with pytest.raises(NotFoundError):
+            await service.reschedule(tenant, user, "objective-a", expected_revision=2,
+                interval_minutes=15)
+    paused = await repo.update("tenant-a", "user-a", "objective-a", expected_revision=2,
+        action=ObjectiveAction.PAUSE, now=updated.updated_at)
+    revised = await service.reschedule("tenant-a", "user-a", "objective-a",
+        expected_revision=paused.revision, interval_minutes=180, timezone="Europe/London")
+    assert revised.status is ObjectiveStatus.PAUSED and revised.next_check_at is None
+    assert revised.schedule.timezone == "Europe/London"
+    manual = await service.reschedule("tenant-a", "user-a", "objective-a",
+        expected_revision=revised.revision, interval_minutes=None)
+    assert manual.schedule is None and manual.next_check_at is None
+    assert manual.status is ObjectiveStatus.PAUSED
+    stopped = await repo.update("tenant-a", "user-a", "objective-a",
+        expected_revision=manual.revision, action=ObjectiveAction.STOP, now=manual.updated_at)
+    with pytest.raises(ConflictError, match="finished"):
+        await service.reschedule("tenant-a", "user-a", "objective-a",
+            expected_revision=stopped.revision, interval_minutes=240)
+    assert len(await repo.executions("tenant-a", "user-a", "objective-a")) == 1

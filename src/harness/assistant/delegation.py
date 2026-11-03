@@ -15,6 +15,7 @@ import json
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any, Protocol, cast
+from zoneinfo import ZoneInfo
 
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD, primary_specialist_id
 from harness.assistant.models import (
@@ -60,7 +61,13 @@ COMMON_INSTRUCTIONS = (
     "传 interval_minutes，按时间间隔而非固定每日时刻执行；不要编造频率。\n"
     "assistant_task_status 查询后台任务的真实执行状态、检查点与 revision；"
     "assistant_send_instruction 给托管任务补充要求（accepted=已送达当前执行，queued=进入下一轮）；"
-    "assistant_update_task 需要 expected_revision，取自最近一次状态查询。\n"
+    "assistant_update_task 需要 expected_revision，取自最近一次状态查询。"
+    "用户调整已有任务周期时，action=reschedule、interval_minutes=分钟数，直接原地修改；"
+    "不要先暂停、停止或重建。下一次检查从修改成功时起按新间隔计算，当前执行不打断。"
+    "interval_minutes=null只关闭自动周期、改为手动，不停止当前执行；暂停状态仍保留。\n"
+    "用户明确要求新建或重建后台任务时，可以用assistant_create_task；"
+    "重建应先确认新任务真实创建成功，失败时保留旧任务，不要先停用旧任务。"
+    "普通领域问题仍派发给已有子助理，不能因为有创建工具就再建一条重复执行。\n"
     "只读关注是结果通知，不是定时任务，也不会执行原任务。"
     "assistant_work_notifications 省略 enabled 可查看各原任务的关注开关、摘要和 revision；"
     "用户要求开启或关闭某条关注时，再传 managed_id、enabled、expected_revision。"
@@ -120,6 +127,11 @@ class DelegationGateway(Protocol):
 
     async def add_note(
         self, tenant_id: str, user_id: str, objective_id: str, *, note: str
+    ) -> Objective: ...
+
+    async def reschedule(
+        self, tenant_id: str, user_id: str, objective_id: str, *,
+        expected_revision: int, interval_minutes: int | None, timezone: str | None = None,
     ) -> Objective: ...
 
     async def resolve_targets(
@@ -231,7 +243,8 @@ def assistant_delegation_overlay(
         interval = arguments.get("interval_minutes")
         schedule = None
         if interval is not None:
-            if not isinstance(interval, int) or not 15 <= interval <= 525_600:
+            if (isinstance(interval, bool) or not isinstance(interval, int)
+                    or not 15 <= interval <= 525_600):
                 return _text("interval_minutes 必须是 15–525600 之间的整数（分钟）。")
             schedule = ObjectiveSchedule.model_validate({"intervalMinutes": interval})
         raw_title = str(arguments.get("title", "")).strip()
@@ -582,6 +595,13 @@ def assistant_delegation_overlay(
             )
             if objective.managed_thread_id:
                 label += f" 托管线程：{objective.managed_thread_id}"
+            label += (
+                f" 周期：每{objective.schedule.interval_minutes}分钟"
+                f"（{objective.schedule.timezone}）"
+                if objective.schedule else " 周期：仅手动"
+            )
+            if objective.next_check_at:
+                label += f" 下次检查：{objective.next_check_at.isoformat()}"
             if latest:
                 label += f" 最近执行：{state}"
             try:
@@ -639,12 +659,47 @@ def assistant_delegation_overlay(
     async def update_task(arguments: dict[str, Any]) -> dict[str, Any]:
         objective_id = str(arguments.get("objective_id", ""))
         revision = arguments.get("expected_revision")
-        if not isinstance(revision, int) or revision < 1:
+        if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
             return _text("expected_revision 必须是正整数（先查询当前任务状态）。")
+        if arguments.get("action") == "reschedule":
+            if "interval_minutes" not in arguments:
+                return _text("修改周期必须填写interval_minutes；整数为分钟数，null仅关闭自动周期。")
+            interval = arguments["interval_minutes"]
+            timezone = arguments.get("timezone")
+            if interval is not None and (
+                isinstance(interval, bool) or not isinstance(interval, int)
+                or not 15 <= interval <= 525_600
+            ):
+                return _text("interval_minutes必须是15–525600之间的整数，或null（仅手动）。")
+            if timezone is not None and (not isinstance(timezone, str) or not timezone.strip()):
+                return _text("timezone必须是有效时区名称；省略则保留原时区。")
+            try:
+                updated = await gateway.reschedule(
+                    tenant_id, user_id, objective_id, expected_revision=revision,
+                    interval_minutes=interval, timezone=timezone,
+                )
+            except (ConflictError, NotFoundError, PermissionDeniedError, ValueError) as error:
+                return _text(f"周期未能修改：{error}；原任务不会为此暂停或重建，请重新查询。")
+            cadence = (
+                f"每{interval // 60}小时" if interval and interval % 60 == 0
+                else f"每{interval}分钟" if interval else "仅手动执行"
+            )
+            when = (
+                "，下次检查：" + updated.next_check_at.astimezone(
+                    ZoneInfo(updated.schedule.timezone if updated.schedule else "Asia/Shanghai")
+                ).strftime("%Y-%m-%d %H:%M %Z")
+                if updated.next_check_at else "，暂不安排自动检查"
+            )
+            return _text(
+                f"「{updated.title}」已改为{cadence}{when}。"
+                "原任务、历史和当前执行均保留，原有暂停状态不改变。请只简短报告实际结果。"
+            )
+        if "interval_minutes" in arguments or "timezone" in arguments:
+            return _text("修改周期请使用action=reschedule；不能同时修改生命周期。")
         try:
             action = ObjectiveAction(str(arguments.get("action", "")))
         except ValueError:
-            return _text("action 必须是 pause/resume/complete/stop 之一。")
+            return _text("action 必须是 pause/resume/complete/stop/reschedule 之一。")
         try:
             updated = await gateway.update(
                 tenant_id,
@@ -856,15 +911,20 @@ def assistant_delegation_overlay(
             ),
             PlatformTool(
                 name="assistant_update_task",
-                description="暂停/恢复/完成/停止一个后台任务。",
+                description="原地修改已有任务周期，或暂停/恢复/完成/停止。改周期用reschedule，不停用重建。",
                 schema={
                     "type": "object",
                     "properties": {
                         "objective_id": {"type": "string"},
                         "action": {
                             "type": "string",
-                            "enum": ["pause", "resume", "complete", "stop"],
+                            "enum": ["pause", "resume", "complete", "stop", "reschedule"],
                         },
+                        "interval_minutes": {
+                            "type": ["integer", "null"], "minimum": 15, "maximum": 525600,
+                            "description": "reschedule时必填；分钟数；null仅关闭自动周期。",
+                        },
+                        "timezone": {"type": "string", "description": "省略则保留任务原时区。"},
                         "expected_revision": {"type": "integer", "minimum": 1},
                     },
                     "required": ["objective_id", "action", "expected_revision"],
@@ -875,10 +935,10 @@ def assistant_delegation_overlay(
         instructions=INSTRUCTIONS,
     )
     if run.input.get("conversation_surface") == "assistant":
-        # Main Bot chat exposes one delegation path. Task/project execution and
-        # scoped follow-up coordinators keep their original tool contracts.
+        # Explicit background creation and management remain available in chat;
+        # normal domain questions use the existing specialist-message route.
         return PlatformToolOverlay(
-            tools=tuple(t for t in overlay.tools if t.name != "assistant_create_task"),
+            tools=overlay.tools,
             instructions=CHAT_ROUTING + COMMON_INSTRUCTIONS,
         )
     return overlay
@@ -945,6 +1005,15 @@ class AssistantDelegationGateway:
             expected_revision=expected_revision,
             now=datetime.now(UTC),
             action=action,
+        )
+
+    async def reschedule(
+        self, tenant_id: str, user_id: str, objective_id: str, *,
+        expected_revision: int, interval_minutes: int | None, timezone: str | None = None,
+    ) -> Objective:
+        return await self._assistant.reschedule(
+            tenant_id, user_id, objective_id, expected_revision=expected_revision,
+            interval_minutes=interval_minutes, timezone=timezone,
         )
 
     async def add_note(
