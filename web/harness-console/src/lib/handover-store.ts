@@ -17,6 +17,8 @@ export type HandoverNotice = {
   sourceThreadId?: string | null;
   targetThreadId?: string | null;
   runId?: string | null;
+  /** 用户 @ 发出的原文：在发送所在的对话区按用户消息展示。 */
+  text?: string;
 };
 
 /** 用户 @ 某个 Bot 的持久回执前缀；与派活工具的键空间分开。 */
@@ -127,6 +129,7 @@ export const handoverStore = {
     sourceThreadId?: string | null;
     targetThreadId?: string | null;
     runId?: string | null;
+    text?: string;
   }) {
     if (!payload.handoverId || !payload.specialistId) return;
     const createdAt = receiptTime(payload.createdAt, Date.now());
@@ -144,6 +147,7 @@ export const handoverStore = {
       sourceThreadId: payload.sourceThreadId,
       targetThreadId: payload.targetThreadId,
       runId: payload.runId,
+      text: payload.text?.trim() || undefined,
     });
   },
   /** 页面加载的一次性投影：把持久 handovers 落成状态行（无轮询）。 */

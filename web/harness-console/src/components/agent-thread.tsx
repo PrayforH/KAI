@@ -784,6 +784,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
         targetThreadId: receipt.targetThreadId,
         runId: receipt.runId,
         createdAt: receipt.createdAt,
+        text: body,
       });
     });
     if (failed.length) {
@@ -1010,7 +1011,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
           ) : null}
         </>
       ) : null}
-      <AssistantConversationTail>
+      <AssistantConversationTail threadId={scope?.threadId}>
       <PromptQueue chat={assistantSurface} items={queue.filter(item => !item.steerRunId || !runView?.items.some(event =>
         [...(assistantSurface ? [] : ["run.steer.requested"]), "run.steer.accepted", "run.steer.unknown"].includes(event.event_type) && event.metadata.request_id === item.id))} paused={queuePaused} busy={busy} canSteer={steerAvailable} sendingIds={steeringIds}
         onChange={setQueue} onPause={(value) => { dispatching.current = false; setQueuePaused(value); }} onGuide={(item) => void guide(item)}

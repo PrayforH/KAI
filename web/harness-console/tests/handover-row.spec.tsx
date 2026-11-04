@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { HandoverInlineRows, shouldShowHandoverRows } from "../src/components/handover-row";
 import { emitHandover } from "./helpers/handover";
-import { handoverStore, statusLead } from "../src/lib/handover-store";
+import { handoverStore, mentionsForThread, statusLead } from "../src/lib/handover-store";
 
 const agentSource = readFileSync(
   join(process.cwd(), "src/components/agent-thread.tsx"),
@@ -52,5 +52,22 @@ describe("handover inline rows", () => {
     const names = handoverStore.snapshot().filter((n) => n.specialistId === "s2");
     expect(names).toHaveLength(1);
     expect(names[0]?.specialistName).toBe("B2");
+  });
+});
+
+describe("@ mention stays in the sending conversation", () => {
+  it("scopes the typed message to the thread it was sent from", () => {
+    handoverStore.ingestMention({
+      handoverId: "mention-1", specialistId: "specialist-9", specialistName: "编码协同",
+      runId: "run-9", sourceThreadId: "thread-main", text: "帮我恢复下",
+    });
+    const notices = handoverStore.snapshot();
+    expect(mentionsForThread(notices, "thread-main").map(item => item.text)).toContain("帮我恢复下");
+    // 换到别的助理会话不串台。
+    expect(mentionsForThread(notices, "thread-other")).toHaveLength(0);
+  });
+
+  it("passes the composer text with the delivery receipt", () => {
+    expect(agentSource).toContain("text: body,");
   });
 });

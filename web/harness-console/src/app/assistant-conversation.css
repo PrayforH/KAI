@@ -740,3 +740,20 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
    (`width: min(800px, 100%); margin-inline: auto`). Full viewport width left it
    hugging the far-left gutter as soon as the window got wide. */
 .chat-stage[data-surface="assistant"] .assistant-message-tail-slot { flex-shrink: 0; width: min(800px, 100%); max-width: 800px; margin-inline: auto; padding-bottom: 12px; }
+
+/* The @ message shows in the conversation it was typed in (user bubble, right
+   aligned, bot accent) with the handover receipt line underneath. */
+.chat-stage[data-surface="assistant"] .handover-mention-text {
+  box-sizing: border-box;
+  width: fit-content;
+  max-width: min(640px, 86%);
+  margin: 6px 0 2px auto;
+  padding: 10px 14px;
+  border-radius: 18px;
+  background: var(--kai-bot-bubble, #126fd4);
+  color: var(--kai-bot-bubble-ink, #fff);
+  font-size: 14px;
+  line-height: 22px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
