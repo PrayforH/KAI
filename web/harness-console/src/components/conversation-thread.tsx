@@ -31,7 +31,10 @@ export function ConversationThread({ threadId, ...config }: ComponentProps<typeo
     <ConversationRedactionProvider><Thread.Root config={{ ...config, branchPicker: { ...config.branchPicker, allowBranchPicker: false } }}>
       <ThreadPrimitive.Viewport className="aui-thread-viewport" ref={viewport} autoScroll={false} scrollToBottomOnRunStart={false} scrollToBottomOnInitialize={false} scrollToBottomOnThreadSwitch={false}>
         <Welcome />
-        <Thread.Messages unstable_flexGrowDiv={!assistant} MessagesFooter={MessagesFooter} components={messageComponents} />
+        {/* The grow div keeps the composer pinned to the bottom of the chat: a
+            short conversation (or the loading state) must not leave the input
+            floating in the middle of the page. */}
+        <Thread.Messages unstable_flexGrowDiv MessagesFooter={MessagesFooter} components={messageComponents} />
         {assistant && <div className="assistant-message-tail-slot" data-assistant-message-tail />}
         <Thread.FollowupSuggestions />
         <Thread.ViewportFooter>

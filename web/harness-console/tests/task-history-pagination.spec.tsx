@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
@@ -310,5 +312,15 @@ describe("auto load earlier on scroll", () => {
     await act(async () => { viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -50 })); });
     expect(loadEarlier).toHaveBeenCalledTimes(1);
     frame.remove();
+  });
+});
+
+describe("composer pinned to the bottom", () => {
+  it("keeps the thread grow div on the assistant surface", () => {
+    const source = readFileSync(join(process.cwd(), "src/components/conversation-thread.tsx"), "utf8");
+    // 助手面曾经关掉 grow div（`unstable_flexGrowDiv={!assistant}`），对话短时输入框
+    // 停在中段；加载态也一直悬着。现在所有面都保留，输入框始终沉底。
+    expect(source).toContain("<Thread.Messages unstable_flexGrowDiv ");
+    expect(source).not.toContain("unstable_flexGrowDiv={!assistant}");
   });
 });
