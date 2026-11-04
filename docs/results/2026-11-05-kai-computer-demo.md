@@ -73,9 +73,13 @@ control 经隧道向本机 gate 发 `{"action":"identity"}` 得到
 - **摘要三方不一致**（实测）：control 环境声明 `3434b9f0…`；机内
   `/etc/kai-computer-remote.json` 写 `dac63fd8…`（10-27 登记）；D0 当天实测机内 4 文件
   哈希 `29e2e2a2…`（repo HEAD 4 文件为 `0b746c3d…`，5 文件 `1aa237ff…`，均对不上任何一方）。
-- **结论**：机内 gate 文件或配置有一方漂移；修复必须在 32.45 直连 SSH 恢复后做
-  （重算哈希 → 更新 `/etc/kai-computer-remote.json` 的 `image` → 与 control env 的
-  `guest_base_digest` 对齐）。**D2 本机冒烟在该修复前无法通过**，不假报。
+- **结论（已解决，2026-11-05 深夜）**：机内 `/etc/kai-computer-remote.json` 与 control
+  env 的 `guest_base_digest` 已双双对齐为
+  `sha256:72b329d672a3ed9aa8d590f667ff63a72c537dc3fb40372f7fca310c11157f50`（×5 个 remote
+  计算机声明同步更新），control gate identity **经 kai-control 通过**；`acp_client.mjs`
+  已升级 selected+optionId 修法（`9ed42ee1`）并直跑验证可写
+  （`/home/xiaokai/acp-test/ACP_WRITE_SMOKE.txt`）。D2 产品路径冒烟已 ✅ 通过，见
+  `2026-11-05-kai-computer-local-smoke.md`。
 
 ---
 
@@ -237,7 +241,7 @@ sudo install -m 644 -o root -g root <(git -C <repo> show 5acf4458:src/harness/co
 ```
 或 `git revert 03db5621`（代码层）。回滚后工具描述恢复「仅只读调研」，permission 恢复一律拒绝。
 
-### 4.3 D2 阻塞修复清单（演示前必做，机器侧）
+### 4.3 D2 阻塞修复清单（✅ 已于 2026-11-05 深夜全部完成；保留作记录）
 
 1. 32.45 SSH 恢复后重算 gate 摘要：`cat /opt/kai-computer/{remote_display_gate,remote_gate,ssh_gate,supervisor,native_desktop}.py | sha256sum`（native_desktop 启用时 5 文件）；
 2. `/etc/kai-computer-remote.json` 的 `image` 更新为该值，同时确认 `"acp": true`；
@@ -260,5 +264,5 @@ sudo install -m 644 -o root -g root <(git -C <repo> show 5acf4458:src/harness/co
 
 1. ff383602 的 web 修复（@ 回执去重等）随紧急回滚不在 79 上——演示 S5 该点需单独重滚或演示时如实说明。
 2. 云电脑演示（S3）未在 116/79 双端验证过 qcow2 clone（79 有容器与盘，未演练切机）。
-3. ACP 真机写入从未跑通过（gate digest 阻塞在前），S2 的「写文件成功」当前是**预期**而非实测。
+3. ~~ACP 真机写入从未跑通过~~ → **已跑通（2026-11-05）**：产品路径真实 Run 带 lease 写入 `/home/xiaokai/acp-test/D2_PRODUCT_ACP.txt` 并读回一致，见 `2026-11-05-kai-computer-local-smoke.md`；残余缺口仅为 `mode` 字段 null 与 viewer 桌面画面未演练。
 4. `claude-agent-acp`/`codex-acp` 的 mode 枚举未实测；若后续要恢复强制 mode，需真机枚举后回填。

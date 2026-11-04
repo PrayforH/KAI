@@ -50,6 +50,8 @@
   （79 实况快照、digest 三方不一致证据链、mermaid 架构、S0–S5 剧本、退回只读步骤）
 - D1：✅ control `20261104-acp-demo-03db5621` healthy（BlockingIO 卡死为复发型，重启恢复）；
   identity 冒烟仍被 gate digest 阻塞（依赖 D2 清单 1–3 步，见合稿 §1.4/§4.3）
-- D2：阻塞——32.45 直连 SSH 未恢复；合稿 §4.3 有逐条修复清单（重算摘要→改 config→对齐
-  control env→刷 acp_client.mjs→identity 冒烟）
+- D2：✅ 产品路径冒烟通过（`docs/results/2026-11-05-kai-computer-local-smoke.md`）：
+  digest 双侧对齐 `72b329d6…`、identity PASS、acp_client selected+optionId（`9ed42ee1`）、
+  真实 Run `run_d741a8b5021049c4be78e8f06132c1ee` 经 computer_acp 写读
+  `/home/xiaokai/acp-test/D2_PRODUCT_ACP.txt`=`D2_ACP_OK` 一致；`demo_writable:true`。
 - D3–D4：未开始
