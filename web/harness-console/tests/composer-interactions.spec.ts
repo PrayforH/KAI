@@ -97,4 +97,5 @@ it("reconciles legacy stuck sends with durable history without replaying them", 
   expect(nextQueuedPrompt(placed)).toBeUndefined();
   history[0].items.push({event_type: "run.steer.accepted", metadata: {request_id: "old"}});
   expect(reconcilePromptHistory(placed, history)).toEqual([]);
+  expect(reconcilePromptHistory([{id:"old",text:"补充",attachments:[],steerRunId:"original"}],history)).toEqual([]);
 });

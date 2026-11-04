@@ -11,8 +11,8 @@ export function useRetainedPromptRecovery({enabled, scopeKey, items, onAccepted}
 }) {
   const callback = useRef(onAccepted);
   callback.current = onAccepted;
-  const key = JSON.stringify(items.filter(item => item.receipt && item.historyRunId)
-    .map(item => [item.historyRunId!, item.id]));
+  const key = JSON.stringify(items.filter(item => item.historyRunId || item.steerRunId)
+    .map(item => [item.historyRunId || item.steerRunId!, item.id]));
   useEffect(() => {
     if (!enabled || !scopeKey || key === "[]") return;
     const pending = JSON.parse(key) as Array<[string, string]>;

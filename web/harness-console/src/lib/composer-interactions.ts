@@ -78,7 +78,7 @@ export function reconcilePromptHistory(items: QueuedPrompt[], activities: Readon
   }
   let changed = false;
   const next = items.flatMap(item => {
-    if (!item.receipt) return [item];
+    if (!item.receipt && !item.steerRunId) return [item];
     const receipt = receipts.get(item.id);
     if (!receipt) return [item];
     if (["run.steer.accepted", "run.steer.unknown"].includes(receipt.status)) { changed = true; return []; }
