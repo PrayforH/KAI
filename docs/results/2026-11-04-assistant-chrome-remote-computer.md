@@ -132,3 +132,10 @@ schema 0065 无迁移、api/worker/feishu 镜像未变。上线 CSS 指纹已核
 
 改为所有面统一保留 `unstable_flexGrowDiv`：短对话与加载态都把输入框压到视口底部，
 长对话行为不变（靠滚动）。加了源级守卫测试锁住这条。
+
+## 79 复滚（2026-11-04，web → 4f366f3c）
+
+带上「@ 气泡显示在发送会话 + 输入框沉底」一起滚：镜像 `kai/superagent-web:20261104-4f366f3c`，
+发布目录 `/data/kai-superagent-20261104-4f366f3c`。闸门同前（CAS == 6b86843c 快照、活跃 Run/职责 0、
+schema 0065 无迁移、api/worker/feishu 未变）。`3501/3543/healthz` 均 200，web healthy。
+**116 仍不可达**（我这台超时、79 上 ping 100% 丢包且 22/2222/2200/2022 全关），整套部署待其恢复。
