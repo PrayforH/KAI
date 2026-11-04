@@ -52,6 +52,7 @@ import { ConversationThread } from "./conversation-thread";
 import { ConversationIndex } from "./conversation-index";
 import { useRunCancel } from "./run-cancel-context";
 import { PromptQueue } from "./prompt-queue";
+import { useRetainedPromptRecovery } from "./use-retained-prompt-recovery";
 import { SteeringUserMessage } from "./steering-user-message";
 import { useFollowUpPreference } from "../lib/interface-preferences";
 import { useConversationRedactor } from "./conversation-redaction";
@@ -435,6 +436,11 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const [taskFollowUpBehavior] = useFollowUpPreference();
   const followUpBehavior = assistantSurface ? "steer" : taskFollowUpBehavior;
   const [queueLoaded, setQueueLoaded] = useState(false);
+  useRetainedPromptRecovery({enabled: assistantSurface && queueLoaded && projectLaunchReady,
+    scopeKey: queueKey, items: queue, onAccepted: ids => {
+      setQueue(items => items.filter(item => !ids.has(item.id)));
+      setSteeringIds(idsInFlight => idsInFlight.filter(id => !ids.has(id)));
+    }});
   const [queuePaused, setQueuePaused] = useState(false);
   const [inputError, setInputError] = useState("");
   const [voiceActive, setVoiceActive] = useState(false);
