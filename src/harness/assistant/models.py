@@ -351,6 +351,7 @@ class SpecialistHandover(StudioModel):
     objective_id: str | None = Field(default=None, alias="objectiveId")
     message_id: str = Field(alias="messageId")
     summary: str = ""
+    source_text: str | None = Field(default=None, alias="sourceText")
     source_thread_id: str | None = Field(default=None, alias="sourceThreadId")
     target_thread_id: str | None = Field(default=None, alias="targetThreadId")
     run_id: str | None = Field(default=None, alias="runId")

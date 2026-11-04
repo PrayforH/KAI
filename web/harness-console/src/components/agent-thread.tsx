@@ -501,7 +501,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   useEffect(() => {
     if (!assistantSurface) return;
     setQueue(items => {
-      if (!items.some(item => item.receipt && !item.historyRunId)) return items;
+      if (!items.some(item => item.receipt)) return items;
       const activities = messages.flatMap(message => message.content.flatMap(part => {
         if (part.type !== "tool-call" || part.toolName !== "harness_run_activity") return [];
         const parsed = runActivitySchema.safeParse(part.args.activity);

@@ -72,6 +72,7 @@ async def test_mention_records_a_durable_handover() -> None:
     assert handover.message_id == "mention-specialist:key-12345678:specialist_a"
     assert handover.status is HandoverStatus.SENT
     assert handover.summary == "帮我看看这份资料"
+    assert handover.source_text == "帮我看看这份资料"
     repo.record_handover.assert_awaited_once()
 
 
@@ -274,6 +275,26 @@ async def test_origin_send_restores_user_text_before_even_a_fast_child_reply(dis
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("legacy", [False, True])
+async def test_origin_keeps_mention_but_child_receives_only_task_body(legacy):
+    from harness.core.models import RunStatus
+
+    service, repo = _service(_specialist())
+    source = "@资料 Bot 检查这些资料" + ("详细内容" * 150 if not legacy else "")
+    prompt = source.replace("@资料 Bot", "").strip()
+    now = datetime(2026, 11, 4, tzinfo=UTC)
+    receipt = SimpleNamespace(handover_id="origin-mention", summary=source[:400],
+        source_text=None if legacy else source, created_at=now, sent_at=now,
+        reply_to_run_id=None, target_thread_id="assistant_specialist_a")
+    run = SimpleNamespace(run_id="r", input={"prompt":prompt}, status=RunStatus.SUCCEEDED,
+                          updated_at=now)
+    repo.mention_message_runs.return_value = ([(receipt,run,_specialist())],1)
+    messages,_ = await service.mention_messages("t","u","main",direction="sent")
+    assert messages[0].text == source
+    assert run.input["prompt"] == prompt and not prompt.startswith("@")
+
+
+@pytest.mark.asyncio
 async def test_legacy_conversation_uses_pinned_identity_not_bot_defaults():
     service, _ = _service(_specialist())
     service.specialist_thread = AsyncMock(return_value="assistant_legacy")
@@ -374,6 +395,7 @@ async def test_recipient_token_is_not_a_second_delegation_instruction():
     request = service._agui.create_run_with_result.call_args.kwargs["request"]
     assert request.messages[0].content == "今天有什么快报 ；只总结"
     assert repo.record_handover.call_args.args[0].summary == text
+    assert repo.record_handover.call_args.args[0].source_text == text
 
 
 @pytest.mark.asyncio

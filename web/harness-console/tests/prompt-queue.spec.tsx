@@ -74,9 +74,9 @@ it("renders every chat send as a plain bubble, with no stuck section or resend c
 
 it("places a reconciled send beside its own turn", () => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
-  act(() => root.render(<PromptQueue chat items={[
+  act(() => root.render(<div className="harness-thread-frame"><article data-turn-id="assistant-run-9" /><PromptQueue chat items={[
     { ...seed[0], receipt: "unknown", historyRunId: "run-9" },
-  ]} paused busy={false} canSteer={false} sendingIds={[]} onChange={vi.fn()} onPause={vi.fn()} onGuide={vi.fn()} onSend={vi.fn()} />));
+  ]} paused busy={false} canSteer={false} sendingIds={[]} onChange={vi.fn()} onPause={vi.fn()} onGuide={vi.fn()} onSend={vi.fn()} /></div>));
   expect([...host.querySelectorAll(".steering-user-message-bubble")].map(node => node.textContent)).toEqual(["first"]);
   expect(host.querySelector("details")).toBeNull();
 });

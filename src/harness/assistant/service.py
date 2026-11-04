@@ -526,6 +526,7 @@ class AssistantService:
                 specialistId=specialist.specialist_id,
                 messageId=message_id,
                 summary=text[:400],
+                sourceText=text,
                 sourceThreadId=source_thread_id,
                 targetThreadId=target_thread_id,
                 requestHash=request_hash,
@@ -716,6 +717,19 @@ class AssistantService:
                     if direction == "sent" and (
                         handover.reply_to_run_id or run.input.get("assistant_dispatch") is not True
                     ) else "")
+            if text and direction == "sent":
+                original = getattr(handover, "source_text", None)
+                # Legacy receipts kept only a brief. Restore that original
+                # (including @) only when it is provably the complete prompt.
+                brief = handover.summary
+                prefix = brief[:-len(text)].strip() if brief.endswith(text) else ""
+                if not original and brief and (re.sub(
+                    rf"@{re.escape(specialist.name)}(?!\w)", "", brief,
+                ).strip() == text or (
+                    prefix.startswith("@") and prefix.count("@") == 1 and len(prefix) <= 161
+                )):
+                    original = brief
+                text = original or text
             if direction == "received":
                 text = brief_notice(await recorded_response_text(
                     self._events, tenant_id, run.run_id, terminal=run.status.is_terminal,

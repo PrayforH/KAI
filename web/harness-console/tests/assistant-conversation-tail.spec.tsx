@@ -56,6 +56,27 @@ it("moves a retained legacy bubble beside its original turn instead of pinning i
   expect(host.querySelector(".aui-thread-viewport-footer")?.textContent).toBe("");
 });
 
+it("does not pin an old retained send to the composer when its history page is absent", async () => {
+  host = document.createElement("div"); document.body.append(host); root = createRoot(host);
+  const { PendingMessagePlacement } = await import("../src/components/pending-message-placement");
+  const render = (loaded: boolean) => act(() => root.render(<div className="harness-thread-frame">
+    {loaded && <article data-turn-id="assistant-old-run" />}
+    <article data-turn-id="assistant-new-run" />
+    <div className="aui-thread-viewport-footer"><PendingMessagePlacement runId="old-run">
+      <span>我说的是微信通道啊</span>
+    </PendingMessagePlacement></div>
+  </div>));
+  render(false);
+  expect(host.textContent).toBe("");
+  render(true);
+  await act(async () => { await Promise.resolve(); });
+  expect(host.querySelector('[data-turn-id="assistant-old-run"]')?.textContent).toBe("我说的是微信通道啊");
+  expect(host.querySelector(".aui-thread-viewport-footer")?.textContent).toBe("");
+  render(false);
+  await act(async () => { await Promise.resolve(); });
+  expect(host.textContent).toBe("");
+});
+
 it("hands a live send over to its durable position before the child reply without a footer duplicate", () => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   state.activity = undefined;

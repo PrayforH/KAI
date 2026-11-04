@@ -12,7 +12,10 @@ export function PendingMessagePlacement({ runId, children }: { runId?: string; c
     const attach = () => {
       const turn = runId ? [...(frame?.querySelectorAll<HTMLElement>("[data-turn-id]") ?? [])]
         .find(element => element.dataset.turnId?.includes(runId)) : null;
-      const target = turn ?? holder.current;
+      // A historical send must wait for its own page/turn. Falling back to
+      // the composer makes an old correction follow every later conversation.
+      const target = runId ? turn : holder.current;
+      if (!target) { node.remove(); return; }
       if (target && node.parentElement !== target) target.append(node);
     };
     attach(); setContainer(node);
@@ -20,5 +23,5 @@ export function PendingMessagePlacement({ runId, children }: { runId?: string; c
     if (frame) observer.observe(frame, { childList: true, subtree: true });
     return () => { observer.disconnect(); node.remove(); };
   }, [runId]);
-  return <><div ref={holder} />{container && createPortal(children, container)}</>;
+  return <><div ref={holder} data-pending-history-run={runId} />{container && createPortal(children, container)}</>;
 }
