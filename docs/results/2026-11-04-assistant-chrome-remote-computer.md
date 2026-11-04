@@ -167,3 +167,6 @@ schema 0065 无迁移、api/worker/feishu 未变）。`3501/3543/healthz` 均 20
 - **人工接管优先**：用户接管写入 HUMAN 状态并推进 epoch，Agent 侧立即失效。
 - **职责排队**：标了 `requiresDesktop` 的职责走 `acquire_desktop_turn`（优先级 + FIFO），拿不到就
   不启动运行空耗模型；更高优先级可在 30s 宽限后软抢占（不硬打断）。
+
+**79 复滚**：镜像 `kai/superagent-web:20261104-dd6ce211`（子助理会话可开同一台电脑），
+发布目录 `/data/kai-superagent-20261104-dd6ce211`；闸门同前，`3501/3543/healthz` 200、web healthy。
