@@ -54,4 +54,8 @@
   digest 双侧对齐 `72b329d6…`、identity PASS、acp_client selected+optionId（`9ed42ee1`）、
   真实 Run `run_d741a8b5021049c4be78e8f06132c1ee` 经 computer_acp 写读
   `/home/xiaokai/acp-test/D2_PRODUCT_ACP.txt`=`D2_ACP_OK` 一致；`demo_writable:true`。
-- D3–D4：未开始
+- D3：✅ 云电脑切换冒烟通过（`docs/results/2026-11-05-kai-computer-cloud-smoke.md`）：
+  切 cloud（revision 385）→ 真实 Run `run_f6323257…` 云 VM `hostname=kai-aaaa…`（Chassis: vm）→
+  切回 local-32-45（revision 391）；lease start+execute 成对 released
+- D4：✅ 最终演示脚本 `docs/results/2026-11-05-kai-computer-demo.md`（S0–S5 可只读跟点，
+  嵌 D2/D3 真实锚点与截图位；调研/架构/回滚同档；含云上 Bash=沙箱策略 vs computer_acp 话术区分）
