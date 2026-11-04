@@ -9,7 +9,7 @@ import pytest
 
 from harness.api.dependencies import Identity
 from harness.assistant import api as assistant_api
-from harness.assistant.models import Specialist, SpecialistConversation, SpecialistStatus
+from harness.assistant.models import Objective, Specialist, SpecialistConversation, SpecialistStatus
 from harness.core.errors import NotFoundError
 
 NOW = datetime(2026, 10, 31, 12, 0, tzinfo=UTC)
@@ -108,6 +108,32 @@ async def test_detail_read_is_pure_and_keeps_the_pause_marker() -> None:
     assert specialist.routine_paused_reason is not None
     assert specialist.routine_paused_reason["reason"] == "unviewed"
     assert specialist.last_viewed_at == datetime(2026, 10, 29, 12, 0, tzinfo=UTC)
+
+
+@pytest.mark.asyncio
+async def test_chat_entry_keeps_binding_but_never_loads_duty_execution_history() -> None:
+    from unittest.mock import AsyncMock
+
+    service = _Service(_specialist())
+    duty = Objective(
+        objectiveId="objective_legacy", tenantId="tenant-a", userId="user-a",
+        specialistId="specialist_pause", title="Existing duty", instructions="fixture",
+        agentName="audit-agent", agentVersion="1.0.0", createdAt=NOW, updatedAt=NOW,
+    )
+    service.repository.list = AsyncMock(return_value=[duty])
+    service.repository.executions = AsyncMock(return_value=[object()])  # type: ignore[attr-defined]
+    detail = await assistant_api.get_specialist(
+        "specialist_pause", IDENTITY, service, include_duties=False,  # type: ignore[arg-type]
+    )
+    assert detail["primaryObjectiveId"] == duty.objective_id
+    assert detail["threadId"] == "assistant_specialist_pause"
+    assert detail["duties"] == []
+    service.repository.executions.assert_not_awaited()
+    full = await assistant_api.get_specialist(
+        "specialist_pause", IDENTITY, service,  # type: ignore[arg-type]
+    )
+    assert full["duties"][0]["hasExecutions"] is True
+    service.repository.executions.assert_awaited_once()
 
 
 @pytest.mark.asyncio

@@ -301,7 +301,9 @@ async def create_specialist(
 
 
 @router.get("/specialists/{specialist_id}")
-async def get_specialist(specialist_id: str, identity: Reader, assistant: Service):
+async def get_specialist(
+    specialist_id: str, identity: Reader, assistant: Service, *, include_duties: bool = True,
+):
     """子助理详情 + 它的会话入口。
 
     子助理独立会话与旧职责入口使用同一只读解析，不迁移或重开线程。
@@ -336,7 +338,7 @@ async def get_specialist(specialist_id: str, identity: Reader, assistant: Servic
                 ),
                 "schedule": item.schedule.model_dump(by_alias=True) if item.schedule else None,
             }
-            for item in duties
+            for item in duties if include_duties
         ],
     }
 

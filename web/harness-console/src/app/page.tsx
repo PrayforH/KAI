@@ -299,7 +299,7 @@ function AuthenticatedHome() {
       agentOwnerUserId: string;
       spaceId: string | null;
       primaryObjectiveId: string | null;
-    }>(`specialists/${encodeURIComponent(botId)}`), 15_000)
+    }>(`specialists/${encodeURIComponent(botId)}?include_duties=false`), 15_000)
       .then((data) => {
         if (!active) return;
         if (data.threadId === PERSONAL_ASSISTANT_THREAD) {
@@ -473,6 +473,7 @@ function AuthenticatedHome() {
     const storedThreadId = loadOrCreateThread(storage);
     const selectionRevision = taskSelectionRevision.current;
     const initialSearch = new URLSearchParams(window.location.search);
+    const openingBot = assistantEntry && initialSearch.has("bot");
     const requestedSkillLaunch = parseSkillCreatorLaunch(initialSearch);
     const canonicalHref = canonicalConversationHref(assistantEntry, initialSearch);
     if (canonicalHref) {
@@ -495,7 +496,7 @@ function AuthenticatedHome() {
     // browser. Restore it immediately so returning from Studio can mount the
     // conversation/history while the authoritative catalogs revalidate in
     // the background. Deep links deliberately wait for catalog authorization.
-    const restoredBinding = hasRequestedAgent
+    const restoredBinding = hasRequestedAgent || openingBot
       ? null
       : loadThreadAgent(storage, initialThreadId);
     if (restoredBinding) {
@@ -511,7 +512,9 @@ function AuthenticatedHome() {
       setAgentsLoading(true);
       setAgentsError("");
       try {
-        const summary = loadTaskSummary(initialThreadId)
+        const summary = openingBot
+          ? Promise.resolve({ available: false as const, tasks: [] as TaskSummary[] })
+          : loadTaskSummary(initialThreadId)
           .then((task) => {
             // A durable thread's own authorized binding is enough to replay
             // it. Do not put history behind the complete registry/draft list.
@@ -543,7 +546,8 @@ function AuthenticatedHome() {
         if (!active) return;
         // Catalog data can still refresh, but an older load cannot select a task
         // after the user has clicked New Task or chosen another conversation.
-        if (taskSelectionRevision.current !== selectionRevision) {
+        if (taskSelectionRevision.current !== selectionRevision ||
+            (assistantEntry && new URLSearchParams(window.location.search).has("bot"))) {
           setTaskAgents(chatUsableAgents(catalog.agents));
           setSystemAssistant(catalog.defaultAgent);
           setModelRoutes(routes);
