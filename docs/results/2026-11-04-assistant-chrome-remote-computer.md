@@ -92,3 +92,12 @@
 顺带修好长期失效的守卫测试 `assistant-activity-terminal.spec.tsx`（它 grep 的两个位置在重构后
 已搬到 `assistant-progress.tsx` / `assistant-conversation-tail.tsx`），使「终态不留等待行」重新有测试兜住；
 本片后全套失败 12 → 11，其余 11 项均为该线既有。
+
+### 横向对齐（同一轮补）
+
+「正在检索相关资料」那行还**贴在最左边**：输入框是居中列
+（`.aui-thread-viewport-footer { width: min(800px,100%); margin-inline: auto }`），
+而实时状态行挂的槽位 `.assistant-message-tail-slot` 是视图区全宽（只吃 viewport 的
+`padding-inline`），窗口一宽就跑到最左。改为与该槽位共用输入框列
+（`width: min(800px,100%); max-width: 800px; margin-inline: auto`），状态行现在正好落在
+输入框左上方。加了一条 CSS 守卫测试锁住这条规则。
