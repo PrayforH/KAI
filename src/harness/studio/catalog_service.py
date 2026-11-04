@@ -31,7 +31,15 @@ from harness.studio.platform_skills import RETIRED_PLATFORM_SKILLS
 from harness.studio.repositories import AgentDraftRepository
 
 CatalogResourceType = Literal["modelRoute", "mcp", "policy", "executionProfile", "skill"]
-_RETIRED_PLATFORM_MODEL_ROUTES = frozenset({"anthropic-official", "new-api-default"})
+_RETIRED_PLATFORM_MODEL_ROUTES = frozenset({
+    "anthropic-official",
+    "new-api-default",
+    # 官方已下线：V4/V4.1、MiniMax M3、GLM。已有库里的旧路由同样清掉。
+    "deepseek-v4-flash",
+    "deepseek-v4-pro",
+    "minimax-m3",
+    "glm-5-3-flash",
+})
 # Tavily was removed from the platform default catalog; persisted catalogs may
 # still carry platform or personal copies of the retired reference until this
 # migration strips them on load.
@@ -233,33 +241,6 @@ def _upgrade_system_managed_catalog(
         else:
             normalized_routes.append(route)
     routes = normalized_routes
-    route_ids = {route.route_id for route in routes}
-    if legacy_deepseek is not None and not {
-        "deepseek-v4-flash",
-        "deepseek-v4-pro",
-    }.issubset(route_ids):
-        routes.extend(
-            ModelRouteCapability(
-                routeId=route_id,
-                label=label,
-                provider=legacy_deepseek.provider,
-                models=(model,),
-                capabilities=legacy_deepseek.capabilities,
-                credentialManaged=legacy_deepseek.credential_managed,
-                credentialReference=legacy_deepseek.credential_reference,
-            )
-            for route_id, label, model in (
-                (
-                    "deepseek-v4-flash",
-                    "DeepSeek V4 Flash",
-                    "deepseek-v4-flash",
-                ),
-                ("deepseek-v4-pro", "DeepSeek V4 Pro", "deepseek-v4-pro"),
-            )
-            if route_id not in route_ids
-        )
-        changed = True
-
     builtin_tools, builtin_changed = _append_missing(
         catalog.builtin_tools, defaults.builtin_tools, lambda item: item.name
     )

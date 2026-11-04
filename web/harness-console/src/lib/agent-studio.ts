@@ -317,24 +317,16 @@ export interface StudioContract {
 // console approved drafts the server then refused.
 export const MODEL_ROUTES: ModelRouteOption[] = [
   {
-    id: "deepseek-v4-flash",
-    label: "DeepSeek V4 Flash",
+    id: "deepseek-flash",
+    label: "DeepSeek Flash",
     provider: "deepseek",
     models: [],
     capabilities: ["streaming", "tool_use"],
     apiFormat: "anthropic_compatible",
   },
   {
-    id: "deepseek-v4-pro",
-    label: "DeepSeek V4 Pro",
-    provider: "deepseek",
-    models: [],
-    capabilities: ["streaming", "tool_use"],
-    apiFormat: "anthropic_compatible",
-  },
-  {
-    id: "minimax-m3",
-    label: "MiniMax M3",
+    id: "minimax-m3-1-flash",
+    label: "MiniMax M3.1 Flash",
     provider: "minimax",
     models: [],
     capabilities: ["streaming", "tool_use", "vision"],
@@ -519,8 +511,8 @@ export const DEFAULT_STUDIO_DRAFT: StudioDraft = {
   runtime: "claude-agent-sdk",
   // Default to the flash route: it is the one the control plane always serves,
   // so a new task never fails on an unavailable pro route.
-  modelRoute: "deepseek-v4-flash",
-  model: "deepseek-v4-flash",
+  modelRoute: "deepseek-flash",
+  model: "deepseek-flash",
   reasoningEffort: null,
   requiredCapabilities: ["streaming", "tool_use"],
   systemPrompt: GENERAL_LEAD_SYSTEM_PROMPT,

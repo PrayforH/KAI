@@ -86,41 +86,26 @@ def default_capability_catalog() -> CapabilityCatalog:
     """Return the safe built-in catalog used until persistent catalogs are wired."""
 
     return CapabilityCatalog(
+        # 官方路由：V4 / V4.1 已下线，MiniMax M3 换 3.1-flash，GLM 先移除。
         modelRoutes=(
             ModelRouteCapability(
-                routeId="deepseek-v4-flash",
-                label="DeepSeek V4 Flash",
+                routeId="deepseek-flash",
+                label="DeepSeek Flash",
                 provider="deepseek",
-                models=("deepseek-v4-flash",),
+                models=("deepseek-flash",),
                 capabilities=("streaming", "tool_use"),
                 credentialReference="NEW_API_KEY",
             ),
             ModelRouteCapability(
-                routeId="deepseek-v4-pro",
-                label="DeepSeek V4 Pro",
-                provider="deepseek",
-                models=("deepseek-v4-pro",),
-                capabilities=("streaming", "tool_use"),
-                credentialReference="NEW_API_KEY",
-            ),
-            ModelRouteCapability(
-                routeId="minimax-m3",
-                label="MiniMax M3",
+                routeId="minimax-m3-1-flash",
+                label="MiniMax M3.1 Flash",
                 provider="minimax",
-                models=("MiniMax-M3",),
+                models=("MiniMax-M3.1-flash",),
                 capabilities=("streaming", "tool_use", "vision"),
                 modelType="vision",
                 credentialReference="MINIMAX_M3_API_KEY",
             ),
-            ModelRouteCapability(
-                routeId="glm-5-3-flash",
-                label="GLM-5.3-Flash",
-                provider="glm",
-                models=("glm-5.3-flash",),
-                modelType="vision",
-                capabilities=("streaming", "tool_use", "vision"),
-            ),
-        ),
+       ),
         builtinTools=(
             BuiltinToolCapability(
                 name="WebSearch", label="搜索公开网页",
