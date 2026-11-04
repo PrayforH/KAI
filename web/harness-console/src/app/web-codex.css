@@ -3624,7 +3624,7 @@ body.codex-theme-v1:has(.console-shell) .bot-rail .bot-rail-avatar[data-working=
 }
 @keyframes kai-rail-bot-working {
   0%, 100% { transform: translateY(0) scale(1); }
-  50% { transform: translateY(-2px) scale(1.03, 0.97); }
+  50% { transform: translateY(-4px) scale(1.07, 0.94); }
 }
 @media (prefers-reduced-motion: reduce) {
   body.codex-theme-v1:has(.console-shell) .bot-rail .bot-rail-avatar[data-working="true"] { animation: none; }

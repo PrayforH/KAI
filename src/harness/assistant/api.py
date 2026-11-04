@@ -20,6 +20,7 @@ from harness.assistant.models import (
     ObjectiveNoteRequest,
     ObjectiveSchedule,
     Specialist,
+    SpecialistDirectoryItem,
     SpecialistHandover,
     SpecialistStatus,
     UpdateObjectiveRequest,
@@ -239,8 +240,8 @@ async def initialize_primary_profile(identity: Writer, assistant: Service) -> Sp
 
 
 @router.get("/specialists")
-async def list_specialists(identity: Reader, assistant: Service) -> list[Specialist]:
-    return await assistant.repository.list_specialists(identity.tenant_id, identity.user_id)
+async def list_specialists(identity: Reader, assistant: Service) -> list[SpecialistDirectoryItem]:
+    return await assistant.specialist_directory(identity.tenant_id, identity.user_id)
 
 
 @router.get("/specialists/appearance/palette")

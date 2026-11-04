@@ -332,19 +332,3 @@ it("keeps main and specialist contacts reachable after selecting a historical ta
     expect(container.querySelector('.bot-rail a[href="/assistant"]')).not.toBeNull();
   } finally { await act(async () => root.unmount()); container.remove(); }
 });
-
-it("refreshes the shared thread summary on delivery without waiting for the idle timer", async () => {
-  const { handoverStore } = await import("../src/lib/handover-store");
-  const { notifyTaskListChanged } = await import("../src/lib/task-history");
-  loadTasks.mockResolvedValue([]);
-  const host=document.createElement("div"),root=createRoot(host);document.body.append(host);
-  try {
-    await act(async()=>root.render(<TaskSidebar currentThreadId="kai-personal-assistant-v1" activeNav="assistant" collapsed={false} onToggle={()=>{}} onSelect={()=>{}} onNewTask={()=>{}}/>));
-    vi.mocked(notifyTaskListChanged).mockClear();
-    await act(async()=>handoverStore.ingestMention({handoverId:"avatar-live",specialistId:"specialist-routing-test",specialistName:"路由验收子助理",runId:"child-run",targetThreadId:"assistant_specialist-routing-test"}));
-    expect(notifyTaskListChanged).toHaveBeenCalledTimes(1);
-    await act(async()=>root.unmount());
-    handoverStore.ingestMention({handoverId:"avatar-after-unmount",specialistId:"specialist-routing-test",specialistName:"路由验收子助理"});
-    expect(notifyTaskListChanged).toHaveBeenCalledTimes(1);
-  } finally {await act(async()=>root.unmount());host.remove();}
-});

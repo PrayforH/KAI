@@ -15,6 +15,8 @@ import { botSidebar, type BotSidebar } from "../lib/bot-sidebar";
 import { stableBotOrder, isPrimaryBot, botConversationHref } from "../lib/bot-sidebar";
 import { peekClientRead, rememberClientRead } from "../lib/client-read-cache";
 import { handoverStore } from "../lib/handover-store";
+import { botIsWorking } from "../lib/bot-working-state";
+import type { RunViewModel } from "../lib/run-view-model";
 
 // 取自客户端调色板（sand-fill-*-bubble-user）：每个 bot 一个稳定强调色，
 // 头像、选中态与该 bot 会话里的用户气泡共用同一色。
@@ -100,15 +102,17 @@ export function BotRailAvatar({
  */
 type BotRailProps = {
   currentThreadId: string; activeBotId?: string | null; userId?: string; tenantId?: string;
-  workingThreadIds?: ReadonlySet<string>;
+  liveRun?: RunViewModel;
   groupsState?: readonly [ReadonlySet<string>, (change: (current: ReadonlySet<string>) => ReadonlySet<string>) => void];
 };
 export function BotRail(props: BotRailProps) {
   return <BotDirectory key={`${props.tenantId ?? ""}:${props.userId ?? ""}`} {...props} />;
 }
-function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, groupsState, workingThreadIds}: BotRailProps) {
+function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, groupsState, liveRun}: BotRailProps) {
   const mounted = useRef(true);
   const requestVersion = useRef(0);
+  const working = useRef(false);
+  const lastReadAt = useRef(0);
   useEffect(() => { mounted.current = true; return () => {mounted.current = false;}; }, []);
   const router = useRouter();
   const activeBot = activeBotId;
@@ -125,6 +129,7 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
 
   const load = useCallback(async () => {
     const version = ++requestVersion.current;
+    lastReadAt.current = Date.now();
     let initialized = false;
     try {
       let list = await assistantRequest<Specialist[]>("specialists");
@@ -143,6 +148,7 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
       if (!mounted.current || version !== requestVersion.current) return;
       handoverStore.updateSpecialists(list);
       const ordered = stableBotOrder(list);
+      working.current = ordered.some(bot => botIsWorking(bot.activity));
       setSpecialists(ordered);
       if (cacheKey) rememberClientRead(cacheKey, ordered);
       if (initialized) window.dispatchEvent(new CustomEvent("kai:specialists-changed"));
@@ -156,15 +162,22 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
     // 打开某 Bot 会话后 viewed 会清暂停标记：页面派发该事件，这里立刻重拉，
     // 徽章不必等下一次 30s 轮询。
     const onChanged = () => void load();
+    let scheduled = false;
+    const unsubscribe = handoverStore.subscribe(() => {
+      if (scheduled) return;
+      scheduled = true;
+      queueMicrotask(() => { scheduled = false; if (mounted.current) void load(); });
+    });
     window.addEventListener("kai:specialists-changed", onChanged);
     const timer = setInterval(() => {
-      if (!document.hidden) void load();
-    }, 30000);
+      if (!document.hidden && Date.now() - lastReadAt.current >= (working.current ? 4000 : 30000)) void load();
+    }, 4000);
     return () => {
       window.removeEventListener("kai:specialists-changed", onChanged);
       clearInterval(timer);
+      unsubscribe();
     };
-  }, [load]);
+  }, [load, liveRun?.runId, liveRun?.phase]);
 
   async function saveSidebar(item: Specialist, patch: Partial<BotSidebar>) {
     const latest = await assistantRequest<{specialist: Specialist}>(`specialists/${encodeURIComponent(item.specialistId)}`);
@@ -197,10 +210,7 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
   const visibleContacts = contacts.filter(shown);
   const isAssistant = !activeBot && currentThreadId === PERSONAL_ASSISTANT_THREAD;
   function row(item: Specialist) {
-    const threadId = isPrimaryBot(item) ? PERSONAL_ASSISTANT_THREAD
-      : typeof item.config.conversation_thread_id === "string" ? item.config.conversation_thread_id
-      : `assistant_${item.specialistId}`;
-    const working = workingThreadIds?.has(threadId) === true;
+    const working = botIsWorking(item.activity, currentThreadId, liveRun);
     return <li key={item.specialistId} className="bot-rail-row">
       <Link className="bot-rail-item" data-active={(isPrimaryBot(item) ? !activeBot && currentThreadId === PERSONAL_ASSISTANT_THREAD : activeBot === item.specialistId) ? "true" : undefined}
         data-paused={isUnviewedPaused(item) ? "true" : undefined} data-unread={botSidebar(item).unread ? "true" : undefined}
@@ -243,7 +253,7 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
             href="/assistant"
             scroll={false}
           >
-            <BotRailAvatar letter="K" tone={BOT_ACCENTS[0]!} working={workingThreadIds?.has(PERSONAL_ASSISTANT_THREAD)} />
+            <BotRailAvatar letter="K" tone={BOT_ACCENTS[0]!} />
             <span className="bot-rail-label">
               <strong>主助理</strong>
             </span>

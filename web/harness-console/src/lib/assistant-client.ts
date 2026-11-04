@@ -25,6 +25,7 @@ export type Notice = { itemId: string; objectiveId: string; title: string; conte
   } | null;
   durationSeconds?: number | null };
 export type Specialist = { specialistId: string; name: string; slug: string; description: string;
+  activity?: { threadId: string; runId: string | null; status: string };
   agentName: string; agentVersion: string;
   status: "draft" | "needs_input" | "validating" | "ready" | "active" | "paused" | "blocked" | "archived";
   revision: number; config: Record<string, unknown>;

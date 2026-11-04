@@ -50,7 +50,9 @@ from harness.assistant.models import (
     ObjectiveSchedule,
     ObjectiveStatus,
     Specialist,
+    SpecialistActivity,
     SpecialistConversation,
+    SpecialistDirectoryItem,
     SpecialistHandover,
     SpecialistStatus,
 )
@@ -789,6 +791,75 @@ class AssistantService:
         return message.model_copy(update={"text": "\n\n".join(
             part for part in (message.text, text) if part
         )})
+
+    async def specialist_directory(
+        self,
+        tenant_id: str,
+        user_id: str,
+    ) -> list[SpecialistDirectoryItem]:
+        """Resolve legacy/current Bot addresses with the same owner-scoped resolver.
+
+        One batched Run read, no history/events, no lifecycle writes. This is
+        independent of ordinary task-list pagination and Bot availability.
+        """
+        bots = await self.repository.list_specialists(tenant_id, user_id)
+        if not bots:
+            return []
+        duties = await self.repository.list(tenant_id, user_id)
+        gate = asyncio.Semaphore(8)
+
+        async def resolve(bot: Specialist) -> tuple[Specialist, str, tuple[str, ...]]:
+            async with gate:
+                thread = await self.specialist_thread(
+                    tenant_id,
+                    user_id,
+                    bot,
+                    duties=[duty for duty in duties if duty.specialist_id == bot.specialist_id],
+                )
+                try:
+                    binding = await self._agui.get_thread_record(
+                        tenant_id=tenant_id,
+                        user_id=user_id,
+                        thread_id=thread,
+                    )
+                except NotFoundError:
+                    return bot, thread, ()
+                return bot, thread, tuple(binding.session_ids)
+
+        owned = await asyncio.gather(*(resolve(bot) for bot in bots))
+        session_ids = list({session for _, _, sessions in owned for session in sessions})
+        runs = (
+            await self._runs.list_for_sessions(
+                tenant_id,
+                session_ids,
+                limit=max(200, len(session_ids) * 20),
+            )
+            if session_ids
+            else []
+        )
+        latest_by_session: dict[str, Run] = {}
+        for run in runs:
+            prior = latest_by_session.get(run.session_id)
+            if prior is None or (run.updated_at, run.run_id) > (prior.updated_at, prior.run_id):
+                latest_by_session[run.session_id] = run
+        result: list[SpecialistDirectoryItem] = []
+        for bot, thread, sessions in owned:
+            latest = max(
+                (latest_by_session[s] for s in sessions if s in latest_by_session),
+                key=lambda run: (run.updated_at, run.run_id),
+                default=None,
+            )
+            result.append(
+                SpecialistDirectoryItem(
+                    **bot.model_dump(by_alias=True),
+                    activity=SpecialistActivity(
+                        threadId=thread,
+                        runId=latest.run_id if latest else None,
+                        status=latest.status.value if latest else "idle",
+                    ),
+                )
+            )
+        return result
 
     async def specialist_thread(
         self, tenant_id: str, user_id: str, specialist: Specialist,

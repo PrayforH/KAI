@@ -322,6 +322,18 @@ class Specialist(StudioModel):
     updated_at: AwareDatetime = Field(alias="updatedAt")
 
 
+class SpecialistActivity(StudioModel):
+    """Read-only owned conversation projection; never persisted as Bot config."""
+
+    thread_id: str = Field(alias="threadId")
+    run_id: str | None = Field(default=None, alias="runId")
+    status: str = "idle"
+
+
+class SpecialistDirectoryItem(Specialist):
+    activity: SpecialistActivity
+
+
 class HandoverStatus(StrEnum):
     """8.11 转交回执：发送≠接收≠执行。"""
 
