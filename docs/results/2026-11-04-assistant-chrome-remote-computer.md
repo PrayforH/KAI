@@ -13,9 +13,10 @@
    - 345a8560 的历史落位保留：能对账进滚动历史的消息（`historyRunId`）继续经
      `PendingMessagePlacement` 渲染在原轮次旁，永不在 composer 上方。
    - **无法落位的卡住消息**（unknown/failed、run 事件未加载或从未投递）此前会一直钉在
-     composer 上方；现在运行中（busy）保持原样可见，**空闲时折叠为一行灰色
-     「未发送的补充消息（N）· 展开可重发」**，展开才有气泡与「重新发送」（onSend 走既有
-     追加为新一轮的路径），输入区不再被遮挡。
+     composer 上方；现在**一律折叠**为一行灰色「未发送的补充消息（N）· 展开可重发」，
+     展开才有气泡与「重新发送」（onSend 走既有追加为新一轮的路径），输入区不再被遮挡。
+     本轮实测反馈后补强：**开新 Run 时也不再弹回**——composer 旁只保留**当前 Run 自己的
+     在途消息**（尚无 receipt 的），带 receipt 的历史不确定消息无论运行与否都进折叠行。
    - **空闲时释放 `steeringIds`**（steering effect 的 `!busy` 分支）：没有活动 Run 可核对时，
      刷新恢复的残留 in-flight 标记原本会永久阻塞队列派发与重发；释放后派发与重发恢复可用。
      已投递与否仍由 `reconcilePromptHistory` 对账决定，重复投递风险不因释放而变大。
@@ -49,7 +50,7 @@
 ## 测试
 
 - `npx tsc --noEmit` 干净。
-- vitest 触及面 25 过：prompt-queue 8（新增空闲折叠/展开重发/已落位不进折叠 3 项，
+- vitest 触及面：prompt-queue 9（新增空闲折叠/展开重发/已落位不进折叠/新 Run 中也不弹回 4 项，
   原「不确定传输」断言改为 busy 态口径）、task-history-pagination 11（+earlier 页 limit=30）、
   agent-thread-config +源守卫、steering-poller/unknown-replay 不回归。
 - 全套：1638 过 + 12 失败；**12 项在干净 HEAD 逐名相同**（account-settings、

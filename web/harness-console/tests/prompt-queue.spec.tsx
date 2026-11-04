@@ -60,15 +60,26 @@ it("shows successive assistant sends as independent bubbles before a run is read
 });
 
 
-it("keeps in-flight sends as plain bubbles through transport uncertainty, with no receipt text or resend controls", () => {
+it("keeps older uncertain sends collapsed even while a new run is active", () => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   act(() => root.render(<PromptQueue chat items={[
     { ...seed[0], receipt: "unknown" }, { ...seed[1], receipt: "failed" },
   ]} paused busy canSteer={false} sendingIds={[]} onChange={vi.fn()} onPause={vi.fn()} onGuide={vi.fn()} onSend={vi.fn()} />));
-  expect(host.textContent).toBe("firstsecond");
+  // A receipt already recorded means the ambiguity is from an earlier send;
+  // it never pins over the composer again, run active or not.
+  expect(host.querySelector(".assistant-pending-messages[aria-label='已发送的消息']")).toBeNull();
+  const stuck = host.querySelector("details.assistant-pending-messages[data-stuck='true']") as HTMLDetailsElement;
+  expect(stuck).not.toBeNull();
+  expect(stuck.open).toBe(false);
+  expect(stuck.querySelector("summary")?.textContent).toContain("未发送的补充消息（2）");
+});
+
+it("keeps the current run's own in-flight sends visible without receipt text or resend controls", () => {
+  host = document.createElement("div"); document.body.append(host); root = createRoot(host);
+  act(() => root.render(<PromptQueue chat items={seed} paused={false} busy canSteer={false} sendingIds={[]} onChange={vi.fn()} onPause={vi.fn()} onGuide={vi.fn()} onSend={vi.fn()} />));
+  expect([...host.querySelectorAll(".steering-user-message-bubble")].map(node => node.textContent)).toEqual(["first", "second"]);
   expect(host.querySelector("button")).toBeNull();
   expect(host.querySelector("small")).toBeNull();
-  expect(host.querySelector('[role="alert"]')).toBeNull();
 });
 
 it("collapses unplaced sends behind one quiet line once nothing is running, with resend reachable", () => {
