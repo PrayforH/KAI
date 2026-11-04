@@ -59,7 +59,8 @@ def attach(app, items):
     app.state.container = replace(
         app.state.container,
         assistant=SimpleNamespace(
-            repository=repo, mention_messages=AsyncMock(return_value=([], 0))
+            repository=repo, mention_messages=AsyncMock(return_value=([], 0)),
+            hydrate_mention_result=AsyncMock(side_effect=lambda _tenant, message: message),
         ),
     )
     return repo
@@ -251,7 +252,7 @@ async def test_sent_receipt_stays_at_send_time_between_original_and_later_turns(
         interval = (later.created_at - first.created_at) / 3
         sent = MentionMessage(
             message_id="mention-sent-handover-one",
-            text="",
+            text="检查这份资料的全部内容",
             source={"name": "资料 Bot", "href": "/assistant?bot=specialist_a", "direction": "sent"},
             created_at=first.created_at + interval,
             run_id="child",
@@ -278,11 +279,13 @@ async def test_sent_receipt_stays_at_send_time_between_original_and_later_turns(
         assert [m["id"] for m in messages] == [
             f"user-{first_id}",
             f"assistant-{first_id}",
+            "answer-" + sent.message_id,
             sent.message_id,
             received.message_id,
             f"user-{later_id}",
             f"assistant-{later_id}",
         ]
-        assert messages[2]["content"] == "" and response["total"] == 4
+        assert messages[2]["role"] == "user" and messages[2]["content"] == sent.text
+        assert messages[3]["content"] == "" and response["total"] == 4
         again = (await client.get(f"/v1/agui/threads/{MAIN}/history", headers=HEADERS)).json()
         assert response == again

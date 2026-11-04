@@ -6,7 +6,12 @@ import type { RunActivity } from "../src/lib/activity-schema";
 import { ConversationSurfaceProvider } from "../src/components/assistant-bot-context";
 import { AssistantConversationTail } from "../src/components/assistant-conversation-tail";
 import { PromptQueue } from "../src/components/prompt-queue";
-const state = vi.hoisted(() => ({ activity: undefined as RunActivity | undefined }));
+import { handoverStore } from "../src/lib/handover-store";
+const state = vi.hoisted(() => ({ activity: undefined as RunActivity | undefined,
+  messages: [] as Array<{id: string}> }));
+vi.mock("@assistant-ui/react", () => ({
+  useAuiState: (select: (value: unknown) => unknown) => select({thread: {messages: state.messages}}),
+}));
 vi.mock("../src/lib/activity-store", () => ({
   useRunActivity: () => state.activity,
   useRunViewModel: () => ({ runId: state.activity?.run_id }),
@@ -49,4 +54,26 @@ it("moves a retained legacy bubble beside its original turn instead of pinning i
   </div>));
   expect(host.querySelector("[data-turn-id]")?.textContent).toBe("帮我恢复下");
   expect(host.querySelector(".aui-thread-viewport-footer")?.textContent).toBe("");
+});
+
+it("hands a live send over to its durable position before the child reply without a footer duplicate", () => {
+  host = document.createElement("div"); document.body.append(host); root = createRoot(host);
+  state.activity = undefined;
+  state.messages = [];
+  handoverStore.ingestMention({handoverId: "tail-handoff", specialistId: "bot",
+    specialistName: "资料 Bot", sourceThreadId: "origin", runId: "child", text: "检查资料"});
+  const render = () => act(() => root.render(<ConversationSurfaceProvider surface="assistant">
+    <div className="harness-thread-frame">
+      {state.messages.length > 0 && <><p>检查资料</p><p>已发送消息给 资料 Bot</p><p>检查完成</p></>}
+      <div data-assistant-message-tail /><AssistantConversationTail threadId="origin">{null}</AssistantConversationTail>
+    </div>
+  </ConversationSurfaceProvider>));
+  render();
+  expect(host.querySelectorAll(".assistant-mention-row")).toHaveLength(1);
+  state.messages = [{id: "mention-sent-tail-handoff"}, {id: "mention-result-tail-handoff"}];
+  render();
+  expect(host.querySelector(".assistant-mention-row")).toBeNull();
+  expect(host.textContent).toBe("检查资料已发送消息给 资料 Bot检查完成");
+  render(); // Reconciliation stays idempotent.
+  expect(host.textContent).toBe("检查资料已发送消息给 资料 Bot检查完成");
 });

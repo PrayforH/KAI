@@ -1,6 +1,6 @@
 """用户 @某个 Bot 发消息：回执幂等、目标必须可收消息。"""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -246,6 +246,31 @@ async def test_receipt_metadata_does_not_replay_child_traces_until_selected() ->
     result = await service.hydrate_mention_result("t", messages[0])
     assert result.text == "已核对资料。"
     events.list_after.assert_awaited_once_with("t", "r", 0, types=("history.snapshot",))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("dispatched", [False, True])
+async def test_origin_send_restores_user_text_before_even_a_fast_child_reply(dispatched):
+    from harness.core.models import RunStatus
+
+    service, repo = _service(_specialist())
+    created = datetime(2026, 11, 4, tzinfo=UTC)
+    # Link acknowledgement happens after execution; it is not the send time.
+    receipt = SimpleNamespace(
+        handover_id="h-fast", created_at=created, sent_at=created + timedelta(seconds=2),
+        summary="truncated", reply_to_run_id=None, target_thread_id="assistant_specialist_a",
+    )
+    prompt = "检查资料" * 150
+    run = SimpleNamespace(
+        run_id="child", updated_at=created + timedelta(seconds=1),
+        input={"prompt": prompt, "assistant_dispatch": dispatched}, status=RunStatus.SUCCEEDED,
+    )
+    repo.mention_message_runs.return_value = ([(receipt, run, _specialist())], 1)
+    sent, _ = await service.mention_messages("t", "u", "main", direction="sent")
+    received, _ = await service.mention_messages("t", "u", "main", hydrate_results=False)
+    assert sent[0].created_at == created < received[0].created_at
+    assert sent[0].text == ("" if dispatched else prompt)
+    service._events.list_after.assert_not_awaited()
 
 
 @pytest.mark.asyncio

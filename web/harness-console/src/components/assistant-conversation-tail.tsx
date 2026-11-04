@@ -2,6 +2,7 @@
 
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useAuiState } from "@assistant-ui/react";
 import { useRunActivity, useRunViewModel } from "../lib/activity-store";
 import { assistantChatReplies } from "../lib/assistant-chat";
 import { useAssistantBot, useAssistantSurface } from "./assistant-bot-context";
@@ -38,9 +39,15 @@ export function AssistantConversationTail({ children, threadId }: { children: Re
  *  收据按 sourceThreadId 归属，换到别的助理会话不会串台。 */
 function AssistantMentionRows({ threadId }: { threadId: string }) {
   const notices = useHandoverNotices();
+  const messages = useAuiState(state => state.thread.messages);
   // Only the newest send: the same receipt can arrive twice (delivery plus a
   // retry, or seed + live), and a stack of identical lines is pure noise.
-  const owned = liveMentionsForThread(notices, threadId).slice(-1);
+  // The optimistic send only bridges the HTTP/history round trip. Once the
+  // canonical send is in the timeline, retaining a footer copy puts it below
+  // the child's reply and makes it appear to disappear on refresh.
+  const owned = liveMentionsForThread(notices, threadId).filter(receipt =>
+    !messages.some(message => message.id === `mention-sent-${receipt.handoverId}`)
+  ).slice(-1);
   if (!owned.length) return null;
   return <div className="assistant-mention-rows" aria-label="已发送给助理的消息">
     {owned.map(receipt => <div className="assistant-mention-row" key={receipt.handoverId}>

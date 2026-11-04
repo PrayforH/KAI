@@ -1605,9 +1605,9 @@ class PostgresAssistantRepository:
         """Owner-scoped timeline events: send time and completion time stay distinct."""
         h = SpecialistHandoverRow
         key = literal("mention-sent-" if direction == "sent" else "mention-result-") + h.handover_id
-        timestamp = (func.coalesce(
-            cast(h.payload["sentAt"].as_string(), DateTime(timezone=True)), h.created_at,
-        ) if direction == "sent" else RunRow.updated_at)
+        # The request is recorded before execution. Its acknowledgement can
+        # arrive after a fast child reply and must not move the send below it.
+        timestamp = h.created_at if direction == "sent" else RunRow.updated_at
         query = (
             select(h, RunRow, SpecialistRow)
             .join(

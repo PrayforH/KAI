@@ -710,10 +710,12 @@ class AssistantService:
         replies = []
         for handover, run, specialist in rows:
             timestamp = (
-                (handover.sent_at or handover.created_at) if direction == "sent" else run.updated_at
+                handover.created_at if direction == "sent" else run.updated_at
             )
             text = (str(run.input.get("prompt", handover.summary))
-                    if direction == "sent" and handover.reply_to_run_id else "")
+                    if direction == "sent" and (
+                        handover.reply_to_run_id or run.input.get("assistant_dispatch") is not True
+                    ) else "")
             if direction == "received":
                 text = brief_notice(await recorded_response_text(
                     self._events, tenant_id, run.run_id, terminal=run.status.is_terminal,

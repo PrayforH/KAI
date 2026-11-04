@@ -97,7 +97,7 @@ async def test_results_and_pending_approvals_are_origin_owned_and_cursor_stable(
     )
     assert count == 4  # Running and waiting children both have genuine sent events.
     cursor = (
-        sent[-1][0].sent_at or sent[-1][0].created_at,
+        sent[-1][0].created_at,
         "mention-sent-" + sent[-1][0].handover_id,
     )
     more, _ = await repo.mention_message_runs(
