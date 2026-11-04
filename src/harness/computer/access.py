@@ -134,35 +134,6 @@ class CanonicalComputerAccess:
             raise _denied()
         return True
 
-    async def _delegated_objective_active(
-        self, session: Session, binding: AguiThreadBindingRow | None
-    ) -> bool:
-        """True while this session runs one of the owner's live objectives.
-
-        The capability is the objective record itself: same owner, own
-        computer (checked by the caller), and only for as long as the
-        objective stays active. A paused, completed or cancelled objective
-        loses computer access immediately on the next action.
-        """
-
-        if binding is None or binding.archived_at is not None:
-            return False
-        if binding.tenant_id != session.tenant_id or binding.user_id != session.user_id:
-            return False
-        if binding.thread_id == PERSONAL_ASSISTANT_THREAD:
-            return False
-        if session.session_id not in binding.session_ids:
-            return False
-        async with self.sessions() as db:
-            objective = await db.scalar(
-                select(ObjectiveRow).where(
-                    ObjectiveRow.tenant_id == session.tenant_id,
-                    ObjectiveRow.user_id == session.user_id,
-                    ObjectiveRow.status == "active",
-                )
-            )
-        return objective is not None
-
     async def is_personal_session(self, session: Session) -> bool:
         """A normal task is not selected merely because its user owns a computer."""
         if session.user_id not in self.owners.get(session.tenant_id, frozenset()):
@@ -181,10 +152,6 @@ class CanonicalComputerAccess:
             record = AguiThreadBinding.model_validate(binding.payload)
             if session.session_id not in record.session_ids:
                 return await self._specialist_session(db, session)
-            if record.thread_id != PERSONAL_ASSISTANT_THREAD:
-                # An objective thread of this owner with a live objective
-                # routes to the computer too; anything else never does.
-                return await self._delegated_objective_active(session, binding)
             stored = await db.get(SessionRow, (session.tenant_id, session.session_id))
             if (
                 not _bound(session, binding)
@@ -447,7 +414,7 @@ class CanonicalComputerAccess:
         )
         if len(rows) != 1:
             return False
-        sandbox, session_row, run_row, binding, run_fence = rows[0]
+        _sandbox, session_row, run_row, binding, run_fence = rows[0]
         record = AguiThreadBinding.model_validate(binding.payload)
         if record.archived_at is not None:
             return False

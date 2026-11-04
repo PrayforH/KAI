@@ -41,7 +41,7 @@ it("closed computer makes no status request and does not mount its desktop", asy
 
 it("quietly discovers the computer only after chat readiness, without opening a desktop", async () => {
   vi.useFakeTimers(); desktop.mockClear();
-  const fetcher = vi.fn(async () => Response.json({desktop_url: "https://console.test/assistant/computer"}));
+  const fetcher = vi.fn(async (_url: string) => Response.json({desktop_url: "https://console.test/assistant/computer"}));
   vi.stubGlobal("fetch", fetcher);
   const host = document.createElement("div"); const root = createRoot(host);
   cleanup = async () => { await act(async () => root.unmount()); };
