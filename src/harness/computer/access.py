@@ -16,7 +16,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.elements import ColumnElement
 
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
-from harness.assistant.models import Specialist
+from harness.assistant.models import Objective, Specialist
 from harness.assistant.permissions import require_local_tools
 from harness.assistant.storage import ObjectiveRow, SpecialistRow
 from harness.computer.models import (
@@ -85,11 +85,34 @@ class CanonicalComputerAccess:
         session: Session,
         binding: AguiThreadBindingRow,
     ) -> bool:
-        if not binding.thread_id.startswith("assistant_specialist_") or not _bound(
-            session, binding, binding.thread_id
-        ):
+        if not _bound(session, binding, binding.thread_id):
             return False
-        row = await db.get(SpecialistRow, binding.thread_id.removeprefix("assistant_"))
+        if binding.thread_id.startswith("assistant_specialist_"):
+            specialist_id = binding.thread_id.removeprefix("assistant_")
+        elif binding.thread_id.startswith("assistant_objective_"):
+            # Older Bots keep their original duty conversation. Resolve its
+            # persisted owner/contact relationship instead of moving history
+            # or granting arbitrary managed task/project threads access.
+            objective_row = await db.get(
+                ObjectiveRow, binding.thread_id.removeprefix("assistant_")
+            )
+            if (objective_row is None or objective_row.tenant_id != session.tenant_id
+                    or objective_row.user_id != session.user_id):
+                return False
+            objective = Objective.model_validate(objective_row.payload)
+            if (objective.objective_id != objective_row.objective_id
+                    or objective.tenant_id != objective_row.tenant_id
+                    or objective.user_id != objective_row.user_id
+                    or objective.status.value != objective_row.status
+                    or objective.status.value != "active"
+                    or objective.project_id is not None
+                    or objective.managed_thread_id is not None
+                    or objective.specialist_id is None):
+                return False
+            specialist_id = objective.specialist_id
+        else:
+            return False
+        row = await db.get(SpecialistRow, specialist_id)
         if row is None or row.tenant_id != session.tenant_id or row.user_id != session.user_id:
             return False
         bot = Specialist.model_validate(row.payload)
@@ -117,7 +140,10 @@ class CanonicalComputerAccess:
                 .where(
                     AguiThreadBindingRow.tenant_id == session.tenant_id,
                     AguiThreadBindingRow.user_id == session.user_id,
-                    AguiThreadBindingRow.thread_id.startswith("assistant_specialist_"),
+                    or_(
+                        AguiThreadBindingRow.thread_id.startswith("assistant_specialist_"),
+                        AguiThreadBindingRow.thread_id.startswith("assistant_objective_"),
+                    ),
                     self._session_binding(session.session_id),
                 )
                 .limit(2)
@@ -250,6 +276,7 @@ class CanonicalComputerAccess:
                             or_(
                                 AguiThreadBindingRow.thread_id == PERSONAL_ASSISTANT_THREAD,
                                 AguiThreadBindingRow.thread_id.startswith("assistant_specialist_"),
+                                AguiThreadBindingRow.thread_id.startswith("assistant_objective_"),
                             ),
                             self._session_binding(SessionRow.session_id),
                         ),

@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import Table, delete, text, update
 
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
-from harness.assistant.models import Specialist
+from harness.assistant.models import Objective, Specialist
 from harness.assistant.storage import ObjectiveRow, SpecialistRow
 from harness.computer.access import CanonicalComputerAccess
 from harness.computer.models import ComputerLeaseLostError
@@ -180,6 +180,51 @@ async def test_only_explicitly_enabled_bot_uses_owner_computer_and_keeps_executi
     assert not await access.is_personal_session(session)
     with pytest.raises(ComputerLeaseLostError):
         await access.authorize(computer, token, "exec")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "change", [None, "paused", "unrelated", "other-owner", "project", "managed"]
+)
+async def test_existing_bot_duty_conversation_keeps_history_and_requires_owned_active_relation(
+    database, change,
+):
+    access, _, computer, token, _, _, session, _ = await seed(database)
+    bot = await use_specialist_binding(database, session)
+    objective = Objective(
+        objectiveId="objective_legacy", tenantId=session.tenant_id, userId=session.user_id,
+        specialistId=bot.specialist_id, title="Existing duty", instructions="Read-only fixture",
+        agentName=session.agent_name, agentVersion=session.agent_version,
+        createdAt=NOW, updatedAt=NOW,
+    )
+    if change == "paused":
+        objective = objective.model_copy(update={"status": type(objective.status).PAUSED})
+    elif change == "unrelated":
+        objective = objective.model_copy(update={"specialist_id": None})
+    elif change == "other-owner":
+        objective = objective.model_copy(update={"user_id": "another-user"})
+    elif change == "project":
+        objective = objective.model_copy(update={"project_id": "project_fixture"})
+    elif change == "managed":
+        objective = objective.model_copy(update={"managed_thread_id": "ordinary-task"})
+    _, sessions = database
+    async with sessions.begin() as db:
+        row = await db.get(AguiThreadBindingRow,
+            (session.tenant_id, session.user_id, "assistant_" + bot.specialist_id))
+        binding = AguiThreadBinding.model_validate(row.payload).model_copy(
+            update={"thread_id": "assistant_" + objective.objective_id})
+        row.thread_id, row.payload = binding.thread_id, binding.model_dump(mode="json")
+        db.add(ObjectiveRow(objective_id=objective.objective_id, tenant_id=objective.tenant_id,
+            user_id=objective.user_id, status=objective.status.value, revision=1,
+            created_at=NOW, updated_at=NOW,
+            payload=objective.model_dump(mode="json", by_alias=True)))
+    assert await access.is_personal_session(session) is (change is None)
+    if change is None:
+        await access.authorize(computer, token, "exec")
+        await access.authorize(computer, token, "renew")
+    else:
+        with pytest.raises(ComputerLeaseLostError):
+            await access.authorize(computer, token, "exec")
 
 
 @pytest.mark.asyncio
