@@ -9,7 +9,7 @@ import {
 import { fromAgUiMessages } from "@assistant-ui/react-ag-ui";
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import type { ApprovalDetails } from "../components/approval-card";
-import { latestHistoryRunActivity } from "./activity-schema";
+import { latestHistoryRunActivity, type RunActivity } from "./activity-schema";
 import { activityStore } from "./activity-store";
 import { requireAuthenticatedResponse } from "./client-auth";
 import { setThreadReplyReferences } from "./reply-references";
@@ -394,9 +394,25 @@ export function useThreadHistoryPagination(
   };
 }
 
+/**
+ * A transcript stores the activity it saw while streaming, so a run that ended
+ * right after the last write still says "running". The thread's own latest-run
+ * status is authoritative: settling it here keeps a refresh from replaying a
+ * live status row over a turn that already finished.
+ */
+export function settleHistoryActivity(
+  activity: RunActivity,
+  threadStatus: string,
+): RunActivity {
+  if (activeStatuses.has(threadStatus) || !activeStatuses.has(activity.status)) return activity;
+  return { ...activity, status: threadStatus };
+}
+
 function publishHistoryActivity(history: ThreadHistoryResponse, threadId: string) {
-  const restoredActivity = latestHistoryRunActivity(history.messages);
-  if (restoredActivity && JSON.stringify(restoredActivity) !== JSON.stringify(activityStore.getSnapshot())) {
+  const restored = latestHistoryRunActivity(history.messages);
+  if (!restored) return;
+  const restoredActivity = settleHistoryActivity(restored, history.status);
+  if (JSON.stringify(restoredActivity) !== JSON.stringify(activityStore.getSnapshot())) {
     activityStore.publish(restoredActivity, threadId, { replaceRun: true });
   }
 }

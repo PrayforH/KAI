@@ -76,3 +76,19 @@
 **已知回退（用户确认接受）**：rc web 不含 managed 线 7ffd833c 的「管理职责」UI（rail 入口、
 设置页第二入口、状态/重试、已结束折叠、maxNewTasks），随本滚暂时从 79 下线，待两线合并后回归。
 **实页未点**：本次仅只读核对镜像/chunk/HTTP；交互效果待用户刷新页面自然核对。
+
+## 刷新后仍显示「正在检索相关资料」（2026-11-04 修）
+
+现象：Run 已结束，刷新助手页后 composer 上方仍挂着「正在检索相关资料」，像还在跑。
+
+根因：刷新后没有 SSE，实时状态只能从会话记录里**冻结的 activity 快照**恢复，而快照写于运行中
+（`status: "running"`）。`/history` 返回的 `status` 是**库里最新 Run 的真实状态**，但客户端恢复时
+没用它校正，于是 `shouldShowChatActivityRow` 一直判为活跃。
+
+修复：`settleHistoryActivity(activity, history.status)`——最新 Run 已终态而快照仍是活跃状态时，
+把快照状态落定为真实终态后再发布（线程仍活跃时原样保留，快照自己已终态时不改写）。真正的
+在跑线程刷新后仍显示该行（`history.status` 为 running）。
+
+顺带修好长期失效的守卫测试 `assistant-activity-terminal.spec.tsx`（它 grep 的两个位置在重构后
+已搬到 `assistant-progress.tsx` / `assistant-conversation-tail.tsx`），使「终态不留等待行」重新有测试兜住；
+本片后全套失败 12 → 11，其余 11 项均为该线既有。

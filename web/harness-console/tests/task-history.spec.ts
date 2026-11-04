@@ -6,6 +6,7 @@ import {
   invalidateThreadHistory,
   loadTasks,
   prefetchThreadHistory,
+  settleHistoryActivity,
   TASK_LIST_REQUEST_TIMEOUT_MS,
 } from "../src/lib/task-history";
 
@@ -255,4 +256,29 @@ it("restores an active video task without adopting it as a text model run", asyn
   expect(onActiveRun).not.toHaveBeenCalled();
   expect(restored.messages).toHaveLength(2);
   adapter.dispose();
+});
+
+describe("settleHistoryActivity", () => {
+  const running = {
+    run_id: "run-1", status: "running", started_at: "2026-11-04T01:00:00Z", metrics: {},
+    items: [{ id: "i1", event_type: "tool.started", kind: "analysis", status: "running",
+      title: "检索", summary: "正在检索相关资料", sequence: 1, timestamp: "2026-11-04T01:00:00Z", metadata: {} }],
+  } as const;
+
+  it("settles a stale running snapshot when the thread's latest run already ended", () => {
+    const settled = settleHistoryActivity(running as never, "succeeded");
+    expect(settled.status).toBe("succeeded");
+    expect(settled.run_id).toBe("run-1");
+    expect(settled.items).toBe(running.items);
+  });
+
+  it("keeps the live status while the thread is still active", () => {
+    expect(settleHistoryActivity(running as never, "running").status).toBe("running");
+    expect(settleHistoryActivity(running as never, "queued").status).toBe("running");
+  });
+
+  it("never rewrites a snapshot that already records its own terminal state", () => {
+    const failed = { ...running, status: "failed" } as never;
+    expect(settleHistoryActivity(failed, "succeeded").status).toBe("failed");
+  });
 });

@@ -8,6 +8,8 @@ import {
 } from "../src/components/grok-activity";
 
 const thread = readFileSync(join(process.cwd(), "src/components/agent-thread.tsx"), "utf8");
+const progress = readFileSync(join(process.cwd(), "src/components/assistant-progress.tsx"), "utf8");
+const tail = readFileSync(join(process.cwd(), "src/components/assistant-conversation-tail.tsx"), "utf8");
 
 const waiting = { items: [{ event_type: "runtime.system", summary: "正在等待本轮模型结果" }] };
 const tool = { items: [{ event_type: "tool.result", summary: "已读取工作区文件" }] };
@@ -36,10 +38,13 @@ describe("terminal turns never keep a waiting row", () => {
   });
 
   it("both chat-form activity rows are gated by the predicate", () => {
-    expect(thread).toContain("if (!shouldShowChatActivityRow(displayed.status, displayed)) return null;");
-    expect(thread).toContain(
-      "<AssistantProgress activity={preResponseActivity}",
-    );
+    // 行渲染点收敛到 AssistantProgress：状态不活跃就整行不渲染。
+    expect(progress).toContain("const visible = shouldShowChatActivityRow(activity.status, activity);");
+    expect(progress).toContain("if (!visible) return null;");
+    // 助手面的实时行与 composer 旁的 tail 都走同一个组件。
+    expect(tail).toContain("<AssistantProgress activity={activity} avatar={avatar} compact");
+    // 任务面（非助手面）的 pre-response 行保留原有入口。
+    expect(thread).toContain("{preResponseActivity && !assistantSurface ? (");
   });
 
   it("keeps the duplicate-answer guards from dce054a7", () => {
