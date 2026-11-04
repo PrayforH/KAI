@@ -101,3 +101,12 @@
 `padding-inline`），窗口一宽就跑到最左。改为与该槽位共用输入框列
 （`width: min(800px,100%); max-width: 800px; margin-inline: auto`），状态行现在正好落在
 输入框左上方。加了一条 CSS 守卫测试锁住这条规则。
+
+## 79 复滚（2026-11-04，web 单滚到 6b86843c）
+
+把「直接发出去 + 刷新后状态行落定 + 状态行与输入框同列」三处一起滚上 79。镜像
+`kai/superagent-web:20261104-6b86843c`（自 `6b86843c` 干净两段构建），发布目录
+`/data/kai-superagent-20261104-6b86843c`。闸门同前：CAS == 7ba2e5d4 快照、活跃 Run/职责 0、
+schema 0065 无迁移、api/worker/feishu 镜像未变。上线 CSS 指纹已核对：
+`assistant-message-tail-slot{...;width:min(800px,100%);max-width:800px;margin-inline:auto;...}`。
+`3501=200`、`3543=200`、`healthz=200`。
