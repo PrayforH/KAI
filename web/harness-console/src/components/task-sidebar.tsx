@@ -16,6 +16,7 @@ import { ProductBrandMark, ProductWordmark, PRODUCT_NAME } from "./product-brand
 import { WorkspaceNavigation, type WorkspaceId } from "./workspace-navigation";
 import { BotRail } from "./bot-rail";
 import { workingBotThreads } from "../lib/bot-working-state";
+import { handoverStore } from "../lib/handover-store";
 import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
 import { useRunViewModel } from "../lib/activity-store";
 import { approvalStore } from "../lib/approval-store";
@@ -160,6 +161,12 @@ export function TaskSidebar({
   const wasOverlayOpenRef = useRef(false);
   const runView = useRunViewModel();
   const workingThreadIds = useMemo(() => workingBotThreads(storedTasks, currentThreadId, runView), [storedTasks, currentThreadId, runView]);
+  // A direct @ send need not start a run in the open chat. Refresh the same
+  // sidebar read on delivery so short background work is visible immediately.
+  useEffect(() => {
+    const unsubscribe = handoverStore.subscribe(notifyTaskListChanged);
+    return () => { unsubscribe(); };
+  }, []);
   const { user, membership } = useAuth();
   const [expandedTaskGroups, setExpandedTaskGroups] = useSidebarGroups(user.user_id);
   const sectionId = useId();
