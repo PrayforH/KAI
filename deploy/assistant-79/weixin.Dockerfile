@@ -3,3 +3,4 @@ ARG API_IMAGE
 FROM ${API_IMAGE}
 ENTRYPOINT ["/app/.venv/bin/python", "-m", "harness.weixin.main"]
 CMD []
+USER 10001:10001

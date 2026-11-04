@@ -63,3 +63,27 @@ misconfigurations:
       The sandbox controller creates the per-run NetworkPolicies that enforce
       the documented egress allowlist, so it must be able to manage
       networkpolicies and read service endpoints in its own namespace.
+  - id: AVD-DS-0002
+    paths:
+      - deploy/assistant-79/computer.Dockerfile
+    expired_at: 2026-12-04
+    statement: >-
+      The private Computer supervisor requires root to create PID/mount
+      namespaces and drop each actual model command to UID 28000 with
+      no_new_privs. The host verifies User=0:0, the pinned image, private
+      lease and workspace mount; it never gives model commands root.
+      A rootless supervisor migration must preserve those execution fences.
+  - id: AVD-DS-0002
+    paths:
+      - deploy/assistant-79/computer-vm/viewer.Dockerfile
+      - deploy/remote-computer/viewer.Dockerfile
+      - deploy/remote-computer/viewer-diagnostics.Dockerfile
+      - deploy/remote-computer/viewer-fence.Dockerfile
+    expired_at: 2026-12-04
+    statement: >-
+      These private pilot Viewer images currently read root-only SSH identity
+      files mounted by the existing host deployment. Changing their user
+      without a coordinated key-ownership migration breaks desktop transport.
+      Viewer input is still account-authenticated, lease/epoch checked and
+      constrained to enrolled SSH targets; no arbitrary exec endpoint exists.
+      Review migration to a dedicated non-root key owner before expiry.

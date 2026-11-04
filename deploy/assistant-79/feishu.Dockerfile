@@ -9,3 +9,4 @@ HEALTHCHECK NONE
 # The manager loads encrypted tenant configuration and owns exactly one SDK
 # child per application; starting main directly only reads legacy environment.
 ENTRYPOINT ["/app/.venv/bin/python", "-m", "harness.feishu.manager"]
+USER 10001:10001
