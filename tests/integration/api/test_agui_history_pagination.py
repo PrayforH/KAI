@@ -20,7 +20,7 @@ HEADERS = {"X-Tenant-ID": "tenant-a", "X-User-ID": "user-1"}
 
 
 @pytest.mark.asyncio
-async def test_main_history_hydrates_only_the_visible_receipt_and_skips_it_for_304():
+async def test_main_history_hydrates_only_the_visible_receipt_and_skips_it_for_304() -> None:
     app = create_memory_app()
     now = datetime(2026, 11, 4, tzinfo=UTC)
     notices = [MentionMessage(
@@ -28,12 +28,15 @@ async def test_main_history_hydrates_only_the_visible_receipt_and_skips_it_for_3
         run_id=f"child-{i}", target_thread_id="child-thread", source={
             "direction": "received", "runStatus": "succeeded",
         }) for i in range(2)]
-    async def metadata(*args, **kwargs):
+    async def metadata(
+        *_args: object, **kwargs: object,
+    ) -> tuple[list[MentionMessage], int]:
         assert kwargs["hydrate_results"] is False
         return (notices, 2) if kwargs["direction"] == "received" else ([], 0)
-    hydrate = AsyncMock(side_effect=lambda tenant, item: item.model_copy(
-        update={"text": "结果正文"}
-    ))
+    async def hydrate_message(_tenant: str, item: MentionMessage) -> MentionMessage:
+        return item.model_copy(update={"text": "结果正文"})
+
+    hydrate = AsyncMock(side_effect=hydrate_message)
     assistant = SimpleNamespace(
         repository=SimpleNamespace(conversation_notices=AsyncMock(return_value=([], 0)),
                                    conversation_notice_sources=AsyncMock(return_value={})),

@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import Table, delete, text, update
 
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
-from harness.assistant.models import Objective, Specialist
+from harness.assistant.models import Objective, Specialist, SpecialistStatus
 from harness.assistant.storage import ObjectiveRow, SpecialistRow
 from harness.computer.access import CanonicalComputerAccess
 from harness.computer.models import ComputerLeaseLostError
@@ -135,6 +135,7 @@ async def test_retained_session_history_remains_owned(database: DatabaseFixture)
             AguiThreadBindingRow, (session.tenant_id, session.user_id, PERSONAL_ASSISTANT_THREAD)
         )
         assert row is not None
+        assert row is not None
         binding = AguiThreadBinding.model_validate(row.payload).model_copy(
             update={"session_id": "newer-session", "previous_session_ids": (session.session_id,)}
         )
@@ -144,17 +145,21 @@ async def test_retained_session_history_remains_owned(database: DatabaseFixture)
     await access.authorize(computer, token, "exec")
 
 
-async def use_specialist_binding(database: DatabaseFixture, session: Session, *, enabled=True):
+async def use_specialist_binding(
+    database: DatabaseFixture, session: Session, *, enabled: bool = True,
+) -> Specialist:
     _, sessions = database
     bot = Specialist(
         specialistId="specialist_fixture", tenantId=session.tenant_id, userId=session.user_id,
         name="任意名称", slug="coding", description="", agentName=session.agent_name,
-        agentVersion=session.agent_version, status="ready", createdAt=NOW, updatedAt=NOW,
+        agentVersion=session.agent_version, status=SpecialistStatus.READY,
+        createdAt=NOW, updatedAt=NOW,
         config={"execution_environment": "personal_computer" if enabled else "sandbox"},
     )
     async with sessions.begin() as db:
         row = await db.get(AguiThreadBindingRow,
                            (session.tenant_id, session.user_id, PERSONAL_ASSISTANT_THREAD))
+        assert row is not None
         binding = AguiThreadBinding.model_validate(row.payload).model_copy(
             update={"thread_id": "assistant_" + bot.specialist_id}
         )
@@ -167,7 +172,9 @@ async def use_specialist_binding(database: DatabaseFixture, session: Session, *,
 
 
 @pytest.mark.asyncio
-async def test_only_explicitly_enabled_bot_uses_owner_computer_and_keeps_execution_fences(database):
+async def test_only_explicitly_enabled_bot_uses_owner_computer_and_keeps_execution_fences(
+    database: DatabaseFixture,
+) -> None:
     access, _, computer, token, _, _, session, _ = await seed(database)
     await use_specialist_binding(database, session)
     assert await access.is_personal_session(session)
@@ -176,6 +183,7 @@ async def test_only_explicitly_enabled_bot_uses_owner_computer_and_keeps_executi
     _, sessions = database
     async with sessions.begin() as db:
         row = await db.get(SpecialistRow, "specialist_fixture")
+        assert row is not None
         row.payload = {**row.payload, "config": {"execution_environment": "sandbox"}}
     assert not await access.is_personal_session(session)
     with pytest.raises(ComputerLeaseLostError):
@@ -187,8 +195,8 @@ async def test_only_explicitly_enabled_bot_uses_owner_computer_and_keeps_executi
     "change", [None, "paused", "unrelated", "other-owner", "project", "managed"]
 )
 async def test_existing_bot_duty_conversation_keeps_history_and_requires_owned_active_relation(
-    database, change,
-):
+    database: DatabaseFixture, change: str | None,
+) -> None:
     access, _, computer, token, _, _, session, _ = await seed(database)
     bot = await use_specialist_binding(database, session)
     objective = Objective(
@@ -211,6 +219,7 @@ async def test_existing_bot_duty_conversation_keeps_history_and_requires_owned_a
     async with sessions.begin() as db:
         row = await db.get(AguiThreadBindingRow,
             (session.tenant_id, session.user_id, "assistant_" + bot.specialist_id))
+        assert row is not None
         binding = AguiThreadBinding.model_validate(row.payload).model_copy(
             update={"thread_id": "assistant_" + objective.objective_id})
         row.thread_id, row.payload = binding.thread_id, binding.model_dump(mode="json")
@@ -230,13 +239,14 @@ async def test_existing_bot_duty_conversation_keeps_history_and_requires_owned_a
 @pytest.mark.asyncio
 @pytest.mark.parametrize("change", ["paused", "archived", "other-owner", "other-tenant", "project"])
 async def test_specialist_computer_access_rechecks_owner_lifecycle_and_task_isolation(
-    database, change,
-):
+    database: DatabaseFixture, change: str | None,
+) -> None:
     access, _, computer, token, _, _, session, _ = await seed(database)
     await use_specialist_binding(database, session)
     _, sessions = database
     async with sessions.begin() as db:
         row = await db.get(SpecialistRow, "specialist_fixture")
+        assert row is not None
         if change in {"paused", "archived"}:
             row.status = change
             row.payload = {**row.payload, "status": change}
@@ -247,6 +257,7 @@ async def test_specialist_computer_access_rechecks_owner_lifecycle_and_task_isol
         else:
             binding = await db.get(AguiThreadBindingRow,
                 (session.tenant_id, session.user_id, "assistant_specialist_fixture"))
+            assert binding is not None
             binding.project_id = "ordinary-project"
     assert not await access.is_personal_session(session)
     with pytest.raises(ComputerLeaseLostError):

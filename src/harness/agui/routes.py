@@ -1220,11 +1220,10 @@ async def get_agui_thread_history(
         for items, count in projections:
             mention_messages.extend(items)
             mention_total += count
-    entries: list[tuple[datetime, str, Run | AssistantInboxItem | MentionMessage]] = (
-        [(run.created_at, run.run_id, run) for run in runs]
-        + [(item.created_at, notice_message_id(item), item) for item in notices]
-        + [(item.created_at, item.message_id, item) for item in mention_messages]
-    )
+    entries: list[tuple[datetime, str, Run | AssistantInboxItem | MentionMessage]] = []
+    entries.extend((run.created_at, run.run_id, run) for run in runs)
+    entries.extend((item.created_at, notice_message_id(item), item) for item in notices)
+    entries.extend((item.created_at, item.message_id, item) for item in mention_messages)
     window = sorted(
         (entry for entry in entries if cursor is None or entry[:2] < cursor),
         key=lambda entry: entry[:2],

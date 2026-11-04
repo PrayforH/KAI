@@ -56,3 +56,19 @@ xiaokai
 ## ACP 与后续接入
 
 32.45 /home/xiaokai/acp-test 的 claude-agent-acp 0.100.0、codex-acp 2.5.0 已实测 initialize 成功，协议1。此次没有创建 ACP 会话或发模型任务；原 smoke 客户端会自动 allow_always，未直接复用于 KAI。KAI 任务身份与机主登录身份不同，目前不能声称编码协同已调用 Claude Code/Codex。固定 broker、项目授权、权限卡、取消恢复和真实合成仓库验收见飞书 11.19；他人电脑的当前运维步骤与后续 C1–C4 计划见 11.18。
+
+## 追加：本地 ACP 最小入口已接入（同日）
+
+上文“ACP 未接入”是首次发布时的状态；用户随后授权直接接入。新增 `computer_acp` 通用电脑能力，沿用 Computer 执行租约、归属与动作通道，固定调用两个既有适配器。普通 shell 仍是独立任务账号；ACP 子进程降权为已登记桌面用户 xiaokai，以其 HOME 和固定 PATH 使用既有 CLI 配置，不复制登录文件、不接受任意 user/env/binary。当前仅 Claude plan、Codex read-only，权限请求明确拒绝；目录限制控制会话起点，不宣称是机主 HOME 的操作系统隔离。初版不提供写入授权、持久会话恢复、自动重试或排队。
+
+79 与 32.45 的受信组件一同切换。32 的 root 私有备份位于 `/var/backups/kai-acp-20261104`；新组件 pin 为 `sha256:3434b9f01f414cd2e3c831ba6841828efc12a1fc898915514e6ee5312704a55b`。79 使用 Registry.switch_provider 维护入口切换同一 computer_id 的 image，未写原始 SQL、未迁移生产库，云机目标和磁盘保持原状。发布前活跃 Run=0、执行租约=0，停 Worker 后复查，再安装组件、切换 Registry 和配置，API/Control 就绪后恢复 Worker。Viewer/飞书/微信容器 ID 未变。
+
+首次真实端到端验收 Run `run_75b0c672aa1d4d898e640eeb1a5d4f48` 成功：`sandbox.provisioned=remote-computer`，实际 `computer_acp(agent=claude)` 返回 `ok=true`、`execution_user=xiaokai`、`cwd=/home/xiaokai/workspace/KAI`、`read_only=true`、`ACP_CLAUDE_OK`。工具执行约 11 秒，整个 Run 约 21 秒；仅为这次样本，不是延迟承诺。主助理实页已经看到对应“已发送消息给”和“消息来自 编码协同”及结果，电脑保持关闭。ACP 原始内部 session_id 后续在工具边界剔除，避免成为对话正文。
+
+本机 Claude CLI 复用的是机主已配置的 DeepSeek 网关，不能把这次成功声称为 Anthropic 订阅登录验收。Codex 适配器 initialize/session-new 可用，但完整 prompt 尚未成功；同用户直接 `codex exec --sandbox read-only` 也复现模型元数据读取异常、请求超时重连和 chatgpt.com MCP 请求失败，55 秒有界结束。未修改其全局配置、登录或网络，也未将握手成功当成完整可用。当前演示可使用 Claude，Codex 保留真实失败状态。
+
+追加验证：ACP/电脑套件 70 项通过，新增内部句柄不外泄及相关工具回归后 73 项通过；全前端 1664 项通过、1 项跳过，TypeScript 通过；全仓 Ruff 通过。隔离 PostgreSQL 从空库升级到0065、降级0064再升级0065均通过；修复0044引用最新ORM导致0055/0063重复字段的历史迁移缺陷，79已在0065，不执行历史重放。合入 PR80 仍须满足仓库必需 CI，不绕过保护。
+
+ACP 首次部署目录 `/data/kai-acp-20261104-3c6a175f`，`release.json` 记录四服务健康与镜像摘要；compose SHA256 `f0f08bf66c32dc6648f2f1a5f91ddceb6cd64c6715927100a1e66fe75da0b8e3`。API/Worker SHA256 `6ea7d7ccb40148402d9169869ea11a53a0abd48dad218133dd905407712dda66`，Web `8239f1c0a4803e53c5a1a0ee0aeeadf46163e4bcbf561f2ebf36f7b3b24eb410`，Control `1150075ed0d603e16ad408dd8fb2a0a4c0b513fb88cdb63b2bc1e05347c57579`。随后仅工具输出投影的小切片发布另行记录。
+
+全仓质量门禁补充：本地用相同环境分别检查当前代码与功能基线ff383602，当前3737条、功能基线3826条Pyright诊断；按文件/规则/消息/次数比较，本轮相对功能基线无新增，减少89条。相对于develop保存的旧类型基线仍有2448条未接纳诊断，因此不能声称全仓类型检查或develop合入完成；未扩大baseline或放宽检查。容器安全CI在09238016通过；后端CI已通过空库迁移但停在3条既有lint，当前已修复并本地全仓Ruff通过，最新提交仍须远端复核。

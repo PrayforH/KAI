@@ -45,7 +45,6 @@ from harness.runtime.assistant_preface import PREFACE_NUDGE_REASON, AssistantPre
 from harness.runtime.base import RuntimeContext
 from harness.runtime.input_redaction import INTERNAL_AGENT_ASSET_MARKER
 from harness.runtime.sdk_tool_gate import SdkToolGate
-from harness.runtime.web_tools import WEB_TOOL_NAMES
 from harness.sandbox.base import SandboxCommandResult, SandboxIsolation
 
 NOW = datetime(2026, 7, 13, tzinfo=UTC)

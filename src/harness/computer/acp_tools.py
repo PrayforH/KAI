@@ -28,14 +28,17 @@ def computer_acp_overlay(sandbox: AcpSource, handle: SandboxHandle) -> PlatformT
         except (RuntimeError, ValueError):
             return {"isError": True, "content": [{"type": "text",
                 "text": "ACP 调用未完成；请检查连接、登录与授权目录，不要假报已执行"}]}
+        # ACP session handles are transport bookkeeping, not conversation
+        # content. Keep them out of the model's answer surface.
+        public = {k: v for k, v in value.items() if k != "session_id"}
         return {"isError": result.exit_code != 0 or not value["ok"],
-                "content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False)}]}
+                "content": [{"type": "text", "text": json.dumps(public, ensure_ascii=False)}]}
 
     return PlatformToolOverlay(tools=(PlatformTool(
         name="computer_acp",
         description=("通过本地电脑已安装的 ACP 调用 Claude Code 或 Codex，复用机主现有登录。"
                      "当前仅只读调研：Claude plan / Codex read-only；权限请求拒绝。"
-                     "cwd 须为已授权项目目录，可省略使用默认项目；返回真实结果与 ACP 会话标识。"),
+                     "cwd 须为已授权项目目录，可省略使用默认项目；返回真实执行结果。"),
         schema={"type": "object", "additionalProperties": False,
                 "properties": {
                     "agent": {"type": "string", "enum": ["claude", "codex"]},

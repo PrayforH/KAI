@@ -36,10 +36,12 @@ def _specialist(status: SpecialistStatus = SpecialistStatus.READY) -> Specialist
 def _service(
     specialist: Specialist | None = None,
     handovers: list[SpecialistHandover] | None = None,
+    *, events: AsyncMock | None = None,
 ):
     from harness.assistant.service import AssistantService
 
-    repo, agents, auth, projects, agui, runs, events = [AsyncMock() for _ in range(7)]
+    repo, agents, auth, projects, agui, runs, default_events = [AsyncMock() for _ in range(7)]
+    events = events if events is not None else default_events
     if specialist is None:
         repo.get_specialist.side_effect = NotFoundError("missing")
     else:
@@ -226,23 +228,24 @@ async def test_completed_reply_is_brief_and_links_back_to_named_bot():
 
 
 @pytest.mark.asyncio
-async def test_receipt_metadata_does_not_replay_child_traces_until_selected():
+async def test_receipt_metadata_does_not_replay_child_traces_until_selected() -> None:
     from harness.agui.response import HISTORY_SNAPSHOT_VERSION
     from harness.core.models import RunStatus
 
-    service, repo = _service(_specialist())
+    events = AsyncMock()
+    service, repo = _service(_specialist(), events=events)
     repo.mention_message_runs.return_value = ([
         (SimpleNamespace(handover_id="h", target_thread_id="child", reply_to_run_id=None),
          SimpleNamespace(run_id="r", updated_at=datetime(2026, 11, 3, tzinfo=UTC),
                          status=RunStatus.SUCCEEDED), _specialist())], 1)
-    service._events.list_after.return_value = [SimpleNamespace(payload={
+    events.list_after.return_value = [SimpleNamespace(payload={
         "version": HISTORY_SNAPSHOT_VERSION, "response_text": "已核对资料。",
     })]
     messages, _ = await service.mention_messages("t", "u", "main", hydrate_results=False)
-    service._events.list_after.assert_not_awaited()
+    events.list_after.assert_not_awaited()
     result = await service.hydrate_mention_result("t", messages[0])
     assert result.text == "已核对资料。"
-    service._events.list_after.assert_awaited_once_with("t", "r", 0, types=("history.snapshot",))
+    events.list_after.assert_awaited_once_with("t", "r", 0, types=("history.snapshot",))
 
 
 @pytest.mark.asyncio

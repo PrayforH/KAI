@@ -1,0 +1,15 @@
+<h2>11.20 本地 ACP 最小入口已上线：Claude 完整链路、Codex 仍待恢复（2026-11-04）</h2>
+<p>用户随后明确授权“不复杂先接上”。本节更新11.19的阶段状态：固定 broker 与 Bot 单次只读调用已实现并部署79，不能继续把它归为仅握手；权限卡、写代码与跨请求恢复仍是后续工作。</p>
+<p><b>已生效。</b>新增通用电脑工具 computer_acp，复用当前 Remote Computer 的归属、生命周期、执行租约和固定 SSH 通道。ACP 进程降权为已登记桌面用户，使用其 HOME/PATH 下的既有 Claude/Codex 配置；普通 shell 的独立任务账号不变。请求只接受 agent、prompt、授权项目目录和有界超时，不接受任意用户、命令、环境或权限模式。Claude 固定 plan、Codex 固定 read-only，权限请求回复拒绝，不复用 smoke 的 allow_always。没有增加队列、业务关键词流程或硬编码 Bot 名称。</p>
+<p><b>真实验收。</b>主会话向编码协同投递只读连接验收，实际 computer_acp(agent=claude) 在32.45的 xiaokai 身份下、/home/xiaokai/workspace/KAI 目录运行，返回 ACP_CLAUDE_OK；Run成功，主助理真实Chrome页面已显示“已发送消息给”“消息来自 编码协同”和对应结果，电脑默认关闭。工具约11秒、完整Run约21秒，仅为该次样本。内部ACP会话句柄在工具输出边界剔除，避免进入聊天正文。</p>
+<p><b>可用边界。</b>Claude 本次使用机主现有的 DeepSeek 网关配置，不能声称已验证 Anthropic 订阅。Codex 初始化和创建会话成功，但完整生成尚未通过；同用户直接 codex exec 也复现请求超时重连、模型元数据异常与 chatgpt.com MCP 请求失败。没有修改机主的全局模型、网络、登录或购买额度。当前演示可用 Claude；Codex 保留失败状态，不把握手当成功。授权目录控制会话起点，初版没有对机主 HOME 额外提供操作系统沙箱隔离。</p>
+<p><b>部署与保护。</b>79 API/Worker、Web、Control 已更新并健康，32侧受信组件按新摘要登记；生产schema0065无迁移，Viewer和IM容器未重建，云机目标、本地文件、浏览器及机主已有编码窗口保留。活跃Run及执行租约均为0后才切换，保留私有回滚备份；不操作174。代码通过 <a href="https://github.com/PrayforH/KAI/pull/80">PR80</a> 合入develop，仍以必需CI通过和远端回读为准，不绕过分支保护。</p>
+<p><b>验证。</b>ACP/电脑套件70项通过；新增句柄不外泄及相关工具回归后73项通过；全前端1664项通过、1项跳过，TypeScript和全仓Ruff通过。隔离PostgreSQL空库升级0065、降级0064再升级0065通过，修复历史0044动态引用最新ORM导致重复字段的问题；生产库不重放旧迁移。</p>
+<table><thead><tr><th>接下来</th><th>范围与完成标准</th></tr></thead><tbody>
+<tr><td>ACP授权闭环</td><td>将 session/request_permission 接入已有主/子Bot共用卡，一处回答只消费一次；仅在用户授权后允许对应受控写入，先用合成文件验收</td></tr>
+<tr><td>会话恢复</td><td>保存 Computer/Run 与 ACP 会话引用，支持断线、取消和幂等；恢复不重复执行，不自动把只读升级为写权限</td></tr>
+<tr><td>Codex恢复</td><td>从现有本机CLI的请求超时与模型配置可用性排查；实际prompt成功后再标记可用，不以调整KAI模型冒充修复本机Codex</td></tr>
+<tr><td>其他人的电脑</td><td>继续按11.18运维步骤接入；先做参数化Linux安装器与第二台合成机器验收，再做配对、共享授权和跨系统适配</td></tr>
+</tbody></table>
+<p>Vercel agent-desktop 仍用于桌面窗口、点击、输入与可访问性树操作。Claude/Codex 的编程任务优先通过ACP提交与接收结果，界面操作作为另一项通用电脑能力保留；两者不互相替代。</p>
+<p><b>develop合入状态补充。</b>容器安全检查已通过，历史迁移缺陷已用空库及往返验证。功能线还有既有全仓类型技术债：本地当前3737条、基线ff383602为3826条，本轮按文件/规则/消息/次数比较无新增、减少89条；但相对develop保存的旧基线仍有2448条未接纳诊断。PR80保持待合入，不扩大类型baseline、不绕过必需检查，不将79部署成功称为develop已提交成功。</p>

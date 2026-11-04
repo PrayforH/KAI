@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -45,6 +46,7 @@ def _specialist(**overrides: Any) -> Specialist:
 class _Repo:
     def __init__(self, specialist: Specialist) -> None:
         self.specialist = specialist
+        self.executions = AsyncMock(return_value=[])
 
     async def get_specialist(self, tenant_id: str, user_id: str, specialist_id: str) -> Specialist:
         return self.specialist
@@ -112,8 +114,6 @@ async def test_detail_read_is_pure_and_keeps_the_pause_marker() -> None:
 
 @pytest.mark.asyncio
 async def test_chat_entry_keeps_binding_but_never_loads_duty_execution_history() -> None:
-    from unittest.mock import AsyncMock
-
     service = _Service(_specialist())
     duty = Objective(
         objectiveId="objective_legacy", tenantId="tenant-a", userId="user-a",
@@ -121,7 +121,7 @@ async def test_chat_entry_keeps_binding_but_never_loads_duty_execution_history()
         agentName="audit-agent", agentVersion="1.0.0", createdAt=NOW, updatedAt=NOW,
     )
     service.repository.list = AsyncMock(return_value=[duty])
-    service.repository.executions = AsyncMock(return_value=[object()])  # type: ignore[attr-defined]
+    service.repository.executions.return_value = [object()]
     detail = await assistant_api.get_specialist(
         "specialist_pause", IDENTITY, service, include_duties=False,  # type: ignore[arg-type]
     )
@@ -132,7 +132,10 @@ async def test_chat_entry_keeps_binding_but_never_loads_duty_execution_history()
     full = await assistant_api.get_specialist(
         "specialist_pause", IDENTITY, service,  # type: ignore[arg-type]
     )
-    assert full["duties"][0]["hasExecutions"] is True
+    duties = full["duties"]
+    assert isinstance(duties, list)
+    assert isinstance(duties[0], dict)
+    assert duties[0]["hasExecutions"] is True
     service.repository.executions.assert_awaited_once()
 
 

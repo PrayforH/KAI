@@ -225,7 +225,9 @@ async def test_contract_applies_when_the_agent_already_declares_web(tmp_path: Pa
 
 
 @pytest.mark.asyncio
-async def test_assistant_web_capability_facts_do_not_impose_a_business_workflow(tmp_path: Path) -> None:
+async def test_assistant_web_capability_facts_do_not_impose_a_business_workflow(
+    tmp_path: Path,
+) -> None:
     """能力描述不得夹带天气关键词、必经步骤或角色优先级补丁。"""
     from harness.runtime.web_tools import WEB_ASSISTANT_CONTRACT
 

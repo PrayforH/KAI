@@ -222,10 +222,6 @@ def _upgrade_system_managed_catalog(
     """Upgrade known system defaults without dropping tenant-authored entries."""
 
     defaults = default_capability_catalog()
-    legacy_deepseek = next(
-        (route for route in catalog.model_routes if route.route_id == "new-api-default"),
-        None,
-    )
     routes = [
         route
         for route in catalog.model_routes
