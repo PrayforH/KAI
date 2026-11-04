@@ -65,8 +65,11 @@ export function compactAssistantProgress(text: string): string {
   return [lead, ...attention].join("\n\n");
 }
 
-export function assistantPresentation<T extends {kind: string; data: Record<string, unknown>; title?: string | null; fallback_text: string}>(item: T): T | null {
+export function assistantPresentation<T extends {kind: string; data: Record<string, unknown>; title?: string | null; fallback_text: string}>(item: T, {hasAttachments = false}: {hasAttachments?: boolean} = {}): T | null {
   if (item.kind === "form") return item;
+  // File delivery already has a preview/download capsule. An additional
+  // summary repeats its metadata and exposes publication/transport details.
+  if (hasAttachments && item.kind === "summary") return null;
   if (isInternalSummary(item)) return null;
   const clean = (value: unknown): unknown => {
     if (typeof value === "string") return /^https?:\/\//.test(value) ? value : assistantCopy(value);

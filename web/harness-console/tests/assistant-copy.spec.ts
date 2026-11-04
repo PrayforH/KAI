@@ -32,6 +32,17 @@ describe("main assistant conversational copy", () => {
     expect(assistantPresentation({...value,data:{items:[{label:"预算",value:"300000000"}]}})?.data.items).toEqual([{label:"预算",value:"300000000"}]);
     expect(value.data.items[0].value).toContain(id);
   });
+  it("uses the attachment capsule for file delivery without another summary card", () => {
+    const delivery={kind:"summary",fallback_text:"文件已发送",data:{items:[
+      {label:"文件",value:"outputs/report.html（25 KB）"},
+      {label:"成果发布",value:"artifact_0123456789abcdef"},
+      {label:"飞书投递",value:"sent"},
+    ]}};
+    expect(assistantPresentation(delivery,{hasAttachments:true})).toBeNull();
+    expect(assistantPresentation({...delivery,kind:"form"},{hasAttachments:true})).toEqual({...delivery,kind:"form"});
+    expect(assistantPresentation({...delivery,kind:"html"},{hasAttachments:true})).not.toBeNull();
+    expect(delivery.data.items).toHaveLength(3);
+  });
 });
 
 it("cleans labels of multiple links without changing their destinations", () => {

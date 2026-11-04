@@ -1749,9 +1749,12 @@ export function HarnessAssistantMessage() {
   // so they are present live and after a reload without a second code path.
   const compactMain = assistantSurface && !assistantBot && !conversationScope;
   const allTurnPresentations = useMemo(() => turnSettled ? presentationsForMessage(content) : [], [content, turnSettled]);
-  const turnPresentations = useMemo(() => compactMain
-    ? allTurnPresentations.flatMap(item => { const visible = assistantPresentation(item); return visible ? [visible] : []; })
-    : allTurnPresentations, [allTurnPresentations, compactMain]);
+  const turnPresentations = useMemo(() => assistantSurface
+    ? allTurnPresentations.flatMap(item => {
+      const visible = assistantPresentation(item, {hasAttachments: turnArtifacts.length > 0});
+      return visible ? [visible] : [];
+    })
+    : allTurnPresentations, [allTurnPresentations, assistantSurface, turnArtifacts.length]);
   // Only blocks the model authored came from a fence in this answer, so only that
   // many fences may be hidden from the rendered Markdown.
   const publishedBlocks = useMemo(() => modelBlockSources(allTurnPresentations), [allTurnPresentations]);
