@@ -37,6 +37,11 @@ type IdentityListing = { specialistId: string; name: string; updatedAt?: string;
   config?: Record<string, unknown> };
 const identities = new Map<string, {name: string; at: number; appearance: HandoverNotice["appearance"]}>();
 
+/** Only mentions sent from this page session: they show in the conversation they
+ *  were typed in. Seeded history never re-renders here, or every old receipt
+ *  would stack at the tail again. */
+const liveMentions = new Set<string>();
+
 const listeners = new Set<() => void>();
 let entries: HandoverNotice[] = [];
 let seeded = false;
@@ -132,6 +137,7 @@ export const handoverStore = {
     text?: string;
   }) {
     if (!payload.handoverId || !payload.specialistId) return;
+    liveMentions.add(payload.handoverId);
     const createdAt = receiptTime(payload.createdAt, Date.now());
     upsert({
       handoverId: payload.handoverId,
@@ -218,6 +224,11 @@ export function handoversForMessage(
 }
 
 /** Unattributed legacy receipts stay hidden; never guess their originating chat. */
+/** The mentions this page session just sent; history-seeded receipts stay out. */
+export function liveMentionsForThread(notices: readonly HandoverNotice[], threadId: string) {
+  return mentionsForThread(notices, threadId).filter(receipt => liveMentions.has(receipt.handoverId));
+}
+
 export function mentionsForThread(notices: readonly HandoverNotice[], threadId: string) {
   return notices.filter(notice => notice.mention && notice.sourceThreadId === threadId && Boolean(notice.runId));
 }

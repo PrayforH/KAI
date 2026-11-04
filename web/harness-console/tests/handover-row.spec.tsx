@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { HandoverInlineRows, shouldShowHandoverRows } from "../src/components/handover-row";
 import { emitHandover } from "./helpers/handover";
-import { handoverStore, mentionsForThread, statusLead } from "../src/lib/handover-store";
+import { handoverStore, liveMentionsForThread, mentionsForThread, statusLead } from "../src/lib/handover-store";
 
 const agentSource = readFileSync(
   join(process.cwd(), "src/components/agent-thread.tsx"),
@@ -56,15 +56,16 @@ describe("handover inline rows", () => {
 });
 
 describe("@ mention stays in the sending conversation", () => {
-  it("scopes the typed message to the thread it was sent from", () => {
+  it("shows only this session's send, scoped to the thread it came from", () => {
     handoverStore.ingestMention({
       handoverId: "mention-1", specialistId: "specialist-9", specialistName: "编码协同",
       runId: "run-9", sourceThreadId: "thread-main", text: "帮我恢复下",
     });
     const notices = handoverStore.snapshot();
     expect(mentionsForThread(notices, "thread-main").map(item => item.text)).toContain("帮我恢复下");
+    expect(liveMentionsForThread(notices, "thread-main").map(item => item.handoverId)).toEqual(["mention-1"]);
     // 换到别的助理会话不串台。
-    expect(mentionsForThread(notices, "thread-other")).toHaveLength(0);
+    expect(liveMentionsForThread(notices, "thread-other")).toHaveLength(0);
   });
 
   it("passes the composer text with the delivery receipt", () => {

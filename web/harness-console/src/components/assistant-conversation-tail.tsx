@@ -7,7 +7,7 @@ import { assistantChatReplies } from "../lib/assistant-chat";
 import { useAssistantBot, useAssistantSurface } from "./assistant-bot-context";
 import { AssistantProgress } from "./assistant-progress";
 import { AssistantEventLine } from "./assistant-event-line";
-import { handoverStore, mentionsForThread, statusLead, useHandoverNotices } from "../lib/handover-store";
+import { liveMentionsForThread, statusLead, useHandoverNotices } from "../lib/handover-store";
 
 /** The live status has one owner, below every newly sent message. */
 export function AssistantConversationTail({ children, threadId }: { children: ReactNode; threadId?: string }) {
@@ -34,10 +34,11 @@ export function AssistantConversationTail({ children, threadId }: { children: Re
 }
 
 /** 用户 @ 某个助理发出的消息，展示在「发送它的」对话区：气泡 + 回执行。
- *  收据按 sourceThreadId 归属，所以换到别的助理会话里不会串台。 */
+ *  只显示本次会话刚发出的那些——历史收据会由持久时间线承载，不能在这里堆叠。
+ *  收据按 sourceThreadId 归属，换到别的助理会话不会串台。 */
 function AssistantMentionRows({ threadId }: { threadId: string }) {
   const notices = useHandoverNotices();
-  const owned = mentionsForThread(notices, threadId);
+  const owned = liveMentionsForThread(notices, threadId);
   if (!owned.length) return null;
   return <div className="assistant-mention-rows" aria-label="已发送给助理的消息">
     {owned.map(receipt => <div className="assistant-mention-row" key={receipt.handoverId}>
