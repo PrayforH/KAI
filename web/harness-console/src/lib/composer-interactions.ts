@@ -49,6 +49,19 @@ export function nextQueuedPrompt(items: QueuedPrompt[]): QueuedPrompt | undefine
   return items.find(item => !item.receipt && !item.steerRunId);
 }
 
+/** Chat treats a recorded-but-unconfirmed send as a fresh turn once nothing is
+ * running: the bubble goes out by itself instead of waiting behind a resend
+ * control. Reconciled rows stay beside their durable turn. */
+export function releaseUncertainSends(items: QueuedPrompt[]): QueuedPrompt[] {
+  let changed = false;
+  const next = items.map(item => {
+    if (!item.receipt || item.historyRunId) return item;
+    changed = true;
+    return { ...item, steerRunId: undefined, receipt: undefined };
+  });
+  return changed ? next : items;
+}
+
 
 export function nextSteeringPrompt(items: QueuedPrompt[], awaitingReceipt: readonly string[]): QueuedPrompt | undefined {
   return items.find(item => item.intent === "steer" && !item.steerRunId && !item.receipt && !item.attachments.length && !awaitingReceipt.includes(item.id));

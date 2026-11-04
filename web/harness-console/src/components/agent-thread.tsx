@@ -157,7 +157,7 @@ import {
   TaskKnowledgeSelection,
   useTaskKnowledge,
 } from "./task-knowledge-context";
-import { composerTrigger, queueAttachments, queueMayDispatch, restorePromptQueue, settleAssistantFollowup, nextQueuedPrompt, nextSteeringPrompt, reconcilePromptHistory, type QueuedPrompt } from "../lib/composer-interactions";
+import { composerTrigger, queueAttachments, queueMayDispatch, releaseUncertainSends, restorePromptQueue, settleAssistantFollowup, nextQueuedPrompt, nextSteeringPrompt, reconcilePromptHistory, type QueuedPrompt } from "../lib/composer-interactions";
 
 import { writeTextToClipboard } from "../lib/clipboard";
 import { CodexResponseIcon } from "./codex-response-icon";
@@ -487,8 +487,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   useEffect(() => {
     if (!queueKey) return;
     try {
-      const saved = restorePromptQueue(localStorage.getItem(queueKey)).map(item =>
-        assistantSurface && !item.steerRunId && !item.receipt ? { ...item, receipt: "unknown" as const } : item);
+      const saved = restorePromptQueue(localStorage.getItem(queueKey));
       setQueue(saved);
       setSteeringIds(saved.filter((item) => item.steerRunId).map((item) => item.id));
       setQueuePaused(!assistantSurface && saved.length > 0);
@@ -511,6 +510,12 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       return reconcilePromptHistory(items, activities);
     });
   }, [assistantSurface, messages]);
+  // Nothing is running: an uncertain send has nowhere left to be reconciled
+  // against, so it goes out as its own turn rather than waiting for a resend.
+  useEffect(() => {
+    if (!assistantSurface || !queueLoaded || busy) return;
+    setQueue(items => releaseUncertainSends(items));
+  }, [assistantSurface, queueLoaded, busy]);
   useEffect(() => { setSuggestionIndex(0); }, [composerText]);
   const terminalRun = useRef("");
   useEffect(() => {

@@ -60,61 +60,23 @@ it("shows successive assistant sends as independent bubbles before a run is read
 });
 
 
-it("keeps older uncertain sends collapsed even while a new run is active", () => {
+it("renders every chat send as a plain bubble, with no stuck section or resend control", () => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   act(() => root.render(<PromptQueue chat items={[
     { ...seed[0], receipt: "unknown" }, { ...seed[1], receipt: "failed" },
-  ]} paused busy canSteer={false} sendingIds={[]} onChange={vi.fn()} onPause={vi.fn()} onGuide={vi.fn()} onSend={vi.fn()} />));
-  // A receipt already recorded means the ambiguity is from an earlier send;
-  // it never pins over the composer again, run active or not.
-  expect(host.querySelector(".assistant-pending-messages[aria-label='已发送的消息']")).toBeNull();
-  const stuck = host.querySelector("details.assistant-pending-messages[data-stuck='true']") as HTMLDetailsElement;
-  expect(stuck).not.toBeNull();
-  expect(stuck.open).toBe(false);
-  expect(stuck.querySelector("summary")?.textContent).toContain("未发送的补充消息（2）");
-});
-
-it("keeps the current run's own in-flight sends visible without receipt text or resend controls", () => {
-  host = document.createElement("div"); document.body.append(host); root = createRoot(host);
-  act(() => root.render(<PromptQueue chat items={seed} paused={false} busy canSteer={false} sendingIds={[]} onChange={vi.fn()} onPause={vi.fn()} onGuide={vi.fn()} onSend={vi.fn()} />));
+  ]} paused busy={false} canSteer={false} sendingIds={[]} onChange={vi.fn()} onPause={vi.fn()} onGuide={vi.fn()} onSend={vi.fn()} />));
   expect([...host.querySelectorAll(".steering-user-message-bubble")].map(node => node.textContent)).toEqual(["first", "second"]);
+  expect(host.querySelector("details")).toBeNull();
+  expect(host.textContent).not.toContain("未发送的补充消息");
   expect(host.querySelector("button")).toBeNull();
   expect(host.querySelector("small")).toBeNull();
 });
 
-it("collapses unplaced sends behind one quiet line once nothing is running, with resend reachable", () => {
-  host = document.createElement("div"); document.body.append(host); root = createRoot(host);
-  const send = vi.fn();
-  act(() => root.render(<PromptQueue chat items={[
-    { ...seed[0], receipt: "unknown" }, { ...seed[1], receipt: "failed" },
-  ]} paused busy={false} canSteer={false} sendingIds={[]} onChange={vi.fn()} onPause={vi.fn()} onGuide={vi.fn()} onSend={send} />));
-  // Default collapsed: no bubble pinned over the composer.
-  const stuck = host.querySelector("details.assistant-pending-messages[data-stuck='true']") as HTMLDetailsElement;
-  expect(stuck).not.toBeNull();
-  expect(stuck.open).toBe(false);
-  expect(stuck.querySelector("summary")?.textContent).toContain("未发送的补充消息（2）");
-  // Expanding keeps the original texts as unknown receipts and a resend affordance.
-  act(() => { stuck.open = true; });
-  expect([...stuck.querySelectorAll(".steering-user-message-bubble")].map(node => node.textContent)).toEqual(["first", "second"]);
-  expect(stuck.querySelectorAll('[data-steering-status="unknown"]')).toHaveLength(2);
-  const retries = [...stuck.querySelectorAll(".assistant-message-retry")] as HTMLButtonElement[];
-  expect(retries.map(node => node.textContent)).toEqual(["重新发送", "重新发送"]);
-  act(() => retries[1]!.click());
-  expect(send).toHaveBeenCalledWith(expect.objectContaining({ id: "b", receipt: "failed" }));
-});
-
-it("keeps reconciled sends beside their original turn instead of the stuck section", () => {
+it("places a reconciled send beside its own turn", () => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   act(() => root.render(<PromptQueue chat items={[
-    { ...seed[0], receipt: "unknown", historyRunId: "run-9" }, { ...seed[1] },
+    { ...seed[0], receipt: "unknown", historyRunId: "run-9" },
   ]} paused busy={false} canSteer={false} sendingIds={[]} onChange={vi.fn()} onPause={vi.fn()} onGuide={vi.fn()} onSend={vi.fn()} />));
-  // The reconciled row portals beside its turn (fallback holder here); only the
-  // unreconciled one collapses. A closed <details> keeps children in the DOM,
-  // so assert ownership rather than absence.
-  const bubbles = [...host.querySelectorAll(".steering-user-message-bubble")].map(node => node.textContent);
-  expect(bubbles).toEqual(["first", "second"]);
-  const stuck = host.querySelector("details.assistant-pending-messages[data-stuck='true']") as HTMLDetailsElement;
-  expect(stuck.open).toBe(false);
-  expect(stuck.querySelector(".steering-user-message-bubble")?.textContent).toBe("second");
-  expect(stuck.querySelector("summary")?.textContent).toContain("未发送的补充消息（1）");
+  expect([...host.querySelectorAll(".steering-user-message-bubble")].map(node => node.textContent)).toEqual(["first"]);
+  expect(host.querySelector("details")).toBeNull();
 });

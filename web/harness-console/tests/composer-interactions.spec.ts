@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { composerTrigger, queueAttachments, queueMayDispatch, restorePromptQueue, settleAssistantFollowup, nextQueuedPrompt, nextSteeringPrompt, reconcilePromptHistory } from "../src/lib/composer-interactions";
+import { composerTrigger, queueAttachments, queueMayDispatch, releaseUncertainSends, restorePromptQueue, settleAssistantFollowup, nextQueuedPrompt, nextSteeringPrompt, reconcilePromptHistory } from "../src/lib/composer-interactions";
 import { composerOptions } from "../src/components/composer-assist";
 import { durationLabel } from "../src/components/activity-summary";
 
@@ -60,6 +60,22 @@ describe("assistant follow-up delivery races", () => {
     expect(nextQueuedPrompt([uncertain, fresh])).toBe(fresh);
     expect(uncertain.steerRunId).toBe("ended");
     expect(settleAssistantFollowup(uncertain, "accepted")).toBeNull();
+  });
+  it("turns an uncertain send into its own turn once no run is left to reconcile against", () => {
+    const uncertain = settleAssistantFollowup({ id: "m1", text: "帮我恢复下", attachments: [], steerRunId: "ended", intent: "steer" }, "unknown")!;
+    const [released] = releaseUncertainSends([uncertain]);
+    expect(released!.id).toBe("m1");
+    expect(released!.text).toBe("帮我恢复下");
+    expect(released!.receipt).toBeUndefined();
+    expect(released!.steerRunId).toBeUndefined();
+    // Now it is dispatched as a normal queued turn instead of waiting on a tap.
+    expect(nextQueuedPrompt([released!])).toBe(released);
+  });
+  it("leaves reconciled and already-clean rows untouched so placement stays stable", () => {
+    const placed = { ...settleAssistantFollowup({ id: "m2", text: "旧补充", attachments: [], steerRunId: "r" }, "failed")!, historyRunId: "run-9" };
+    const clean = { id: "m3", text: "普通", attachments: [] };
+    const input = [placed, clean];
+    expect(releaseUncertainSends(input)).toBe(input);
   });
 });
 

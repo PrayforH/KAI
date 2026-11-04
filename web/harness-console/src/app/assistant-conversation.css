@@ -724,25 +724,9 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .grok-
   }
 }
 /* History loads silently on reader gestures; there is no visible button.
-   Pending sends use the same bubble as sent messages. */
+   Pending sends use the same bubble as sent messages and go out on their own,
+   so there is no stuck section or resend control to place here. */
 .chat-stage[data-surface="assistant"] .assistant-pending-messages { display: grid; gap: 12px; }
-/* When nothing is running, unplaced sends collapse to one quiet line instead
-   of pinning bubbles over the composer; expanding keeps resend reachable. */
-.chat-stage[data-surface="assistant"] .assistant-pending-messages[data-stuck] { gap: 0; }
-.chat-stage[data-surface="assistant"] .assistant-pending-messages[data-stuck] summary {
-  align-self: center;
-  margin: 2px auto 0;
-  padding: 2px 8px;
-  border: 0;
-  background: transparent;
-  color: var(--codex-muted, #8f8f8f);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  list-style: none;
-}
-.chat-stage[data-surface="assistant"] .assistant-pending-messages[data-stuck] summary::-webkit-details-marker { display: none; }
-.chat-stage[data-surface="assistant"] .assistant-pending-messages[data-stuck] summary:hover { color: var(--codex-ink, #ededed); }
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .steering-user-message-bubble {
   padding: 10px 14px;
   border-radius: 18px;
@@ -751,8 +735,5 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
   font-size: inherit;
   line-height: 1.6;
 }
-.chat-stage[data-surface="assistant"] .assistant-message-receipt,
-.chat-stage[data-surface="assistant"] .assistant-message-retry { display: block; margin: 4px 0 0 auto; color: var(--codex-muted, #8f8f8f); font-size: 12px; }
-.chat-stage[data-surface="assistant"] .assistant-message-retry { border: 0; background: transparent; cursor: pointer; }
 
 .chat-stage[data-surface="assistant"] .assistant-message-tail-slot { flex-shrink: 0; width: 100%; padding-bottom: 12px; }

@@ -25,40 +25,11 @@ export function PromptQueue({ items, paused, busy, canSteer, sendingIds, onChang
     onChange(next);
   }
   if (!items.length) return null;
-  if (chat) {
-    const bubble = (item: QueuedPrompt) =>
-      <SteeringUserMessage chat text={item.text || `附件消息（${item.attachments.length} 个附件）`}
-        status={item.receipt === "unknown" || item.receipt === "failed" ? "unknown" : "pending"} />;
-    const row = (item: QueuedPrompt) =>
-      <PendingMessagePlacement key={item.id} runId={item.historyRunId}>{bubble(item)}</PendingMessagePlacement>;
-    const placed = items.filter(item => item.historyRunId);
-    const unplaced = items.filter(item => !item.historyRunId);
-    // Messages that reconcile into a durable turn keep living beside that turn
-    // (PendingMessagePlacement), never over the composer. Only the current
-    // run's own unconfirmed sends stay next to the composer; older uncertain
-    // ones (receipt already recorded) collapse behind one quiet line even
-    // while a new run is active, so they cannot crowd the input. Resend stays
-    // reachable on expansion.
-    const inFlight = busy ? unplaced.filter(item => !item.receipt) : [];
-    const collapsed = busy
-      ? unplaced.filter(item => item.receipt)
-      : unplaced;
-    const stuckRows = collapsed.map(item => <div key={item.id}>
-      <SteeringUserMessage chat text={item.text || `附件消息（${item.attachments.length} 个附件）`} status="unknown" />
-      {item.attachments.length > 0 && <small className="assistant-message-receipt">当前回复结束后发送附件</small>}
-      <button type="button" className="assistant-message-retry" disabled={sendingIds.length > 0} onClick={() => onSend(item)}>重新发送</button>
-    </div>);
-    return <>
-      {placed.map(row)}
-      {inFlight.length > 0 && <div className="assistant-pending-messages" aria-label="已发送的消息">
-        {inFlight.map(row)}
-      </div>}
-      {collapsed.length > 0 && <details className="assistant-pending-messages" data-stuck="true">
-        <summary>未发送的补充消息（{collapsed.length}）· 展开可重发</summary>
-        {stuckRows}
-      </details>}
-    </>;
-  }
+  if (chat) return <div className="assistant-pending-messages" aria-label="已发送的消息">
+    {items.map(item => <PendingMessagePlacement key={item.id} runId={item.historyRunId}>
+      <SteeringUserMessage chat text={item.text || `附件消息（${item.attachments.length} 个附件）`} status="pending" />
+    </PendingMessagePlacement>)}
+  </div>;
   const queuedCount = items.filter(item => !item.steerRunId).length;
   const pendingGuidance = items.filter(item => item.steerRunId);
   return <>{pendingGuidance.map(item => <SteeringUserMessage key={item.id} text={item.text} status="pending" />)}
