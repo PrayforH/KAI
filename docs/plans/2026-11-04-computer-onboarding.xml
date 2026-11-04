@@ -1,0 +1,56 @@
+<h2>11.17 主助理及其他 Bot 加载优化、编码协同本地电脑闭环（2026-11-04）</h2>
+<p>79 已部署：API/Worker startup-9d288d03、Web startup-41a53afb、Control bot-computer-9d288d03，均健康；schema0065 无迁移，Viewer 与 IM 服务未重建，远端组件 pin、本人本地电脑与云机磁盘保留。本次没有增加排队。代码基线 ff383602，本次代码至9d288d03；用户要求最终提交 develop，远端结果另行核实。</p>
+<p><b>加载优化。</b>主会话不再重播23个历史子 Run；历史先分页后读取本页结果，优先终态 snapshot，压缩后保留弱 ETag，刷新合并。所有 Bot 共用历史优化；Bot 聊天入口跳过职责执行历史扫描，防止后台主助理绑定覆盖当前 Bot。IM 在当前会话历史就绪后加载。电脑默认关闭，聊天就绪1秒后静默发现入口，不连接桌面；用户点击才挂载桌面，旧打开偏好不再自动重连。</p>
+<p><b>测量与真实验收。</b>同一主历史数据原API约1000–1673ms，新版冷样本636ms，随后148–207ms，条件请求61ms/304/零正文。其他 Bot 实际历史：天气78ms、编码协同157ms、休息50ms；这不是完整浏览器首屏或首token耗时。真实Chrome打开编码协同并看到本地结果，侧栏切到天气/休息均进入对应聊天；保留用户原窗口与草稿。完整首屏未用性能面板计时，未以健康检查代替实页。</p>
+<p><b>编码协同实际闭环。</b>仅该 Bot 通过配置API启用 personal_computer，原聊天和状态保留。旧职责会话也核对本人、同租户、活跃、无项目/外部托管线程及关联Bot的能力，不按名称写死。主会话来源投递只读 pwd/hostname → 真实 remote-computer 执行 → 返回 /home/kai/workspace 与主机名 xiaokai → 主会话持久收到 sent/received 回执与简短正文。第一次仍走一次性沙箱的验收暴露了旧会话兼容缺口，已修复并再次真实执行通过；不将第一次当通过。</p>
+<p><b>验证边界。</b>最新Assistant/API回归242项、Computer单元43项、相关前端43项通过，TypeScript、Pyright、Ruff通过。数据库授权全套首轮29过1失败；暂停旧职责无效声明投影问题已修复，对应旧职责/撤销7项重测全过。另有基线已存在的前端源码字符串守卫失败，未宣称全仓全套通过。未重新做本地桌面输入/接管全套测试；本次主链是只读本地命令与消息回传。报告位于 docs/results/2026-11-04-assistant-startup-79.md。</p>
+<h2>11.18 连接其他人的电脑：当前运维接入步骤与开发计划（2026-11-04）</h2>
+<p>现阶段支持管理员预登记的 Linux Remote Computer，不是输入任意 IP 即可连接的自助产品。已验证的物理机环境是 Ubuntu 24.04、已登录的 X11 桌面；Windows、macOS、Wayland 及休眠唤醒尚无同等验收结论。接入他人电脑须由机主明确授权，并先决定它归属哪个 KAI 账号；不能因为同网段或持有 SSH 密码就把它登记给任意用户。本节说明后续接入流程，本次没有接入其他人的真实电脑。</p>
+<p><b>账号与机器边界。</b>当前 ComputerRegistry 为每个 KAI 账号保留一条执行绑定，多个预登记目标可切换；每个目标声明同一账号的 computer_id、独立 volume_ref、machine_id 和固定组件摘要。不同账号使用各自绑定，不复制现有用户 ID、私钥或授权配置。当前没有机主邀请、跨账号共享授权、按 Bot 固定不同机器或一台物理机跨账号同时工作的完整产品能力；这些属于后续开发。</p>
+<table><thead><tr><th>接入前收集</th><th>要求</th></tr></thead><tbody>
+<tr><td>KAI 归属</td><td>tenant_id、user_id、该账号现有或新建的 computer_id；用户须在获准的 assistant_computer_owners 中</td></tr>
+<tr><td>物理机身份</td><td>机主确认、机器名称、操作系统、machine-id、SSH host key 指纹；每台独立 target_id 和 volume_ref</td></tr>
+<tr><td>桌面身份</td><td>实际桌面用户名、UID/GID、DISPLAY、XAUTHORITY、用户 runtime 目录；不能照抄 xiaokai、1000、:0</td></tr>
+<tr><td>网络路径</td><td>电脑到 79 的可达地址与端口、必要 VPN；直连不可达时采用该电脑主动发起的反向 SSH Unix socket</td></tr>
+<tr><td>执行范围</td><td>命令任务使用独立 UID 28000、HOME=/home/kai；仓库目录、桌面操作、CLI 登录分别确认，不默认获得机主全部 HOME 或凭据</td></tr>
+</tbody></table>
+<ol>
+<li seq="auto">由机主或授权管理员检查系统、已登录桌面、SSH 与出站网络，确认 UID/GID 28000 没有冲突。记录现有服务和配置备份；不为接入自动升级操作系统、改 VPN 或重启工作电脑。没有可用桌面时先明确仅命令可用，不能把隧道连通说成桌面可用。</li>
+<li seq="auto">从同一已验收版本准备远端组件：remote_gate.py、remote_display_gate.py、ssh_gate.py、supervisor.py；启用原生控件时再包含 native_desktop.py 和已校验的官方 CLI。为新机器单独生成控制、桌面、反向通道三类密钥并固定 host key。私钥仅放受控部署目录，不写飞书、仓库或 Bot 提示词。</li>
+<li seq="auto">以 root 安装固定组件到 /opt/kai-computer，保持 root 所有且不可被普通用户改写。创建低权限 kai-task（UID/GID 28000，/home/kai 为 700）、独立控制账号和本机反向连接账号。参考 deploy/remote-computer/enroll-linux-example.sh，但必须先参数化机主用户名、UID、DISPLAY、XAUTHORITY、79 地址、服务名和 socket 路径；现有脚本是试点样例，不能直接复制到别人电脑执行。</li>
+<li seq="auto">写入 /etc/kai-computer-remote.json，记录 computer_id、machine_id、image、desktop_uid、display_socket；启用原生桌面时还需 native_desktop、display、xauthority、native_binary、native_binary_sha256。image 按 remote_gate.configuration() 的固定顺序对实际组件字节计算摘要；不是操作系统镜像摘要。配置和组件均不得允许组或其他用户写入。原生 CLI 不可用时先关闭该能力，不能用配置声称安装成功。</li>
+<li seq="auto">控制公钥绑定 forced command：sudo -n /usr/bin/python3 -I /opt/kai-computer/remote_gate.py；sudoers 只允许该固定入口并用 visudo -cf 检查。桌面公钥绑定 /usr/bin/python3 -I /opt/kai-computer/remote_display_gate.py，运行于真实桌面用户。保留原 authorized_keys 其他条目，不覆盖机主原登录方式，不关闭 OpenSSH StrictModes。</li>
+<li seq="auto">为该桌面启动仅 Unix socket 的 RFB 服务；不开放 5900 类公网端口。无 79 到该电脑直连时，用专属连接账号建立 ssh -NT 反向通道，固定独立远端路径 /data/kai-remote/&lt;target_id&gt;/ssh.sock，并以 systemd 保活。79 上该账号只允许所需的远程 Unix 转发，禁止普通命令、TTY 和 TCP 转发。目录与 socket 权限仅授予对应 control/viewer；每台电脑用独立目录和密钥，避免互相覆盖。</li>
+<li seq="auto">管理员在 79 的私有配置登记同一目标：API/Worker 的 HARNESS_ASSISTANT_COMPUTER_OWNERS、HARNESS_ASSISTANT_COMPUTER_REMOTE_IMAGE、HARNESS_ASSISTANT_COMPUTER_TARGETS；Control 的 HARNESS_COMPUTER_CONTROL_REMOTE_COMPUTERS；Viewer 的 KAI_VIEWER_CONFIG 指向的 JSON 文件中的 targets。各名称以对应 Settings 类为准，模板字段见下表。Control 与 Viewer 挂载对应密钥、known_hosts 和私有 socket。浏览器与模型只接收 opaque target_id，不接收 SSH 地址、私钥或 host 路径。</li>
+<li seq="auto">已有 KAI 账号保留原 computer_id 和云机目标；新账号先经 ComputerRegistry.adopt 注册。scripts/adopt_owner_computer.py 支持 adopt/switch 及 --provider remote-computer，由管理员在安全运行环境调用，数据库凭据不放命令示例或日志。实际切换用页面“打开电脑 → 查看电脑 → 目标名称”仅切画面；空闲时通过“更多电脑操作 → 供助理使用”改变执行绑定。活跃 Run 或人工控制期间拒绝更改执行机。</li>
+<li seq="auto">逐层验收：从真实 Control 容器调用 identity，核对 machine_id/computer_id/image；真实 Viewer 建立 RFB；网页观察桌面；授权 Bot 只读执行 pwd 与 hostname；使用合成窗口验证原生控件；人工接管后确认助理输入被拒绝，交还后恢复；最后核对结果回到来源主会话。分别记录每层结果，不能以 healthy、SSH 通或截图代替全部通过。</li>
+<li seq="auto">撤销时先停接新任务并等待当前动作安全结束，移除 Bot 的电脑授权、目标与连接授权，停止本次新增的隧道/桌面服务，撤销该机器专属公钥。保留机主文件、浏览器、原 SSH 账号、原业务服务及云机磁盘。只有确认没有使用者后才清理本次安装物；连接丢失不触发关机、重装或删除文件。</li>
+</ol>
+<table><thead><tr><th>私有声明</th><th>必需字段</th></tr></thead><tbody>
+<tr><td>ComputerTarget</td><td>target_id、label、tenant_id、user_id、computer_id、provider=remote-computer、image、volume_ref；同账号多个目标的 computer_id 相同</td></tr>
+<tr><td>RemoteComputerSpec</td><td>volume_ref、computer_id、machine_id、guest_base_digest、control、viewer、native_desktop；摘要与远端 image 一致</td></tr>
+<tr><td>control/viewer SSH endpoint</td><td>host、port、user、identity、known_hosts、host_key_alias；需要反向通道时额外提供 proxy_socket，主机密钥必须固定</td></tr>
+<tr><td>Viewer targets</td><td>target_id 映射到对应 viewer endpoint；仍需通过当前账号的 targets API 进行归属校验</td></tr>
+<tr><td>Bot 能力</td><td>仅获准 Bot 的 config.execution_environment=personal_computer，并满足既有 local_tool_permissions；当前跟随该账号选定执行机，不是按 Bot 固定机器</td></tr>
+</tbody></table>
+<p><b>故障定位。</b>按钮没有目标先查账号归属和 target 声明；目标离线查 VPN、systemd 隧道和私有 socket；Permission denied 先比对当前公钥与已登记指纹、文件权限及 StrictModes，不关闭校验绕过；桌面黑屏查真实登录会话、DISPLAY/XAUTHORITY 和 display socket；Bot 仍报 /workspace 时查 execution_environment 与原会话归属；CLI 不可用时核对执行用户、PATH、项目授权和登录方式。修改 host key 或密钥后需完成对应受控登记，不能只改一端。</p>
+<table><thead><tr><th>阶段</th><th>交付与代码边界</th><th>完成标准</th></tr></thead><tbody>
+<tr><td>C0 当前演示</td><td>主助理 → 编码协同 → 当前本地电脑 → 简短结果回主会话；共用租约，不增加排队</td><td>真实本地主机结果、网页回执、聊天先于电脑加载；不触碰业务项目</td></tr>
+<tr><td>C1 参数化运维接入，预计 1–2 个工程日</td><td>把试点安装脚本改为有参数、预检、幂等、版本校验、回滚记录和卸载清单的 Linux 安装器；默认生成本机密钥，私钥不离机</td><td>第二台合成 Linux 电脑以不同用户名/UID 完整接入；重复运行不覆盖原 key；重启后自动恢复，撤销后立即拒绝</td></tr>
+<tr><td>C2 自助配对，预计 2–3 个工程日，依赖 C1</td><td>设置页添加电脑、一次性短期配对码、机主确认、可信设备登记、心跳和版本状态；共享凭据不进对话</td><td>配对码过期/重放/串账号拒绝；断线静默重连；无需运维手改每台机器配置</td></tr>
+<tr><td>C3 指定电脑与共享授权，预计 2–3 个工程日，依赖 C2</td><td>在现有 Registry、生命周期和授权模型内增加 Bot 的目标引用、机主邀请、租期、授权范围与撤销；先保持忙时拒绝，不引入队列</td><td>两个 Bot 能各选目标；未授权账号不能看到/使用他人电脑；旧 epoch 与在途动作在撤销后受控终止；不误关机</td></tr>
+<tr><td>C4 跨系统与网络恢复，单独估期</td><td>分别做 macOS、Windows、Wayland 适配和系统权限引导；休眠唤醒、VPN变化、断网恢复独立设计</td><td>每系统有独立安装、控制、人工接管和卸载证据后才列为支持平台</td></tr>
+</tbody></table>
+<p>以上工期是实施预估，不是已完成状态或自动交付承诺。连接器与协议由同一维护者负责，前端配对和集成验收可按接口交接；多个 agent 协同时按路径拆分变更，发布前统一核对基线、79 实际版本和未提交修改，不覆盖他人工作树。</p>
+<h2>11.19 编码协同复用本地 ACP：已核实入口与后续实现（2026-11-04）</h2>
+<p>用户确认 ACP 安装在 192.168.32.45。已只读检查 /home/xiaokai/acp-test，并实际完成两个适配器的 initialize 握手：claude-agent-acp 0.100.0、codex-acp 2.5.0，协议版本 1。此次没有创建 ACP 会话、发送模型任务或写业务文件。原 README 记载此前问答与写文件测试成功，但这些历史记录不替代本次 KAI 端到端验收。</p>
+<p>现有调用入口为 <code>node /home/xiaokai/acp-test/acp-smoke.mjs &lt;claude|codex&gt; [prompt] [cwd]</code>。它是本机测试客户端，并非已接入 KAI 的工具。KAI 当前命令任务使用 kai-task / UID 28000、HOME=/home/kai；适配器和既有 Claude/Codex 登录在 xiaokai 身份下，不能直接假设继承。读取整个机主 HOME、复制 ~/.codex 或 ~/.claude 凭据、在通用命令工具中提权都不作为接入方案。</p>
+<p><b>最小正式接法。</b>保留现有两个适配器，增加电脑侧固定入口的 ACP broker，由明确授权的桌面用户运行。KAI 通过既有 Remote Computer 私有通道请求该 broker；请求只允许固定 agent 类型、已授权项目目录、会话标识和消息，不接受任意可执行文件、shell 或环境变量。底层运行身份、CLI 登录和计费仍属于机主已配置的工具；平台仅保存引用和能力状态。</p>
+<p>ACP 标准已经定义初始化、会话、流式更新、权限请求和取消；实现直接映射这些协议能力，避免用自由文本解析 CLI 输出。参考 <a href="https://agentclientprotocol.com/protocol/v1/overview">ACP 协议概览</a>、<a href="https://github.com/agentclientprotocol/claude-agent-acp">Claude 适配器</a>和<a href="https://github.com/agentclientprotocol/codex-acp">Codex 适配器</a>。当前 acp-smoke 示例会选择 allow_always，只用于既有本地联调，不能原样作为正式权限策略。</p>
+<table><thead><tr><th>工作包</th><th>内容</th><th>验收</th></tr></thead><tbody>
+<tr><td>A1 固定 broker，预计 1–2 个工程日</td><td>复用既有适配器和 Node SDK；固定二进制/版本、桌面用户和目录授权；会话 start/send/read/cancel、超时与进程回收；先不做排队或自动双 agent 并发</td><td>两个 adapter 的握手、登录状态、合成目录只读问答；未授权目录、任意程序、失效租约全部拒绝</td></tr>
+<tr><td>A2 Bot 工具与消息，预计 1 个工程日，依赖 A1</td><td>编码协同使用通用 ACP 会话工具；session/update 映射为简短进展、工具事件与最终结果；保存 computer/agent/ACP session 到 KAI run 的关联，支持恢复和幂等重试</td><td>主助理派发 → 编码协同调用 Codex 或 Claude → 主会话收到多条适度进展与结果；断线不误报完成、不重复任务</td></tr>
+<tr><td>A3 权限闭环，预计 1–2 个工程日，依赖 A2</td><td>session/request_permission 映射到原有确认/授权卡，在主 Bot 和子 Bot 同步显示；用户任一处回答只消费一次；拒绝、超时、取消回复协议结果，不默认 allow_always</td><td>先读合成仓库，再仅经授权修改合成文件并运行测试；拒绝无写入；中断、失联、撤销授权后无残留失控进程</td></tr>
+<tr><td>A4 演示与交付，预计半个工程日</td><td>一个合成仓库、一台电脑、一个编码任务；Claude 或 Codex 由明确选择或能力匹配决定；结果附测试/差异摘要，回主会话</td><td>真实日志、消息链、文件差异与测试结果齐全；单一 agent 串行完成，保留人工接管；不改真实业务仓库</td></tr>
+</tbody></table>
+<p>ACP 接入列为后续开发。本次先完成编码协同到本地电脑的基础链路；不能把安装适配器、initialize 成功或 KAI 能跑命令写成“编码协同已能直接控制 Claude Code/Codex”。</p>
