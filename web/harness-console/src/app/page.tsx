@@ -1012,7 +1012,7 @@ function AuthenticatedHome() {
               computerControl={assistantEntry ? (
                 <>
                   {computerOpen && <DesktopOccupancyChip />}
-                  <AssistantComputerLink open={computerOpen} onToggle={() => showComputer(!computerOpen)} />
+                  <AssistantComputerLink open={computerOpen} ready={readyConversation === threadId} onToggle={() => showComputer(!computerOpen)} />
                 </>
               ) : undefined}
               taskRailOpen={taskRailOpen}

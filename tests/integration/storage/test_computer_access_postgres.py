@@ -7,7 +7,8 @@ import pytest
 from sqlalchemy import Table, delete, text, update
 
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
-from harness.assistant.storage import ObjectiveRow
+from harness.assistant.models import Specialist
+from harness.assistant.storage import ObjectiveRow, SpecialistRow
 from harness.computer.access import CanonicalComputerAccess
 from harness.computer.models import ComputerLeaseLostError
 from harness.computer.registry import ComputerRegistry
@@ -141,6 +142,70 @@ async def test_retained_session_history_remains_owned(database: DatabaseFixture)
         row.payload = binding.model_dump(mode="json")
     assert await access.is_personal_session(session)
     await access.authorize(computer, token, "exec")
+
+
+async def use_specialist_binding(database: DatabaseFixture, session: Session, *, enabled=True):
+    _, sessions = database
+    bot = Specialist(
+        specialistId="specialist_fixture", tenantId=session.tenant_id, userId=session.user_id,
+        name="任意名称", slug="coding", description="", agentName=session.agent_name,
+        agentVersion=session.agent_version, status="ready", createdAt=NOW, updatedAt=NOW,
+        config={"execution_environment": "personal_computer" if enabled else "sandbox"},
+    )
+    async with sessions.begin() as db:
+        row = await db.get(AguiThreadBindingRow,
+                           (session.tenant_id, session.user_id, PERSONAL_ASSISTANT_THREAD))
+        binding = AguiThreadBinding.model_validate(row.payload).model_copy(
+            update={"thread_id": "assistant_" + bot.specialist_id}
+        )
+        row.thread_id = binding.thread_id
+        row.payload = binding.model_dump(mode="json")
+        db.add(SpecialistRow(specialist_id=bot.specialist_id, tenant_id=bot.tenant_id,
+            user_id=bot.user_id, slug=bot.slug, status=bot.status.value, revision=bot.revision,
+            created_at=NOW, updated_at=NOW, payload=bot.model_dump(mode="json", by_alias=True)))
+    return bot
+
+
+@pytest.mark.asyncio
+async def test_only_explicitly_enabled_bot_uses_owner_computer_and_keeps_execution_fences(database):
+    access, _, computer, token, _, _, session, _ = await seed(database)
+    await use_specialist_binding(database, session)
+    assert await access.is_personal_session(session)
+    await access.authorize(computer, token, "exec")
+    await access.authorize(computer, token, "renew")
+    _, sessions = database
+    async with sessions.begin() as db:
+        row = await db.get(SpecialistRow, "specialist_fixture")
+        row.payload = {**row.payload, "config": {"execution_environment": "sandbox"}}
+    assert not await access.is_personal_session(session)
+    with pytest.raises(ComputerLeaseLostError):
+        await access.authorize(computer, token, "exec")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["paused", "archived", "other-owner", "other-tenant", "project"])
+async def test_specialist_computer_access_rechecks_owner_lifecycle_and_task_isolation(
+    database, change,
+):
+    access, _, computer, token, _, _, session, _ = await seed(database)
+    await use_specialist_binding(database, session)
+    _, sessions = database
+    async with sessions.begin() as db:
+        row = await db.get(SpecialistRow, "specialist_fixture")
+        if change in {"paused", "archived"}:
+            row.status = change
+            row.payload = {**row.payload, "status": change}
+        elif change == "other-owner":
+            row.user_id = "someone-else"
+        elif change == "other-tenant":
+            row.tenant_id = "another-tenant"
+        else:
+            binding = await db.get(AguiThreadBindingRow,
+                (session.tenant_id, session.user_id, "assistant_specialist_fixture"))
+            binding.project_id = "ordinary-project"
+    assert not await access.is_personal_session(session)
+    with pytest.raises(ComputerLeaseLostError):
+        await access.authorize(computer, token, "exec")
 
 
 @pytest.mark.parametrize(

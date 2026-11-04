@@ -15,7 +15,7 @@ vi.mock("../src/lib/assistant-client", () => ({ assistantRequest: async (path: s
       status: "sent", createdAt: "2026-11-03T00:00:00Z" })) : [] }));
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 let cleanup: (() => Promise<void>) | undefined;
-afterEach(async () => { await cleanup?.(); cleanup = undefined; vi.unstubAllGlobals(); });
+afterEach(async () => { await cleanup?.(); cleanup = undefined; vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 it("opening old main chat does not replay 23 child Runs or force another history import", async () => {
   const host = document.createElement("div"); const root = createRoot(host); const changed = vi.fn();
@@ -37,5 +37,23 @@ it("closed computer makes no status request and does not mount its desktop", asy
   expect(host.querySelector('[aria-label="打开电脑"]')).not.toBeNull();
   await act(async () => root.render(<AssistantComputerPane open onClose={() => {}}>chat</AssistantComputerPane>));
   expect(desktop).toHaveBeenCalled();
+});
+
+it("quietly discovers the computer only after chat readiness, without opening a desktop", async () => {
+  vi.useFakeTimers(); desktop.mockClear();
+  const fetcher = vi.fn(async () => Response.json({desktop_url: "https://console.test/assistant/computer"}));
+  vi.stubGlobal("fetch", fetcher);
+  const host = document.createElement("div"); const root = createRoot(host);
+  cleanup = async () => { await act(async () => root.unmount()); };
+  await act(async () => root.render(<AssistantComputerLink open={false} ready={false} onToggle={() => {}} />));
+  await act(async () => vi.advanceTimersByTime(2000));
+  expect(fetcher).not.toHaveBeenCalled();
+  await act(async () => root.render(<AssistantComputerLink open={false} ready onToggle={() => {}} />));
+  await act(async () => vi.advanceTimersByTime(999));
+  expect(fetcher).not.toHaveBeenCalled();
+  await act(async () => vi.advanceTimersByTime(1));
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(fetcher.mock.calls[0][0]).toBe("/api/computer/status");
+  expect(desktop).not.toHaveBeenCalled();
 });
 

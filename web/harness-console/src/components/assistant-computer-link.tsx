@@ -1,14 +1,35 @@
 "use client";
 
-export function AssistantComputerLink({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+import { useEffect, useRef } from "react";
+
+export function AssistantComputerLink({ open, onToggle, ready = false }: {
+  open: boolean; onToggle: () => void; ready?: boolean;
+}) {
+  const endpoint = useRef<string | null>(null);
+  useEffect(() => {
+    if (!ready) return;
+    const controller = new AbortController();
+    // Low-cost capability discovery happens after the conversation is usable.
+    // It does not mount noVNC, open a socket, or acquire desktop control.
+    const timer = setTimeout(() => {
+      void fetch("/api/computer/status", { cache: "no-store", signal: controller.signal })
+        .then(async response => {
+          if (response.ok) endpoint.current = (await response.json() as {desktop_url?: string}).desktop_url ?? null;
+        }).catch(() => undefined);
+    }, 1000);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [ready]);
   async function toggle() {
     if (window.location.protocol === "https:") { onToggle(); return; }
     // Resolve a secure viewer origin only after the user opens the computer.
     try {
-      const response = await fetch("/api/computer/status", { cache: "no-store" });
-      if (!response.ok) return;
-      const status = await response.json() as { desktop_url?: string };
-      const url = new URL(status.desktop_url ?? "/assistant/computer", window.location.href);
+      let href = endpoint.current;
+      if (!href) {
+        const response = await fetch("/api/computer/status", { cache: "no-store" });
+        if (!response.ok) return;
+        href = (await response.json() as {desktop_url?: string}).desktop_url ?? null;
+      }
+      const url = new URL(href ?? "/assistant/computer", window.location.href);
       if (url.hostname !== window.location.hostname || url.protocol !== "https:") return;
       url.pathname = "/assistant"; url.search = "?computer=open";
       window.location.assign(url.href);

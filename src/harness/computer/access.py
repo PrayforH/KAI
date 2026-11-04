@@ -9,10 +9,16 @@ already owns. Nothing else opens for ordinary task sessions.
 from collections.abc import Mapping
 from typing import Any, Protocol
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, cast, func, or_, select
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
+from sqlalchemy.sql.elements import ColumnElement
 
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
-from harness.assistant.storage import ObjectiveRow
+from harness.assistant.models import Specialist
+from harness.assistant.permissions import require_local_tools
+from harness.assistant.storage import ObjectiveRow, SpecialistRow
 from harness.computer.models import (
     AssistantComputer,
     ComputerLease,
@@ -20,6 +26,7 @@ from harness.computer.models import (
     LeasePurpose,
 )
 from harness.computer.storage import ComputerLeaseRow
+from harness.core.errors import ConflictError
 from harness.core.models import AguiThreadBinding, Run, Session
 from harness.storage.database import SessionFactory
 from harness.storage.models import (
@@ -42,12 +49,16 @@ def _denied() -> ComputerLeaseLostError:
     return ComputerLeaseLostError("Computer account, conversation or execution access was lost")
 
 
-def _bound(session: Session, row: AguiThreadBindingRow) -> bool:
+def _bound(
+    session: Session,
+    row: AguiThreadBindingRow,
+    thread_id: str = PERSONAL_ASSISTANT_THREAD,
+) -> bool:
     binding = AguiThreadBinding.model_validate(row.payload)
     return (
         binding.tenant_id == row.tenant_id == session.tenant_id
         and binding.user_id == row.user_id == session.user_id
-        and binding.thread_id == row.thread_id == PERSONAL_ASSISTANT_THREAD
+        and binding.thread_id == row.thread_id == thread_id
         and binding.session_id == row.session_id
         and session.session_id in binding.session_ids
         and binding.project_id is None
@@ -60,6 +71,68 @@ def _bound(session: Session, row: AguiThreadBindingRow) -> bool:
 class CanonicalComputerAccess:
     def __init__(self, sessions: SessionFactory, owners: Mapping[str, frozenset[str]]) -> None:
         self.sessions, self.owners = sessions, owners
+
+    @staticmethod
+    def _session_binding(session_id: str | InstrumentedAttribute[str]) -> ColumnElement[bool]:
+        return or_(
+            AguiThreadBindingRow.session_id == session_id,
+            cast(AguiThreadBindingRow.payload["previous_session_ids"], JSONB).op("?")(session_id),
+        )
+
+    async def _specialist_bound(
+        self,
+        db: AsyncSession,
+        session: Session,
+        binding: AguiThreadBindingRow,
+    ) -> bool:
+        if not binding.thread_id.startswith("assistant_specialist_") or not _bound(
+            session, binding, binding.thread_id
+        ):
+            return False
+        row = await db.get(SpecialistRow, binding.thread_id.removeprefix("assistant_"))
+        if row is None or row.tenant_id != session.tenant_id or row.user_id != session.user_id:
+            return False
+        bot = Specialist.model_validate(row.payload)
+        if (
+            bot.specialist_id != row.specialist_id
+            or bot.tenant_id != row.tenant_id
+            or bot.user_id != row.user_id
+            or bot.status.value != row.status
+            or row.status in {"paused", "archived"}
+            or bot.deleted_at is not None
+            or bot.config.get("execution_environment") != "personal_computer"
+            or bot.config.get("conversation_thread_id", binding.thread_id) != binding.thread_id
+        ):
+            return False
+        try:
+            require_local_tools(bot.config)
+        except ConflictError:
+            return False
+        return True
+
+    async def _specialist_session(self, db: AsyncSession, session: Session) -> bool:
+        rows = list(
+            await db.scalars(
+                select(AguiThreadBindingRow)
+                .where(
+                    AguiThreadBindingRow.tenant_id == session.tenant_id,
+                    AguiThreadBindingRow.user_id == session.user_id,
+                    AguiThreadBindingRow.thread_id.startswith("assistant_specialist_"),
+                    self._session_binding(session.session_id),
+                )
+                .limit(2)
+            )
+        )
+        if len(rows) != 1 or not await self._specialist_bound(db, session, rows[0]):
+            return False
+        stored = await db.get(SessionRow, (session.tenant_id, session.session_id))
+        if (
+            stored is None
+            or stored.user_id != session.user_id
+            or Session.model_validate(stored.payload) != session
+        ):
+            raise _denied()
+        return True
 
     async def _delegated_objective_active(
         self, session: Session, binding: AguiThreadBindingRow | None
@@ -104,10 +177,10 @@ class CanonicalComputerAccess:
                 (session.tenant_id, session.user_id, PERSONAL_ASSISTANT_THREAD),
             )
             if binding is None:
-                return False
+                return await self._specialist_session(db, session)
             record = AguiThreadBinding.model_validate(binding.payload)
             if session.session_id not in record.session_ids:
-                return False
+                return await self._specialist_session(db, session)
             if record.thread_id != PERSONAL_ASSISTANT_THREAD:
                 # An objective thread of this owner with a live objective
                 # routes to the computer too; anything else never does.
@@ -167,9 +240,7 @@ class CanonicalComputerAccess:
             else {"provisioning", "running"}
         )
         async with self.sessions() as db:
-            if await self._delegated_chain(
-                db, computer, lease, operation, allowed
-            ):
+            if await self._delegated_chain(db, computer, lease, operation, allowed):
                 return
             rows = (
                 await db.execute(
@@ -209,7 +280,11 @@ class CanonicalComputerAccess:
                         and_(
                             AguiThreadBindingRow.tenant_id == SessionRow.tenant_id,
                             AguiThreadBindingRow.user_id == SessionRow.user_id,
-                            AguiThreadBindingRow.thread_id == PERSONAL_ASSISTANT_THREAD,
+                            or_(
+                                AguiThreadBindingRow.thread_id == PERSONAL_ASSISTANT_THREAD,
+                                AguiThreadBindingRow.thread_id.startswith("assistant_specialist_"),
+                            ),
+                            self._session_binding(SessionRow.session_id),
                         ),
                     )
                     .join(ComputerLeaseRow, ComputerLeaseRow.lease_id == lease.lease_id)
@@ -238,7 +313,7 @@ class CanonicalComputerAccess:
             session = Session.model_validate(session_row.payload)
             run = Run.model_validate(run_row.payload)
             if (
-                not _bound(session, binding)
+                not (_bound(session, binding) or await self._specialist_bound(db, session, binding))
                 or session.session_id != session_row.session_id
                 or session.tenant_id != computer.tenant_id
                 or session.user_id != computer.user_id
