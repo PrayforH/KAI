@@ -428,7 +428,19 @@ class ModelConfigurationService:
             (item for item in record.catalog.model_routes if item.route_id == route_id), None
         )
         if route is None or not route.enabled:
-            return None
+            # A saved agent or thread may still name a route the platform has
+            # since retired (or one this deployment never had). Degrade to the
+            # default chat route instead of failing the whole run.
+            fallback_id = "deepseek-flash"
+            fallback = next(
+                (item for item in record.catalog.model_routes
+                 if item.route_id == fallback_id and item.enabled),
+                None,
+            )
+            if fallback is None:
+                return None
+            route = fallback
+            route_id = fallback.route_id
         if required_api_format is not None and route.api_format != required_api_format:
             return None
         if route.base_url is None or route.model_type not in {"chat", "vision"}:
@@ -1625,6 +1637,34 @@ class ModelConfigurationService:
                 )
                 changed = True
             imported_routes.append(route)
+        # A catalog created before this deployment had route settings can be
+        # empty; seed the deployment's own routes so runs can resolve them.
+        known = {item.route_id for item in imported_routes}
+        for route_id, server in self._server_routes.items():
+            if route_id in known:
+                continue
+            if route_id not in stored:
+                await self._store_secret(
+                    tenant_id,
+                    _MODEL_IMPORT_ACTOR,
+                    route_id,
+                    server.credential,
+                )
+                stored.add(route_id)
+            imported_routes.append(
+                ModelRouteCapability(
+                    routeId=route_id,
+                    label=route_id,
+                    provider=server.provider,
+                    models=(server.model,),
+                    capabilities=tuple(sorted(server.capabilities)),
+                    modelType=self._server_model_type(server),
+                    baseUrl=self._server_direct_base_url(server),
+                    apiFormat="anthropic_compatible",
+                    authScheme=server.resolved_auth_scheme,
+                )
+            )
+            changed = True
         if not changed:
             return record
         try:

@@ -38,7 +38,9 @@ export function AssistantConversationTail({ children, threadId }: { children: Re
  *  收据按 sourceThreadId 归属，换到别的助理会话不会串台。 */
 function AssistantMentionRows({ threadId }: { threadId: string }) {
   const notices = useHandoverNotices();
-  const owned = liveMentionsForThread(notices, threadId);
+  // Only the newest send: the same receipt can arrive twice (delivery plus a
+  // retry, or seed + live), and a stack of identical lines is pure noise.
+  const owned = liveMentionsForThread(notices, threadId).slice(-1);
   if (!owned.length) return null;
   return <div className="assistant-mention-rows" aria-label="已发送给助理的消息">
     {owned.map(receipt => <div className="assistant-mention-row" key={receipt.handoverId}>

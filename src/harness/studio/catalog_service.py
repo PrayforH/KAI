@@ -33,7 +33,6 @@ from harness.studio.repositories import AgentDraftRepository
 CatalogResourceType = Literal["modelRoute", "mcp", "policy", "executionProfile", "skill"]
 _RETIRED_PLATFORM_MODEL_ROUTES = frozenset({
     "anthropic-official",
-    "new-api-default",
     # 官方已下线：V4/V4.1、MiniMax M3、GLM。已有库里的旧路由同样清掉。
     "deepseek-v4-flash",
     "deepseek-v4-pro",

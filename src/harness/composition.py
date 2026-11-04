@@ -306,21 +306,19 @@ def _deployment_model_routes(settings: Settings) -> tuple[CcSwitchClaudeConfig, 
             )
         )
 
-    for route_id, model in (
-        ("deepseek-v4-flash", settings.new_api_flash_model),
-        ("deepseek-v4-pro", settings.new_api_pro_model),
-    ):
-        add(
-            route_id,
-            base_url=settings.new_api_base_url,
-            model=model,
-            credential=settings.new_api_key,
-            auth_scheme=settings.new_api_auth_scheme,
-            compatibility=settings.new_api_compatibility,
-            capabilities=settings.new_api_capabilities,
-        )
+    # Official route ids. V4/V4.1 and the pro variant are retired, so the
+    # deployment seeds exactly the routes it still serves.
     add(
-        "minimax-m3",
+        "deepseek-flash",
+        base_url=settings.new_api_base_url,
+        model=settings.new_api_flash_model or settings.new_api_model,
+        credential=settings.new_api_key,
+        auth_scheme=settings.new_api_auth_scheme,
+        compatibility=settings.new_api_compatibility,
+        capabilities=settings.new_api_capabilities,
+    )
+    add(
+        "minimax-m3-1-flash",
         base_url=settings.minimax_m3_base_url,
         model=settings.minimax_m3_model,
         credential=settings.minimax_m3_api_key,
