@@ -57,3 +57,20 @@
   agent-thread-config 2、assistant-activity-terminal、assistant-dup-channels、
   assistant-message-controls、assistant-task-routing 3、bot-rail-paused-badge 3），
   本片零新增失败。
+
+## 发布 79（2026-11-04，web 单滚，rc 线）
+
+用户要求直接单滚 rc web。镜像 `kai/superagent-web:20261104-7ba2e5d4`（干净两段构建自本分支
+`7ba2e5d4`）；发布目录 `/data/kai-superagent-20261104-7ba2e5d4`。
+
+闸门：CAS 比对 live compose == 7ffd833c 发布快照（无并发发布）；切换前后活跃 Run/职责执行均 0
+（revision 0065）；schema **0065 无迁移**（web-only）；脚本内 assert api/worker/feishu 镜像逐项
+不变（`20261103-4e559c28` / `20261102-4aaedddf`，均未重启）。
+
+判别式指纹：`assistant-history-earlier` 类名在新镜像全部 chunk 中 **0 命中**（助手按钮已消失；
+残留的「查看更早的消息」文字只在 studio 测试面板 chunk，非助手面）；「未发送的补充消息」新镜像
+1 chunk、旧镜像 0。`http3501=200`、`http3543=200`、`healthz8080=200`。
+
+**已知回退（用户确认接受）**：rc web 不含 managed 线 7ffd833c 的「管理职责」UI（rail 入口、
+设置页第二入口、状态/重试、已结束折叠、maxNewTasks），随本滚暂时从 79 下线，待两线合并后回归。
+**实页未点**：本次仅只读核对镜像/chunk/HTTP；交互效果待用户刷新页面自然核对。
