@@ -15,3 +15,9 @@
 真实Chrome进入编码协同，原请求保留，点击一次“重试回复”。新Run run_8927f93ef1984b07a2dbdc40b2ce0b4c 已实际进入remote-computer和模型/工具执行，越过原先的目录校验失败点；最终执行及交付情况续记下文，不以running当作任务全部完成。
 
 最终原请求已成功：Run run_8927f93ef1984b07a2dbdc40b2ce0b4c为succeeded；真实computer_acp(agent=claude)返回协议比较初稿，Bot生成outputs/acp-protocol-comparison.html并发布artifact_4668002e66de413b8e531a0d041e8f99。飞书文件投递工具最终回执status=sent、errorCode=null、messageId存在；不是仅凭Bot自述。Chrome实页已看到完成回复和“ACP-协议对比说明.html”的预览/下载附件入口。飞书11.21修复说明revision128已读回核对。
+
+附件展示同步收敛（01f1ef28）：对照本地Grok Bot现有报告，保留内容预览及附件入口，去除KAI额外生成的“文件/成果发布/飞书投递”大汇总卡。仅对存在附件的主/子助理summary展示生效，补充/确认/授权表单、HTML预览保留；普通任务和项目任务继续原分支。相关前端61项通过，TypeScript与生产构建通过。发布前将两份完整UI文件与线上构建源逐一比较，确认仅含目标改动。
+
+79仅更新Web为kai/superagent-web:20261104-bot-file-card-01f1ef28，sha256:978787f3ff4d844cb6a5d930633d74b25b1d9b6422e5e477843dd02e198b225b。发布脚本和回执在/data/kai-catalog-92ee117c/release-bot-file-card.py及release-bot-file-card.json；最终compose SHA256 b25df4eff68cd90ceea1d1632a2e04d531ad5a79420648bcc6ef4ce33c2f9d50。API、Worker、Control、Viewer、飞书、微信容器ID均断言未变，后端仍为catalog-92ee117c；Web健康和nginx校验通过。
+
+真实Chrome打开原编码协同会话，AX与截图均确认大汇总卡已消失，同一ACP-协议对比说明.html预览/下载附件保留。飞书方案追加原请求成功交付与附件展示验收，revision129已按关键词读回核对。代码提交在PR80，目标develop，仍不声称已合入或全仓门禁通过。
