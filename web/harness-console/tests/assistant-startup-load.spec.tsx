@@ -38,3 +38,4 @@ it("closed computer makes no status request and does not mount its desktop", asy
   await act(async () => root.render(<AssistantComputerPane open onClose={() => {}}>chat</AssistantComputerPane>));
   expect(desktop).toHaveBeenCalled();
 });
+

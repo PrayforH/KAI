@@ -251,19 +251,17 @@ function AuthenticatedHome() {
   const [computerOpen, setComputerOpen] = useState(false);
   const [readyConversation, setReadyConversation] = useState<string | null>(null);
   useEffect(() => {
-    try {
-      setComputerOpen(new URLSearchParams(window.location.search).get("computer") === "open"
-        || window.localStorage.getItem(`kai:computer-pane:${user.user_id}`) === "open");
-    } catch { /* A disabled browser storage still allows opening the pane. */ }
+    // A previous visit must not connect the desktop during a new chat load.
+    // The explicit URL is used only by the computer button's HTTP→HTTPS handoff.
+    setComputerOpen(new URLSearchParams(window.location.search).get("computer") === "open");
   }, [user.user_id]);
   const showComputer = (open: boolean) => {
     setComputerOpen(open);
     if (open) { setTaskRailOpen(false); setRailExpanded(false); }
     try {
-      window.localStorage.setItem(`kai:computer-pane:${user.user_id}`, open ? "open" : "closed");
       const url = new URL(window.location.href);
       if (url.searchParams.has("computer")) { url.searchParams.delete("computer"); window.history.replaceState(null, "", url.href); }
-    } catch { /* optional view preference */ }
+    } catch { /* The local toggle still works if URL updates are unavailable. */ }
   };
   // 每次进入某个 Bot 会话只上报一次"查看"（botRevision 刷新不重复上报）。
   const botViewedRef = useRef<string | null>(null);
