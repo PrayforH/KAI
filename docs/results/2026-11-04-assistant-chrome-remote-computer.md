@@ -145,3 +145,9 @@ schema 0065 无迁移、api/worker/feishu 未变）。`3501/3543/healthz` 均 20
 首版把该线程**历史上所有** mention 收据都渲染到落尾，实际效果是十几行「已发送消息给 X」
 堆在输入框上方。改为只显示**本次页面会话里刚发出的**收据（`liveMentions` 只由
 `ingestMention` 写入，`seed()` 读回的历史不参与），历史部分由持久时间线承载。
+
+## 79 复滚（2026-11-04，web → 2fb0377d）
+
+镜像 `kai/superagent-web:20261104-2fb0377d`，发布目录 `/data/kai-superagent-20261104-2fb0377d`。
+闸门同前（CAS == 4f366f3c 快照、活跃 Run/职责 0、schema 0065、api/worker/feishu 未变）；
+`3501/3543/healthz` 200、web healthy。
