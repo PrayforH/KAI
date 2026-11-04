@@ -1,4 +1,4 @@
-.controls { width: min(640px, 100%); margin: 10px 0; text-align: left; color: var(--codex-ink); }
+.controls { width: min(420px, 100%); margin: 10px 0; text-align: left; color: var(--codex-ink); }
 .controls > [role="alert"] { display: flex; gap: 12px; align-items: center; color: var(--codex-muted); font-size: 13px; }
 .controls > [role="alert"] button { border: 0; background: transparent; color: inherit; text-decoration: underline; cursor: pointer; }
 .continue { min-height: 36px; padding: 8px 16px; border: 0; border-radius: 999px; background: var(--codex-ink); color: var(--codex-surface); cursor: pointer; }

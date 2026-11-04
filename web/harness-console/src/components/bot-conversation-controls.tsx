@@ -10,6 +10,7 @@ import { ApprovalCard, type ApprovalDetails } from "./approval-card";
 import { ConversationInputCard } from "./conversation-input-card";
 import { SpecialistCredentials, credentialNames, pendingCredentialNames } from "./specialist-credentials";
 import styles from "./bot-conversation-controls.module.css";
+import { credentialRequest } from "../lib/credential-request";
 
 type Target = { specialistId: string; specialistName: string; runId: string; threadId: string; sourceThreadId: string };
 
@@ -80,7 +81,7 @@ export function BotConversationControls(target: Target) {
   const ordinary = ask?.input.questions.filter(question => !isSensitiveQuestion(question)) ?? [];
   const required = [...new Set([...secrets.map(question => question.id), ...(bot ? pendingCredentialNames(bot) : [])])];
   const missing = required.filter(name => !bot || !credentialNames(bot).includes(name));
-  const credentialReply = secrets.map(question => `${question.label}：已通过加密凭证通道保存，引用名称 ${question.id}`).join("\n");
+  const credentialReply = secrets.filter(question => bot && credentialNames(bot).includes(question.id)).map(question => `${question.label}：已通过加密凭证通道保存，引用名称 ${question.id}`).join("\n");
   if (!ask && !approval && !missing.length && !error) return null;
   return <div className={styles.controls} aria-label={`${specialistName}的待办`}>
     {error && <div role="alert">{error}<button type="button" onClick={() => void refresh(new AbortController().signal)}>重试</button></div>}
@@ -92,9 +93,10 @@ export function BotConversationControls(target: Target) {
       setApproval(null);
     }} />}
     {bot && missing.length > 0 && <SpecialistCredentials specialistId={specialistId} specialist={bot}
-      requiredNames={missing} onUpdated={updated => { setBot(updated); }} />}
+      requiredNames={missing} requests={missing.map(name => credentialRequest(name, secrets.find(question => question.id === name)))}
+      onUpdated={updated => { setBot(updated); }} />}
     {ask && ordinary.length > 0 && <ConversationInputCard key={ask.messageId}
-      input={{...ask.input, questions: ordinary}} disabled={missing.length > 0}
+      input={{...ask.input, questions: ordinary}} disabled={false}
       onSubmit={text => answer([text, credentialReply].filter(Boolean).join("\n\n"))} />}
     {ask && secrets.length > 0 && ordinary.length === 0 && !missing.length &&
       <button type="button" className={styles.continue} onClick={() => void answer(credentialReply).catch(cause => setError(String(cause)))}>凭证已保存，继续</button>}

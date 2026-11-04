@@ -59,6 +59,42 @@ it("saves secrets through the credential channel and sends only a reference",asy
  expect(sent[2].text).toContain("site_password");expect(JSON.stringify(sent)).not.toContain("Synthetic-Only-42");
 });
 
+it("asks for login fields and preserves an editable ordinary answer while credentials are pending", async () => {
+ questions=[{id:"login_detail",label:"登录用户名和密码",type:"password"},
+   {id:"scope",label:"补充说明",type:"text"}];
+ save.mockResolvedValue({...bot,revision:2,config:{"credential_ref:login_detail":"opaque-login"}});
+ await mount();
+ expect(host.querySelector('select[aria-label="凭据名称"]')).toBeNull();
+ expect(host.textContent).not.toMatch(/login_detail|待补凭据|必填凭据|还没有凭据/);
+ const ordinary=host.querySelector<HTMLInputElement>('input[aria-label="补充说明 · 填写回答"]')!;
+ expect(ordinary.closest('fieldset')?.disabled).toBe(false);
+ await act(async()=>fill(ordinary,"只创建任务，不填工时"));
+ await act(async()=>fill(host.querySelector('input[aria-label="用户名"]')!,"synthetic-user"));
+ await act(async()=>fill(host.querySelector('input[aria-label="密码"]')!,"Synthetic-Password-42"));
+ await act(async()=>button("保存登录信息").click());await flush();
+ expect(JSON.parse(save.mock.calls[0][1].secret)).toEqual({version:1,category:"login",username:"synthetic-user",password:"Synthetic-Password-42"});
+ expect(host.querySelector<HTMLInputElement>('input[aria-label="补充说明 · 填写回答"]')?.value).toBe("只创建任务，不填工时");
+ await act(async()=>button("提交回答").click());await flush();
+ const sent=request.mock.calls.find(c=>String(c[0]).endsWith("/messages"))!;
+ expect(sent[2].text).toContain("只创建任务，不填工时");
+ expect(sent[2].text).not.toMatch(/synthetic-user|Synthetic-Password-42/);
+ expect(sent[2].text).toContain("已通过加密凭证通道保存");
+});
+
+it("can choose to provide information or log in manually without first saving credentials", async () => {
+ questions=[{id:"login_detail",label:"登录用户名和密码",type:"password"},
+   {id:"mode",label:"登录方式",type:"single",options:["我自己登录","提供账号"]}];
+ await mount();
+ const choice=host.querySelector<HTMLInputElement>('input[type="radio"]')!;
+ expect(choice.closest('fieldset')?.disabled).toBe(false);
+ await act(async()=>choice.click());
+ await act(async()=>button("提交回答").click());await flush();
+ const sent=request.mock.calls.find(c=>String(c[0]).endsWith("/messages"))!;
+ expect(sent[2].text).toContain("我自己登录");
+ expect(sent[2].text).not.toContain("已通过加密凭证通道保存");
+ expect(save).not.toHaveBeenCalled();
+});
+
 it("retires a question when another reply advances its child conversation",async()=>{
  await mount();expect(host.textContent).toContain("核对范围");
  summary.mockResolvedValue({run_id:"child-2",status:"succeeded"});

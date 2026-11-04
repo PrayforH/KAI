@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { saveSpecialistCredential, type Specialist } from "../lib/assistant-client";
 import { SecretInput } from "./secret-input";
 import { useAssistantSurface } from "./assistant-bot-context";
+import { credentialRequest, loginCredentialValue, type CredentialRequest } from "../lib/credential-request";
 import styles from "./specialist-credentials.module.css";
 
 export function requiredCredentialNames(specialist: Specialist): string[] {
@@ -39,6 +40,7 @@ export function SpecialistCredentials({
   onUpdated,
   compact = false,
   requiredNames,
+  requests,
 }: {
   specialistId: string;
   specialist: Specialist;
@@ -46,10 +48,12 @@ export function SpecialistCredentials({
   compact?: boolean;
   /** 必填凭据（来自 config.required_credentials 的未满足项）：只允许逐个填写这些名称。 */
   requiredNames?: string[];
+  requests?: readonly CredentialRequest[];
 }) {
   const botSurface = useAssistantSurface();
   const [name, setName] = useState(requiredNames?.[0] ?? "");
   const [secret, setSecret] = useState("");
+  const [username, setUsername] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
@@ -57,20 +61,25 @@ export function SpecialistCredentials({
   const [savedNames, setSavedNames] = useState<string[]>([]);
   const configured = [...new Set([...credentialNames(specialist), ...savedNames])].sort();
   const pendingRequired = (requiredNames ?? []).filter((entry) => !configured.includes(entry));
+  const requested = requests?.find(item => item.name === name) ?? credentialRequest(name);
+  const conversationRequest = botSurface && Boolean(requiredNames?.length);
+  const login = conversationRequest && requested.category === "login";
 
   useEffect(() => {
     // 待填列表变化后（例如刚保存一个名称），选中项跟着移动到下一个未填名称。
     if (!requiredNames?.length) return;
-    if (!requiredNames.includes(name) && pendingRequired.length) {
+    if ((!requiredNames.includes(name) || configured.includes(name)) && pendingRequired.length) {
       setName(pendingRequired[0]!);
+      setUsername("");
+      setSecret("");
     }
   }, [name, pendingRequired, requiredNames]);
 
   async function submit() {
     if (busy) return;
     const trimmed = name.trim();
-    if (!trimmed || !secret) {
-      setError("请填写凭据名称与内容");
+    if (!trimmed || !secret || login && !username.trim()) {
+      setError(login ? "请填写用户名和密码" : "请填写凭据名称与内容");
       return;
     }
     setBusy(true);
@@ -79,7 +88,7 @@ export function SpecialistCredentials({
     try {
       const updated = await saveSpecialistCredential(specialistId, {
         name: trimmed,
-        secret,
+        secret: login ? loginCredentialValue(username, secret) : secret,
         expectedRevision: specialist.revision,
       });
       onUpdated(updated);
@@ -87,6 +96,7 @@ export function SpecialistCredentials({
       setSavedNames((current) => [...current, trimmed]);
       setName("");
       setSecret("");
+      setUsername("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "凭据保存失败");
     } finally {
@@ -96,13 +106,13 @@ export function SpecialistCredentials({
 
   return (
     <section className={`${compact ? styles.credentialsCompact : styles.credentials}${botSurface ? ` ${styles.botCard}` : ""}`} aria-label="子助理凭据">
-      <p className={styles.title}>{requiredNames?.length ? "必填凭据" : "凭据"}</p>
-      {requiredNames?.length ? (
+      <p className={styles.title}>{conversationRequest ? requested.label : requiredNames?.length ? "必填凭据" : "凭据"}</p>
+      {!conversationRequest && requiredNames?.length ? (
         <p className={styles.pending} role="status">
           待补凭据：{pendingRequired.length ? pendingRequired.join("、") : "已全部配置"}
         </p>
       ) : null}
-      {configured.length ? (
+      {!conversationRequest && (configured.length ? (
         <ul className={styles.list}>
           {configured.map((entry) => (
             <li className={styles.configured} key={entry}>
@@ -112,8 +122,8 @@ export function SpecialistCredentials({
         </ul>
       ) : (
         <p className={styles.empty}>还没有凭据；需要密钥的任务运行前请先配置。</p>
-      )}
-      <label className={styles.field}>
+      ))}
+      {!conversationRequest && <label className={styles.field}>
         <span>凭据名称</span>
         {requiredNames?.length ? (
           <select
@@ -135,15 +145,22 @@ export function SpecialistCredentials({
             onChange={(event) => setName(event.target.value)}
           />
         )}
-      </label>
+      </label>}
+      {login && <label className={styles.field}>
+        <span>用户名</span>
+        <input aria-label="用户名" autoComplete="username" autoCapitalize="none" spellCheck={false}
+          disabled={busy} value={username} maxLength={256} onChange={event => setUsername(event.target.value)} />
+      </label>}
       <label className={styles.field}>
-        <span>凭据内容</span>
+        <span>{login ? "密码" : conversationRequest ? requested.label : "凭据内容"}</span>
         <SecretInput
-          aria-label="凭据内容"
-          revealLabel="凭据内容"
+          aria-label={login ? "密码" : "凭据内容"}
+          revealLabel={login ? "密码" : "凭据内容"}
           value={secret}
-          autoComplete="new-password"
-          placeholder="输入密钥；保存后不再显示"
+          autoComplete={login ? "current-password" : "new-password"}
+          disabled={busy}
+          placeholder={login ? "填写密码" : conversationRequest ? "填写密钥" : "输入密钥；保存后不再显示"}
+          maxLength={login ? 1000 : 4000}
           onChange={(event) => setSecret(event.target.value)}
         />
       </label>
@@ -152,7 +169,7 @@ export function SpecialistCredentials({
           {error}
         </p>
       )}
-      {saved && !error && (
+      {saved && !error && !conversationRequest && (
         <p className={styles.saved} role="status">
           已保存「{saved}」
         </p>
@@ -163,7 +180,7 @@ export function SpecialistCredentials({
         disabled={busy}
         onClick={() => void submit()}
       >
-        {busy ? "保存中…" : "保存凭据"}
+        {busy ? "保存中…" : login ? "保存登录信息" : "保存凭据"}
       </button>
     </section>
   );

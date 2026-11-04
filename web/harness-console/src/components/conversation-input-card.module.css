@@ -61,28 +61,28 @@
 /* Bot conversations use the same quiet question card in the main and child chat. */
 .botCard {
   box-sizing: border-box;
-  width: min(640px, 100%);
+  width: min(420px, 100%);
   margin: 8px 0 10px;
-  border-radius: 22px;
+  border-radius: 18px;
   background: transparent;
   font-size: 14px;
   line-height: 1.55;
   text-align: left;
 }
-.botCard .header { padding: 16px 18px 8px; }
-.botCard .body { padding: 0 12px 14px; }
-.botCard .body legend { padding: 0 6px; margin-bottom: 10px; font-weight: 600; }
-.botCard .options { gap: 6px; max-height: 360px; }
-.botCard .option { gap: 12px; min-height: 46px; padding: 10px 12px; border-radius: 12px; }
-.botCard .marker { width: 24px; height: 24px; flex-basis: 24px; border-radius: 8px; font-weight: 400; }
+.botCard .header { padding: 10px 12px 6px; }
+.botCard .body { padding: 0 8px 10px; }
+.botCard .body legend { padding: 0 6px; margin-bottom: 6px; font-weight: 500; }
+.botCard .options { gap: 2px; max-height: 280px; }
+.botCard .option { gap: 8px; min-height: 36px; padding: 6px 8px; border-radius: 12px; }
+.botCard .marker { width: 22px; height: 22px; flex-basis: 22px; border-radius: 8px; font-weight: 400; }
 .botCard .option:has(input:checked) .marker { border-color: var(--codex-line-strong); background: var(--codex-surface-raised); color: var(--codex-muted); }
 .botCard .optionText { flex: 1; }
 .botCard .optionText > span:first-child { font-weight: 400; }
 .botCard .recommended { display: none; }
 .selectedCheck { width: 18px; height: 18px; flex: 0 0 18px; fill: currentColor; stroke: none; }
-.botCard .freeform { margin-top: 12px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--codex-line); border-radius: 12px; }
-.botCard .footer { padding: 12px 6px 0; }
-.botCard :is(.submit, .skip) { min-height: 36px; border-radius: 999px; padding: 8px 16px; }
+.botCard .freeform { margin-top: 6px; min-height: 36px; padding: 4px 8px; border: 1px solid var(--codex-line); border-radius: 12px; }
+.botCard .footer { padding: 6px 6px 0; }
+.botCard :is(.submit, .skip) { min-height: 32px; border-radius: 999px; padding: 6px 12px; }
 @media (max-width: 480px) {
    .botCard .header { padding: 12px 14px 8px; }
    .botCard .body { padding: 0 8px 12px; }

@@ -2,13 +2,13 @@ import { isSensitiveLabel, isSecretFieldLabel } from "./conversation-secrets";
 export const CONVERSATION_INPUT_LIMITS = { characters: 64_000, questions: 32, options: 128 } as const;
 
 /** A display protocol only: submitted answers are ordinary user messages, never tool calls. */
-export type ConversationQuestion = { id: string; label: string; type: "single" | "multi" | "text" | "password"; options: string[]; sensitive?: boolean };
+export type ConversationQuestion = { id: string; label: string; type: "single" | "multi" | "text" | "password"; options: string[]; sensitive?: boolean; credentialType?: "login" | "secret" };
 export type ConversationInput = { version: 1; title: string; questions: ConversationQuestion[] };
 function shortText(value: unknown, maximum: number): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= maximum;
 }
 export function isSensitiveQuestion(question: ConversationQuestion) {
-  return question.type === "password" || question.sensitive === true || (question.type === "text" && isSensitiveLabel(question.label + " " + question.id));
+  return question.credentialType !== undefined || question.type === "password" || question.sensitive === true || (question.type === "text" && isSensitiveLabel(question.label + " " + question.id));
 }
 type InputBlock = { start: number; end: number; input: ConversationInput };
 function validateInput(raw: string): ConversationInput | null {
@@ -24,8 +24,9 @@ function validateInput(raw: string): ConversationInput | null {
       const options = item.options ?? [];
       if (!Array.isArray(options) || options.length > CONVERSATION_INPUT_LIMITS.options || !options.every(value => shortText(value, 300)) || new Set(options).size !== options.length || (!["text", "password"].includes(item.type) && options.length < 2) || (["text", "password"].includes(item.type) && options.length)) return null;
       if (item.sensitive !== undefined && typeof item.sensitive !== "boolean") return null;
+      if (item.credentialType !== undefined && !["login", "secret"].includes(item.credentialType)) return null;
       ids.add(item.id);
-      questions.push({ id: item.id, label: item.label, type: item.type, options, ...(item.sensitive === true ? {sensitive: true} : {}) });
+      questions.push({ id: item.id, label: item.label, type: item.type, options, ...(item.sensitive === true ? {sensitive: true} : {}), ...(item.credentialType ? {credentialType: item.credentialType} : {}) });
     }
     return { version: 1, title: data.title, questions };
   } catch { return null; }
