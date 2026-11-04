@@ -36,7 +36,11 @@ from harness.agui.mapper import (
     map_harness_event,
     presentation_frames,
 )
-from harness.agui.response import active_response_text, final_response_text
+from harness.agui.response import (
+    HISTORY_SNAPSHOT_VERSION,
+    active_response_text,
+    final_response_text,
+)
 from harness.api.dependencies import (
     ApiContainer,
     Identity,
@@ -83,7 +87,7 @@ _HISTORY_SNAPSHOT_EVENT_TYPE = "history.snapshot"
 # items, ~1MB per run) and are ignored so they rebuild compactly on next read.
 # Version 3 adds the run's validated interactive answer blocks, so a reload shows
 # the same widgets the live stream published.
-_HISTORY_SNAPSHOT_VERSION = 5  # Include bounded web-image references in restored turns.
+_HISTORY_SNAPSHOT_VERSION = HISTORY_SNAPSHOT_VERSION
 _HISTORY_MARKER_EVENT_TYPES = (_HISTORY_SNAPSHOT_EVENT_TYPE, "run.steer.accepted")
 _HISTORY_RUN_PAGE_DEFAULT = 10
 _HISTORY_RUN_PAGE_MAX = 100
@@ -1210,7 +1214,7 @@ async def get_agui_thread_history(
         projections = await asyncio.gather(*(
             container.assistant.mention_messages(
                 identity.tenant_id, identity.user_id, thread_id, before=cursor,
-                limit=limit + 1, direction=direction,
+                limit=limit + 1, direction=direction, hydrate_results=False,
             ) for direction in ("sent", "received")
         ))
         for items, count in projections:
@@ -1246,7 +1250,7 @@ async def get_agui_thread_history(
             "page": [limit, before],
         }, sort_keys=True)
         etag = '"' + hashlib.sha256(fingerprint.encode()).hexdigest() + '"'
-        if if_none_match == etag:
+        if if_none_match in (etag, f"W/{etag}"):
             return Response(status_code=304, headers={
                 "ETag": etag, "Cache-Control": "private, no-cache",
             })
@@ -1258,6 +1262,18 @@ async def get_agui_thread_history(
             return await _history_messages_for_run(container, identity, run, write_snapshot=False)
 
     reconstructed = await asyncio.gather(*(reconstruct(run) for run in page_runs))
+    # Merge the timeline before reading child responses. Old child runs outside
+    # this page must not replay all their tool traces on every history refresh.
+    async def hydrate_entry(
+        entry: tuple[datetime, str, Run | AssistantInboxItem | MentionMessage],
+    ) -> tuple[datetime, str, Run | AssistantInboxItem | MentionMessage]:
+        at, mid, item = entry
+        if isinstance(item, MentionMessage) and container.assistant is not None:
+            async with semaphore:
+                item = await container.assistant.hydrate_mention_result(identity.tenant_id, item)
+        return at, mid, item
+
+    page = await asyncio.gather(*(hydrate_entry(entry) for entry in page))
     terminal_snapshot_tasks = [run for run in page_runs if run.status.is_terminal]
     for run in terminal_snapshot_tasks:
         background_tasks.add_task(_materialize_history_snapshot, container, identity.tenant_id, run)

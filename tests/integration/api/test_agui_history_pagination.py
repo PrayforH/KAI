@@ -1,4 +1,7 @@
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -9,10 +12,46 @@ from harness.agui import routes as history_routes
 from harness.agui.routes import _HISTORY_SNAPSHOT_VERSION as HISTORY_SNAPSHOT_VERSION
 from harness.api.app import create_memory_app
 from harness.api.dependencies import ApiContainer
+from harness.assistant.models import MentionMessage
 from harness.core.models import Run
 
 FIXTURE_MANIFEST = Path("tests/fixtures/agents/echo-agent/agent.yaml")
 HEADERS = {"X-Tenant-ID": "tenant-a", "X-User-ID": "user-1"}
+
+
+@pytest.mark.asyncio
+async def test_main_history_hydrates_only_the_visible_receipt_and_skips_it_for_304():
+    app = create_memory_app()
+    now = datetime(2026, 11, 4, tzinfo=UTC)
+    notices = [MentionMessage(
+        message_id=f"receipt-{i}", text="", created_at=now + timedelta(seconds=i),
+        run_id=f"child-{i}", target_thread_id="child-thread", source={
+            "direction": "received", "runStatus": "succeeded",
+        }) for i in range(2)]
+    async def metadata(*args, **kwargs):
+        assert kwargs["hydrate_results"] is False
+        return (notices, 2) if kwargs["direction"] == "received" else ([], 0)
+    hydrate = AsyncMock(side_effect=lambda tenant, item: item.model_copy(
+        update={"text": "结果正文"}
+    ))
+    assistant = SimpleNamespace(
+        repository=SimpleNamespace(conversation_notices=AsyncMock(return_value=([], 0)),
+                                   conversation_notice_sources=AsyncMock(return_value={})),
+        mention_messages=metadata, hydrate_mention_result=hydrate,
+    )
+    app.state.container = replace(app.state.container, assistant=assistant)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        path = "/v1/agui/threads/kai-personal-assistant-v1/history?limit=1"
+        result = await client.get(path, headers=HEADERS)
+        assert result.status_code == 200
+        hydrate.assert_awaited_once_with("tenant-a", notices[1])
+        assert _texts(result.json(), "assistant") == ["结果正文"]
+        hydrate.reset_mock()
+        unchanged = await client.get(
+            path, headers={**HEADERS, "If-None-Match": result.headers["etag"]}
+        )
+        assert unchanged.status_code == 304
+        hydrate.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -29,6 +68,11 @@ async def test_idle_history_validator_skips_projection_but_never_skips_ownership
         monkeypatch.setattr(history_routes, "_history_messages_for_run", reconstruct)
         unchanged = await client.get(path, headers={**HEADERS, "If-None-Match": tag})
         assert unchanged.status_code == 304 and unchanged.content == b""
+        reconstruct.assert_not_awaited()
+        compressed_validator = await client.get(
+            path, headers={**HEADERS, "If-None-Match": f"W/{tag}"}
+        )
+        assert compressed_validator.status_code == 304
         reconstruct.assert_not_awaited()
         other = await client.get(
             path, headers={**HEADERS, "X-User-ID": "other", "If-None-Match": tag}

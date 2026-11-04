@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { handoverStore, mentionsForThread, useHandoverNotices } from "../lib/handover-store";
+import { handoverStore, liveMentionsForThread, useHandoverNotices } from "../lib/handover-store";
 import { watchMentionCompletion } from "../lib/mention-completion";
 
 /** Refresh the durable timeline on delivery and completion; never render a footer list. */
 export function useMentionHistoryUpdates(threadId: string | undefined, onChange: () => void) {
   const notices = useHandoverNotices();
   useEffect(() => { if (threadId) void handoverStore.seed(); }, [threadId]);
-  const owned = useMemo(() => threadId ? mentionsForThread(notices, threadId) : [], [notices, threadId]);
+  // Durable history already contains old receipts. Replaying every old Run's
+  // SSE on mount flooded the first screen with tool traces and refreshes.
+  const owned = useMemo(() => threadId ? liveMentionsForThread(notices, threadId) : [], [notices, threadId]);
   const seen = useRef(new Set<string>());
   const completed = useRef(new Set<string>());
   useEffect(() => {

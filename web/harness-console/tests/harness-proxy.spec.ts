@@ -557,6 +557,17 @@ describe("Harness proxy response compression", () => {
     expect(decompressed).toBe(payload);
   });
 
+  it("keeps a weak JSON validator after gzip so idle chat history can return 304", async () => {
+    const payload = JSON.stringify({ messages: Array(400).fill({ content: "历史回复" }) });
+    const response = await proxyAguiRequest(new Request(`http://console.test/api/agui/${historyPath}`, {
+      headers: { "Accept-Encoding": "gzip" },
+    }), config, async () => new Response(payload, {
+      headers: { "Content-Type": "application/json", ETag: '"saved-page"' },
+    }), historyPath);
+    expect(response.headers.get("Content-Encoding")).toBe("gzip");
+    expect(response.headers.get("ETag")).toBe('W/"saved-page"');
+  });
+
   it("keeps a small JSON reply readable when gzip is accepted", async () => {
     // Regression: the compressed path consumed the body before deciding the
     // reply was too small, and the caller then reused the disturbed stream,

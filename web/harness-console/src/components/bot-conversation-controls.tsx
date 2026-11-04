@@ -50,13 +50,17 @@ export function BotConversationControls(target: Target) {
   }, [threadId, specialistId, runId]);
 
   useEffect(() => {
+    if (latestKnownRun && latestKnownRun !== runId) {
+      setSettled(true);
+      return;
+    }
     const controller = new AbortController();
     void refresh(controller.signal);
     const update = () => void refresh(controller.signal);
     window.addEventListener("focus", update);
     window.addEventListener("kai:specialists-changed", update);
     return () => { controller.abort(); window.removeEventListener("focus", update); window.removeEventListener("kai:specialists-changed", update); };
-  }, [refresh, latestKnownRun]);
+  }, [refresh, latestKnownRun, runId]);
 
   async function answer(text: string) {
     // A network retry reuses the accepted operation rather than making a second child Run.

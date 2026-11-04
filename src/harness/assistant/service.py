@@ -23,7 +23,7 @@ from ag_ui.core import (
 )
 from pydantic import SecretStr
 
-from harness.agui.response import final_response_text
+from harness.agui.response import final_response_text, recorded_response_text
 from harness.agui.service import AguiRunService
 from harness.application.agents import AgentService
 from harness.application.events import EventService
@@ -694,6 +694,7 @@ class AssistantService:
         limit: int = 100,
         message_id: str | None = None,
         direction: Literal["sent", "received"] = "received",
+        hydrate_results: bool = True,
     ) -> tuple[list[MentionMessage], int]:
         from harness.assistant.chat_notices import brief_notice
 
@@ -714,8 +715,9 @@ class AssistantService:
             text = (str(run.input.get("prompt", handover.summary))
                     if direction == "sent" and handover.reply_to_run_id else "")
             if direction == "received":
-                events = await self._events.list_after(tenant_id, run.run_id, 0)
-                text = brief_notice(final_response_text(events))
+                text = brief_notice(await recorded_response_text(
+                    self._events, tenant_id, run.run_id, terminal=run.status.is_terminal,
+                )) if hydrate_results else ""
                 state = {
                     RunStatus.WAITING_APPROVAL: "有一项操作需要你确认",
                     RunStatus.CANCELLED: "已停止", RunStatus.TIMED_OUT: "处理超时",
@@ -729,6 +731,7 @@ class AssistantService:
                 "timestamp": timestamp.isoformat(),
                 "direction": direction,
                 "runId": run.run_id, "threadId": handover.target_thread_id or "",
+                "runStatus": run.status.value,
                 "sourceThreadId": source_thread_id, "handoverId": handover.handover_id,
                 **({"replyToRunId": handover.reply_to_run_id}
                    if handover.reply_to_run_id else {}),
@@ -754,6 +757,22 @@ class AssistantService:
                 )
             )
         return replies, total
+
+    async def hydrate_mention_result(
+        self, tenant_id: str, message: MentionMessage,
+    ) -> MentionMessage:
+        """Only the received receipts selected for this history page need a body."""
+        from harness.assistant.chat_notices import brief_notice
+
+        if message.source.get("direction") != "received":
+            return message
+        text = brief_notice(await recorded_response_text(
+            self._events, tenant_id, message.run_id,
+            terminal=RunStatus(message.source["runStatus"]).is_terminal,
+        ))
+        return message.model_copy(update={"text": "\n\n".join(
+            part for part in (message.text, text) if part
+        )})
 
     async def specialist_thread(
         self, tenant_id: str, user_id: str, specialist: Specialist,

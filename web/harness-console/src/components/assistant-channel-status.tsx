@@ -42,6 +42,7 @@ export function AssistantChannelStatus() {
   }, []);
   const connected = status?.filter(channel => channel.state === "online") ?? [];
   const attention = status?.filter(channel => !["online", "disconnected"].includes(channel.state)) ?? [];
+  if (!status) return null;
   return <div className={styles.status} aria-label="助理通道连接状态" aria-live="polite">
     <span>{!status ? "正在读取连接状态" : connected.length ? "已连接：" : attention.length ? "连接状态：" : "未连接"}</span>
     {connected.map(channel => <span className={styles.connected} key={channel.name}><i aria-hidden="true" />{channel.name}</span>)}

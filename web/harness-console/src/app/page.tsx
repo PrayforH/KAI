@@ -249,6 +249,7 @@ function AuthenticatedHome() {
   const personalAssistant = assistantEntry && threadId === PERSONAL_ASSISTANT_THREAD;
   // 助理入口一律用对话形态；选中机器人时标题与输入框跟着它变。
   const [computerOpen, setComputerOpen] = useState(false);
+  const [readyConversation, setReadyConversation] = useState<string | null>(null);
   useEffect(() => {
     try {
       setComputerOpen(new URLSearchParams(window.location.search).get("computer") === "open"
@@ -975,7 +976,7 @@ function AuthenticatedHome() {
                 </button>
                 {/* 主助理页头保留 IM 通道状态（飞书/微信）：它属于主助理的跨渠道会话，
                     与资料记录在不在无关；只有进到某个子 Bot 会话（?bot=）才不显示。 */}
-                {!botParam && <AssistantChannelStatus />}
+                {!botParam && readyConversation === threadId && <AssistantChannelStatus />}
               </div> : <TaskContextBar
                 taskTitle={currentTaskTitle}
                 onForked={switchTask}
@@ -1012,7 +1013,7 @@ function AuthenticatedHome() {
             <HeaderUtilities
               computerControl={assistantEntry ? (
                 <>
-                  <DesktopOccupancyChip />
+                  {computerOpen && <DesktopOccupancyChip />}
                   <AssistantComputerLink open={computerOpen} onToggle={() => showComputer(!computerOpen)} />
                 </>
               ) : undefined}
@@ -1082,6 +1083,7 @@ function AuthenticatedHome() {
                 </div>
               ) : threadId && selectedAgent ? (
                 <AssistantRuntimeShell
+                  onHistoryReady={setReadyConversation}
                   key={`${threadId}:${runtimeAgentKey(selectedAgent)}`}
                   threadId={threadId}
                   localOnly={localThreadId === threadId}

@@ -49,6 +49,7 @@ export function AssistantRuntimeShell({
   modelRoutes,
   modelRouteOverride,
   onModelRouteOverrideChange,
+  onHistoryReady,
   children,
 }: {
   threadId: string;
@@ -64,6 +65,7 @@ export function AssistantRuntimeShell({
   modelRoutes: TaskModelRoute[];
   modelRouteOverride: string | null;
   onModelRouteOverrideChange: (routeId: string | null) => void;
+  onHistoryReady?: (threadId: string) => void;
   children: ReactNode;
 }) {
   const localOnlyRef = useRef(localOnly);
@@ -71,6 +73,12 @@ export function AssistantRuntimeShell({
   const runView = useRunViewModel();
   const [historyRevision, setHistoryRevision] = useState(0);
   const [historyReady, setHistoryReady] = useState(false);
+  const settleHistory = useCallback(() => {
+    setHistoryReady(true);
+    onHistoryReady?.(threadId);
+  }, [onHistoryReady, threadId]);
+  const historyRefreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(historyRefreshTimer.current), [threadId]);
   const [knowledgeReferences, setKnowledgeReferences] = useState<string[]>([]);
   const [loadedKnowledgeKey, setLoadedKnowledgeKey] = useState<string | null>(null);
   const knowledgeStorageKey = `harness:thread-knowledge:${threadId}`;
@@ -79,11 +87,12 @@ export function AssistantRuntimeShell({
   )?.id ?? null;
   const refreshDurableHistory = useCallback(() => {
     localOnlyRef.current = false;
-    invalidateThreadHistory(threadId, { keepPages: conversationSurface === "assistant" });
     // Let the terminal live answer paint before reconciling the durable snapshot.
     // History remains the recovery source; this only moves its cache refresh off
     // the immediate terminal event path.
-    window.setTimeout(() => {
+    clearTimeout(historyRefreshTimer.current);
+    historyRefreshTimer.current = setTimeout(() => {
+      invalidateThreadHistory(threadId, { keepPages: conversationSurface === "assistant" });
       setHistoryRevision((current) => current + 1);
     }, 250);
   }, [threadId, conversationSurface]);
@@ -203,7 +212,7 @@ export function AssistantRuntimeShell({
       <ReplySendContext.Provider value={sendReply}>
       <RunCancelProvider value={() => agent.cancelActiveRun()}>
       <ThreadHistoryReadyProvider value={historyReady}>
-      <DurableHistorySync threadId={threadId} revision={historyRevision} history={history} onSettled={() => setHistoryReady(true)} />
+      <DurableHistorySync threadId={threadId} revision={historyRevision} history={history} onSettled={settleHistory} />
       <TaskModelProvider
         routes={modelRoutes}
         agentDefaultRouteId={agentDefaultModelRoute}
