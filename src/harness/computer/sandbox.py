@@ -223,6 +223,12 @@ class ComputerSandboxProvider:
             allocation.token, operation, payload, expected_epoch=expected_epoch
         )
 
+    async def acp_action(
+        self, handle: SandboxHandle, payload: Mapping[str, object],
+    ) -> SandboxCommandResult:
+        allocation, _ = await self._remote(handle)
+        return await self.driver.host.call(allocation.token, "acp", payload)
+
     async def destroy(self, handle: SandboxHandle) -> None:
         lease = self._leases.pop(handle.sandbox_id, None)
         if lease is None:

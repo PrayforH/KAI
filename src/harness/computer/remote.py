@@ -10,6 +10,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from harness.computer.access import ComputerAuthorizer
+from harness.computer.acp_bridge import arguments as acp_arguments
 from harness.computer.docker import ComputerHost
 from harness.computer.gate_ack import validate as validate_ack
 from harness.computer.models import (
@@ -23,6 +24,7 @@ from harness.computer.registry import ComputerRegistry
 from harness.computer.ssh_transport import SshEndpoint
 from harness.computer.vm import VmComputerDriver
 from harness.computer.vm_host import GuestGate, SshComputerControl
+from harness.sandbox.base import SandboxCommandResult
 
 PROVIDER = "remote-computer"
 
@@ -36,6 +38,7 @@ class RemoteComputerSpec(BaseModel):
     control: SshEndpoint
     viewer: SshEndpoint
     native_desktop: bool = False
+    acp: bool = False
 
     def ssh_endpoint(self, kind: Literal["control", "viewer"]) -> SshEndpoint:
         return self.control if kind == "control" else self.viewer
@@ -45,13 +48,26 @@ class RemoteComputerDriver(VmComputerDriver):
     provider = PROVIDER
     image_office = False
 
-    def __init__(self, host: ComputerHost, *, image: str, native_desktop: bool = False) -> None:
+    def __init__(
+        self, host: ComputerHost, *, image: str, native_desktop: bool = False, acp: bool = False,
+    ) -> None:
         super().__init__(host, image=image)
         self.native_desktop = native_desktop
+        self.acp = acp
 
 
 class RemoteComputerControl(SshComputerControl):
     provider = PROVIDER
+
+    async def call(
+        self, token: ComputerLease, action: str, payload: Mapping[str, object],
+    ) -> SandboxCommandResult:
+        if action == "acp":
+            computer, _ = await self.registry.holder(token)
+            if not self._spec(computer).acp:
+                raise ValueError("ACP is not enabled on this computer")
+            acp_arguments(dict(payload))
+        return await super().call(token, action, payload)
 
     def _spec(self, computer: AssistantComputer) -> RemoteComputerSpec:
         spec = self.specs.get(computer.volume_ref)

@@ -28,6 +28,8 @@ def configuration() -> dict[str, Any]:
     components = ["remote_display_gate.py", "remote_gate.py", "ssh_gate.py", "supervisor.py"]
     if value.get("native_desktop"):
         components.append("native_desktop.py")
+    if value.get("acp"):
+        components += ["acp_bridge.py", "acp_client.mjs"]
     for name in components:
         component = Path("/opt/kai-computer") / name
         info = component.lstat()
@@ -58,6 +60,17 @@ def main() -> None:
     request = json.loads(body)
     if request == {"version": 1, "action": "identity", "spec": {}}:
         print(json.dumps({k: config[k] for k in ("machine_id", "computer_id", "image")}))
+        return
+    if request.get("action") == "acp":
+        if (not config.get("acp") or request.keys() != {"version", "action", "spec"}
+                or request["version"] != 1):
+            raise PermissionError("ACP is not enabled")
+        bridge = importlib.util.spec_from_file_location(
+            "kai_acp_bridge", "/opt/kai-computer/acp_bridge.py")
+        assert bridge is not None and bridge.loader is not None
+        module = importlib.util.module_from_spec(bridge)
+        bridge.loader.exec_module(module)
+        print(json.dumps(module.run(config, request["spec"]), ensure_ascii=False))
         return
     if request.get("action") in {"native_desktop", "native_barrier"}:
         if (

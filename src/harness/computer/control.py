@@ -27,7 +27,7 @@ from harness.computer.models import (
 from harness.computer.registry import ComputerRegistry
 from harness.sandbox.base import SandboxCommandResult
 
-ControlAction = Literal["init", "activate", "renew", "deactivate", "exec"]
+ControlAction = Literal["init", "activate", "renew", "deactivate", "exec", "acp"]
 MAX_BYTES = 40 * 1024 * 1024
 SUPERVISOR = "/opt/kai-computer/supervisor.py"
 SPOOL = "/var/lib/kai-computer/spool"

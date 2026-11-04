@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable
 import httpx
 
 from harness.computer.access import CanonicalComputerAccess
+from harness.computer.acp_tools import computer_acp_overlay
 from harness.computer.control import HttpComputerControl
 from harness.computer.desktop import DesktopControlService
 from harness.computer.docker import DockerComputerDriver
@@ -76,6 +77,7 @@ class ComputerRuntime:
                 control,
                 image=settings.assistant_computer_remote_image,
                 native_desktop=settings.assistant_computer_native_desktop,
+                acp=settings.assistant_computer_acp_enabled,
             )
         self.default_provider = settings.assistant_computer_default_provider
 
@@ -133,12 +135,17 @@ class ComputerRuntime:
             return PlatformToolOverlay()
         if not isinstance(handle, SandboxHandle) or not sandbox.owns(handle):
             return PlatformToolOverlay()
-        return computer_gui_overlay(
+        gui = computer_gui_overlay(
             self.desktop,
             sandbox,
             handle,
             native_desktop=bool(getattr(sandbox.driver, "native_desktop", False)),
         )
+        if not getattr(sandbox.driver, "acp", False):
+            return gui
+        acp = computer_acp_overlay(sandbox, handle)
+        return PlatformToolOverlay(tools=(*gui.tools, *acp.tools),
+                                   instructions=gui.instructions + "\n" + acp.instructions)
 
     async def close(self) -> None:
         if self.client is not None:
