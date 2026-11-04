@@ -72,3 +72,9 @@ xiaokai
 ACP 首次部署目录 `/data/kai-acp-20261104-3c6a175f`，`release.json` 记录四服务健康与镜像摘要；compose SHA256 `f0f08bf66c32dc6648f2f1a5f91ddceb6cd64c6715927100a1e66fe75da0b8e3`。API/Worker SHA256 `6ea7d7ccb40148402d9169869ea11a53a0abd48dad218133dd905407712dda66`，Web `8239f1c0a4803e53c5a1a0ee0aeeadf46163e4bcbf561f2ebf36f7b3b24eb410`，Control `1150075ed0d603e16ad408dd8fb2a0a4c0b513fb88cdb63b2bc1e05347c57579`。随后仅工具输出投影的小切片发布另行记录。
 
 全仓质量门禁补充：本地用相同环境分别检查当前代码与功能基线ff383602，当前3737条、功能基线3826条Pyright诊断；按文件/规则/消息/次数比较，本轮相对功能基线无新增，减少89条。相对于develop保存的旧类型基线仍有2448条未接纳诊断，因此不能声称全仓类型检查或develop合入完成；未扩大baseline或放宽检查。容器安全CI在09238016通过；后端CI已通过空库迁移但停在3条既有lint，当前已修复并本地全仓Ruff通过，最新提交仍须远端复核。
+
+Codex追加定位：桌面GNOME手动代理为127.0.0.1:7897（Clash），后台环境无代理。直连chatgpt.com:443 TCP超时，临时仅测试进程使用既有代理后TLS可达，实际模型请求返回400 model_not_found：“not supported when using Codex with a ChatGPT account”，分别复现于gpt-6.1-sol、model/list列出的gpt-5.5及gpt-5.3-codex。账号查询成功，ChatGPT/Pro，周用量100%；有credits字段，未推断所有额度完全用尽，不披露凭据或余额。现有登录可被复用，但当前Codex账号/模型权限与网络尚未形成可用链路，未改全局网络/模型/登录、未购买额度。
+
+最终受影响回归84项全部通过（370.69秒），包含完整真实PostgreSQL电脑授权套件，旧职责、暂停/撤销、跨用户/租户、项目隔离及最新历史分页/回执/ACP工具。所有测试只用独立容器和15434转发，已清理；不对生产库运行测试建删schema。
+
+最终79 API/Worker更新为 `kai/superagent-api:20261104-acp-2be0744d`，SHA256 `eb347e7ab40c23668f1f724c39bc4ed703447f9d31429788b11caccd9b6cac49`；Web/Control保持首次ACP部署版本。`release-public.json`记录健康，compose最终SHA256 `c6a6005c3e1c84417ebcf99cd5a7afaf9ebd7929eeee44b90a7938e81ca5dd4f`。已部署工具边界会排除session_id。飞书11.20写入revision125，读回确认；11.18保留他人电脑操作步骤和后续计划。代码推至PR80目标develop，受保护分支必需检查尚未全部通过，不宣称已合入。
