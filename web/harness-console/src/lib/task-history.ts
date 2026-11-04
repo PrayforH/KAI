@@ -41,6 +41,9 @@ export const TASK_LIST_REQUEST_TIMEOUT_MS = 8_000;
 export const THREAD_HISTORY_PREFETCH_TTL_MS = 30_000;
 const threadHistoryCacheMax = 8;
 const THREAD_HISTORY_PAGE_RUNS = 10;
+/** Earlier pages trade payload for far fewer round trips while paging back;
+ * the latest page keeps its small size so thread open stays fast. */
+export const THREAD_HISTORY_EARLIER_PAGE_RUNS = 30;
 const threadHistoryAccumulatedMax = 8;
 
 export interface ThreadHistoryResponse {
@@ -121,7 +124,9 @@ function waitForHistoryPoll(signal: AbortSignal, milliseconds = 500) {
 
 function historyUrl(threadId: string, before?: string) {
   const base = `/api/agui/threads/${encodeURIComponent(threadId)}/history`;
-  const query = new URLSearchParams({ limit: String(THREAD_HISTORY_PAGE_RUNS) });
+  const query = new URLSearchParams({
+    limit: String(before ? THREAD_HISTORY_EARLIER_PAGE_RUNS : THREAD_HISTORY_PAGE_RUNS),
+  });
   if (before) query.set("before", before);
   return `${base}?${query.toString()}`;
 }

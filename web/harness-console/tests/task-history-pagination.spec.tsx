@@ -120,6 +120,8 @@ describe("thread history pagination", () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
     const earlierUrl = fetcher.mock.calls[1][0] as string;
     expect(earlierUrl).toContain("before=cursor-1");
+    // Earlier pages carry more runs per gesture; the latest page stays small.
+    expect(earlierUrl).toContain("limit=30");
     expect(importRepositoryMock).toHaveBeenCalledTimes(1);
     const repository = importRepositoryMock.mock.calls[0][0] as {
       messages: Array<{ message: { content: unknown } }>;

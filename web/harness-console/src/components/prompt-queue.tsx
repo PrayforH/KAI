@@ -25,11 +25,36 @@ export function PromptQueue({ items, paused, busy, canSteer, sendingIds, onChang
     onChange(next);
   }
   if (!items.length) return null;
-  if (chat) return <div className="assistant-pending-messages" aria-label="已发送的消息">
-    {items.map(item => <PendingMessagePlacement key={item.id} runId={item.historyRunId}>
-      <SteeringUserMessage chat text={item.text || `附件消息（${item.attachments.length} 个附件）`} status={item.receipt === "unknown" || item.receipt === "failed" ? "unknown" : "pending"} />
-    </PendingMessagePlacement>)}
-  </div>;
+  if (chat) {
+    const bubble = (item: QueuedPrompt) =>
+      <SteeringUserMessage chat text={item.text || `附件消息（${item.attachments.length} 个附件）`}
+        status={item.receipt === "unknown" || item.receipt === "failed" ? "unknown" : "pending"} />;
+    const placed = items.filter(item => item.historyRunId);
+    const unplaced = items.filter(item => !item.historyRunId);
+    // Messages that reconcile into a durable turn keep living beside that turn
+    // (PendingMessagePlacement), never over the composer. Unplaced sends still
+    // in flight stay visible while the run is active; once nothing is running
+    // they collapse behind one quiet line so they cannot cover the input, with
+    // resend reachable on expansion.
+    if (busy || !unplaced.length) {
+      return <div className="assistant-pending-messages" aria-label="已发送的消息">
+        {items.map(item =>
+          <PendingMessagePlacement key={item.id} runId={item.historyRunId}>{bubble(item)}</PendingMessagePlacement>)}
+      </div>;
+    }
+    return <>
+      {placed.map(item =>
+        <PendingMessagePlacement key={item.id} runId={item.historyRunId}>{bubble(item)}</PendingMessagePlacement>)}
+      <details className="assistant-pending-messages" data-stuck="true">
+        <summary>未发送的补充消息（{unplaced.length}）· 展开可重发</summary>
+        {unplaced.map(item => <div key={item.id}>
+          <SteeringUserMessage chat text={item.text || `附件消息（${item.attachments.length} 个附件）`} status="unknown" />
+          {item.attachments.length > 0 && <small className="assistant-message-receipt">当前回复结束后发送附件</small>}
+          <button type="button" className="assistant-message-retry" disabled={sendingIds.length > 0} onClick={() => onSend(item)}>重新发送</button>
+        </div>)}
+      </details>
+    </>;
+  }
   const queuedCount = items.filter(item => !item.steerRunId).length;
   const pendingGuidance = items.filter(item => item.steerRunId);
   return <>{pendingGuidance.map(item => <SteeringUserMessage key={item.id} text={item.text} status="pending" />)}

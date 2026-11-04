@@ -599,11 +599,16 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
 
     } catch (error) { setInputError(error instanceof Error ? error.message : "无法加入队列"); }
   }
-  const hasPendingSteering = steeringIds.length > 0;
   const steeringContext = useRef({ runId: runView?.runId, busy, steeringIds, queue });
   steeringContext.current = { runId: runView?.runId, busy, steeringIds, queue };
   useEffect(() => {
-    if (!steeringRunId || (!busy && !hasPendingSteering)) { setSteerAvailable(false); return; }
+    if (!steeringRunId || !busy) {
+      setSteerAvailable(false);
+      // Nothing is running to reconcile against; stale in-flight markers would
+      // block the queued dispatch and resend forever once the run is over.
+      if (!busy) setSteeringIds((ids) => (ids.length ? [] : ids));
+      return;
+    }
     let available = false;
     return startSteeringPolling({
       runId: steeringRunId,
@@ -665,7 +670,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
         }
       },
     });
-  }, [steeringRunId, busy, hasPendingSteering, assistantSurface]);
+  }, [steeringRunId, busy, assistantSurface]);
 
   async function guide(item: QueuedPrompt) {
     if (!runView?.runId || steeringIds.includes(item.id) || steeringInFlight.current.has(item.id)) return;

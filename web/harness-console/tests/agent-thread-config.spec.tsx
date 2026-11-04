@@ -383,3 +383,9 @@ it("keeps only copy and reply in the assistant chat message actions", () => {
   expect(completion).toBeGreaterThan(feedback);
   expect(agentThreadSource).toContain('<MessageReplyButton className="assistant-message-copy"');
 });
+
+it("keeps the assistant thread free of a visible earlier-history button", () => {
+  // 更早的消息靠阅读手势静默加载（readerDriven 钩子），不出现常驻按钮挡内容。
+  expect(agentThreadSource).not.toContain("assistant-history-earlier");
+  expect(agentThreadSource).toContain("useAutoLoadEarlierMessages(frame, historyPagination, { readerDriven: assistantSurface })");
+});

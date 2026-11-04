@@ -723,21 +723,26 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .grok-
     -webkit-text-fill-color: currentColor;
   }
 }
-/* History stays quiet while a page is fetched; only an explicit reading action
-   exposes older messages. Pending sends use the same bubble as sent messages. */
-.chat-stage[data-surface="assistant"] .assistant-history-earlier {
+/* History loads silently on reader gestures; there is no visible button.
+   Pending sends use the same bubble as sent messages. */
+.chat-stage[data-surface="assistant"] .assistant-pending-messages { display: grid; gap: 12px; }
+/* When nothing is running, unplaced sends collapse to one quiet line instead
+   of pinning bubbles over the composer; expanding keeps resend reachable. */
+.chat-stage[data-surface="assistant"] .assistant-pending-messages[data-stuck] { gap: 0; }
+.chat-stage[data-surface="assistant"] .assistant-pending-messages[data-stuck] summary {
   align-self: center;
-  margin: 6px auto;
-  padding: 4px 10px;
+  margin: 2px auto 0;
+  padding: 2px 8px;
   border: 0;
   background: transparent;
   color: var(--codex-muted, #8f8f8f);
   font: inherit;
   font-size: 12px;
   cursor: pointer;
+  list-style: none;
 }
-.chat-stage[data-surface="assistant"] .assistant-history-earlier:hover { color: var(--codex-ink, #ededed); }
-.chat-stage[data-surface="assistant"] .assistant-pending-messages { display: grid; gap: 12px; }
+.chat-stage[data-surface="assistant"] .assistant-pending-messages[data-stuck] summary::-webkit-details-marker { display: none; }
+.chat-stage[data-surface="assistant"] .assistant-pending-messages[data-stuck] summary:hover { color: var(--codex-ink, #ededed); }
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .steering-user-message-bubble {
   padding: 10px 14px;
   border-radius: 18px;
