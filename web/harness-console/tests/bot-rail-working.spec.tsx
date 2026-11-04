@@ -10,6 +10,7 @@ vi.mock("../src/lib/assistant-client", () => ({assistantRequest: request}));
 vi.mock("next/navigation", () => ({useRouter: () => ({push: vi.fn()})}));
 vi.mock("next/link", () => ({default: ({children, scroll, ...props}: {children: React.ReactNode; scroll?: boolean}) => <a {...props}>{children}</a>}));
 import { BotRail } from "../src/components/bot-rail";
+import { handoverStore } from "../src/lib/handover-store";
 (globalThis as Record<string,unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 const bot = (id: string, config = {}) => ({specialistId:id,name:id,status:"active",config,
  createdAt:"2026-11-01T00:00:00Z",updatedAt:"2026-11-01T00:00:00Z"}) as Specialist;
@@ -38,7 +39,7 @@ it("animates working main and background bots, stops on completion and keeps nav
   expect(host.querySelector('a[href="/assistant?bot=coding"] [data-working="true"]')).not.toBeNull();
   expect(host.querySelector('a[href="/assistant?bot=rest"] [data-working]')).toBeNull();
   request.mockResolvedValue(bots.map(b=>({...b,activity:{...b.activity,status:"succeeded"}})));
-  await act(async()=>window.dispatchEvent(new Event("kai:specialists-changed")));
+  await act(async()=>handoverStore.ingestMention({handoverId:"avatar-delivery",specialistId:"coding",specialistName:"coding",runId:"next",targetThreadId:"assistant_coding"}));
   expect(host.querySelector('[data-working="true"]')).toBeNull();
   expect(names()).toEqual(order);
   expect(request).toHaveBeenCalledTimes(2);
