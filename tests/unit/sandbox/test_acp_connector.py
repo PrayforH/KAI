@@ -108,6 +108,7 @@ def test_client_keeps_writes_and_answers_permissions_once() -> None:
     assert "session/set_mode" not in client
     assert '"outcome": "cancelled"' not in client
     assert "allow_once" in client
-    # allow_always may only appear as a fallback pick, never as the chosen outcome.
-    chosen = client.split("pick =")[1].split("return")[0]
-    assert 'outcome: "allow_always"' not in chosen
+    assert 'outcome: "selected"' in client
+    assert 'outcome: "allow_once"' not in client
+    # allow_always may only appear as a fallback pick, never as the chosen kind path alone.
+    assert 'kind === "allow_once"' in client

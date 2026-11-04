@@ -25,20 +25,23 @@ export async function run(request) {
   try {
     const app = new ClientApp({ name: "kai-computer-acp" })
       .onRequest("session/request_permission", ({ params }) => {
-        const title = String(params.toolCall?.title ?? "Permission required").slice(0, 120);
+        const title = String(
+          params.toolCall?.title ?? params.title ?? "Permission required",
+        ).slice(0, 120);
         denied.push(title);
-        // DEMO (2026-11-05): the owner asked for a writable demo. Approve the
-        // current tool call only (allow_once semantics); never allow_always.
-        // Revert by restoring the cancelled outcome from git history.
+        // DEMO (2026-11-05): writable demo. ACP requires outcome "selected"
+        // plus the optionId of an offered option; kind "allow_once" is that
+        // option's hint, not the outcome string. Never allow_always as the
+        // chosen kind. Revert by restoring cancelled from git history.
         const options = Array.isArray(params.options) ? params.options : [];
         const pick =
           options.find(o => o.kind === "allow_once") ??
-          options.find(o => o.outcome === "allow_once") ??
           options.find(o => o.kind === "allow_selected") ??
-          options.find(o => o.kind === "allow_always") ??
-          Object.values(params.option ?? {}).find(v => v?.kind === "allow_once") ??
-          { outcome: "allow_once" };
-        return { outcome: { outcome: "allow_once", optionId: pick.optionId ?? pick.id } };
+          options.find(o => o.kind === "allow_always");
+        if (!pick?.optionId) {
+          return { outcome: { outcome: "cancelled" } };
+        }
+        return { outcome: { outcome: "selected", optionId: pick.optionId } };
       });
     const conn = app.connect(ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(child.stdout)));
     await conn.agent.request("initialize", {
