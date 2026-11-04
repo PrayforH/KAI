@@ -3618,6 +3618,17 @@ body.codex-theme-v1:has(.console-shell) .task-context-bot-more:hover {
 body.codex-theme-v1:has(.console-shell) .bot-rail .bot-rail-item { flex: 1; min-width: 0; min-height: 40px; gap: 6px; padding: 4px 8px; }
 body.codex-theme-v1:has(.console-shell) .bot-rail .bot-rail-item .bot-rail-avatar { width: 32px; height: 32px; font-size: 16px; border-radius: 10px; }
 body.codex-theme-v1:has(.console-shell) .bot-rail .bot-rail-item .bot-rail-avatar svg { width: 32px; height: 32px; }
+body.codex-theme-v1:has(.console-shell) .bot-rail .bot-rail-avatar[data-working="true"] {
+  animation: kai-rail-bot-working 1.4s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+@keyframes kai-rail-bot-working {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-2px) scale(1.03, 0.97); }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.codex-theme-v1:has(.console-shell) .bot-rail .bot-rail-avatar[data-working="true"] { animation: none; }
+}
 body.codex-theme-v1:has(.console-shell) .bot-rail-row { display: flex; align-items: center; position: relative; border-radius: 10px; }
 body.codex-theme-v1:has(.console-shell) .bot-rail-row:hover { background: rgba(255, 255, 255, 0.06); }
 body.codex-theme-v1:has(.console-shell) .bot-rail-row:has(.bot-rail-item[data-active="true"]) { background: rgba(255, 255, 255, 0.1); }

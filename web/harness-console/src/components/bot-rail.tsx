@@ -63,14 +63,16 @@ export function BotRailAvatar({
   tone,
   shape,
   letter,
+  working = false,
 }: {
   tone: string;
   shape?: string | null;
   letter?: string;
+  working?: boolean;
 }) {
   if (letter) {
     return (
-      <span className="bot-rail-avatar" data-avatar="letter" style={{ background: tone }} aria-hidden="true">
+      <span className="bot-rail-avatar" data-avatar="letter" data-working={working || undefined} style={{ background: tone }} aria-hidden="true">
         {letter}
       </span>
     );
@@ -83,6 +85,7 @@ export function BotRailAvatar({
       className="bot-rail-avatar"
       data-avatar="shape"
       data-shape={glyph.id}
+      data-working={working || undefined}
       style={{ background: tokens.surface, ...botAppearanceVars(tone) } as React.CSSProperties}
       aria-hidden="true"
     >
@@ -97,12 +100,13 @@ export function BotRailAvatar({
  */
 type BotRailProps = {
   currentThreadId: string; activeBotId?: string | null; userId?: string; tenantId?: string;
+  workingThreadIds?: ReadonlySet<string>;
   groupsState?: readonly [ReadonlySet<string>, (change: (current: ReadonlySet<string>) => ReadonlySet<string>) => void];
 };
 export function BotRail(props: BotRailProps) {
   return <BotDirectory key={`${props.tenantId ?? ""}:${props.userId ?? ""}`} {...props} />;
 }
-function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, groupsState}: BotRailProps) {
+function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, groupsState, workingThreadIds}: BotRailProps) {
   const mounted = useRef(true);
   const requestVersion = useRef(0);
   useEffect(() => { mounted.current = true; return () => {mounted.current = false;}; }, []);
@@ -193,12 +197,16 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
   const visibleContacts = contacts.filter(shown);
   const isAssistant = !activeBot && currentThreadId === PERSONAL_ASSISTANT_THREAD;
   function row(item: Specialist) {
+    const threadId = isPrimaryBot(item) ? PERSONAL_ASSISTANT_THREAD
+      : typeof item.config.conversation_thread_id === "string" ? item.config.conversation_thread_id
+      : `assistant_${item.specialistId}`;
+    const working = workingThreadIds?.has(threadId) === true;
     return <li key={item.specialistId} className="bot-rail-row">
       <Link className="bot-rail-item" data-active={(isPrimaryBot(item) ? !activeBot && currentThreadId === PERSONAL_ASSISTANT_THREAD : activeBot === item.specialistId) ? "true" : undefined}
         data-paused={isUnviewedPaused(item) ? "true" : undefined} data-unread={botSidebar(item).unread ? "true" : undefined}
-        title={isUnviewedPaused(item) ? "已暂停 · 无人查看" : undefined}
+        title={working ? "正在工作" : isUnviewedPaused(item) ? "已暂停 · 无人查看" : undefined}
         href={botConversationHref(item)} scroll={false}>
-        <BotRailAvatar tone={specialistAppearance(item).color} shape={specialistAppearance(item).avatar} />
+        <BotRailAvatar tone={specialistAppearance(item).color} shape={specialistAppearance(item).avatar} working={working} />
         <span className="bot-rail-label"><strong>{item.name}</strong></span>
         {botSidebar(item).unread && <span className="bot-rail-unread" aria-label="未读" />}
       </Link>
@@ -235,7 +243,7 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
             href="/assistant"
             scroll={false}
           >
-            <BotRailAvatar letter="K" tone={BOT_ACCENTS[0]!} />
+            <BotRailAvatar letter="K" tone={BOT_ACCENTS[0]!} working={workingThreadIds?.has(PERSONAL_ASSISTANT_THREAD)} />
             <span className="bot-rail-label">
               <strong>主助理</strong>
             </span>

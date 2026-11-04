@@ -15,6 +15,7 @@ import { useAuth } from "./auth-provider";
 import { ProductBrandMark, ProductWordmark, PRODUCT_NAME } from "./product-brand";
 import { WorkspaceNavigation, type WorkspaceId } from "./workspace-navigation";
 import { BotRail } from "./bot-rail";
+import { workingBotThreads } from "../lib/bot-working-state";
 import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
 import { useRunViewModel } from "../lib/activity-store";
 import { approvalStore } from "../lib/approval-store";
@@ -158,6 +159,7 @@ export function TaskSidebar({
   const expandButtonRef = useRef<HTMLButtonElement>(null);
   const wasOverlayOpenRef = useRef(false);
   const runView = useRunViewModel();
+  const workingThreadIds = useMemo(() => workingBotThreads(storedTasks, currentThreadId, runView), [storedTasks, currentThreadId, runView]);
   const { user, membership } = useAuth();
   const [expandedTaskGroups, setExpandedTaskGroups] = useSidebarGroups(user.user_id);
   const sectionId = useId();
@@ -570,7 +572,7 @@ export function TaskSidebar({
               visible={["knowledge", "agents", "automation", "skills"]}
             />
           </div>
-          {(activeNav === "assistant" || activeNav === "tasks") && <BotRail currentThreadId={currentThreadId} activeBotId={activeBotId} userId={user.user_id} tenantId={membership?.tenant_id} groupsState={[expandedTaskGroups, setExpandedTaskGroups]} />}
+          {(activeNav === "assistant" || activeNav === "tasks") && <BotRail currentThreadId={currentThreadId} activeBotId={activeBotId} userId={user.user_id} tenantId={membership?.tenant_id} workingThreadIds={workingThreadIds} groupsState={[expandedTaskGroups, setExpandedTaskGroups]} />}
           <div className="task-list-toolbar task-project-toolbar">
             <div className="task-list-heading">
               <button type="button" className="task-section-toggle"
