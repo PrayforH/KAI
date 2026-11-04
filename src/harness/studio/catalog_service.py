@@ -31,18 +31,11 @@ from harness.studio.platform_skills import RETIRED_PLATFORM_SKILLS
 from harness.studio.repositories import AgentDraftRepository
 
 CatalogResourceType = Literal["modelRoute", "mcp", "policy", "executionProfile", "skill"]
-_RETIRED_PLATFORM_MODEL_ROUTES = frozenset({
-    "anthropic-official",
-    # 官方已下线：V4/V4.1、MiniMax M3、GLM。已有库里的旧路由同样清掉。
-    "deepseek-v4-flash",
-    "deepseek-v4-pro",
-    "minimax-m3",
-    "glm-5-3-flash",
-})
+_RETIRED_PLATFORM_MODEL_ROUTES = frozenset({"anthropic-official", "new-api-default"})
 # Tavily was removed from the platform default catalog; persisted catalogs may
 # still carry platform or personal copies of the retired reference until this
 # migration strips them on load.
-_EDITABLE_PLATFORM_MCP_REFERENCES = frozenset()
+_EDITABLE_PLATFORM_MCP_REFERENCES: frozenset[str] = frozenset()
 
 
 def _retire_platform_mcp_servers(
@@ -83,10 +76,13 @@ def _mcp_is_mutable_by(item: McpCapability, user_id: str) -> bool:
 def _retire_platform_model_routes(
     catalog: CapabilityCatalog,
 ) -> CapabilityCatalog | None:
+    # A refresh must not invalidate an Agent selection. Retiring a referenced
+    # route requires an explicit rebind, rather than silently changing models.
+    bound_routes = set(catalog.agent_model_bindings.values())
     routes = tuple(
-        route
-        for route in catalog.model_routes
+        route for route in catalog.model_routes
         if route.route_id not in _RETIRED_PLATFORM_MODEL_ROUTES
+        or route.route_id in bound_routes
     )
     if len(routes) == len(catalog.model_routes):
         return None
@@ -222,12 +218,13 @@ def _upgrade_system_managed_catalog(
     """Upgrade known system defaults without dropping tenant-authored entries."""
 
     defaults = default_capability_catalog()
-    routes = [
-        route
-        for route in catalog.model_routes
-        if route.route_id not in _RETIRED_PLATFORM_MODEL_ROUTES
-    ]
-    changed = len(routes) != len(catalog.model_routes)
+    legacy_deepseek = next(
+        (route for route in catalog.model_routes if route.route_id == "new-api-default"),
+        None,
+    )
+    retired = _retire_platform_model_routes(catalog)
+    routes = list((retired or catalog).model_routes)
+    changed = retired is not None
     normalized_routes: list[ModelRouteCapability] = []
     for route in routes:
         if "vision" in route.capabilities and route.model_type == "chat":
@@ -236,6 +233,33 @@ def _upgrade_system_managed_catalog(
         else:
             normalized_routes.append(route)
     routes = normalized_routes
+    route_ids = {route.route_id for route in routes}
+    if legacy_deepseek is not None and not {
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
+    }.issubset(route_ids):
+        routes.extend(
+            ModelRouteCapability(
+                routeId=route_id,
+                label=label,
+                provider=legacy_deepseek.provider,
+                models=(model,),
+                capabilities=legacy_deepseek.capabilities,
+                credentialManaged=legacy_deepseek.credential_managed,
+                credentialReference=legacy_deepseek.credential_reference,
+            )
+            for route_id, label, model in (
+                (
+                    "deepseek-v4-flash",
+                    "DeepSeek V4 Flash",
+                    "deepseek-v4-flash",
+                ),
+                ("deepseek-v4-pro", "DeepSeek V4 Pro", "deepseek-v4-pro"),
+            )
+            if route_id not in route_ids
+        )
+        changed = True
+
     builtin_tools, builtin_changed = _append_missing(
         catalog.builtin_tools, defaults.builtin_tools, lambda item: item.name
     )
