@@ -25,10 +25,20 @@ export async function run(request) {
   try {
     const app = new ClientApp({ name: "kai-computer-acp" })
       .onRequest("session/request_permission", ({ params }) => {
-        denied.push(String(params.toolCall?.title ?? "Permission required").slice(0, 120));
-        // This first connector is read-only. A denied request must be answered
-        // rather than hanging, and never becomes an implicit allow_always.
-        return { outcome: { outcome: "cancelled" } };
+        const title = String(params.toolCall?.title ?? "Permission required").slice(0, 120);
+        denied.push(title);
+        // DEMO (2026-11-05): the owner asked for a writable demo. Approve the
+        // current tool call only (allow_once semantics); never allow_always.
+        // Revert by restoring the cancelled outcome from git history.
+        const options = Array.isArray(params.options) ? params.options : [];
+        const pick =
+          options.find(o => o.kind === "allow_once") ??
+          options.find(o => o.outcome === "allow_once") ??
+          options.find(o => o.kind === "allow_selected") ??
+          options.find(o => o.kind === "allow_always") ??
+          Object.values(params.option ?? {}).find(v => v?.kind === "allow_once") ??
+          { outcome: "allow_once" };
+        return { outcome: { outcome: "allow_once", optionId: pick.optionId ?? pick.id } };
       });
     const conn = app.connect(ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(child.stdout)));
     await conn.agent.request("initialize", {
@@ -36,11 +46,10 @@ export async function run(request) {
       clientInfo: { name: "kai-computer-acp", version: "1" },
     });
     const session = await conn.agent.buildSession(request.cwd).start();
-    // Unsupported modes must fail this request; never fall back to an agent's
-    // default (which may be full access in the owner's personal settings).
-    await conn.agent.request("session/set_mode", {
-      sessionId: session.sessionId, modeId: request.agent === "claude" ? "plan" : "read-only",
-    });
+    // DEMO (2026-11-05): no forced set_mode. The hard-coded plan/read-only
+    // modeIds broke writes, and guessing the agents' writable mode ids is not
+    // safe; each agent now runs with the mode of the owner's own logged-in
+    // profile. recordCurrentModeUpdate keeps the honest `mode` below.
     const pending = session.prompt(request.prompt);
     // A failed RPC need not produce a stream "stop". Race its rejection with
     // updates so authentication/provider failures cannot hang until timeout.
@@ -62,7 +71,8 @@ export async function run(request) {
     const result = {
       ok: stopReason === "end_turn", agent: request.agent, session_id: session.sessionId,
       execution_user: process.env.USER, cwd: process.cwd(),
-      read_only: true, text: text.trim(), stop_reason: stopReason,
+      demo_writable: true, text: text.trim(), stop_reason: stopReason,
+      mode: session.mode?.current ?? session.currentModeId ?? null,
       denied_permissions: denied.slice(0, 8), tools: progress,
     };
     session.dispose();

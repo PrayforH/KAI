@@ -1,4 +1,8 @@
-"""Lease-bound, read-only ACP calls under the enrolled desktop user's login.
+"""Lease-bound ACP calls under the enrolled desktop user's login.
+
+DEMO (2026-11-05): the owner enabled writes; permission requests are
+approved once per call inside acp_client.mjs. Revert by restoring the
+cancelled outcome there (git history of this file's client).
 
 Installed with the fixed remote gate. No model-supplied command, environment,
 user identity or adapter path is accepted. This is not a general sudo bridge.

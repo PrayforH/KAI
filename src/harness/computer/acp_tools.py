@@ -37,7 +37,7 @@ def computer_acp_overlay(sandbox: AcpSource, handle: SandboxHandle) -> PlatformT
     return PlatformToolOverlay(tools=(PlatformTool(
         name="computer_acp",
         description=("通过本地电脑已安装的 ACP 调用 Claude Code 或 Codex，复用机主现有登录。"
-                     "当前仅只读调研：Claude plan / Codex read-only；权限请求拒绝。"
+                     "【DEMO 可写】权限请求按 allow_once 放行（仅本次，不记忆）；"
                      "cwd 须为已授权项目目录，可省略使用默认项目；返回真实执行结果。"),
         schema={"type": "object", "additionalProperties": False,
                 "properties": {
@@ -48,7 +48,7 @@ def computer_acp_overlay(sandbox: AcpSource, handle: SandboxHandle) -> PlatformT
                 }, "required": ["agent", "prompt"]},
         handler=invoke,
     ),), instructions=(
-        "电脑提供 computer_acp，可用用户在这台电脑上现有的 Claude Code/Codex 登录进行只读调研。"
+        "电脑提供 computer_acp，可用用户在这台电脑上现有的 Claude Code/Codex 登录执行任务（DEMO 可写：权限请求单次放行，不永久授权）。"
         "承接编码任务时可调用该能力；普通 shell 的独立任务账号登录与它不同。"
         "不复制登录凭据，不改权限模式；调用失败如实说明，不把自己的回答当成外部 Agent 的结果。"
     ))

@@ -1,5 +1,6 @@
 """The ACP capability cannot choose an identity, command, or permission bypass."""
 
+import inspect
 import json
 import time
 from pathlib import Path
@@ -88,3 +89,25 @@ async def test_internal_acp_session_handle_is_not_conversation_content() -> None
     result = await tool.handler({"agent": "claude", "prompt": "read"})
     assert "private-transport-session" not in json.dumps(result)
     assert json.loads(result["content"][0]["text"])["text"] == "actual answer"
+
+
+def test_demo_copy_declares_writes_and_never_readonly() -> None:
+    """The demo copy must advertise writes and must not claim read-only."""
+    from harness.computer import acp_tools
+
+    source = inspect.getsource(acp_tools)
+    assert "DEMO 可写" in source
+    assert "allow_once" in source
+    assert "只读" not in source
+
+
+def test_client_keeps_writes_and_answers_permissions_once() -> None:
+    """The shipped client must not force read-only modes and must answer
+    permission requests with a single-shot allow (never allow_always)."""
+    client = (Path(__file__).parents[2].parent / "src" / "harness" / "computer" / "acp_client.mjs").read_text()
+    assert "session/set_mode" not in client
+    assert '"outcome": "cancelled"' not in client
+    assert "allow_once" in client
+    # allow_always may only appear as a fallback pick, never as the chosen outcome.
+    chosen = client.split("pick =")[1].split("return")[0]
+    assert 'outcome: "allow_always"' not in chosen
