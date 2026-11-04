@@ -9,6 +9,7 @@ already owns. Nothing else opens for ordinary task sessions.
 from collections.abc import Mapping
 from typing import Any, Protocol
 
+from pydantic import ValidationError
 from sqlalchemy import and_, cast, func, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -96,10 +97,14 @@ class CanonicalComputerAccess:
             objective_row = await db.get(
                 ObjectiveRow, binding.thread_id.removeprefix("assistant_")
             )
-            if (objective_row is None or objective_row.tenant_id != session.tenant_id
+            if (objective_row is None or objective_row.status != "active"
+                    or objective_row.tenant_id != session.tenant_id
                     or objective_row.user_id != session.user_id):
                 return False
-            objective = Objective.model_validate(objective_row.payload)
+            try:
+                objective = Objective.model_validate(objective_row.payload)
+            except ValidationError:
+                return False
             if (objective.objective_id != objective_row.objective_id
                     or objective.tenant_id != objective_row.tenant_id
                     or objective.user_id != objective_row.user_id
