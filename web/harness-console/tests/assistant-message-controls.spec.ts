@@ -10,6 +10,12 @@ it("bounds every Bot presentation rule to the assistant shell", () => {
   const rules: string[] = [];
   postcss.parse(assistant).walkRules(rule => {
     if (rule.parent?.type === "atrule" && rule.parent.name === "keyframes") return;
+    if (rule.selector === ":root" || rule.selector === 'html[data-color-mode="light"]') {
+      // Shared theme tokens do not style task/project geometry. Every actual
+      // presentation rule must still be bounded to the assistant surface.
+      rule.walkDecls(decl => expect(decl.prop.startsWith("--kai-bot-neutral-")).toBe(true));
+      return;
+    }
     rules.push(rule.selector);
     expect(rule.selectors.every(selector => selector.includes('.console-shell[data-conversation-surface="assistant"]'))).toBe(true);
     expect(rule.selector).not.toContain('body.codex-theme-v1:has');

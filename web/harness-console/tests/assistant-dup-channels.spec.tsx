@@ -25,9 +25,9 @@ describe("activity phrase never repeats the answer", () => {
     const activity = { items: [{ event_type: "message.delta", summary: longAnswer }] };
     expect(progressPhrase(activity)).toBe("");
     // 渲染层据此整行不出现，而不是画一段正文在脸旁边。
-    expect(read("src/components/agent-thread.tsx")).toContain(
-      "if (!shouldShowChatActivityRow(displayed.status, displayed)) return null;",
-    );
+    const progress = read("src/components/assistant-progress.tsx");
+    expect(progress).toContain("const visible = shouldShowChatActivityRow(activity.status, activity);");
+    expect(progress).toContain("if (!visible) return null;");
   });
 
   it("skips reasoning and over-long summaries", () => {

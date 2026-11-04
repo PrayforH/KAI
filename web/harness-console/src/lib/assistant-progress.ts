@@ -54,6 +54,11 @@ const UI_STAGES: Record<string, [string, string]> = {
 };
 
 function toolStage(name: string, args?: unknown): [string, string] {
+  if (/computer_acp$/i.test(name) && args && typeof args === "object") {
+    const agent = (args as Record<string, unknown>).agent;
+    if (agent === "claude") return ["正在使用 Claude Code。", "Claude Code 已返回，正在核对。"];
+    if (agent === "codex") return ["正在使用 Codex。", "Codex 已返回，正在核对。"];
+  }
   if (/computer_ui$/i.test(name) && args && typeof args === "object") {
     // Only an allowlisted operation enum affects the public status. Never
     // expose field text, passwords, commands, URLs or raw control references.

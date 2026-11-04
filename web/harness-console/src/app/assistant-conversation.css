@@ -726,7 +726,7 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .grok-
 /* History loads silently on reader gestures; there is no visible button.
    Pending sends use the same bubble as sent messages and go out on their own,
    so there is no stuck section or resend control to place here. */
-.chat-stage[data-surface="assistant"] .assistant-pending-messages { display: grid; gap: 12px; }
+.console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-pending-messages { display: grid; gap: 12px; }
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .steering-user-message-bubble {
   padding: 10px 14px;
   border-radius: 18px;
@@ -739,11 +739,11 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
 /* The live status sits above the composer, so it shares the composer's column
    (`width: min(800px, 100%); margin-inline: auto`). Full viewport width left it
    hugging the far-left gutter as soon as the window got wide. */
-.chat-stage[data-surface="assistant"] .assistant-message-tail-slot { flex-shrink: 0; width: min(800px, 100%); max-width: 800px; margin-inline: auto; padding-bottom: 12px; }
+.console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-message-tail-slot { flex-shrink: 0; width: min(800px, 100%); max-width: 800px; margin-inline: auto; padding-bottom: 12px; }
 
 /* The @ message shows in the conversation it was typed in (user bubble, right
    aligned, bot accent) with the handover receipt line underneath. */
-.chat-stage[data-surface="assistant"] .handover-mention-text {
+.console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .handover-mention-text {
   box-sizing: border-box;
   width: fit-content;
   max-width: min(640px, 86%);

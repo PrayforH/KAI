@@ -184,15 +184,15 @@ it("keeps assistant output avatar-free so activity rows cannot overlap it", () =
 it("places copy before edit beside the user message content", () => {
   // 操作栏与气泡同一行、排在前面的位置（贴气泡左侧）；任务面仍按原位置渲染。
   const row = agentThreadSource.indexOf('className="harness-user-answer-row"');
-  const actions = agentThreadSource.indexOf("<ActionBarPrimitive.Root", row);
-  const content = agentThreadSource.indexOf("<SentUserContent ", row);
-  const copy = agentThreadSource.indexOf("<MessageCopyButton", actions);
-  const edit = agentThreadSource.indexOf('aria-label="编辑消息"', actions);
+  const actions = agentThreadSource.indexOf("{messageActions}", row);
+  const content = agentThreadSource.indexOf("{messageContent}", row);
+  const definition = agentThreadSource.indexOf('className="harness-user-action-bar"');
+  const copy = agentThreadSource.indexOf("<MessageCopyButton", definition);
+  const edit = agentThreadSource.indexOf('aria-label="编辑消息"', definition);
   expect(row).toBeGreaterThan(-1);
   expect(actions).toBeGreaterThan(row);
   expect(content).toBeGreaterThan(actions);
-  expect(copy).toBeGreaterThan(actions);
-  expect(copy).toBeGreaterThan(actions);
+  expect(copy).toBeGreaterThan(definition);
   expect(edit).toBeGreaterThan(copy);
   expect(agentThreadSource).toContain("onClick={beginEdit}");
   expect(agentThreadSource).toContain("<MessageCopyButton");
@@ -378,7 +378,9 @@ it("keeps only copy and reply in the assistant chat message actions", () => {
   const completion = agentThreadSource.indexOf("<TurnCompletion />");
   expect(controls).toBeGreaterThan(-1);
   // 点赞、差评、分支复制都挂在 !assistantSurface 下：聊天里不出现。
-  expect(agentThreadSource.indexOf("{!assistantSurface && (", controls)).toBeGreaterThan(controls);
+  const replyBranch = agentThreadSource.indexOf("{assistantSurface ? (", controls);
+  expect(replyBranch).toBeGreaterThan(controls);
+  expect(agentThreadSource.indexOf("<MessageReplyButton", replyBranch)).toBeLessThan(feedback);
   expect(feedback).toBeGreaterThan(controls);
   expect(completion).toBeGreaterThan(feedback);
   expect(agentThreadSource).toContain('<MessageReplyButton className="assistant-message-copy"');

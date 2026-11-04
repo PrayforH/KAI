@@ -6,6 +6,7 @@ import { useAssistantSurface, useAssistantBot } from "../src/components/assistan
 import Home from "../src/app/page";
 import { PersonalAssistantEntry, PERSONAL_ASSISTANT_THREAD } from "../src/components/personal-assistant-context";
 import { createUserScopedStorage, loadOrCreateThread, selectThread } from "../src/lib/thread-store";
+import { invalidateClientReads } from "../src/lib/client-read-cache";
 
 const delayed = vi.hoisted(() => ({enabled: false, resolve: undefined as ((value: unknown) => void) | undefined}));
 const state = vi.hoisted(() => {
@@ -22,9 +23,11 @@ vi.mock("../src/lib/sidebar-state", () => ({ useSidebarProjects: () => [state.pr
 vi.mock("../src/lib/activity-store", () => ({ useRunActivity: () => null, useRunViewModel: () => null }));
 vi.mock("../src/lib/run-stream-store", () => ({ useRunStream: () => ({ status: "idle" }) }));
 vi.mock("../src/lib/assistant-client", () => ({ assistantRequest: async (path: string) => {
+  path = path.split("?")[0];
   if (path === "primary") return state.primary;
   if (path === "specialists/bot-b" && delayed.enabled) return new Promise(resolve => {delayed.resolve = resolve;});
   return {specialist: {specialistId: path.split("/")[1], name: "子助理A", agentName: "agent", agentVersion: "1", config: {}},
+    agentName: "agent", agentVersion: "1", agentOwnerUserId: "user", spaceId: null,
     threadId: path.includes("bot-b") ? "bot-second" : "bot-original", primaryObjectiveId: null};
 } }));
 vi.mock("../src/components/task-sidebar", () => ({ TaskSidebar: ({ onSelect, onNewTask }: { onSelect: (task: unknown) => void; onNewTask: () => void }) => <nav><button onClick={() => onSelect(state.task)}>打开历史任务</button><button onClick={onNewTask}>新建任务</button></nav> }));
@@ -43,6 +46,7 @@ vi.mock("../src/components/task-header-actions", () => ({ TaskDetailsPopover: ()
 let host: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
+  invalidateClientReads();
   const values = new Map<string, string>();
   vi.stubGlobal("localStorage", { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) });
   window.history.replaceState(null, "", "/assistant");

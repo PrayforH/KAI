@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const assistantRequest = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 vi.mock("../src/lib/assistant-client", () => ({
   assistantRequest: (...args: unknown[]) => assistantRequest(...args),
