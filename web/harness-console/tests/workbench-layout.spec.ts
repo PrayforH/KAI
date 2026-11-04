@@ -153,8 +153,8 @@ describe("full-page agent workbench", () => {
     expect(page).toContain('className="task-context-bar"');
     expect(page).toContain("<SidebarPanelToggle");
     expect(page).not.toContain("<HelpMenu");
-    // 电脑入口与只读占用 chip 都只在助理面出现。
-    expect(page).toContain("computerControl={personalAssistant ? (");
+    // 电脑入口与只读占用 chip 都只在助理面出现（主助理与子助理会话共享同一台电脑）。
+    expect(page).toContain("computerControl={assistantEntry ? (");
     expect(page).toContain("<DesktopOccupancyChip");
     expect(page).toContain("<AssistantComputerLink");
     expect(page).toContain("<WorkbenchRail");

@@ -151,3 +151,19 @@ schema 0065 无迁移、api/worker/feishu 未变）。`3501/3543/healthz` 均 20
 镜像 `kai/superagent-web:20261104-2fb0377d`，发布目录 `/data/kai-superagent-20261104-2fb0377d`。
 闸门同前（CAS == 4f366f3c 快照、活跃 Run/职责 0、schema 0065、api/worker/feishu 未变）；
 `3501/3543/healthz` 200、web healthy。
+
+## 子助理会话也能打开同一台电脑（2026-11-04）
+
+按用户选择走最小方案：**一人一台电脑，主助理与每个子助理会话都能打开同一个面板**。
+`page.tsx` 的挂载条件从 `personalAssistant`（仅主助理线程）改为 `assistantEntry`（整个助理面），
+页头电脑按钮与只读占用 chip 同步放开。
+
+冲突处理沿用既有租约，未改一处：
+- **独占**：`DesktopControlService.acquire_agent` 只有 OBSERVE 状态能拿到控制权；另一个 Run 再来
+  得到 `DesktopOccupiedError`，工具层返回「桌面控制权暂不可用」，不会抢活着的持有者。持有期间
+  每次使用续租（TTL），到期 `_settle` 自动回收。
+- **防串台**：每次控制权转移 `epoch += 1`，每个 GUI 动作绑定它看到的 epoch；失去控制权后再发动作
+  得到 `ComputerLeaseLostError`（「桌面控制权已变更」），旧的发送者无法继续操作。
+- **人工接管优先**：用户接管写入 HUMAN 状态并推进 epoch，Agent 侧立即失效。
+- **职责排队**：标了 `requiresDesktop` 的职责走 `acquire_desktop_turn`（优先级 + FIFO），拿不到就
+  不启动运行空耗模型；更高优先级可在 30s 宽限后软抢占（不硬打断）。
