@@ -174,7 +174,9 @@ describe("Agent Studio effective contract", () => {
     expect(DEFAULT_STUDIO_DRAFT.name).toBe("lead-agent");
     expect(DEFAULT_STUDIO_DRAFT.domain).toBe("general-assistant");
     expect(DEFAULT_STUDIO_DRAFT.version).toBe("1.0.0");
-    expect(DEFAULT_STUDIO_DRAFT.model).toBe("deepseek-v4-pro");
+    // 默认走控制面一定提供的 flash 路由；pro 缺失时不会让新任务起不来。
+    expect(DEFAULT_STUDIO_DRAFT.model).toBe("deepseek-v4-flash");
+    expect(DEFAULT_STUDIO_DRAFT.modelRoute).toBe("deepseek-v4-flash");
     expect(DEFAULT_STUDIO_DRAFT.systemPrompt).toContain("通用任务入口");
     expect(DEFAULT_STUDIO_DRAFT.systemPrompt).not.toContain("专用舆情 MCP");
     expect(skill.name).toBe("general-task-orchestration");

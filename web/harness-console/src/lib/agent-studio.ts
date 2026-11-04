@@ -517,8 +517,10 @@ export const DEFAULT_STUDIO_DRAFT: StudioDraft = {
     examples: [],
   },
   runtime: "claude-agent-sdk",
-  modelRoute: "deepseek-v4-pro",
-  model: "deepseek-v4-pro",
+  // Default to the flash route: it is the one the control plane always serves,
+  // so a new task never fails on an unavailable pro route.
+  modelRoute: "deepseek-v4-flash",
+  model: "deepseek-v4-flash",
   reasoningEffort: null,
   requiredCapabilities: ["streaming", "tool_use"],
   systemPrompt: GENERAL_LEAD_SYSTEM_PROMPT,
