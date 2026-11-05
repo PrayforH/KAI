@@ -156,6 +156,11 @@ flowchart LR
 - **操作**：页头点「打开电脑」→ 右侧分栏出现，target 默认本机。
 - **预期**：右侧显示机主 :0 实时桌面。
   - ![截图位：本机桌面画面](待补)
+- **机器侧链路已实证（2026-11-05 跟点）**：产品路径真实 Run `run_bdf2c0ce…` 经
+  computer_acp 在机主机上查得 `systemctl is-active kai-remote-display` = **active**、
+  `/run/user/1000/kai-remote/vnc.sock` = `srwx------ xiaokai xiaokai`（存在）——
+  S1 的机器侧链路 ✅；仅「画面渲染进浏览器」仍需人眼彩排。
+  - ![截图位：本机桌面画面](待补)
 - **失败判读**：黑屏/断开 → `journalctl -u kai-remote-display`（x11vnc 起没起）；
   viewer 日志 `ConnectionReset` = VNC socket 不存在（桌面服务没起）。
 
@@ -196,6 +201,11 @@ flowchart LR
 - **操作**：targets 选回「本地电脑」→ 演示中点「接管」→ 再「交还」。
 - **预期**：切回成功（D3 实测 revision 391，registry 回 remote-computer/registered）；
   接管瞬间 Bot 的桌面动作被拒（epoch 变更提示）；交还后恢复。
+- **接管链已实证（2026-11-05 跟点，产品 API 全链）**：
+  `observe(epoch 217)` → `POST /desktop/takeover` → `takeover_pending(epoch 218)` →
+  gate ack → **`human(epoch 219)`**（TTL 300s）→ `POST /desktop/heartbeat` 续期 →
+  `POST /desktop/return` → **`observe(epoch 220)`**。epoch 单调递增，交还后 binding_key
+  回归——S4 ✅（页上点按钮走的就是这三个路由）。
   - ![截图位：接管提示](待补)
 - **失败判读**：接管后 Bot 仍能操作 → epoch 校验失效（严重，查 `expected_epoch` 传递）。
 
@@ -267,11 +277,12 @@ sudo install -m 644 -o root -g root \
 | D2 本机 ACP 写入 | ✅ | `run_d741a8b5…` 写读 `D2_PRODUCT_ACP.txt`=`D2_ACP_OK`；页上复验通过 |
 | D3 云切换执行 | ✅ | rev 385→391；`run_f6323257…` 云 VM hostname=`kai-aaaa…` |
 | D4 本脚本 | ✅ | 本文（S0–S5 可跟点） |
+| 跟点验证（S0–S5 可执行部分） | ✅ | S0 用户页验 `run_5e3586a8…`；S1 机器侧 `run_bdf2c0ce…`（display active + vnc.sock 在）；S2 用户页验 `run_d741a8b5…`；S3 `run_f6323257…`；S4 接管链 epoch 217→220 产品 API 全通；S5 去重在现网 web 构建源内 |
 
 ## 六、已知缺口（演示时如实，不掩盖）
 
-1. **viewer 桌面画面彩排可选**：S1/S3 的画面未做过正式彩排（执行链路已验），演示前建议
-   各开一次面板确认画面。
+1. **viewer 桌面画面彩排可选（唯一剩余人眼项）**：机器侧链路已实证（display 服务 active、
+   vnc.sock 在），画面渲染进浏览器需演示前各开一次面板确认。
 2. **`mode` 字段为 `null`**：ACP 客户端未上报 mode id；如需收紧权限模式，须真机枚举
    `session/modes` 后回填强制 set_mode。
 3. **`denied_permissions` 是请求清单不是拒绝记录**：讲解时按 §三 S2 口径说明。
