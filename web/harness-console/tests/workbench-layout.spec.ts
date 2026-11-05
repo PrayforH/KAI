@@ -152,7 +152,11 @@ describe("full-page agent workbench", () => {
     expect(agentThread).toContain("<TaskAgentSwitcher");
     expect(page).toContain('className="task-context-bar"');
     expect(page).toContain("<SidebarPanelToggle");
-    expect(page).toContain("<HelpMenu />");
+    expect(page).not.toContain("<HelpMenu");
+    // 电脑入口与只读占用 chip 都只在助理面出现（主助理与子助理会话共享同一台电脑）。
+    expect(page).toContain("computerControl={assistantEntry ? (");
+    expect(page).toContain("<DesktopOccupancyChip");
+    expect(page).toContain("<AssistantComputerLink");
     expect(page).toContain("<WorkbenchRail");
     expect(page).not.toContain("EnvironmentBadge");
     expect(page).not.toContain("<ContextRecoveryPanel");
@@ -234,7 +238,9 @@ describe("full-page agent workbench", () => {
   it("keeps agents and skills in the simplified task sidebar", () => {
     expect(taskSidebar).not.toContain("WorkspaceModeSwitcher");
     expect(studioSidebar).not.toContain("WorkspaceModeSwitcher");
+    // 主助理入口已迁到「机器人」分区，导航只保留其余工作区。
     expect(taskSidebar).toContain('visible={["knowledge", "agents", "automation", "skills"]}');
+    expect(taskSidebar).toContain("<BotRail");
     expect(taskSidebar).not.toContain('capabilities');
     expect(taskSidebar).not.toContain('visible={["agents", "files"]}');
     expect(studioSidebar).toContain('visible={["tasks", "agents"]}');

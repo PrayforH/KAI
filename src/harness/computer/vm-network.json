@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "ethernets": {
+    "kai": {
+      "match": {"name": "e*"},
+      "dhcp4": false,
+      "dhcp6": false,
+      "addresses": ["10.0.2.15/24"],
+      "routes": [{"to": "0.0.0.0/0", "via": "10.0.2.2"}],
+      "nameservers": {"addresses": ["10.0.2.3"]}
+    }
+  }
+}

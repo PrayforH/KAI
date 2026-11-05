@@ -1,0 +1,8 @@
+{
+  "kernel": "6.1.0-54-amd64",
+  "bootId": "f1106478-f923-440b-8c31-e928cd4c3517",
+  "mountinfo": [
+    "76 27 0:36 / /home/kai rw,nosuid,nodev,relatime shared:32 - 9p kai_home rw,sync,dirsync,access=client,msize=262144,trans=virtio"
+  ],
+  "automaticWorkdiskMountAfterReboot": true
+}

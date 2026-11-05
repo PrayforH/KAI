@@ -78,3 +78,15 @@ def test_valid_api_credential_reaches_identity_and_tenant_boundary() -> None:
     assert missing_identity.json()["error"]["code"] == "identity_required"
     assert authorized.status_code == 404
     assert authorized.json()["error"]["code"] == "not_found"
+
+
+def test_feishu_identity_controls_require_authentication() -> None:
+    with protected_client() as client:
+        for method, path, body in (
+            ("GET", "status", None),
+            ("POST", "binding-code", None),
+            ("DELETE", "binding", None),
+            ("PUT", "notifications", {"enabled": False}),
+        ):
+            response = client.request(method, f"/v1/studio/assistant/feishu/{path}", json=body)
+            assert response.status_code == 401

@@ -1,0 +1,33 @@
+{
+  "checks": [
+    "/healthz",
+    "/v1/auth/me",
+    "/v1/studio/projects",
+    "/v1/agui/threads",
+    "/v1/studio/models",
+    "/v1/studio/automations",
+    "/v1/studio/assistant/objectives",
+    "/v1/studio/assistant/inbox",
+    "/v1/studio/assistant/feishu/status"
+  ],
+  "execution": "not_requested",
+  "feishu": {
+    "configured": false,
+    "enabled": false,
+    "receiverOnline": false,
+    "bound": false
+  },
+  "https_status": 200,
+  "health": {
+    "api": "healthy",
+    "worker": "healthy",
+    "web": "healthy",
+    "restarts": 0
+  },
+  "receiver_controller": {
+    "startup": "passed",
+    "heartbeat": "passed",
+    "external_connection": "not_started",
+    "sdk_send": "not_invoked"
+  }
+}

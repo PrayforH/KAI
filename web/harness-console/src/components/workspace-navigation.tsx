@@ -1,8 +1,13 @@
+"use client";
+
 import { SidebarIcon } from "./sidebar-icon";
 import Link from "next/link";
+import { prefetchThreadHistory } from "../lib/task-history";
+import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
 import styles from "./workspace-navigation.module.css";
 
 export type WorkspaceId =
+  | "assistant"
   | "tasks"
   | "agents"
   | "files"
@@ -18,6 +23,7 @@ export const workspaceItems: ReadonlyArray<{
   href: string;
   label: string;
 }> = [
+  { id: "assistant", href: "/assistant", label: "我的助理" },
   { id: "tasks", href: "/", label: "任务" },
   { id: "agents", href: "/studio/agents", label: "智能体" },
   { id: "files", href: "/studio/files", label: "我的文件" },
@@ -54,11 +60,16 @@ export function WorkspaceNavigation({
   function renderWorkspaceLink(workspace: (typeof workspaceItems)[number]) {
     const current = workspace.id === active;
     const label = labelOverrides?.[workspace.id] ?? workspace.label;
+    const warmAssistant = workspace.id === "assistant" && !current
+      ? () => { void prefetchThreadHistory(PERSONAL_ASSISTANT_THREAD).catch(() => {}); }
+      : undefined;
     return (
       <Link
         className={current ? styles.navigationActive : styles.navigationLink}
         href={workspace.href}
-        prefetch={false}
+        prefetch={workspace.id === "assistant" ? undefined : false}
+        onPointerEnter={warmAssistant}
+        onFocus={warmAssistant}
         aria-current={current ? "page" : undefined}
         title={collapsed ? label : undefined}
         key={workspace.id}

@@ -220,7 +220,6 @@ body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workbench-r
   letter-spacing: 0.1em;
 }
 
-
 .workbench-rail-files {
   display: grid;
   grid-auto-columns: minmax(0, 1fr);
@@ -266,7 +265,6 @@ body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workbench-r
   color: #767676;
   font-size: 12px;
 }
-
 
 .workbench-rail-rows code,
 .workbench-rail-thread {
@@ -1071,6 +1069,24 @@ body.codex-theme-v1:has(.console-shell) .console-header {
   white-space: nowrap;
 }
 
+/* 助理会话页头只留名称：点名称直接改资料，按钮不带任何默认外观。 */
+.task-context-bot-name {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-context-bot-name:disabled { cursor: default; }
+
+.task-context-bot-name:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
 .task-context-chip {
   min-width: 0;
   height: 30px;
@@ -1451,6 +1467,41 @@ body.codex-theme-v1:has(.console-shell) .console-header {
   color: #8c8c8c;
 }
 
+/* 顶栏电脑入口旁的只读占用 chip（P1-4 occupancy 投影）；空闲时不渲染。 */
+body.codex-theme-v1:has(.console-shell) .desktop-occupancy-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: min(26vw, 240px);
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #a8a8a8;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.codex-theme-v1:has(.console-shell) .desktop-occupancy-chip::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.8;
+}
+
+body.codex-theme-v1:has(.console-shell) .desktop-occupancy-chip[data-occupancy="held"]::before {
+  background: #d2a83a;
+}
+
+body.codex-theme-v1:has(.console-shell) .desktop-occupancy-chip[data-occupancy="queued"]::before {
+  background: #8c8c8c;
+}
+
 .header-icon-button {
   width: 32px;
   height: 32px;
@@ -1596,12 +1647,15 @@ body.codex-theme-v1:has(.console-shell) .aui-user-message-content {
 
 body.codex-theme-v1:has(.console-shell) .aui-thread-viewport-footer {
   isolation: isolate;
+  box-sizing: border-box;
   width: min(800px, 100%);
   max-width: 800px;
   margin-top: 0;
+  margin-inline: auto;
   padding: 2px 0 10px;
   background: transparent;
   backdrop-filter: none;
+  align-self: center;
 }
 
 /* Paint across the scroll gutter without widening the scroll area or clipping
@@ -1619,8 +1673,10 @@ body.codex-theme-v1:has(.console-shell) .aui-thread-viewport-footer::before {
 
 body.codex-theme-v1:has(.console-shell) .harness-composer-shell {
   --composer-shadow: 0 2px 12px rgb(0 0 0 / 18%);
+  box-sizing: border-box;
   width: 100%;
   max-width: 800px;
+  margin-inline: auto;
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell {
@@ -1675,6 +1731,117 @@ body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-in
 
 body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-input::placeholder {
   color: #767676;
+}
+
+/* 8.12 reply reference: quote bar shares the composer container; the thin
+   divider separates it from the body input. Cancelling keeps the draft. */
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-reply-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px 0;
+  min-width: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-reply-bar svg {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: #8a8a8a;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-reply-excerpt {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #9a9a9a;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: left;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-reply-cancel {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #9a9a9a;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-reply-cancel:hover {
+  background: #2a2a2a;
+  color: #efefef;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-reply-divider {
+  height: 1px;
+  margin: 8px 12px 0;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-user-message .user-reply-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  margin-bottom: 4px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #9a9a9a;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  text-align: left;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-user-message .user-reply-header svg {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-user-message .user-reply-excerpt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-user-message .user-reply-header.unavailable {
+  cursor: default;
+  color: #6f6f6f;
+  font-style: italic;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-user-message .user-reply-original {
+  max-width: 100%;
+  margin-bottom: 4px;
+  padding: 6px 10px;
+  border-left: 2px solid rgba(255, 255, 255, 0.14);
+  color: #9a9a9a;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* Drafts remain editable without a fold overlay. */
@@ -3106,7 +3273,6 @@ body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-toolba
 
 .composer-footer { display: flex; flex: 0 0 100%; width: 100%; min-width: 0; align-items: flex-end; gap: 6px; }
 
-
 /* Answer card actions share the compact, quiet Codex response controls. */
 body.codex-theme-v1 :is(button, a).card-icon-action {
   display: inline-flex;
@@ -3183,3 +3349,297 @@ body.codex-theme-v1 :is(button, a).card-icon-action { min-height: 28px; text-dec
 
 /* Project columns scroll internally rather than moving the whole workspace. */
 .studio-unified[data-project-home] > .studio-unified-content { overflow: hidden; }
+
+/* 8.5 结果优先 + 布局：进展条改为悬浮浮标（不占文档流），
+   同时修正高度链，让对话区内部滚动、输入框始终留在视口底部。 */
+
+body.codex-theme-v1:has(.console-shell) .chat-stage {
+  min-height: 0;
+  overflow: hidden;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-surface {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .chat-surface > .assistant-runtime-shell,
+body.codex-theme-v1:has(.console-shell) .chat-surface > .harness-thread-frame {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .assistant-runtime-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .assistant-runtime-shell > * {
+  min-height: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-thread-frame {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .aui-thread-root {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .aui-thread-root .aui-thread-viewport {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* ── 左栏「机器人」区（助理页）：头像列表 + 在岗/待启用分组 ── */
+body.codex-theme-v1:has(.console-shell) .bot-rail {
+  margin: 2px 8px 10px;
+  padding: 2px 6px 6px;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-toolbar {
+  margin: 0 -14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 12px;
+}
+
+/* 沿用项目区「+」的图标尺寸与悬停行为 */
+body.codex-theme-v1:has(.console-shell) .bot-rail-add {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--codex-muted, #9a9a9a);
+  cursor: pointer;
+  padding: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-add svg {
+  width: 14px;
+  height: 14px;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-add:hover {
+  background: var(--codex-accent-soft, rgb(236 236 236 / 14%));
+  color: var(--codex-ink, #fff);
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-group {
+  padding: 8px 6px 3px;
+  color: #7d7d7d;
+  font-size: 11px;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 8px;
+  border-radius: 10px;
+  color: var(--codex-ink, #f2f2f2);
+  text-decoration: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-item[data-active="true"] {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-avatar {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 9px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* 子助理头像用已选的外形（色 + 形），不再是名字首字。 */
+body.codex-theme-v1:has(.console-shell) .bot-rail-avatar svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-label {
+  display: grid;
+  min-width: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-label strong {
+  font-size: 13px;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 侧栏只显示名称；无人查看暂停用名称颜色 + title 提示，不加第二行文案。 */
+body.codex-theme-v1:has(.console-shell) .bot-rail-item[data-paused="true"] .bot-rail-label strong {
+  color: #d2a83a;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-more {
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #8a8a8a;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-rail-more:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e6e6e6;
+}
+
+/* 顶栏身份标记：与 rail 的色+形对齐；主助理仍是「K」。 */
+body.codex-theme-v1:has(.console-shell) .task-context-bot-avatar {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-right: 2px;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-context-bot-avatar .bot-rail-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-context-bot-avatar .bot-rail-avatar svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* 选中子助理时标题栏的副标题（职责一句话） */
+body.codex-theme-v1:has(.console-shell) .task-context-bot-hint {
+  margin-left: 8px;
+  color: #8a8a8a;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 新建但还没派活的 Bot：给一张空状态，不要借用主助理的会话 */
+body.codex-theme-v1:has(.console-shell) .bot-empty-state {
+  flex: 1 1 auto;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 48px 24px;
+  text-align: center;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-empty-state .bot-empty-title {
+  margin: 0;
+  color: #e8e8e8;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-empty-state .bot-empty-hint {
+  max-width: 420px;
+  margin: 0;
+  color: #8a8a8a;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+body.codex-theme-v1:has(.console-shell) .bot-empty-state .bot-empty-action {
+  margin-top: 6px;
+  padding: 9px 18px;
+  border: 1px solid #3a3a3a;
+  border-radius: 999px;
+  background: #f5f5f5;
+  color: #111;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Bot 头部的「…」：打开编辑弹窗（姓名/标题/描述/例行程序） */
+body.codex-theme-v1:has(.console-shell) .task-context-bot-more {
+  margin-left: auto;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #8a8a8a;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-context-bot-more:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ededed;
+}
+
+/* Bot navigation owns its avatar sizes and menu; task/project rows are unaffected. */
+body.codex-theme-v1:has(.console-shell) .bot-rail .bot-rail-item { flex: 1; min-width: 0; min-height: 40px; gap: 6px; padding: 4px 8px; }
+body.codex-theme-v1:has(.console-shell) .bot-rail .bot-rail-item .bot-rail-avatar { width: 32px; height: 32px; font-size: 16px; border-radius: 10px; }
+body.codex-theme-v1:has(.console-shell) .bot-rail .bot-rail-item .bot-rail-avatar svg { width: 32px; height: 32px; }
+body.codex-theme-v1:has(.console-shell) .bot-rail .bot-rail-avatar[data-working="true"] {
+  animation: kai-rail-bot-working 1.4s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+@keyframes kai-rail-bot-working {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-4px) scale(1.07, 0.94); }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.codex-theme-v1:has(.console-shell) .bot-rail .bot-rail-avatar[data-working="true"] { animation: none; }
+}
+body.codex-theme-v1:has(.console-shell) .bot-rail-row { display: flex; align-items: center; position: relative; border-radius: 10px; }
+body.codex-theme-v1:has(.console-shell) .bot-rail-row:hover { background: rgba(255, 255, 255, 0.06); }
+body.codex-theme-v1:has(.console-shell) .bot-rail-row:has(.bot-rail-item[data-active="true"]) { background: rgba(255, 255, 255, 0.1); }
+body.codex-theme-v1:has(.console-shell) .bot-rail .bot-rail-row .bot-rail-item { padding-right: 40px; background: transparent; }
+body.codex-theme-v1:has(.console-shell) .bot-rail-menu-trigger { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); width: 26px; height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: #aaa; opacity: 0; cursor: pointer; font-size: 18px; }
+body.codex-theme-v1:has(.console-shell) .bot-rail-row:hover .bot-rail-menu-trigger,
+body.codex-theme-v1:has(.console-shell) .bot-rail-row:focus-within .bot-rail-menu-trigger,
+body.codex-theme-v1:has(.console-shell) .bot-rail-menu-trigger[aria-expanded="true"] { opacity: 1; }
+body.codex-theme-v1:has(.console-shell) .bot-rail-menu-trigger:hover { background: #ffffff12; }
+body.codex-theme-v1:has(.console-shell) .bot-rail-menu-trigger:focus-visible { outline: 2px solid #aaa; }
+body.codex-theme-v1:has(.console-shell) .bot-rail-unread { flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%; background: #5b9ee9; }
+body.codex-theme-v1:has(.console-shell) .bot-rail-recover { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 7px; color: #aaa; font-size: 12px; }
+body.codex-theme-v1:has(.console-shell) .bot-rail-recover button { border: 1px solid #ffffff22; border-radius: 14px; padding: 4px 8px; background: transparent; color: inherit; cursor: pointer; }
+@media (hover: none) { body.codex-theme-v1:has(.console-shell) .bot-rail-menu-trigger { opacity: 1; } }

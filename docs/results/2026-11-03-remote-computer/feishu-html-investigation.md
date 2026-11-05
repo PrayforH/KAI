@@ -1,0 +1,13 @@
+# 跨渠道HTML未投递：只读调查
+
+此为先前诊断；2026-11-04已实现显式历史文件投递并补发，飞书sent回执已确认。最新结果见[修复报告](../2026-11-04-files-and-chat/acceptance.md)。以下保留调查时的结论。
+
+定位文件为AI应用长期记忆接入调研-2026-11.html，artifact_1132586d20e044e2bd261f4563f05a90，37659字节。对象存储真实读取成功，SHA256与登记值完全一致，文件未丢失。
+
+原运行run_eaa0c63a66bb4426b14188b991037dad在Web助理生成并发布成果，不存在对应feishu_incoming。随后飞书消息run_698fc5c5a7434c5e88f686164f3d0ac8与run_df656a96c635414aa548436d03244386有status=sent的文字回执，但这些新运行没有自己的artifact。该HTML没有assistant_channel_files行，因此没有进入上传阶段，也没有飞书上传拒绝记录。
+
+代码对应：FeishuService.process_conversation_once仅在飞书消息运行结束时enqueue(run.run_id)；ChannelFiles.enqueue仅list_for_run(当前run_id)。后续跨渠道谈论已有成果并不会自动引用原运行附件，也没有为该历史附件产生投递请求。
+
+平台已有FeishuFileTransport.upload/send和持久化重试，历史文件发送成功。模型此前“会话没配置飞书、桥只搬文本、需要用户再提供app_id/app_secret”的说法与实际能力不符。后续模型尝试打开本地飞书界面失败，是另一个步骤，不能解释原生附件从未入队。
+
+修复边界：应以显式、受归属校验的历史artifact引用产生当前绑定渠道投递请求，并将当前渠道与交付回执暴露给助理；不应扫描整段聊天或把所有Web历史文件默认群发。当前为调查结论，未新增此功能、未补发文件、未改动用户飞书绑定或密钥。

@@ -1,0 +1,30 @@
+{
+  "messageId": "om_x100b62d9fdab9cb0cfcad20606e7d3d",
+  "incomingId": "incoming_a633040bcf95472bb92a9293cf519cb2",
+  "status": "done",
+  "errorCode": null,
+  "attempts": 0,
+  "runId": "run_028f2faac9f14bee806ac123c258e57e",
+  "prepared": {
+    "text": "KAI 配置迁移图文验收\n[图片 1]\n配置迁移验收：请识别图中文字与形状颜色，记住图片验收代号 IMGSET79-G4N6；用两句话回答即可，不要联网。",
+    "artifacts": [
+      {
+        "input_artifact_id": "input_artifact_dc7ad0ab821eca0e51290ff58754332a9f89f9942b9dbe751d3f57572b718389",
+        "tenant_id": "local",
+        "user_id": "user_1c16a8994ff548c298c356fd8385eb76",
+        "name": "飞书图片.png",
+        "media_type": "image/png",
+        "status": "ready",
+        "object_key": "local/input_artifact_dc7ad0ab821eca0e51290ff58754332a9f89f9942b9dbe751d3f57572b718389",
+        "created_at": "2026-10-26T04:46:47.891430Z",
+        "sha256": "9088bee4d6993eb0c6e10144f47eb38c9eeb5ea24c0647dd4beb135f52032064",
+        "size_bytes": 7127
+      }
+    ],
+    "model_route": "deepseek-v4-flash"
+  },
+  "runStatus": "succeeded",
+  "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+  "modelRoute": "deepseek-v4-flash",
+  "answer": "图中文字为 `IMG79-R2B8`，图形是一个绿色的实心三角形，背景纯白、没有其他元素。图片验收代号 IMGSET79-G4N6 已记住。"
+}

@@ -33,6 +33,60 @@ class PostgresMemoryBankRepository:
     def __init__(self, sessions: SessionFactory) -> None:
         self._sessions = sessions
 
+    async def resolve_session_scope(self, tenant_id: str, session_id: str) -> str | None:
+        """Duty or Bot thread → specialist:{slug}；其余（含查不到）返回 None。
+
+        与 composition 的 specialist_memory_scope 同一判定，供读侧
+        （projection、harness-memory MCP 工具）与写侧（提取）共用，
+        保证"子助理对话的记忆读写都落在 specialist:{slug}"。
+        Bot 会话线程是 assistant_specialist_<specialist_id>，没有 ObjectiveRow，
+        必须按 specialist 前缀直查，否则 Bot 聊天的记忆会落回底层 agent 名下。
+        """
+        from harness.assistant.storage import ObjectiveRow, SpecialistRow
+
+        async with self._sessions() as db:
+            if session_id.startswith("assistant_"):
+                thread_id = session_id
+            else:
+                # 生产会话 id 是 session_*；职责线程要从线程绑定反查 thread_id。
+                from harness.storage.models import AguiThreadBindingRow
+
+                binding_row = await db.scalar(
+                    select(AguiThreadBindingRow.thread_id).where(
+                        AguiThreadBindingRow.session_id == session_id,
+                        AguiThreadBindingRow.tenant_id == tenant_id,
+                    )
+                )
+                thread_id = str(binding_row) if binding_row is not None else ""
+                if not thread_id.startswith("assistant_"):
+                    return None
+            if thread_id.startswith("assistant_specialist_"):
+                specialist_row = await db.scalar(
+                    select(SpecialistRow).where(
+                        SpecialistRow.specialist_id == thread_id.removeprefix("assistant_"),
+                        SpecialistRow.tenant_id == tenant_id,
+                    )
+                )
+                return f"specialist:{specialist_row.slug}" if specialist_row else None
+            objective_row = await db.scalar(
+                select(ObjectiveRow).where(
+                    ObjectiveRow.objective_id == thread_id.removeprefix("assistant_"),
+                    ObjectiveRow.tenant_id == tenant_id,
+                )
+            )
+            if objective_row is None:
+                return None
+            specialist_id = objective_row.payload.get("specialistId")
+            if not specialist_id:
+                return None
+            specialist_row = await db.scalar(
+                select(SpecialistRow).where(
+                    SpecialistRow.specialist_id == specialist_id,
+                    SpecialistRow.tenant_id == tenant_id,
+                )
+            )
+        return f"specialist:{specialist_row.slug}" if specialist_row else None
+
     async def add_entry(self, entry: MemoryEntry) -> None:
         async with self._sessions() as db:
             await self._lock_scope(db, entry)

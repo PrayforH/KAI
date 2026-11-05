@@ -1,0 +1,185 @@
+"""A viewer re-resolves the canonical target and cannot stay on an old machine."""
+
+import asyncio
+import sys
+import time
+from pathlib import Path
+
+import httpx
+import pytest
+from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
+
+from harness.computer import viewer
+from harness.computer.ssh_transport import SshEndpoint
+
+ORIGIN = "https://kai.example.test"
+
+
+@pytest.fixture
+def selected_viewer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    selected = {"target": "cloud"}
+    opened: list[str] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/targets"):
+            return httpx.Response(
+                200,
+                json={
+                    "active_target": selected["target"],
+                    "targets": [
+                        {"target_id": name, "binding_key": key * 64}
+                        for name, key in [("cloud", "c"), ("local", "a")]
+                    ]
+                    if selected.get("allowed", True)
+                    else [],
+                },
+            )
+        if request.url.path.endswith("/desktop"):
+            return httpx.Response(
+                200,
+                json={
+                    "state": selected.get("control", "observe"),
+                    "epoch": selected.get("epoch", 1),
+                    "binding_key": ("c" if selected["target"] == "cloud" else "a") * 64,
+                },
+            )
+        return httpx.Response(
+            200, json={"user": {"user_id": "owner"}, "membership": {"tenant_id": "tenant"}}
+        )
+
+    async def connect(_self, endpoint: SshEndpoint | None = None):
+        assert endpoint is not None
+        opened.append(endpoint.host)
+        return await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-u",
+            "-c",
+            "import os\nos.write(1,b'RFB 003.008\\n')\n"
+            "while True:\n data=os.read(0,4096)\n if not data:break\n os.write(1,data)",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+        )
+
+    monkeypatch.setattr(viewer.DesktopSsh, "connect", connect)
+    monkeypatch.setattr(viewer, "AUTH_CHECK_SECONDS", 0.02)
+
+    def endpoint(host):
+        return SshEndpoint(
+            host=host,
+            user="viewer",
+            identity="/private/key",
+            known_hosts="/private/hosts",
+            host_key_alias=host,
+        )
+
+    settings = viewer.ViewerSettings(
+        api_url="http://api",
+        tenant_id="tenant",
+        user_id="owner",
+        computer_id="computer_" + "a" * 32,
+        incarnation="b" * 32,
+        ssh_host="127.0.0.1",
+        identities=tmp_path,
+        origins=frozenset({ORIGIN}),
+        public_origin=ORIGIN,
+        targets={"cloud": endpoint("cloud"), "local": endpoint("local")},
+        max_viewers_per_target=1,
+    )
+    auth = httpx.AsyncClient(base_url="http://api", transport=httpx.MockTransport(respond))
+    with TestClient(viewer.create_viewer_app(settings, client=auth)) as client:
+        client.cookies.set("harness_access_token", "fixture")
+        yield client, selected, opened
+
+
+def test_selection_change_closes_old_stream_and_reconnects_to_new_machine(selected_viewer):
+    client, selected, opened = selected_viewer
+    with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}) as socket:
+        assert socket.receive_bytes() == b"RFB 003.008\n"
+        selected["target"] = "local"
+        assert socket.receive()["type"] == "websocket.close"
+    with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}) as socket:
+        assert socket.receive_bytes() == b"RFB 003.008\n"
+        selected["target"] = "cloud"
+        assert socket.receive()["type"] == "websocket.close"
+    assert opened == ["cloud", "local"]
+
+
+def test_unserved_selection_never_opens_an_ssh_connection(selected_viewer):
+    client, selected, opened = selected_viewer
+    selected["target"] = "unserved"
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}):
+            pytest.fail("unserved desktop was accepted")
+    assert opened == []
+
+
+def test_explicit_view_survives_execution_switch_without_inheriting_human_input(selected_viewer):
+    client, selected, opened = selected_viewer
+    with client.websocket_connect(
+        "/computer/desktop?target=local", headers={"origin": ORIGIN}
+    ) as socket:
+        assert socket.receive_bytes() == b"RFB 003.008\n"
+        selected["control"] = "human"  # on cloud, never on the observed local PC
+        time.sleep(0.05)
+        handshake = b"RFB 003.008\n" + b"\x01\x01"
+        socket.send_bytes(handshake)
+        assert socket.receive_bytes() == handshake
+        # An input followed by a read-only refresh must echo only the refresh.
+        socket.send_bytes(b"\x04\x01\x00\x00\x00\x00\x00\x41" + b"\x03" + b"\x00" * 9)
+        assert socket.receive_bytes() == b"\x03" + b"\x00" * 9
+        selected["target"] = "local"
+        selected["control"] = "observe"
+        time.sleep(0.05)
+        socket.send_bytes(b"\x03" + b"\x00" * 9)
+        assert socket.receive_bytes() == b"\x03" + b"\x00" * 9
+        selected["allowed"] = False
+        assert socket.receive()["type"] == "websocket.close"
+    assert opened == ["local"]
+
+
+def test_explicit_unknown_target_never_opens_transport(selected_viewer):
+    client, _, opened = selected_viewer
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/computer/desktop?target=other", headers={"origin": ORIGIN}):
+            pytest.fail("unauthorized view was accepted")
+    assert opened == []
+
+
+def test_capacity_is_independent_for_each_authorized_target(selected_viewer):
+    client, _, opened = selected_viewer
+    headers = {"origin": ORIGIN}
+    with client.websocket_connect("/computer/desktop?target=cloud", headers=headers) as cloud:
+        assert cloud.receive_bytes() == b"RFB 003.008\n"
+        with client.websocket_connect("/computer/desktop?target=local", headers=headers) as local:
+            assert local.receive_bytes() == b"RFB 003.008\n"
+            with pytest.raises(WebSocketDisconnect) as rejected:
+                with client.websocket_connect("/computer/desktop?target=cloud", headers=headers):
+                    pytest.fail("cloud exceeded its own capacity")
+            assert rejected.value.code == 1013
+            handshake = b"RFB 003.008\n" + b"\x01\x01"
+            local.send_bytes(handshake)
+            assert local.receive_bytes() == handshake
+            local.close()
+            assert local.receive()["type"] == "websocket.close"
+        cloud.close()
+        assert cloud.receive()["type"] == "websocket.close"
+    assert opened == ["cloud", "local"]
+
+
+def test_old_human_epoch_cannot_send_input_while_observation_poll_is_waiting(
+    selected_viewer, monkeypatch
+):
+    client, selected, _ = selected_viewer
+    selected["control"] = "human"
+    with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}) as socket:
+        assert socket.receive_bytes() == b"RFB 003.008\n"
+        time.sleep(0.05)
+        monkeypatch.setattr(viewer, "AUTH_CHECK_SECONDS", 100)
+        time.sleep(0.05)
+        handshake = b"RFB 003.008\n" + b"\x01\x01"
+        socket.send_bytes(handshake)
+        assert socket.receive_bytes() == handshake
+        selected["epoch"] = 2
+        socket.send_bytes(b"\x04\x01\x00\x00\x00\x00\x00\x41")
+        assert socket.receive()["type"] == "websocket.close"

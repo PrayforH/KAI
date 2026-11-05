@@ -1,0 +1,37 @@
+{
+  "oldReceiverStopProof": {
+    "appId": "cli_aa51ac4376b9dc0e",
+    "receiverStopped": true,
+    "restartDisabled": true,
+    "composeDisabled": true,
+    "containerId": "54f7b39c8a2de14201ce8e565a294bd64f49fd4f1b4f45ed877befce39cb9d08",
+    "stoppedAt": "20261026T030036Z"
+  },
+  "existingServicesChanged": {
+    "api": [
+      "HARNESS_FEISHU_ENABLED",
+      "HARNESS_FEISHU_APP_ID",
+      "HARNESS_FEISHU_APP_SECRET",
+      "HARNESS_FEISHU_PUBLIC_BASE_URL"
+    ],
+    "worker": [
+      "HARNESS_FEISHU_ENABLED",
+      "HARNESS_FEISHU_APP_ID",
+      "HARNESS_FEISHU_APP_SECRET",
+      "HARNESS_FEISHU_PUBLIC_BASE_URL"
+    ]
+  },
+  "addedServices": [
+    "feishu"
+  ],
+  "receiver": {
+    "image": "kai/feishu-receiver:20261026-r2",
+    "imageId": "sha256:1488232a85083ecd1b44084d58585692c02c3c8cf0ec642fbd33162e38f18ca4",
+    "user": "10001:10001",
+    "restart": "unless-stopped",
+    "restarts": 0,
+    "running": true,
+    "ports": {},
+    "bindMountCount": 0
+  }
+}

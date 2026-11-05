@@ -1,0 +1,75 @@
+{
+  "checkedAt": "2026-10-27T06:03:00.940668+00:00",
+  "composeMatchesR21": true,
+  "schema": "0051",
+  "services": {
+    "api": {
+      "image": "sha256:d310cd7929c2d2b4b4b6cf91bd759eacb66d9f49fce2a584e280770575458934",
+      "running": true,
+      "startedAt": "2026-10-27T04:41:54.384466835Z",
+      "health": "healthy"
+    },
+    "worker": {
+      "image": "sha256:d310cd7929c2d2b4b4b6cf91bd759eacb66d9f49fce2a584e280770575458934",
+      "running": true,
+      "startedAt": "2026-10-27T04:41:54.371809845Z",
+      "health": "healthy"
+    },
+    "computer-control": {
+      "image": "sha256:d310cd7929c2d2b4b4b6cf91bd759eacb66d9f49fce2a584e280770575458934",
+      "running": true,
+      "startedAt": "2026-10-27T04:41:41.195581193Z",
+      "health": "healthy"
+    },
+    "web": {
+      "image": "sha256:8371d939169be255126fff30299b3b086e0becc59664103b507b2fec3772819f",
+      "running": true,
+      "startedAt": "2026-10-26T06:38:26.003361417Z",
+      "health": "healthy"
+    },
+    "https": {
+      "image": "sha256:6769dc3a703c719c1d2756bda113659be28ae16cf0da58dd5fd823d6b9a050ea",
+      "running": true,
+      "startedAt": "2026-10-26T02:25:54.961752311Z",
+      "health": "healthy"
+    },
+    "feishu": {
+      "image": "sha256:8a3cf5192f8344aea1907ecfa4a910409fc7e7bfd326df983c885fc57ccd6c20",
+      "running": true,
+      "startedAt": "2026-10-27T04:42:16.483665555Z",
+      "health": null
+    },
+    "weixin": {
+      "image": "sha256:312c56977ab6e57b8d7bdeded066141e66278b0f028ec10233d8449387d2a02c",
+      "running": true,
+      "startedAt": "2026-10-27T04:42:16.441507215Z",
+      "health": null
+    },
+    "postgres": {
+      "image": "sha256:e374467f6b36d28f106f379f410b9bdee9a586f96dcac41c5f4c42c09bebd80b",
+      "running": true,
+      "startedAt": "2026-10-13T01:18:53.559474117Z",
+      "health": "healthy"
+    },
+    "minio": {
+      "image": "sha256:9d668e47f1fc60ea49af4203deee87a657eb1aa0e2761fee2c7c2d1df282c880",
+      "running": true,
+      "startedAt": "2026-10-13T01:10:47.546285183Z",
+      "health": "healthy"
+    },
+    "redis": {
+      "image": "sha256:4326c43a061bc3984d6fcb5acd34f6cf363523a76920eee2a405f5b7fd55aa92",
+      "running": true,
+      "startedAt": "2026-10-13T01:10:47.505790478Z",
+      "health": "healthy"
+    }
+  },
+  "ownerComputer": {
+    "computer_id": "computer_76649d1de93843289142040974d587f9",
+    "provider_ref": "262941df38841f8bbfed06baedde379516c2021781badc642f570a3aa3d198ae",
+    "image": "sha256:9b926012e692cec7a060124926a2b7638cf81faa13ccd3cb73d72704e11fb88c",
+    "volume_ref": "kai-computer-76649d1de93843289142040974d587f9",
+    "state": "idle",
+    "epoch": 9
+  }
+}

@@ -215,6 +215,7 @@ class AguiRunService:
         archived: bool = False,
         project_id: str | None = None,
         offset: int = 0,
+        query: str | None = None,
     ) -> list[StoredAguiThreadBinding]:
         return await self._bindings.list_for_user(
             tenant_id,
@@ -223,6 +224,7 @@ class AguiRunService:
             archived=archived,
             project_id=project_id,
             offset=offset,
+            **({"query": query} if query is not None else {}),
         )
 
     async def mark_read(
@@ -379,11 +381,16 @@ class AguiRunService:
         space_id: str | None = None,
         connection_mode: Literal["caller_owned", "service_owned"] = "caller_owned",
         project_id: str | None = None,
+        quoted_message_context: str = "",
+        deduplicate_active_input: bool = True,
+        append_to_history: bool = False,
+        assistant_dispatch: bool = False,
     ) -> AguiRunCreation:
         prompt, input_artifact_ids = _latest_user_input(request)
         conversation_prompts = _user_prompts(request)
         model_route_override = _model_route_override(request)
         requested_knowledge = _knowledge_references_override(request)
+        reply_reference = _reply_reference(request)
         if project_id is not None and self._project_context is not None:
             if await self._project_context(tenant_id, user_id, project_id) is None:
                 raise NotFoundError(f"Project not found: {project_id}")
@@ -417,6 +424,12 @@ class AguiRunService:
                 prefix = branch_snapshot.user_prompts()
                 if prefix and conversation_prompts[: len(prefix)] == prefix:
                     conversation_prompts = conversation_prompts[len(prefix) :]
+            if append_to_history:
+                conversation_prompts = await self._append_history_prompt(tenant_id, binding, prompt)
+            else:
+                conversation_prompts = await self._restore_history_prefix(
+                    tenant_id, binding, request, conversation_prompts
+                )
             captured_skills = []
             if project_context is not None and project_context.skill_references:
                 if self._project_skill_snapshots is None:
@@ -470,6 +483,27 @@ class AguiRunService:
                     raise ConflictError("当前运行时不支持知识问答，请切换支持知识检索的智能体")
             run_input: dict[str, object] = {
                 "prompt": prompt,
+                # Internal dispatch context stays available to execution, without
+                # being repeated as a user-authored message in the Bot UI.
+                **({"assistant_dispatch": True} if assistant_dispatch
+                   and binding.project_id is None else {}),
+                # Presentation guidance is opt-in per send, never inherited from a thread name.
+                **({"conversation_surface": "assistant"} if (
+                    isinstance(request.forwarded_props, dict)
+                    and request.forwarded_props.get("conversationSurface") == "assistant"
+                    and binding.project_id is None
+                ) else {}),
+                # 助理范围（主助理会话、子助理会话与它们的例行执行）：
+                # 平台联网配好时默认跟随，不要求逐个 Bot 另行配置。
+                **({"assistant_scope": True} if (
+                    isinstance(request.forwarded_props, dict)
+                    and (
+                        request.forwarded_props.get("assistantScope") is True
+                        or request.forwarded_props.get("conversationSurface") == "assistant"
+                    )
+                ) else {}),
+                **({"quoted_message_context": quoted_message_context}
+                   if quoted_message_context else {}),
                 "conversation_prompts": conversation_prompts,
                 "input_artifact_ids": user_input_ids,
                 **(
@@ -478,6 +512,7 @@ class AguiRunService:
                     else {}
                 ),
                 **({"project_skill_snapshots": captured_skills} if captured_skills else {}),
+                **({"reply_to": reply_reference} if reply_reference is not None else {}),
                 **({"project_document_ids": project_document_ids} if project_document_ids else {}),
                 **(
                     {"required_model_capabilities": ["vision"]}
@@ -548,7 +583,7 @@ class AguiRunService:
                 binding.session_id,
                 request.run_id,
                 input=run_input,
-                deduplicate_active_input=True,
+                deduplicate_active_input=deduplicate_active_input,
             )
             current = await self._bindings.get_by_thread(tenant_id, user_id, request.thread_id)
             if current.session_id == binding.session_id:
@@ -574,6 +609,63 @@ class AguiRunService:
             reused=not creation.created,
             deduplicated=creation.deduplicated,
         )
+
+    async def _append_history_prompt(
+        self, tenant_id: str, binding: AguiThreadBinding, prompt: str,
+    ) -> list[str]:
+        """Server-delivered Bot messages append rather than edit the visible branch."""
+        runs = await self._run_service.list_for_sessions(
+            tenant_id, list(binding.session_ids), limit=200,
+        )
+        if not runs:
+            return [prompt]
+        latest = max(runs, key=lambda run: (run.created_at, run.run_id))
+        stored = latest.input.get("conversation_prompts")
+        if (isinstance(stored, list) and stored
+                and all(isinstance(item, str) for item in stored)
+                and stored[-1] == latest.input.get("prompt")):
+            return [*stored, prompt]
+        ordered = sorted(runs, key=lambda run: (run.created_at, run.run_id))
+        prefix = [str(run.input["prompt"]) for run in ordered
+                  if isinstance(run.input.get("prompt"), str) and run.input["prompt"].strip()]
+        return [*prefix, prompt]
+
+    async def _restore_history_prefix(
+        self,
+        tenant_id: str,
+        binding: AguiThreadBinding,
+        request: RunAgentInput,
+        prompts: list[str],
+    ) -> list[str]:
+        # A restored browser may only have the last history page. Its preceding
+        # user message identifies the durable Run whose prefix was not loaded.
+        # Match both that owner-scoped anchor and its text suffix: edits retain
+        # the prefix before the edited turn without resurrecting later turns.
+        users = [message for message in request.messages if message.role == "user"]
+        if len(users) < 2 or len(prompts) < 2:
+            return prompts
+        anchor_id = users[-2].id
+        if not anchor_id.startswith("user-"):
+            return prompts
+        try:
+            anchor = await self._run_service.get(tenant_id, anchor_id.removeprefix("user-"))
+        except NotFoundError:
+            return prompts
+        if anchor.session_id not in binding.session_ids:
+            return prompts
+        stored = anchor.input.get("conversation_prompts")
+        stored_items = cast(list[object], stored) if isinstance(stored, list) else []
+        if not (
+            stored_items
+            and all(isinstance(item, str) for item in stored_items)
+            and stored_items[-1] == anchor.input.get("prompt")
+        ):
+            return prompts
+        complete = cast(list[str], stored_items)
+        previous = prompts[:-1]
+        if len(previous) < len(complete) and previous == complete[-len(previous) :]:
+            return [*complete, prompts[-1]]
+        return prompts
 
     async def resolve_title(self, binding: StoredAguiThreadBinding, prompts: list[str]) -> str:
         if binding.title and (
@@ -1176,6 +1268,33 @@ def _latest_user_input(request: RunAgentInput) -> tuple[str, list[str]]:
                 input_artifact_ids.append(input_artifact_id)
         return text, input_artifact_ids
     return "", []
+
+
+def _reply_reference(request: RunAgentInput) -> dict[str, str] | None:
+    """Quoted-message reference from the composer, per the reply protocol.
+
+    The client excerpt is display-only; routing back to the referenced
+    message resolves through its persisted run, never through the excerpt.
+    """
+    raw = request.forwarded_props
+    if not isinstance(raw, dict):
+        return None
+    value = cast(dict[str, object], raw).get("replyTo")
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ConflictError("reply reference is invalid")
+    reply = cast(dict[str, object], value)
+    message_id = reply.get("messageId")
+    if not isinstance(message_id, str) or not 1 <= len(message_id) <= 200:
+        raise ConflictError("reply reference is invalid")
+    reference = {"message_id": message_id}
+    excerpt = reply.get("excerpt")
+    if excerpt is not None:
+        if not isinstance(excerpt, str):
+            raise ConflictError("reply reference is invalid")
+        reference["excerpt"] = excerpt[:400]
+    return reference
 
 
 def _user_prompts(request: RunAgentInput) -> list[str]:

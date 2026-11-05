@@ -1,0 +1,2 @@
+{"queued": {"deliveryId": "file_48ef503610546b4bb18ad611f3bf0f5f", "artifactId": "artifact_1132586d20e044e2bd261f4563f05a90", "status": "pending", "errorCode": null, "messageId": null}, "receiverOnline": true}
+{"confirmed": {"deliveryId": "file_48ef503610546b4bb18ad611f3bf0f5f", "artifactId": "artifact_1132586d20e044e2bd261f4563f05a90", "status": "sent", "errorCode": null, "messageId": "om_x100b6194cf728ca0cfef4a14ccb46f4"}}

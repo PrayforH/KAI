@@ -71,7 +71,7 @@ describe("account settings", () => {
     expect(productIcons).toContain("export type ProductIconName");
     expect(productIcons).toContain("data-product-icon={name}");
     expect(settings).toContain("const SETTINGS_NAV");
-    expect(settings.match(/href: "#/g)).toHaveLength(10);
+    expect(settings.match(/href: "#/g)).toHaveLength(13);
     expect(settings).toContain("<ProductIcon name={item.icon} />");
     expect(styles).toMatch(
       /\.account-actions svg\s*\{[^}]*stroke-width:\s*1\.65;/s,

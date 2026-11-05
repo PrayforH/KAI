@@ -1,0 +1,10 @@
+{
+  "supervisor-kernel-3.10": {
+    "exit": 0,
+    "expectedTests": 11
+  },
+  "supervisor-kernel-6.1": {
+    "exit": 0,
+    "expectedTests": 11
+  }
+}

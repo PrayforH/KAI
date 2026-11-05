@@ -385,6 +385,7 @@ class RunService:
                 "run.steer.sending",
                 "run.steer.accepted",
                 "run.steer.failed",
+                "run.steer.unknown",
             ),
         )
         ready = False

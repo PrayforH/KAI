@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { composerTrigger, queueAttachments, queueMayDispatch, restorePromptQueue } from "../src/lib/composer-interactions";
+import { composerTrigger, queueAttachments, queueMayDispatch, releaseUncertainSends, restorePromptQueue, settleAssistantFollowup, nextQueuedPrompt, nextSteeringPrompt, reconcilePromptHistory } from "../src/lib/composer-interactions";
 import { composerOptions } from "../src/components/composer-assist";
 import { durationLabel } from "../src/components/activity-summary";
 
@@ -41,4 +41,61 @@ describe("composer semantics and queue boundaries", () => {
   it("does not show a sixty-second remainder", () => {
     expect(durationLabel(119900)).toBe("1分59秒");
   });
+});
+
+describe("assistant follow-up delivery races", () => {
+  it("continues a definitely undelivered message as a fresh turn, preserving its identity and attachments", () => {
+    const original = { id: "m1", text: "帮我恢复下", attachments: [], steerRunId: "ended", intent: "steer" as const };
+    const next = settleAssistantFollowup(original, "not_delivered")!;
+    expect(next.id).toBe(original.id);
+    expect(next.attachments).toBe(original.attachments);
+    expect(next.intent).toBe("next");
+    expect(next.steerRunId).toBeUndefined();
+    expect(nextQueuedPrompt([next])).toBe(next);
+  });
+  it("never automatically duplicates an ambiguous write, without blocking later distinct sends", () => {
+    const uncertain = settleAssistantFollowup({ id: "m1", text: "补充", attachments: [], steerRunId: "ended" }, "unknown")!;
+    expect(nextQueuedPrompt([uncertain])).toBeUndefined();
+    const fresh = { id: "m2", text: "继续检查", attachments: [] };
+    expect(nextQueuedPrompt([uncertain, fresh])).toBe(fresh);
+    expect(uncertain.steerRunId).toBe("ended");
+    expect(settleAssistantFollowup(uncertain, "accepted")).toBeNull();
+  });
+  it("turns an uncertain send into its own turn once no run is left to reconcile against", () => {
+    const uncertain = settleAssistantFollowup({ id: "m1", text: "帮我恢复下", attachments: [], steerRunId: "ended", intent: "steer" }, "unknown")!;
+    const [released] = releaseUncertainSends([uncertain]);
+    expect(released!.id).toBe("m1");
+    expect(released!.text).toBe("帮我恢复下");
+    expect(released!.receipt).toBeUndefined();
+    expect(released!.steerRunId).toBeUndefined();
+    // Now it is dispatched as a normal queued turn instead of waiting on a tap.
+    expect(nextQueuedPrompt([released!])).toBe(released);
+  });
+  it("leaves reconciled and already-clean rows untouched so placement stays stable", () => {
+    const placed = { ...settleAssistantFollowup({ id: "m2", text: "旧补充", attachments: [], steerRunId: "r" }, "failed")!, historyRunId: "run-9" };
+    const clean = { id: "m3", text: "普通", attachments: [] };
+    const input = [placed, clean];
+    expect(releaseUncertainSends(input)).toBe(input);
+  });
+});
+
+
+it("sends the next distinct message without waiting for earlier consumption receipts", () => {
+  const first = { id: "one", text: "第一条", attachments: [], intent: "steer" as const, steerRunId: "r" };
+  const second = { id: "two", text: "第二条", attachments: [], intent: "steer" as const };
+  const third = { id: "three", text: "第三条", attachments: [], intent: "steer" as const };
+  expect(nextSteeringPrompt([first, second, third], ["one"])).toBe(second);
+  expect(nextSteeringPrompt([first, { ...second, steerRunId: "r" }, third], ["one", "two"])).toBe(third);
+  expect(nextSteeringPrompt([first], ["one"])).toBeUndefined();
+});
+
+it("reconciles legacy stuck sends with durable history without replaying them", () => {
+  const legacy = {id: "old", text: "帮我恢复下", attachments: [], receipt: "unknown" as const};
+  const history = [{run_id: "original", status: "succeeded", items: [{event_type: "run.steer.requested", metadata: {request_id: "old"}}]}];
+  const placed = reconcilePromptHistory([legacy], history);
+  expect(placed[0].historyRunId).toBe("original");
+  expect(nextQueuedPrompt(placed)).toBeUndefined();
+  history[0].items.push({event_type: "run.steer.accepted", metadata: {request_id: "old"}});
+  expect(reconcilePromptHistory(placed, history)).toEqual([]);
+  expect(reconcilePromptHistory([{id:"old",text:"补充",attachments:[],steerRunId:"original"}],history)).toEqual([]);
 });

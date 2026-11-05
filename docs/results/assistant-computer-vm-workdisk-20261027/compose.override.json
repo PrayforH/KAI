@@ -1,0 +1,50 @@
+{
+  "services": {
+    "computer-vm": {
+      "user": "28000:28000",
+      "command": [
+        "-machine",
+        "q35,accel=kvm",
+        "-cpu",
+        "host",
+        "-smp",
+        "2",
+        "-m",
+        "4096",
+        "-display",
+        "none",
+        "-monitor",
+        "none",
+        "-serial",
+        "file:/vm/serial.log",
+        "-drive",
+        "file=/vm/root.qcow2,if=virtio,format=qcow2,cache=none,discard=unmap",
+        "-drive",
+        "file=/vm/seed.iso,format=raw,if=virtio,readonly=on",
+        "-netdev",
+        "user,id=net0,hostfwd=tcp:0.0.0.0:2222-:22",
+        "-device",
+        "virtio-net-pci,netdev=net0",
+        "-device",
+        "virtio-rng-pci",
+        "-sandbox",
+        "on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny",
+        "-virtfs",
+        "local,path=/shared/home,mount_tag=kai_home,security_model=passthrough,multidevs=forbid"
+      ],
+      "volumes": [
+        {
+          "type": "volume",
+          "source": "workdisk",
+          "target": "/shared/home"
+        }
+      ]
+    }
+  },
+  "volumes": {
+    "workdisk": {
+      "external": true,
+      "name": "kai-computer-workdisk-probe-20261027"
+    }
+  }
+}

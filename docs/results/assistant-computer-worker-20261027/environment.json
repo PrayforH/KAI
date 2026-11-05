@@ -1,0 +1,31 @@
+{
+  "kernel": "3.10.0-1160.119.1.el7.x86_64",
+  "dockerServer": "26.1.4",
+  "imageTag": "kai/assistant-computer:20261027-v0h",
+  "imageId": "sha256:9b926012e692cec7a060124926a2b7638cf81faa13ccd3cb73d72704e11fb88c",
+  "sourceSha256": {
+    "src/harness/computer/__init__.py": "9e26d93dd6aa4ed7f08c3dfe27c5652fd27cb25aae3c6960622a1734ed2d7dfb",
+    "src/harness/computer/control.py": "d411d467afc1365469178c401f9f59c4aabe81f9f646e0061e0b6d6854626afc",
+    "src/harness/computer/control_server.py": "626ebecc93069e25c1fb84d59f71404cfc5f0da5e768fb5a47080fcc36049d95",
+    "src/harness/computer/docker.py": "1744d653a1e894241d1541f6cb765db539a7820d8b46642ea7bec302fc5dbf99",
+    "src/harness/computer/host.py": "d20d1ef8fd6e504b18d036b0af304522bb49d5710cd26693de6aa594f81ff7bd",
+    "src/harness/computer/manager.py": "021f427aae1c6f57a510c102826f95186bea4f916e3b432c5dd1ae960ee90bf6",
+    "src/harness/computer/models.py": "3bf17a88cbc4f6d55e39235cfd2e458c6847b9831e5bae8f2e74ba5190be5cac",
+    "src/harness/computer/registry.py": "a9203ce43a7e7ad19be924edef035c287e7496156ee60200b7129dfd8bd09376",
+    "src/harness/computer/sandbox.py": "e56d931dd62c1dcdc81730bc7b26c00abe504d6eee79e57f195b471de8d0ac32",
+    "src/harness/computer/storage.py": "1a6e43adae4ecf86ae1ce9b998bb1bac6528f79b23138707fbba3ff08d9c9dc4",
+    "src/harness/computer/supervisor.py": "7a2d2c6c56669865ddd6b00f4aff84a23dfa84809730e8b5a4f93d519fea3a99",
+    "src/harness/computer/workspace.py": "1b1c513b0adb7b633057b8759dc0d4299a879003962da6aa1fae37c99d808a8b",
+    "src/harness/computer/workspace_guest.py": "5336a2561f8c36dc39f6a4672b94815171ae089d370fb7f2e33e8158476694c7",
+    "scripts/probe_assistant_computer_worker.py": "7dca054ed74526e26948c207e7b99d346ed63c67484a4f7f644535d61777dfba",
+    "src/harness/worker/orchestrator.py": "83e4d1fce79047228878441d40d7a30886b8b7f06f578af12a3a3d9d34391eb3",
+    "src/harness/sandbox/base.py": "53585c0b222b4cbe96c1c9f4970ebe29aa5e88eab17d4b50210bd5434806c7a0"
+  },
+  "taskUid": 28000,
+  "memoryBytes": 536870912,
+  "nanoCpus": 500000000,
+  "productionComputerEnabled": false,
+  "testDatabase": "harness_computer_probe",
+  "testedSourceMatchesCheckout": true,
+  "runtimeScope": "Deterministic runtime; real Docker execution; Run/event fixture repositories in memory"
+}

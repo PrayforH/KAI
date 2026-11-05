@@ -6,10 +6,25 @@ import {
   invalidateThreadHistory,
   loadTasks,
   prefetchThreadHistory,
+  settleHistoryActivity,
   TASK_LIST_REQUEST_TIMEOUT_MS,
 } from "../src/lib/task-history";
 
 describe("thread history activity restoration", () => {
+  it("reuses the first assistant snapshot and conditionally refreshes later snapshots", async () => {
+    const first = historyResponse("succeeded", "不变的回答");
+    first.headers.set("ETag", '"first-page"');
+    const fetcher = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(new Response(null, { status: 304 }));
+    vi.stubGlobal("fetch", fetcher);
+    const adapter = createThreadHistoryAdapter("assistant-conditional", { reuseInitialSnapshot: true });
+    await adapter.load();
+    await adapter.loadSnapshot();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    const refreshed = await adapter.loadSnapshot();
+    expect(fetcher.mock.calls[1][1]?.headers).toEqual({ "If-None-Match": '"first-page"' });
+    expect(refreshed.messages.at(-1)?.message.content).toEqual([{ type: "text", text: "不变的回答" }]);
+    adapter.dispose();
+  });
   afterEach(() => {
     activityStore.clear();
     vi.useRealTimers();
@@ -117,6 +132,20 @@ describe("thread history activity restoration", () => {
     expect(repository.messages.at(-1)?.message.content).toEqual([
       { type: "text", text: "预取完成" },
     ]);
+  });
+
+  it("shares the startup history request with simultaneous external reconciliation", async () => {
+    let resolveFetch!: (response: Response) => void;
+    const fetchMock = vi.fn(() => new Promise<Response>(resolve => { resolveFetch = resolve; }));
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = createThreadHistoryAdapter("thread-startup-shared");
+    const startup = adapter.load();
+    const reconcile = adapter.loadSnapshot();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    resolveFetch(historyResponse("succeeded", "同步后的历史"));
+    const [first, second] = await Promise.all([startup, reconcile]);
+    expect(first.messages.at(-1)?.message.content).toEqual(second.messages.at(-1)?.message.content);
+    adapter.dispose();
   });
 
   it("invalidates a prefetched conversation after a new run finishes", async () => {
@@ -227,4 +256,29 @@ it("restores an active video task without adopting it as a text model run", asyn
   expect(onActiveRun).not.toHaveBeenCalled();
   expect(restored.messages).toHaveLength(2);
   adapter.dispose();
+});
+
+describe("settleHistoryActivity", () => {
+  const running = {
+    run_id: "run-1", status: "running", started_at: "2026-11-04T01:00:00Z", metrics: {},
+    items: [{ id: "i1", event_type: "tool.started", kind: "analysis", status: "running",
+      title: "检索", summary: "正在检索相关资料", sequence: 1, timestamp: "2026-11-04T01:00:00Z", metadata: {} }],
+  } as const;
+
+  it("settles a stale running snapshot when the thread's latest run already ended", () => {
+    const settled = settleHistoryActivity(running as never, "succeeded");
+    expect(settled.status).toBe("succeeded");
+    expect(settled.run_id).toBe("run-1");
+    expect(settled.items).toBe(running.items);
+  });
+
+  it("keeps the live status while the thread is still active", () => {
+    expect(settleHistoryActivity(running as never, "running").status).toBe("running");
+    expect(settleHistoryActivity(running as never, "queued").status).toBe("running");
+  });
+
+  it("never rewrites a snapshot that already records its own terminal state", () => {
+    const failed = { ...running, status: "failed" } as never;
+    expect(settleHistoryActivity(failed, "succeeded").status).toBe("failed");
+  });
 });

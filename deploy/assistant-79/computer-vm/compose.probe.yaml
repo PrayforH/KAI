@@ -1,0 +1,51 @@
+services:
+  computer-vm:
+    image: ${KAI_VM_PROBE_IMAGE:?Use the verified immutable runner image ID}
+    container_name: kai-computer-vm-probe-20261027
+    labels:
+      kai.probe: computer-vm-20261027
+    user: "28010:28010"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 6g
+    cpus: 2
+    pids_limit: 128
+    network_mode: bridge
+    restart: "no"
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=64m
+    devices:
+      - ${KAI_VM_PROBE_DIR:?Use the private probe release directory}/kvm-device:/dev/kvm:rw
+    ports:
+      - 127.0.0.1:22079:2222
+    volumes:
+      - ${KAI_VM_PROBE_DIR}/debian.qcow2:/base/debian.qcow2:ro
+      - ${KAI_VM_PROBE_DIR}/vm:/vm
+    command:
+      - -machine
+      - q35,accel=kvm
+      - -cpu
+      - host
+      - -smp
+      - "2"
+      - -m
+      - "4096"
+      - -display
+      - none
+      - -monitor
+      - none
+      - -serial
+      - file:/vm/serial.log
+      - -drive
+      - file=/vm/root.qcow2,if=virtio,format=qcow2,cache=none,discard=unmap
+      - -drive
+      - file=/vm/seed.iso,format=raw,if=virtio,readonly=on
+      - -netdev
+      - user,id=net0,hostfwd=tcp:0.0.0.0:2222-:22
+      - -device
+      - virtio-net-pci,netdev=net0
+      - -device
+      - virtio-rng-pci
+      - -sandbox
+      - on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny

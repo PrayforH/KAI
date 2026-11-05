@@ -1,0 +1,288 @@
+"""The personal assistant conversation, shared by Web and private channels."""
+
+from collections.abc import Mapping, Sequence
+from typing import cast
+
+from ag_ui.core import (
+    AudioInputContent,
+    DocumentInputContent,
+    ImageInputContent,
+    InputContentDataSource,
+    RunAgentInput,
+    TextInputContent,
+    UserMessage,
+)
+
+from harness.agui.response import final_response_text
+from harness.agui.service import AguiRunService
+from harness.application.agents import AgentService
+from harness.application.runs import RunService
+from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
+from harness.assistant.controls import CONTROL_HELP, RUN_LABELS, ControlIntent
+from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
+from harness.core.models import InputArtifact, Run
+from harness.core.ports import EventRepository
+
+
+def _previous_prompts(runs: list[Run]) -> list[str]:
+    ordered = sorted(runs, key=lambda run: (run.created_at, run.run_id))
+    if not ordered:
+        return []
+    latest = ordered[-1]
+    raw = latest.input.get("conversation_prompts")
+    prompts = cast(list[object], raw) if isinstance(raw, list) else []
+    if (
+        prompts
+        and all(isinstance(prompt, str) for prompt in prompts)
+        and prompts[-1] == latest.input.get("prompt")
+    ):
+        return list(cast(list[str], prompts))
+    return [str(run.input["prompt"]) for run in ordered if run.input.get("prompt")]
+
+
+class PersonalConversation:
+    def __init__(
+        self,
+        *,
+        agui: AguiRunService,
+        runs: RunService,
+        agents: AgentService,
+        events: EventRepository,
+    ) -> None:
+        self.agui, self.runs, self.agents, self.events = agui, runs, agents, events
+
+    async def submit(
+        self,
+        tenant_id: str,
+        user_id: str,
+        key: str,
+        text: str,
+        *,
+        artifacts: Sequence[InputArtifact] = (),
+        model_route: str | None = None,
+        reply_to: Mapping[str, str] | None = None,
+    ) -> Run:
+        target_thread = (reply_to or {}).get("threadId", PERSONAL_ASSISTANT_THREAD)
+        coordinates = dict(tenant_id=tenant_id, user_id=user_id, thread_id=target_thread)
+        try:
+            record = await self.agui.get_thread_record(**coordinates)
+        except NotFoundError:
+            if target_thread != PERSONAL_ASSISTANT_THREAD:
+                # An unavailable quoted task must never become a replacement task.
+                raise
+            record = None
+        previous: list[str] = []
+        if record:
+            # Recover a submission even if a process stopped before linking it,
+            # or the user switched Agent versions and retained earlier sessions.
+            for session_id in reversed(record.session_ids):
+                run = await self.runs.find_by_idempotency_key(tenant_id, session_id, key)
+                if run is not None:
+                    return run
+            binding = await self.agui.get_binding(**coordinates)
+            name, version = binding.agent_name, binding.agent_version
+            owner, space = binding.agent_owner_user_id, binding.space_id
+            previous = _previous_prompts(
+                await self.runs.list_for_sessions(tenant_id, list(record.session_ids), limit=200)
+            )
+        else:
+            agent = await self.agents.ensure_user_default(tenant_id, user_id)
+            if agent is None:
+                raise ConflictError("No personal assistant is configured")
+            name, version, owner, space = agent.name, agent.version, user_id, None
+        await self.agents.get_published(tenant_id, owner or user_id, name, version)
+        created = await self.agui.create_run_with_result(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            agent_name=name,
+            agent_version=version,
+            agent_owner_user_id=owner,
+            space_id=space,
+            project_id=getattr(record, "project_id", None),
+            connection_mode="service_owned",
+            # Distinct external messages must retain their own durable key,
+            # including two identical greetings while another turn is active.
+            deduplicate_active_input=False,
+            request=RunAgentInput(
+                thread_id=target_thread,
+                run_id=key,
+                state={},
+                # AG-UI uses the user-message path to distinguish an append
+                # from editing an earlier turn. A one-message request would
+                # hide every preceding Web turn as a replaced branch.
+                messages=[
+                    *[
+                        UserMessage(id=f"{key}-previous-{index}", content=prompt)
+                        for index, prompt in enumerate(previous)
+                    ],
+                    UserMessage(
+                        id=key,
+                        content=[
+                            TextInputContent(text=text),
+                            *[
+                                (
+                                    ImageInputContent
+                                    if artifact.media_type.startswith("image/")
+                                    else AudioInputContent
+                                    if artifact.media_type.startswith("audio/")
+                                    else DocumentInputContent
+                                )(
+                                    source=InputContentDataSource(
+                                        value=artifact.input_artifact_id,
+                                        mime_type=artifact.media_type,
+                                    ),
+                                    metadata={
+                                        "inputArtifactId": artifact.input_artifact_id,
+                                        "filename": artifact.name,
+                                    },
+                                )
+                                for artifact in artifacts
+                            ],
+                        ]
+                        if artifacts
+                        else text,
+                    ),
+                ],
+                tools=[],
+                context=[],
+                forwarded_props={
+                    **({"modelRoute": model_route} if model_route else {}),
+                    # 渠道引用走同一内部引用协议；摘录只用于展示。
+                    **({"replyTo": dict(reply_to)} if reply_to else {}),
+                },
+            ),
+        )
+        return created.run
+
+    async def result_reference(
+        self, tenant_id: str, user_id: str, *, run_id: str
+    ) -> Mapping[str, str] | None:
+        """Resolve a transport's durable result receipt under the current owner's binding.
+
+        The channel adapter supplies run_id from its own sent rows, never from
+        quoted text. Access is checked again on submission through AG-UI.
+        """
+        try:
+            run = await self.runs.get(tenant_id, run_id)
+            thread = await self.agui.get_thread_record_for_session(
+                tenant_id=tenant_id, user_id=user_id, session_id=run.session_id
+            )
+        except (NotFoundError, PermissionDeniedError):
+            return None
+        events = await self.events.list_after(tenant_id, run_id, 0)
+        messages = [event for event in events if event.type == "message.delta"]
+        if not messages:
+            return None
+        last = messages[-1]
+        return {
+            "threadId": thread.thread_id,
+            "messageId": str(last.payload.get("message_id", f"assistant-{run_id}")),
+            "excerpt": final_response_text(events)[:200],
+        }
+
+    async def reply_reference(
+        self, tenant_id: str, user_id: str, *, platform_message_id: str, prefix: str
+    ) -> Mapping[str, str] | None:
+        """把渠道消息 id 映射成内部引用（user-<run_id>）。
+
+        只认该用户自己线程里、由这条渠道消息产生的运行；找不到就返回 None，
+        调用方据此保留原文并说明"无法定位原消息"，绝不猜最近一条。
+        """
+        if not platform_message_id:
+            return None
+        return await self.reply_reference_by_key(
+            tenant_id, user_id, key=prefix + platform_message_id
+        )
+
+    async def reply_reference_by_key(
+        self, tenant_id: str, user_id: str, *, key: str
+    ) -> Mapping[str, str] | None:
+        """同一映射的另一入口：渠道已把平台 id 折算成内部 run 键时使用。"""
+        if not key:
+            return None
+        try:
+            record = await self.agui.get_thread_record(
+                tenant_id=tenant_id, user_id=user_id, thread_id=PERSONAL_ASSISTANT_THREAD
+            )
+        except NotFoundError:
+            return None
+        for session_id in reversed(record.session_ids):
+            run = await self.runs.find_by_idempotency_key(tenant_id, session_id, key)
+            if run is None:
+                continue
+            prompt = run.input.get("prompt")
+            excerpt = prompt[:200] if isinstance(prompt, str) else None
+            return {
+                "messageId": f"user-{run.run_id}",
+                **({"excerpt": excerpt} if excerpt else {}),
+            }
+        return None
+
+    async def answer(self, run: Run) -> str:
+        events = await self.events.list_after(run.tenant_id, run.run_id, 0)
+        return final_response_text(events) or f"本次处理状态：{run.status.value}。"
+
+    async def plan_control(
+        self, tenant_id: str, user_id: str, intent: ControlIntent
+    ) -> ControlIntent:
+        """Persist this target before applying a mutation; retries cannot hit a newer Run."""
+        if intent.action == "help":
+            return intent
+        try:
+            record = await self.agui.get_thread_record(
+                tenant_id=tenant_id, user_id=user_id, thread_id=PERSONAL_ASSISTANT_THREAD
+            )
+        except NotFoundError:
+            return intent
+        runs = await self.runs.list_for_sessions(tenant_id, list(record.session_ids), limit=200)
+        active = [run for run in runs if not run.status.is_terminal]
+        candidates = active or (runs if intent.action == "status" else [])
+        target = max(candidates, key=lambda run: (run.created_at, run.run_id), default=None)
+        return intent.model_copy(update={"target_run_id": target.run_id if target else None})
+
+    async def execute_control(
+        self, tenant_id: str, user_id: str, intent: ControlIntent, request_id: str
+    ) -> str:
+        if intent.action == "help":
+            return CONTROL_HELP
+        if intent.action == "steer" and len(intent.text) > 8000:
+            return "补充内容过长，请缩短至 8000 字以内后重发。"
+        if not intent.target_run_id:
+            return (
+                "当前没有正在执行的任务。"
+                if intent.action != "steer"
+                else ("当前没有正在执行的任务，请直接发送新要求。")
+            )
+        record = await self.agui.get_thread_record(
+            tenant_id=tenant_id, user_id=user_id, thread_id=PERSONAL_ASSISTANT_THREAD
+        )
+        run = await self.runs.get(tenant_id, intent.target_run_id)
+        if run.tenant_id != tenant_id or run.session_id not in record.session_ids:
+            raise PermissionDeniedError("Control target is outside the owned assistant thread")
+        label = RUN_LABELS[run.status.value]
+        if intent.action == "status":
+            return f"本轮状态：{label}。"
+        if run.status.is_terminal:
+            return f"本轮已结束（{label}），请直接发送下一条要求。"
+        if intent.action == "stop":
+            stopped = await self.runs.cancel(tenant_id, run.run_id)
+            return (
+                "已停止当前执行。"
+                if stopped.status.value == "cancelled"
+                else (
+                    "已请求停止，正在等待执行器退出。"
+                    if not stopped.status.is_terminal
+                    else f"本轮已结束（{RUN_LABELS[stopped.status.value]}）。"
+                )
+            )
+        try:
+            receipt = await self.runs.steer(tenant_id, run.run_id, request_id, intent.text)
+        except ConflictError:
+            return "当前执行暂不支持中途补充，请等本轮结束后直接发送新要求。"
+        return (
+            "补充已被执行器接收。"
+            if receipt.get("status") == "accepted"
+            else "补充未能送达，请等本轮结束后重新发送。"
+            if receipt.get("status") == "failed"
+            else "补充已提交，等待执行器接收。"
+        )

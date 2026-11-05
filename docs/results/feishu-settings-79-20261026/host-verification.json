@@ -1,0 +1,107 @@
+{
+  "preserved": {
+    "users": {
+      "original": 12,
+      "current": 12,
+      "allOriginalIdsPreserved": true
+    },
+    "sessions": {
+      "original": 279,
+      "current": 279,
+      "allOriginalIdsPreserved": true
+    },
+    "runs": {
+      "original": 775,
+      "current": 778,
+      "allOriginalIdsPreserved": true
+    },
+    "bindingsUnchanged": true
+  },
+  "containers": {
+    "api": {
+      "image": "kai/assistant-api:20261026-r7",
+      "imageId": "sha256:6a9b5f4c94acfa88cb2bd877ba128be3b925765dd615fbcab71f103c72ae2544",
+      "state": "running",
+      "health": "healthy",
+      "restarts": 0,
+      "appCredentialEnvironmentAbsent": true
+    },
+    "worker": {
+      "image": "kai/assistant-api:20261026-r7",
+      "imageId": "sha256:6a9b5f4c94acfa88cb2bd877ba128be3b925765dd615fbcab71f103c72ae2544",
+      "state": "running",
+      "health": "healthy",
+      "restarts": 0,
+      "appCredentialEnvironmentAbsent": true
+    },
+    "web": {
+      "image": "kai/assistant-web:20261026-r7",
+      "imageId": "sha256:01ef2a77b9141d32e94d03931ac134d6f5317b600c0320ef2363979745057565",
+      "state": "running",
+      "health": "healthy",
+      "restarts": 0,
+      "appCredentialEnvironmentAbsent": true
+    },
+    "feishu": {
+      "image": "kai/feishu-receiver:20261026-r7",
+      "imageId": "sha256:13322c088ac2ff197d7de216abf7aa9eac00d2ecac85d683bb0cd74ed126442c",
+      "state": "running",
+      "health": null,
+      "restarts": 0,
+      "appCredentialEnvironmentAbsent": true
+    }
+  },
+  "sourceHashes": {
+    "feishu/api.py": {
+      "source": "d37af4df997e72aecb4cd4f0ebec9e9ccfb231e27c2f0e85e8c44c66f77d2363",
+      "api": "d37af4df997e72aecb4cd4f0ebec9e9ccfb231e27c2f0e85e8c44c66f77d2363",
+      "feishu": "d37af4df997e72aecb4cd4f0ebec9e9ccfb231e27c2f0e85e8c44c66f77d2363"
+    },
+    "feishu/configuration.py": {
+      "source": "4eb4d7df177fdf88dd826dedbca71f1b5bb4fd07305b8af5a1d65ec722687f0a",
+      "api": "4eb4d7df177fdf88dd826dedbca71f1b5bb4fd07305b8af5a1d65ec722687f0a",
+      "feishu": "4eb4d7df177fdf88dd826dedbca71f1b5bb4fd07305b8af5a1d65ec722687f0a"
+    },
+    "feishu/manager.py": {
+      "source": "b9ceec70280062cfca89579d2ca7d584860f13d75fb299c56c1db4630b1c597f",
+      "api": "b9ceec70280062cfca89579d2ca7d584860f13d75fb299c56c1db4630b1c597f",
+      "feishu": "b9ceec70280062cfca89579d2ca7d584860f13d75fb299c56c1db4630b1c597f"
+    },
+    "feishu/main.py": {
+      "source": "136e319abfc2c3f0de452c23bdfa119e91a628365de622edd8527892261dcac2",
+      "api": "136e319abfc2c3f0de452c23bdfa119e91a628365de622edd8527892261dcac2",
+      "feishu": "136e319abfc2c3f0de452c23bdfa119e91a628365de622edd8527892261dcac2"
+    },
+    "feishu/repository.py": {
+      "source": "2e50859405b686171e6423828e07d755c2d0ce023172e614165d0f685c9b0e47",
+      "api": "2e50859405b686171e6423828e07d755c2d0ce023172e614165d0f685c9b0e47",
+      "feishu": "2e50859405b686171e6423828e07d755c2d0ce023172e614165d0f685c9b0e47"
+    },
+    "feishu/storage.py": {
+      "source": "b7d1b6ae715c7872f5ab31237bdc0e0d330985fd69189d774c736e1aa7f8a562",
+      "api": "b7d1b6ae715c7872f5ab31237bdc0e0d330985fd69189d774c736e1aa7f8a562",
+      "feishu": "b7d1b6ae715c7872f5ab31237bdc0e0d330985fd69189d774c736e1aa7f8a562"
+    },
+    "feishu/models.py": {
+      "source": "e7b3b47adfb0111eccb91790d6d369aac0ff0d093667359f4cee90857d4e8285",
+      "api": "e7b3b47adfb0111eccb91790d6d369aac0ff0d093667359f4cee90857d4e8285",
+      "feishu": "e7b3b47adfb0111eccb91790d6d369aac0ff0d093667359f4cee90857d4e8285"
+    },
+    "composition.py": {
+      "source": "e4d739c87bbe259e50da8c2f80b92e8cbc9876db5dba812cc9f34711034fd3bc",
+      "api": "e4d739c87bbe259e50da8c2f80b92e8cbc9876db5dba812cc9f34711034fd3bc",
+      "feishu": "e4d739c87bbe259e50da8c2f80b92e8cbc9876db5dba812cc9f34711034fd3bc"
+    },
+    "api/dependencies.py": {
+      "source": "5b8e67b74c65f596006010a9e7e190ed82e331b6d3f622a7e173cb3b483f1ff6",
+      "api": "5b8e67b74c65f596006010a9e7e190ed82e331b6d3f622a7e173cb3b483f1ff6",
+      "feishu": "5b8e67b74c65f596006010a9e7e190ed82e331b6d3f622a7e173cb3b483f1ff6"
+    }
+  },
+  "receiverProcess": [
+    "PID                 COMMAND",
+    "16775               /sbin/docker-init -- /app/.venv/bin/python -m harness.feishu.manager",
+    "16836               /app/.venv/bin/python -m harness.feishu.manager",
+    "47187               /app/.venv/bin/python -m harness.feishu.main"
+  ]
+}

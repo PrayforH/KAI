@@ -1,0 +1,10 @@
+{
+  "unitTestsPassed": 33,
+  "linuxKernel310TestsPassed": 11,
+  "linuxKernel61TestsPassed": 11,
+  "ruff": "passed",
+  "pyrightErrors": 0,
+  "pyrightWarnings": 0,
+  "shellSyntaxExit": 0,
+  "canonicalVmWorkerTested": false
+}

@@ -1,0 +1,56 @@
+{
+  "tenant": "computer-access-probe-be77e109228348a3b4c7508469481a20",
+  "checkedAt": "2026-10-27T04:38:30.468279+00:00",
+  "scope": "Real Worker, account/thread/Run/lease records in isolated PostgreSQL and canonical node authorization; deterministic runtime; no real model or production chats",
+  "authorization": "canonical",
+  "plainChatAllocatedNoComputer": true,
+  "chunkedAndEmptyTransferConfirmed": true,
+  "taskUids": [
+    28000,
+    28000,
+    28000
+  ],
+  "stagedFixtureFilesVerified": 200,
+  "computerId": "computer_dfff62bc297c4fdb9d7d8a2d79830a34",
+  "volumeRef": "kai-computer-dfff62bc297c4fdb9d7d8a2d79830a34",
+  "providerRef": "efbcfd915069d39f69fcf765ffd389f8e3c5301a8ec0d3c99039a850a5434fc2",
+  "previousFilesAndExecutableRetained": true,
+  "sameComputerAndDiskAcrossFreshProviders": true,
+  "publishedPerRound": {
+    "1": [
+      "outputs/first.txt"
+    ],
+    "2": [
+      "outputs/second.txt"
+    ]
+  },
+  "passed": true,
+  "controlVolumeRef": "kai-computer-dfff62bc297c4fdb9d7d8a2d79830a34-control",
+  "fixtureInstanceRemoved": true,
+  "filePlaneOperations": {
+    "manifest": {
+      "calls": 4,
+      "seconds": 2.280894663184881
+    },
+    "upload_batch": {
+      "calls": 9,
+      "seconds": 5.634978816844523
+    },
+    "upload": {
+      "calls": 2,
+      "seconds": 1.5667424872517586
+    },
+    "stat": {
+      "calls": 2,
+      "seconds": 1.0382583048194647
+    },
+    "read": {
+      "calls": 5,
+      "seconds": 2.5696594957262278
+    },
+    "command": {
+      "calls": 2,
+      "seconds": 0.9150670459493995
+    }
+  }
+}

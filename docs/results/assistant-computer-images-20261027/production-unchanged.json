@@ -1,0 +1,16 @@
+{
+  "checkedAt": "2026-10-27T05:08:18.249212+00:00",
+  "records": [
+    {
+      "schema": "0051"
+    },
+    {
+      "computerId": "computer_76649d1de93843289142040974d587f9",
+      "providerRef": "262941df38841f8bbfed06baedde379516c2021781badc642f570a3aa3d198ae",
+      "image": "sha256:9b926012e692cec7a060124926a2b7638cf81faa13ccd3cb73d72704e11fb88c",
+      "volume": "kai-computer-76649d1de93843289142040974d587f9",
+      "state": "idle"
+    }
+  ],
+  "productionImageUpgradeApplied": false
+}

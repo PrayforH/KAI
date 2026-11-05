@@ -1,0 +1,12 @@
+{
+  "source": "GET official Feishu message API; recover an actual post skipped by the old receiver, not a new WebSocket delivery",
+  "messageId": "om_x100b62d8a590dca0c04135982a538dc",
+  "messageType": "post",
+  "senderVerifiedAgainstExistingBinding": true,
+  "caption": "[图片 1]\n查下这个",
+  "imageCount": 1,
+  "accepted": true,
+  "duplicateAcknowledged": true,
+  "durableIncomingRows": 1,
+  "originalMessageSha256": "eef7191220e2a378c679f5b10c27376d8f2360dc8bc560e3a6d9f000e78f282a"
+}

@@ -1,0 +1,417 @@
+{
+  "checkedAt": "2026-10-27T04:31:17.202424+00:00",
+  "schema": "0051",
+  "retention": {
+    "users": {
+      "before": 12,
+      "now": 12,
+      "allOriginalIdsPreserved": true
+    },
+    "sessions": {
+      "before": 281,
+      "now": 281,
+      "allOriginalIdsPreserved": true
+    },
+    "runs": {
+      "before": 809,
+      "now": 815,
+      "allOriginalIdsPreserved": true
+    },
+    "feishu_bindings": {
+      "count": 1,
+      "unchanged": true
+    },
+    "feishu_connections": {
+      "count": 1,
+      "unchanged": true
+    },
+    "weixin": {
+      "count": 1,
+      "unchanged": true
+    }
+  },
+  "runs": [
+    {
+      "runId": "run_24ddec42b9704f749d20513067baa441",
+      "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+      "status": "succeeded",
+      "fencingToken": 3,
+      "errorCode": null,
+      "durationSeconds": 98.812,
+      "eventCounts": {
+        "run.queued": 1,
+        "run.provisioning": 1,
+        "sandbox.provisioned": 1,
+        "input.staged": 1,
+        "agent.assets.staged": 1,
+        "run.running": 1,
+        "presentation.intent": 1,
+        "policy.resolved": 1,
+        "model.route.selected": 1,
+        "runtime.steering.ready": 1,
+        "runtime.system": 4,
+        "message.start": 3,
+        "reasoning.delta": 205,
+        "tool.request": 2,
+        "tool.allowed": 2,
+        "message.completed": 3,
+        "tool.result": 2,
+        "runtime.steering.closed": 1,
+        "message.delta": 26,
+        "context.window.observed": 1,
+        "runtime.result": 1,
+        "artifact.ready": 2,
+        "context.digest.created": 1,
+        "run.succeeded": 1,
+        "ui.presentation.ready": 1,
+        "history.snapshot": 1
+      },
+      "artifacts": [
+        "computer-pilot/identity.txt",
+        "computer-pilot-first.txt"
+      ],
+      "artifactEvents": [
+        {
+          "artifact_id": "artifact_c2f9e57d3e1542fa9624cefaef52e0f8",
+          "name": "computer-pilot/identity.txt",
+          "size_bytes": 27
+        },
+        {
+          "artifact_id": "artifact_a090ed2685ef46ba8be95a27afdc1f49",
+          "name": "computer-pilot-first.txt",
+          "size_bytes": 119
+        }
+      ]
+    },
+    {
+      "runId": "run_7f88a3abfd4d417ebdcf6e50c019816c",
+      "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+      "status": "succeeded",
+      "fencingToken": 3,
+      "errorCode": null,
+      "durationSeconds": 81.628,
+      "eventCounts": {
+        "run.queued": 1,
+        "run.provisioning": 1,
+        "sandbox.provisioned": 1,
+        "input.staged": 1,
+        "agent.assets.staged": 1,
+        "run.running": 1,
+        "presentation.intent": 1,
+        "policy.resolved": 1,
+        "model.route.selected": 1,
+        "runtime.steering.ready": 1,
+        "runtime.system": 4,
+        "message.start": 3,
+        "tool.request": 2,
+        "message.completed": 3,
+        "tool.allowed": 2,
+        "tool.result": 2,
+        "reasoning.delta": 17,
+        "message.delta": 30,
+        "runtime.steering.closed": 1,
+        "context.window.observed": 1,
+        "runtime.result": 1,
+        "artifact.ready": 1,
+        "context.digest.created": 1,
+        "run.succeeded": 1,
+        "ui.presentation.ready": 1,
+        "history.snapshot": 1
+      },
+      "artifacts": [
+        "computer-pilot-second.txt"
+      ],
+      "artifactEvents": [
+        {
+          "artifact_id": "artifact_dd4072e8917246e6936c383ae11f73ba",
+          "name": "computer-pilot-second.txt",
+          "size_bytes": 359
+        }
+      ]
+    },
+    {
+      "runId": "run_52e3453e319049ef8311f8023532322d",
+      "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+      "status": "succeeded",
+      "fencingToken": 3,
+      "errorCode": null,
+      "durationSeconds": 6.491,
+      "eventCounts": {
+        "run.queued": 1,
+        "run.provisioning": 1,
+        "sandbox.provisioned": 1,
+        "input.staged": 1,
+        "agent.assets.staged": 1,
+        "run.running": 1,
+        "presentation.intent": 1,
+        "policy.resolved": 1,
+        "model.route.selected": 1,
+        "runtime.steering.ready": 1,
+        "runtime.system": 2,
+        "message.start": 1,
+        "message.delta": 3,
+        "runtime.steering.closed": 1,
+        "message.completed": 1,
+        "context.window.observed": 1,
+        "runtime.result": 1,
+        "context.digest.created": 1,
+        "run.succeeded": 1,
+        "history.snapshot": 1
+      },
+      "artifacts": [],
+      "artifactEvents": []
+    },
+    {
+      "runId": "run_100324515f1a45948c6fe72372affa1f",
+      "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+      "status": "succeeded",
+      "fencingToken": 3,
+      "errorCode": null,
+      "durationSeconds": 79.467,
+      "eventCounts": {
+        "run.queued": 1,
+        "run.provisioning": 1,
+        "sandbox.provisioned": 1,
+        "input.staged": 1,
+        "agent.assets.staged": 1,
+        "run.running": 1,
+        "presentation.intent": 1,
+        "policy.resolved": 1,
+        "model.route.selected": 1,
+        "runtime.steering.ready": 1,
+        "runtime.system": 3,
+        "message.start": 2,
+        "tool.request": 1,
+        "message.completed": 2,
+        "tool.allowed": 1,
+        "tool.result": 1,
+        "message.delta": 6,
+        "runtime.steering.closed": 1,
+        "context.window.observed": 1,
+        "runtime.result": 1,
+        "context.digest.created": 1,
+        "run.succeeded": 1,
+        "history.snapshot": 1
+      },
+      "artifacts": [],
+      "artifactEvents": []
+    },
+    {
+      "runId": "run_6096615eb19349229c056f51c9199122",
+      "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+      "status": "succeeded",
+      "fencingToken": 3,
+      "errorCode": null,
+      "durationSeconds": 94.912,
+      "eventCounts": {
+        "run.queued": 1,
+        "run.provisioning": 1,
+        "sandbox.provisioned": 1,
+        "input.staged": 1,
+        "agent.assets.staged": 1,
+        "run.running": 1,
+        "presentation.intent": 1,
+        "policy.resolved": 1,
+        "model.route.selected": 1,
+        "runtime.steering.ready": 1,
+        "runtime.system": 3,
+        "message.start": 2,
+        "tool.request": 1,
+        "tool.allowed": 1,
+        "message.completed": 2,
+        "tool.result": 1,
+        "message.delta": 4,
+        "runtime.steering.closed": 1,
+        "context.window.observed": 1,
+        "runtime.result": 1,
+        "context.digest.created": 1,
+        "run.succeeded": 1,
+        "history.snapshot": 1
+      },
+      "artifacts": [],
+      "artifactEvents": []
+    },
+    {
+      "runId": "run_a5fbec8984604dcfa6b626acd9d7550c",
+      "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+      "status": "succeeded",
+      "fencingToken": 3,
+      "errorCode": null,
+      "durationSeconds": 81.549,
+      "eventCounts": {
+        "run.queued": 1,
+        "run.provisioning": 1,
+        "sandbox.provisioned": 1,
+        "input.staged": 1,
+        "agent.assets.staged": 1,
+        "run.running": 1,
+        "presentation.intent": 1,
+        "policy.resolved": 1,
+        "model.route.selected": 1,
+        "runtime.steering.ready": 1,
+        "runtime.system": 3,
+        "message.start": 2,
+        "tool.request": 1,
+        "tool.allowed": 1,
+        "message.completed": 2,
+        "tool.result": 1,
+        "message.delta": 2,
+        "runtime.steering.closed": 1,
+        "context.window.observed": 1,
+        "runtime.result": 1,
+        "context.digest.created": 1,
+        "run.succeeded": 1,
+        "history.snapshot": 1
+      },
+      "artifacts": [],
+      "artifactEvents": []
+    }
+  ],
+  "computer": {
+    "computerId": "computer_76649d1de93843289142040974d587f9",
+    "provider": "262941df38841f8bbfed06baedde379516c2021781badc642f570a3aa3d198ae",
+    "state": "idle",
+    "epoch": 6,
+    "volume": "kai-computer-76649d1de93843289142040974d587f9"
+  },
+  "services": [
+    {
+      "name": "kai-79-20261013-feishu-1",
+      "status": "running",
+      "health": null,
+      "restartCount": 0,
+      "imageId": "sha256:d48abbeea5ae88efc3139f8e99fb32d15b9d083eb2e322c0d9e2c4bf8c7a0d7e"
+    },
+    {
+      "name": "kai-79-20261013-weixin-1",
+      "status": "running",
+      "health": null,
+      "restartCount": 0,
+      "imageId": "sha256:df68fac4317e86beadafd58df5e96e7b404784eb7bc86163a76184c9c8d012db"
+    },
+    {
+      "name": "kai-79-20261013-worker-1",
+      "status": "running",
+      "health": "healthy",
+      "restartCount": 0,
+      "imageId": "sha256:18929cd6c944d063b652d2ca97854ecb111e4a4d26cdde9d2f86326c84f394aa"
+    },
+    {
+      "name": "kai-79-20261013-api-1",
+      "status": "running",
+      "health": "healthy",
+      "restartCount": 0,
+      "imageId": "sha256:18929cd6c944d063b652d2ca97854ecb111e4a4d26cdde9d2f86326c84f394aa"
+    },
+    {
+      "name": "kai-79-20261013-computer-control-1",
+      "status": "running",
+      "health": "healthy",
+      "restartCount": 0,
+      "imageId": "sha256:18929cd6c944d063b652d2ca97854ecb111e4a4d26cdde9d2f86326c84f394aa"
+    },
+    {
+      "name": "kai-79-20261013-web-1",
+      "status": "running",
+      "health": "healthy",
+      "restartCount": 0,
+      "imageId": "sha256:8371d939169be255126fff30299b3b086e0becc59664103b507b2fec3772819f"
+    },
+    {
+      "name": "kai-79-20261013-https-1",
+      "status": "running",
+      "health": "healthy",
+      "restartCount": 0,
+      "imageId": "sha256:6769dc3a703c719c1d2756bda113659be28ae16cf0da58dd5fd823d6b9a050ea"
+    },
+    {
+      "name": "kai-79-20261013-migrate-1",
+      "status": "exited",
+      "health": null,
+      "restartCount": 0,
+      "imageId": "sha256:1401a8b4f8320514a8647db9bc69de0fdb01765413c152fa17b6b3f4654ade69"
+    },
+    {
+      "name": "kai-79-20261013-postgres-1",
+      "status": "running",
+      "health": "healthy",
+      "restartCount": 0,
+      "imageId": "sha256:e374467f6b36d28f106f379f410b9bdee9a586f96dcac41c5f4c42c09bebd80b"
+    },
+    {
+      "name": "kai-79-20261013-minio-1",
+      "status": "running",
+      "health": "healthy",
+      "restartCount": 0,
+      "imageId": "sha256:9d668e47f1fc60ea49af4203deee87a657eb1aa0e2761fee2c7c2d1df282c880"
+    },
+    {
+      "name": "kai-79-20261013-redis-1",
+      "status": "running",
+      "health": "healthy",
+      "restartCount": 0,
+      "imageId": "sha256:4326c43a061bc3984d6fcb5acd34f6cf363523a76920eee2a405f5b7fd55aa92"
+    }
+  ],
+  "channels": {
+    "weixin": [
+      {
+        "state": "connected",
+        "heartbeatAgeSeconds": 4,
+        "errorCode": null,
+        "enabled": true
+      }
+    ],
+    "feishu": [
+      {
+        "state": "receiving",
+        "heartbeatAgeSeconds": 0,
+        "configurationRevision": 4
+      }
+    ]
+  },
+  "computerLeases": [
+    {
+      "purpose": "start",
+      "epoch": 1,
+      "runId": null,
+      "state": "released",
+      "fence": null
+    },
+    {
+      "purpose": "execute",
+      "epoch": 2,
+      "runId": "run_24ddec42b9704f749d20513067baa441",
+      "state": "released",
+      "fence": 3
+    },
+    {
+      "purpose": "execute",
+      "epoch": 3,
+      "runId": "run_7f88a3abfd4d417ebdcf6e50c019816c",
+      "state": "released",
+      "fence": 3
+    },
+    {
+      "purpose": "execute",
+      "epoch": 4,
+      "runId": "run_100324515f1a45948c6fe72372affa1f",
+      "state": "released",
+      "fence": 3
+    },
+    {
+      "purpose": "execute",
+      "epoch": 5,
+      "runId": "run_6096615eb19349229c056f51c9199122",
+      "state": "released",
+      "fence": 3
+    },
+    {
+      "purpose": "execute",
+      "epoch": 6,
+      "runId": "run_a5fbec8984604dcfa6b626acd9d7550c",
+      "state": "released",
+      "fence": 3
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "runs": [
+    {
+      "run_id": "fixture-run-0",
+      "status": "succeeded",
+      "fencing_token": 3
+    },
+    {
+      "run_id": "fixture-run-1",
+      "status": "succeeded",
+      "fencing_token": 3
+    },
+    {
+      "run_id": "fixture-run-2",
+      "status": "succeeded",
+      "fencing_token": 3
+    }
+  ],
+  "sandboxLeases": [
+    {
+      "run_id": "fixture-run-0",
+      "provider": "docker-computer",
+      "state": "released",
+      "epoch": 1
+    },
+    {
+      "run_id": "fixture-run-1",
+      "provider": "docker-computer",
+      "state": "released",
+      "epoch": 2
+    },
+    {
+      "run_id": "fixture-run-2",
+      "provider": "docker-computer",
+      "state": "released",
+      "epoch": 3
+    }
+  ],
+  "computerLeases": [
+    {
+      "purpose": "start",
+      "state": "released",
+      "epoch": 1,
+      "run_id": null,
+      "run_fencing_token": null
+    },
+    {
+      "purpose": "execute",
+      "state": "released",
+      "epoch": 2,
+      "run_id": "fixture-run-1",
+      "run_fencing_token": 3
+    },
+    {
+      "purpose": "execute",
+      "state": "released",
+      "epoch": 3,
+      "run_id": "fixture-run-2",
+      "run_fencing_token": 3
+    },
+    {
+      "purpose": "recover",
+      "state": "released",
+      "epoch": 4,
+      "run_id": null,
+      "run_fencing_token": null
+    }
+  ],
+  "owners": [
+    {
+      "tenant_id": "computer-access-probe-c6e09bbd7ef64042b5314aa08d5db860",
+      "user_id": "fixture-owner-c7b2d4d0f39741d4ade0d9d4993b22de",
+      "thread_id": "kai-personal-assistant-v1"
+    }
+  ]
+}

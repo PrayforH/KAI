@@ -3,6 +3,14 @@ import type { LiveResponseSnapshot } from "./live-response-store";
 
 type Repository = ReturnType<typeof ExportedMessageRepository.fromArray>;
 
+/** AG-UI supplies a fresh createdAt when importing messages without dates. */
+export function historyContentSignature(repository: Repository): string {
+  return JSON.stringify(repository.messages.map(({ parentId, message }) => {
+    const { createdAt: _createdAt, ...content } = message;
+    return { parentId, message: content };
+  }));
+}
+
 /** A lagging history page must never remove or shorten the answer on screen. */
 export function canHandoffResponse(repository: Repository, live: LiveResponseSnapshot): boolean {
   if (!live.runId) return true;
@@ -19,7 +27,11 @@ export function retainEarlierTurns(repository: Repository, current: readonly Thr
   const firstId = repository.messages[0]?.message.id;
   const offset = current.findIndex(message => message.id === firstId);
   if (offset <= 0) return repository;
+  const incoming = new Set(repository.messages.map(item => item.message.id));
   return ExportedMessageRepository.fromArray([
-    ...current.slice(0, offset), ...repository.messages.map(item => item.message),
+    // A background receipt can advance when its source Run finishes. It has
+    // the same durable message id, even if its position moves to this page.
+    ...current.slice(0, offset).filter(message => !incoming.has(message.id)),
+    ...repository.messages.map(item => item.message),
   ]);
 }

@@ -2,13 +2,13 @@ import { isSensitiveLabel, isSecretFieldLabel } from "./conversation-secrets";
 export const CONVERSATION_INPUT_LIMITS = { characters: 64_000, questions: 32, options: 128 } as const;
 
 /** A display protocol only: submitted answers are ordinary user messages, never tool calls. */
-export type ConversationQuestion = { id: string; label: string; type: "single" | "multi" | "text" | "password"; options: string[]; sensitive?: boolean };
+export type ConversationQuestion = { id: string; label: string; type: "single" | "multi" | "text" | "password"; options: string[]; sensitive?: boolean; credentialType?: "login" | "secret" };
 export type ConversationInput = { version: 1; title: string; questions: ConversationQuestion[] };
 function shortText(value: unknown, maximum: number): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= maximum;
 }
 export function isSensitiveQuestion(question: ConversationQuestion) {
-  return question.type === "password" || question.sensitive === true || (question.type === "text" && isSensitiveLabel(question.label + " " + question.id));
+  return question.credentialType !== undefined || question.type === "password" || question.sensitive === true || (question.type === "text" && isSensitiveLabel(question.label + " " + question.id));
 }
 type InputBlock = { start: number; end: number; input: ConversationInput };
 function validateInput(raw: string): ConversationInput | null {
@@ -24,8 +24,9 @@ function validateInput(raw: string): ConversationInput | null {
       const options = item.options ?? [];
       if (!Array.isArray(options) || options.length > CONVERSATION_INPUT_LIMITS.options || !options.every(value => shortText(value, 300)) || new Set(options).size !== options.length || (!["text", "password"].includes(item.type) && options.length < 2) || (["text", "password"].includes(item.type) && options.length)) return null;
       if (item.sensitive !== undefined && typeof item.sensitive !== "boolean") return null;
+      if (item.credentialType !== undefined && !["login", "secret"].includes(item.credentialType)) return null;
       ids.add(item.id);
-      questions.push({ id: item.id, label: item.label, type: item.type, options, ...(item.sensitive === true ? {sensitive: true} : {}) });
+      questions.push({ id: item.id, label: item.label, type: item.type, options, ...(item.sensitive === true ? {sensitive: true} : {}), ...(item.credentialType ? {credentialType: item.credentialType} : {}) });
     }
     return { version: 1, title: data.title, questions };
   } catch { return null; }
@@ -75,6 +76,12 @@ function inputBlock(text: string): InputBlock | null {
 export function parseConversationInput(text: string): ConversationInput | null {
   return inputBlock(text)?.input ?? null;
 }
+/** The active card already owns its question and choices; keep surrounding prose only. */
+export function conversationInputIntro(text: string): string {
+  const block = inputBlock(text);
+  return block ? [text.slice(0, block.start), text.slice(block.end)].filter(x => x.trim()).join("\n\n").trim() : text;
+}
+
 export function conversationInputDisplay(text: string, streaming = false): string {
   const block = inputBlock(text);
   if (block) return text.slice(0, block.start) + [block.input.title, ...block.input.questions.map(q => `${q.label}${q.options.length ? `（${q.options.join(" / ")}）` : ""}`)].join("\n\n") + text.slice(block.end);
@@ -92,8 +99,12 @@ export function conversationInputDisplay(text: string, streaming = false): strin
   }
   return text;
 }
-export function latestConversationInput(messages: readonly { id: string; role: string; content: readonly { type: string; text?: string }[]; status?: {type: string} }[]) {
-  const last = messages.at(-1);
+export function latestConversationInput(messages: readonly { id: string; role: string; content: readonly { type: string; text?: string; toolName?: string }[]; status?: {type: string} }[]) {
+  // Background results are conversation messages, not new configuration
+  // questions. They must neither dismiss a pending answer nor mount a form
+  // quoted from another Bot's result.
+  const last = messages.findLast(message => !message.id.startsWith("notice-") &&
+    !message.content.some(part => part.type === "tool-call" && part.toolName === "harness_notice_source"));
   if (!last || last.role !== "assistant" || (last.status && last.status.type !== "complete")) return null;
   const input = parseConversationInput(last.content.filter(p => p.type === "text").map(p => p.text ?? "").join("\n"));
   return input ? { messageId: last.id, input } : null;

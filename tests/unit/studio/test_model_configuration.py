@@ -458,10 +458,10 @@ async def test_delete_permanently_removes_workspace_model_and_credential() -> No
 async def test_delete_of_platform_model_route_persists() -> None:
     models, _catalogs, _credentials = service()
 
-    deleted = await models.delete("tenant-a", "admin-a", "deepseek-v4-flash", 1)
+    deleted = await models.delete("tenant-a", "admin-a", "deepseek-flash", 1)
     repeated = await models.list("tenant-a")
 
-    assert "deepseek-v4-flash" not in {item.route_id for item in deleted.models}
+    assert "deepseek-flash" not in {item.route_id for item in deleted.models}
     assert repeated == deleted
 
 

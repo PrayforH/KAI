@@ -1,0 +1,10 @@
+{
+  "scope": "Isolated local PostgreSQL; production remains 0051",
+  "freshDatabaseTo0051Then0052": true,
+  "existingOwnerComputerAndUserPreserved": true,
+  "newHistoryDefaultsEmpty": true,
+  "metadataMatchesComputerTables": true,
+  "emptyHistoryDowngrade0052To0051AndReupgrade": true,
+  "downgradeDoesNotProvePreservationOfNonemptyImageHistory": true,
+  "nonemptyHistoryDowngradeRejectedAndHistoryPreserved": true
+}

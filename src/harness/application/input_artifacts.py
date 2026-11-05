@@ -1,6 +1,7 @@
 """Pre-run input artifact lifecycle and ownership rules."""
 
 import asyncio
+import hashlib
 import re
 from collections.abc import Sequence
 from pathlib import Path
@@ -88,13 +89,34 @@ class InputArtifactService:
         name: str,
         media_type: str,
         content: bytes,
+        idempotency_key: str | None = None,
     ) -> InputArtifact:
         maximum = self.file_size_limit(name)
         if len(content) > maximum:
             raise ConflictError(
                 f"input artifact exceeds maximum size of {maximum} bytes"
             )
-        input_artifact_id = self._id_generator("input_artifact")
+        input_artifact_id = (
+            "input_artifact_" + hashlib.sha256(
+                f"{tenant_id}\0{user_id}\0{idempotency_key}".encode()
+            ).hexdigest()
+            if idempotency_key is not None else self._id_generator("input_artifact")
+        )
+        existing = None
+        if idempotency_key is not None:
+            try:
+                existing = await self._repository.get(tenant_id, input_artifact_id)
+            except NotFoundError:
+                pass
+            if existing is not None:
+                if (existing.user_id, existing.name, existing.media_type) != (
+                    user_id, name, media_type
+                ):
+                    raise ConflictError("input artifact retry does not match its original")
+                if existing.status is ArtifactStatus.READY:
+                    if existing.sha256 != hashlib.sha256(content).hexdigest():
+                        raise ConflictError("input artifact retry content has changed")
+                    return existing
         pending = InputArtifact(
             input_artifact_id=input_artifact_id,
             tenant_id=tenant_id,
@@ -105,7 +127,12 @@ class InputArtifactService:
             object_key=f".pending/{tenant_id}/{input_artifact_id}",
             created_at=self._clock(),
         )
-        await self._repository.add(pending)
+        if existing is None:
+            await self._repository.add(pending)
+        else:
+            # A crash after object storage but before READY may safely restage
+            # the same channel resource under its stable, owner-scoped ID.
+            await self._repository.update(pending)
         try:
             stored = await self._store.put(tenant_id, input_artifact_id, content)
         except Exception:

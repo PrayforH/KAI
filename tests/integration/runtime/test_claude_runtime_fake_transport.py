@@ -78,6 +78,7 @@ class RecordingToolGate:
         subagent_skill_names: Mapping[str, Collection[str]] | None = None,
         result_trust_by_tool: Mapping[str, ContextTrust] | None = None,
         delegate_allowed_to_sdk_permissions: bool = False,
+        preface: object | None = None,
     ) -> dict[HookEvent, list[HookMatcher]]:
         self.contexts.append(context)
         return {"PreToolUse": []}
@@ -443,9 +444,13 @@ async def test_resumed_runtime_emits_unavailable_when_stream_has_no_window_outco
 
 
 @pytest.mark.asyncio
-async def test_local_sandbox_keeps_native_file_builtins_for_multimodal_reads(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    "provider", ["local", "daytona", "docker-computer", "vm-computer", "remote-computer"]
+)
+async def test_runtime_keeps_sdk_control_local_and_describes_remote_tools(
+    tmp_path: Path, provider: str,
 ) -> None:
+    remote = provider != "local"
     snapshot = load_manifest("tests/fixtures/agents/echo-agent/agent.yaml")
     now = datetime.now(UTC)
     version = AgentVersion(
@@ -487,6 +492,7 @@ async def test_local_sandbox_keeps_native_file_builtins_for_multimodal_reads(
         )
 
     sandbox_calls: list[Sequence[str]] = []
+    helper_snapshot = load_manifest("tests/fixtures/agents/helper-agent/agent.yaml")
 
     async def execute_sandbox(
         argv: Sequence[str],
@@ -501,6 +507,14 @@ async def test_local_sandbox_keeps_native_file_builtins_for_multimodal_reads(
         routes=[route],
         route_secrets={"new-api-default": "secret"},
         query_factory=fake_query,
+        subagent_versions={
+            "helper": version.model_copy(update={
+                "name": "helper",
+                "version": "1.0.0",
+                "manifest_hash": helper_snapshot.content_hash,
+                "snapshot": helper_snapshot.model_dump(mode="json"),
+            })
+        },
     )
     context = RuntimeContext(
         run=Run(
@@ -523,15 +537,29 @@ async def test_local_sandbox_keeps_native_file_builtins_for_multimodal_reads(
         ),
         workspace=tmp_path,
         sandbox_command_executor=execute_sandbox,
+        sandbox_provider=provider,
+        remote_workspace="/home/kai/workspace" if remote else None,
     )
 
     _events = [event async for event in runtime.execute(context)]
 
     options = captured[0]
-    assert options.tools == ["Read", "Task"]
+    assert options.cwd == tmp_path
     assert isinstance(options.mcp_servers, dict)
-    assert options.mcp_servers == {}
-    assert options.allowed_tools == []
+    if remote:
+        assert options.tools == ["Task"]
+        assert set(options.mcp_servers) == {"harness-sandbox"}
+        assert "mcp__harness-sandbox__read" in options.allowed_tools
+        assert isinstance(options.system_prompt, str)
+        assert 'working directory "/home/kai/workspace"' in options.system_prompt
+        assert options.agents is not None
+        assert 'working directory "/home/kai/workspace"' in options.agents["helper"].prompt
+    else:
+        assert options.tools == ["Read", "Task"]
+        assert options.mcp_servers == {}
+        assert options.allowed_tools == []
+        assert isinstance(options.system_prompt, str)
+        assert "control mirror" not in options.system_prompt
     assert sandbox_calls == []
 
 

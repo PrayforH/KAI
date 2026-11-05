@@ -13,6 +13,8 @@ import "./intelligent-ui.css";
 import "./response-design.css";
 import "./process-design.css";
 import "./sapling-brand.css";
+import "./task-conversation.css";
+import "./assistant-conversation.css";
 import { PRODUCT_DESCRIPTION, PRODUCT_NAME } from "../components/product-brand";
 
 export const metadata: Metadata = {

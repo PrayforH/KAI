@@ -45,6 +45,38 @@ class FakeEvents:
         return object()
 
 
+@pytest.mark.asyncio
+async def test_persistent_file_is_published_without_changed_file_mirror(tmp_path: Path):
+    from unittest.mock import AsyncMock
+
+    artifacts, events = FakeArtifacts(), FakeEvents()
+    reader = AsyncMock(return_value="原文件未修改".encode())
+    collect = AsyncMock()
+    service = ArtifactPublisher(
+        workspace=tmp_path,
+        tenant_id="tenant-a",
+        run_id="run-next",
+        session_id="session-a",
+        artifacts=artifacts,
+        events=events,
+        sync_workspace=collect,
+        max_file_bytes=100,
+        read_workspace_file=reader,
+    )
+    assert not (tmp_path / "outputs/报告.html").exists()
+    result = await service.publish(path="outputs/报告.html")
+    assert result.name == "报告.html" and artifacts.uploads[0]["content"] == "原文件未修改".encode()
+    reader.assert_awaited_once_with("outputs/报告.html", 100)
+    collect.assert_not_awaited()
+    with pytest.raises(ValueError, match="within"):
+        await service.publish(path="../private.txt")
+    assert reader.await_count == 1
+    reader.return_value = b"x" * 101
+    with pytest.raises(ValueError, match="maximum size"):
+        await service.publish(path="outputs/too-big.txt")
+    assert len(artifacts.uploads) == 1
+
+
 def publisher(
     workspace: Path,
     *,

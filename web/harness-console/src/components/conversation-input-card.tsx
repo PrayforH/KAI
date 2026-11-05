@@ -7,6 +7,7 @@ import { collectConversationSecrets, redactConversationText } from "../lib/conve
 import { useConversationRedactor } from "./conversation-redaction";
 import { CodexResponseIcon } from "./codex-response-icon";
 
+import { useAssistantSurface } from "./assistant-bot-context";
 import { VoiceInput } from "./voice-input";
 import { useDictationComposer } from "./use-dictation-composer";
 
@@ -25,6 +26,7 @@ export function ConversationInputCard({ input, disabled, onSubmit, modelRoute = 
   onSubmit: (answer: string) => void | Promise<void>;
 }) {
   const redact = useConversationRedactor();
+  const botSurface = useAssistantSurface();
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
   const [questionIndex, setQuestionIndex] = useState(0);
   const [optionPages, setOptionPages] = useState<Record<string, number>>({});
@@ -126,7 +128,7 @@ export function ConversationInputCard({ input, disabled, onSubmit, modelRoute = 
     }
   }
 
-  return <section ref={card} className={styles.card} aria-label="待补充的信息" tabIndex={0} onKeyDown={onKeyDown}
+  return <section ref={card} className={`${styles.card}${botSurface ? ` ${styles.botCard}` : ""}`} aria-label="待补充的信息" tabIndex={0} onKeyDown={onKeyDown}
     onPointerDownCapture={touch} onKeyDownCapture={touch} onFocusCapture={touch} onInputCapture={touch}>
     <header className={styles.header}>
       <button className={styles.heading} type="button" aria-expanded={!collapsed} disabled={voiceActive} onClick={() => setCollapsed(!collapsed)}>
@@ -149,11 +151,12 @@ export function ConversationInputCard({ input, disabled, onSubmit, modelRoute = 
           {visibleOptions.map((option, index) => <label key={option} className={styles.option}>
             <input type={question.type === "multi" ? "checkbox" : "radio"} name={question.id}
               disabled={voiceActive} checked={value.selected.includes(option)} onChange={() => select(option)} />
-            <span className={styles.marker} aria-hidden="true">{value.selected.includes(option) ? <CodexResponseIcon name="check" /> : index + 1}</span>
+            <span className={styles.marker} aria-hidden="true">{botSurface ? String.fromCharCode(65 + index) : value.selected.includes(option) ? <CodexResponseIcon name="check" /> : index + 1}</span>
             <span className={styles.optionText}>
               <span>{redact(option.replace(RECOMMENDED_SUFFIX, ""))}</span>
               {option === recommendedOption && <span className={styles.recommended}>推荐</span>}
             </span>
+            {botSurface && value.selected.includes(option) && <CodexResponseIcon name="check" className={styles.selectedCheck} />}
           </label>)}
         </div>}
         {pageCount > 1 && <nav className={styles.optionPagination} aria-label="选项分页">

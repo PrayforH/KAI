@@ -1,0 +1,86 @@
+{
+  "connection": {
+    "bound": true,
+    "enabled": true,
+    "online": true,
+    "state": "connected",
+    "lastEventAt": "2026-10-27 00:59:44.991291+00:00",
+    "lastReplyAt": "2026-10-27 00:59:46.967495+00:00",
+    "errorCode": null
+  },
+  "diagnosis": {
+    "checkedAt": "2026-10-27 01:03:17.834740+00:00",
+    "checks": [
+      {
+        "key": "binding",
+        "label": "微信绑定",
+        "status": "pass",
+        "detail": "扫码授权与当前 KAI 账号关联。"
+      },
+      {
+        "key": "receiver",
+        "label": "消息连接",
+        "status": "pass",
+        "detail": "接收器已完成微信长轮询。"
+      },
+      {
+        "key": "incoming",
+        "label": "消息接收",
+        "status": "pass",
+        "detail": "本次连接已收到本人消息。"
+      },
+      {
+        "key": "chat",
+        "label": "助理会话",
+        "status": "pass",
+        "detail": "消息已进入与飞书、网页共用的助理会话。"
+      },
+      {
+        "key": "reply",
+        "label": "消息回复",
+        "status": "pass",
+        "detail": "微信接口已确认接收回复。"
+      },
+      {
+        "key": "media",
+        "label": "图片、文件与语音",
+        "status": "pass",
+        "detail": "附件已读取并保存到当前账号的助理会话。"
+      }
+    ]
+  },
+  "messages": [
+    {
+      "message_id": "b28abed3bf004b54a298c87e36da65b2",
+      "text": "进度",
+      "status": "done",
+      "control": {
+        "text": "",
+        "action": "status",
+        "target_run_id": "run_fee6e96b651c4571aac2ef5f2c7b4e07"
+      },
+      "run_id": "run_fee6e96b651c4571aac2ef5f2c7b4e07",
+      "reply": "本轮状态：已完成。",
+      "error_code": null,
+      "created_at": "2026-10-27T00:59:35.70937+00:00",
+      "finished_at": "2026-10-27T00:59:37.441202+00:00"
+    },
+    {
+      "message_id": "90985de520b84cd48a6074edaf99c06a",
+      "text": "助理帮助",
+      "status": "done",
+      "control": {
+        "text": "",
+        "action": "help",
+        "target_run_id": null
+      },
+      "run_id": null,
+      "reply": "直接发文字、图片、文件或语音，与网页继续同一段对话。\n「进度」查看当前执行；「停止当前任务」请求停止；「/补充 新要求」补充正在执行的任务。",
+      "error_code": null,
+      "created_at": "2026-10-27T00:59:44.985587+00:00",
+      "finished_at": "2026-10-27T00:59:46.964871+00:00"
+    }
+  ],
+  "deliveryEvidence": "Weixin sendmessage returned success; this confirms platform acceptance, not client read status.",
+  "sameGenerationAsCurrentBinding": true
+}

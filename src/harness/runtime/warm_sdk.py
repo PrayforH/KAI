@@ -260,6 +260,11 @@ class WarmEntry:
         await self.binding.authority.check()
         await self.client.query(prompt)
 
+    async def interrupt(self) -> None:
+        assert self.binding is not None
+        await self.binding.authority.check()
+        await self.client.interrupt()
+
     async def get_context_usage(self) -> Any:
         try:
             # The SDK public method requests full per-category token counting,

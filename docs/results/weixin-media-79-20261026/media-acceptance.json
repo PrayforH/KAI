@@ -1,0 +1,133 @@
+{
+  "messages": [
+    {
+      "kind": "image",
+      "messageId": "72ff2345ea7d4387ba0bef19b56412df",
+      "runId": "run_2375b02b74134eaf99ef6f42a83f429d",
+      "deliveryStatus": "done",
+      "runStatus": "succeeded",
+      "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+      "promptCount": 41,
+      "artifactCount": 1,
+      "mediaTypes": [
+        "image/jpeg"
+      ],
+      "modelRoute": "deepseek-v4-flash"
+    },
+    {
+      "kind": "file",
+      "messageId": "11b6e8af198c492e9f3de925f9697a3a",
+      "runId": "run_5fc039ef74104fbdb8b2209eaeaa8cac",
+      "deliveryStatus": "done",
+      "runStatus": "succeeded",
+      "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+      "promptCount": 42,
+      "artifactCount": 1,
+      "mediaTypes": [
+        "application/octet-stream"
+      ]
+    },
+    {
+      "kind": "voice-original",
+      "messageId": "cb9a12bd94ca498da2ec0f73dce5ab68",
+      "runId": "run_255f010a96ae4ebfac82a4b55a8ea8a2",
+      "deliveryStatus": "done",
+      "runStatus": "succeeded",
+      "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+      "promptCount": 43,
+      "artifactCount": 1,
+      "mediaTypes": [
+        "audio/wav"
+      ]
+    },
+    {
+      "kind": "voice-corrected",
+      "messageId": "wx-repair-b6f13a1374839c77a8bde5913e7b6492d77545e6",
+      "runId": "run_cec5644440704ab9b8aed80b05d3dd4d",
+      "deliveryStatus": "done",
+      "runStatus": "succeeded",
+      "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+      "promptCount": 44,
+      "artifactCount": 1,
+      "mediaTypes": [
+        "audio/wav"
+      ],
+      "platformTranscriptPreserved": true
+    }
+  ],
+  "userConfirmedAllThreeReplies": true,
+  "webAfterFullReload": {
+    "runId": "run_7c3d4a8d2def474f9c2731492037fa8c",
+    "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+    "status": "succeeded",
+    "promptCount": 45,
+    "voiceCode": "海豚68",
+    "documentTopicCount": 75,
+    "crossChannelCode": "WXMEDIA79-L3P7"
+  },
+  "feishuFollowup": {
+    "runId": "run_e6a952d2886b4db1a98b7988589fa278",
+    "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+    "status": "succeeded",
+    "promptCount": 46,
+    "voiceCode": "海豚68",
+    "documentTopicCount": 75,
+    "crossChannelCode": "WXMEDIA79-L3P7"
+  },
+  "weixin": {
+    "bound": true,
+    "enabled": true,
+    "online": true,
+    "state": "connected",
+    "pendingMessages": 0,
+    "failedMessages": 0
+  },
+  "feishu": {
+    "bound": true,
+    "enabled": true,
+    "receiverOnline": true,
+    "pendingDeliveries": 0,
+    "failedDeliveries": 0
+  },
+  "diagnostics": {
+    "checkedAt": "2026-10-26T06:23:04.910444+00:00",
+    "checks": [
+      {
+        "key": "binding",
+        "label": "微信绑定",
+        "status": "pass",
+        "detail": "扫码授权与当前 KAI 账号关联。"
+      },
+      {
+        "key": "receiver",
+        "label": "消息连接",
+        "status": "pass",
+        "detail": "接收器已完成微信长轮询。"
+      },
+      {
+        "key": "incoming",
+        "label": "消息接收",
+        "status": "pass",
+        "detail": "本次连接已收到本人消息。"
+      },
+      {
+        "key": "chat",
+        "label": "助理会话",
+        "status": "pass",
+        "detail": "消息已进入与飞书、网页共用的助理会话。"
+      },
+      {
+        "key": "reply",
+        "label": "消息回复",
+        "status": "pass",
+        "detail": "微信接口已确认接收回复。"
+      },
+      {
+        "key": "media",
+        "label": "图片、文件与语音",
+        "status": "pass",
+        "detail": "附件已读取并保存到当前账号的助理会话。"
+      }
+    ]
+  }
+}

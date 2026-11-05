@@ -1,0 +1,978 @@
+"""Delegation tool behaviour against a typed in-memory gateway."""
+
+from datetime import UTC, datetime, timedelta
+from typing import Any, cast
+
+import pytest
+
+from harness.assistant.delegation import (
+    assistant_delegation_overlay,
+    coordinator_session,
+    specialist_directory_instructions,
+)
+from harness.assistant.models import (
+    Objective,
+    ObjectiveAction,
+    ObjectiveBrief,
+    ObjectiveExecution,
+    ObjectiveExecutionStatus,
+    ObjectiveSchedule,
+    ObjectiveStatus,
+)
+from harness.core.errors import ConflictError, NotFoundError
+from harness.core.models import Run, RunStatus, Session
+
+NOW = datetime(2026, 10, 28, 3, 0, tzinfo=UTC)
+
+
+class FakeGateway:
+    """Records calls and stores objectives in memory.
+
+    Mirrors the real repository contract: ``executions`` returns newest first,
+    and ``create`` is idempotent on the caller's key.
+    """
+
+    def __init__(self) -> None:
+        self.objectives: dict[str, Objective] = {}
+        self.records: dict[str, list[ObjectiveExecution]] = {}
+        self.created: list[ObjectiveBrief] = []
+        self.idempotency_keys: dict[str, str | None] = {}
+        self.notes: list[tuple[str, str]] = []
+        self.bindings: list[dict[str, Any]] = []
+        self.resolved_queries: list[str] = []
+        self.delegate_calls: list[dict[str, Any]] = []
+        self.bound_threads: list[tuple[str, str]] = []
+        self.notification_changes: list[dict[str, Any]] = []
+        self.bound_notifications: list[bool] = []
+        self.instruct_outcome: dict[str, Any] = {
+            "status": "queued",
+            "message": "当前没有进行中的执行",
+        }
+        self.checkpoint_summaries: list[Any] = []
+        self.specialists: list[Any] = []
+        self.handovers: list[Any] = []
+        self.delegate_outcome: dict[str, Any] = {
+            "handover_id": "handover-1",
+            "created_at": NOW.isoformat(),
+            "updated_at": NOW.isoformat(),
+            "specialist_id": "specialist-1",
+            "objective_id": "objective-9",
+            "status": "pending_input",
+            "missing": ["schedule_minutes", "notify_channel"],
+            "created_specialist": True,
+        }
+        self.enqueue_error: Exception | None = None
+
+    async def create(
+        self,
+        tenant_id: str,
+        user_id: str,
+        brief: ObjectiveBrief,
+        *,
+        idempotency_key: str | None,
+        managed_thread_id: str | None = None,
+        mode: str | None = None,
+        parent_objective_id: str | None = None,
+    ) -> Objective:
+        for objective_id, key in self.idempotency_keys.items():
+            if key is not None and key == idempotency_key:
+                return self.objectives[objective_id]
+        self.created.append(brief)
+        objective = Objective(
+            **brief.model_dump(),
+            objectiveId=f"objective_{len(self.created):04d}",
+            tenantId=tenant_id,
+            userId=user_id,
+            status=ObjectiveStatus.ACTIVE,
+            managedThreadId=managed_thread_id,
+            parentObjectiveId=parent_objective_id,
+            mode=cast("Any", mode or "autonomous"),
+            createdAt=NOW,
+            updatedAt=NOW,
+        )
+        self.objectives[objective.objective_id] = objective
+        self.idempotency_keys[objective.objective_id] = idempotency_key
+        return objective
+
+    async def enqueue(
+        self, tenant_id: str, user_id: str, objective_id: str, *, trigger_key: str
+    ) -> ObjectiveExecution:
+        if self.enqueue_error is not None:
+            raise self.enqueue_error
+        for existing in self.records.get(objective_id, []):
+            if existing.trigger_key == trigger_key:
+                return existing
+        managed = self.objectives[objective_id].managed_thread_id
+        execution = ObjectiveExecution(
+            executionId=f"objective_run_{trigger_key}",
+            objectiveId=objective_id,
+            tenantId=tenant_id,
+            userId=user_id,
+            triggerKey=trigger_key,
+            objectiveRevision=1,
+            brief=self.objectives[objective_id],
+            threadId=managed or f"assistant_{objective_id}",
+            status=ObjectiveExecutionStatus.PENDING,
+            createdAt=NOW + timedelta(minutes=len(self.records.get(objective_id, []))),
+        )
+        self.records.setdefault(objective_id, []).insert(0, execution)
+        return execution
+
+    async def list_objectives(self, tenant_id: str, user_id: str) -> list[Objective]:
+        return list(self.objectives.values())
+
+    async def executions(
+        self, tenant_id: str, user_id: str, objective_id: str
+    ) -> list[ObjectiveExecution]:
+        return self.records.get(objective_id, [])
+
+    async def resolve_targets(
+        self, tenant_id: str, user_id: str, query: str, *, limit: int = 5
+    ) -> list[dict[str, Any]]:
+        self.resolved_queries.append(query)
+        needle = query.strip().lower()
+        matches = [
+            item
+            for item in self.bindings
+            if needle in item["thread_id"].lower()
+            or needle in (item["title"] or "").lower()
+        ]
+        return matches[:limit]
+
+    async def instruct(
+        self, tenant_id: str, user_id: str, objective_id: str, text: str, *, request_id: str
+    ) -> dict[str, Any]:
+        await self.add_note(tenant_id, user_id, objective_id, note=text)
+        return self.instruct_outcome
+
+    async def checkpoints(
+        self, tenant_id: str, user_id: str, objective_id: str, *, limit: int = 3
+    ) -> list[Any]:
+        return self.checkpoint_summaries
+
+    async def delegate_to_specialist(
+        self,
+        tenant_id: str,
+        user_id: str,
+        *,
+        name: str,
+        description: str,
+        agent_name: str,
+        agent_version: str,
+        task: str,
+        mode: str,
+        message_id: str,
+        schedule: ObjectiveSchedule | None = None,
+    ) -> dict[str, Any]:
+        self.delegate_calls.append(
+            {"name": name, "task": task, "mode": mode,
+             "message_id": message_id, "schedule": schedule}
+        )
+        return self.delegate_outcome
+
+    async def bind_thread(
+        self, tenant_id: str, user_id: str, objective_id: str, thread_id: str,
+        *, notify_on_progress: bool = False,
+    ) -> None:
+        self.bound_threads.append((objective_id, thread_id))
+        self.bound_notifications.append(notify_on_progress)
+
+    async def managed_status(self, tenant_id, user_id, objective_id):
+        objective = self.objectives[objective_id]
+        return {"revision": objective.revision, "managed": [{"managed_id": "managed-one"}]}
+
+    async def configure_managed_notifications(
+        self, tenant_id, user_id, objective_id, managed_id, *, enabled, expected_revision,
+    ):
+        objective = self.objectives[objective_id]
+        if objective.revision != expected_revision:
+            raise ConflictError("revision changed")
+        self.notification_changes.append({"managed_id": managed_id, "enabled": enabled})
+        self.objectives[objective_id] = objective.model_copy(
+            update={"revision": objective.revision + 1}
+        )
+
+    async def list_specialists(self, tenant_id: str, user_id: str) -> list[Any]:
+        return self.specialists
+
+    async def specialist_handovers(
+        self, tenant_id: str, user_id: str, *, specialist_id: str | None = None
+    ) -> list[Any]:
+        return self.handovers
+
+    async def add_note(
+        self, tenant_id: str, user_id: str, objective_id: str, *, note: str
+    ) -> Objective:
+        objective = self.objectives[objective_id]
+        updated = objective.model_copy(update={"revision": objective.revision + 1})
+        self.objectives[objective_id] = updated
+        self.notes.append((objective_id, note))
+        return updated
+
+    async def update(
+        self,
+        tenant_id: str,
+        user_id: str,
+        objective_id: str,
+        *,
+        expected_revision: int,
+        action: ObjectiveAction,
+    ) -> Objective:
+        objective = self.objectives[objective_id]
+        if objective.revision != expected_revision:
+            raise ConflictError("Objective changed; reload before applying this change")
+        from harness.assistant.lifecycle import transition
+
+        updated = objective.model_copy(
+            update={
+                "revision": objective.revision + 1,
+                "status": transition(objective.status, action),
+            }
+        )
+        self.objectives[objective_id] = updated
+        return updated
+
+
+def overlay(
+    gateway: FakeGateway,
+    *,
+    coordinator_thread: bool = True,
+    emit: Any = None,
+    emit_receipt: Any = None,
+    conversation_surface: str | None = None,
+) -> Any:
+    run = Run(
+        run_id="run-1",
+        session_id="session-1",
+        tenant_id="t",
+        status=RunStatus.RUNNING,
+        idempotency_key="k",
+        input={"conversation_surface": conversation_surface} if conversation_surface else {},
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    session = Session(
+        session_id="session-1",
+        tenant_id="t",
+        user_id="u",
+        agent_name="kai-personal-assistant",
+        agent_version="1",
+        created_at=NOW,
+        environment="production",
+        runtime_type="claude-agent-sdk",
+    )
+    return assistant_delegation_overlay(
+        gateway,
+        run,
+        session,
+        coordinator_thread=coordinator_thread,
+        emit=emit,
+        emit_receipt=emit_receipt,
+    )
+
+
+def text_of(result: dict[str, Any]) -> str:
+    return str(result["content"][0]["text"])
+
+
+@pytest.mark.asyncio
+async def test_create_task_persists_and_enqueues_one_execution():
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    result = await tools["assistant_create_task"]({"task": "整理季度报告初稿"})
+    assert "已安排" in text_of(result)
+    assert "已创建并开始执行" not in text_of(result)
+    assert len(gateway.created) == 1
+    brief = gateway.created[0]
+    assert brief.agent_name == "kai-personal-assistant" and brief.schedule is None
+    # The trigger key carries the delegating run: retries cannot re-dispatch.
+    execution = gateway.records["objective_0001"][0]
+    assert execution.trigger_key == "delegate:run-1:objective_0001"
+    assert execution.thread_id == "assistant_objective_0001"
+    assert gateway.idempotency_keys["objective_0001"] is not None
+    assert gateway.idempotency_keys["objective_0001"].startswith("delegate:run-1:")
+
+
+@pytest.mark.asyncio
+async def test_repeated_tool_call_reuses_the_same_objective():
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    first = await tools["assistant_create_task"]({"task": "整理季度报告初稿"})
+    second = await tools["assistant_create_task"]({"task": "整理季度报告初稿"})
+    assert len(gateway.created) == 1
+    assert "objective_0001" in text_of(second)
+    assert "objective_0001" in text_of(first)
+    # Only one durable execution intent exists for the repeated request.
+    assert len(gateway.records["objective_0001"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_delegation_tools_only_exist_for_the_coordinator_thread():
+    gateway = FakeGateway()
+    overlay_off_coordinator = overlay(gateway, coordinator_thread=False)
+    assert overlay_off_coordinator.tools == () and not overlay_off_coordinator.instructions
+
+
+@pytest.mark.asyncio
+async def test_coordinator_session_resolves_the_personal_thread():
+    from types import SimpleNamespace
+
+    from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
+
+    class Agui:
+        def __init__(self, thread_id: str | None) -> None:
+            self._thread_id = thread_id
+
+        async def get_thread_record_for_session(self, **_kwargs: Any):
+            if self._thread_id is None:
+                raise NotFoundError("no binding")
+            return SimpleNamespace(thread_id=self._thread_id)
+
+    session = Session(
+        session_id="session-1",
+        tenant_id="t",
+        user_id="u",
+        agent_name="kai-personal-assistant",
+        agent_version="1",
+        created_at=NOW,
+        environment="production",
+        runtime_type="claude-agent-sdk",
+    )
+    assert await coordinator_session(Agui(PERSONAL_ASSISTANT_THREAD), session)
+    assert not await coordinator_session(Agui("assistant_objective_x"), session)
+    assert not await coordinator_session(Agui(None), session)
+
+
+@pytest.mark.asyncio
+async def test_create_task_supports_periodic_schedule():
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    result = await tools["assistant_create_task"](
+        {"task": "每小时检查页面", "interval_minutes": 60}
+    )
+    assert "已安排" in text_of(result)
+    assert gateway.created[0].schedule is not None
+    assert gateway.created[0].schedule.interval_minutes == 60
+
+
+@pytest.mark.asyncio
+async def test_create_task_rejects_bad_interval():
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    result = await tools["assistant_create_task"]({"task": "x", "interval_minutes": 5})
+    assert "15" in text_of(result)
+    assert gateway.created == []
+
+
+@pytest.mark.asyncio
+async def test_status_lists_objectives_with_revision_and_latest_execution():
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    await tools["assistant_create_task"]({"task": "观察某页面变化"})
+    # The newest execution wins: the gateway returns newest first, so an older
+    # queued execution must not shadow a newer failure.
+    pending = gateway.records["objective_0001"][0]
+    failed = pending.model_copy(
+        update={"status": ObjectiveExecutionStatus.FAILED, "summary": "失败"}
+    )
+    gateway.records["objective_0001"] = [failed, pending]
+    status = await tools["assistant_task_status"]({})
+    body = text_of(status)
+    assert "[active]" in body and "最近执行：failed" in body
+    assert "revision=1" in body
+    assert "expected_revision" in body
+
+
+@pytest.mark.asyncio
+async def test_update_task_reports_the_new_revision():
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    await tools["assistant_create_task"]({"task": "任务"})
+    ok = await tools["assistant_update_task"](
+        {"objective_id": "objective_0001", "action": "pause", "expected_revision": 1}
+    )
+    assert "revision=2" in text_of(ok)
+
+
+@pytest.mark.asyncio
+async def test_update_task_requires_fresh_revision():
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    await tools["assistant_create_task"]({"task": "任务"})
+    stale = await tools["assistant_update_task"](
+        {"objective_id": "objective_0001", "action": "pause", "expected_revision": 9}
+    )
+    assert "失败" in text_of(stale)
+    ok = await tools["assistant_update_task"](
+        {"objective_id": "objective_0001", "action": "pause", "expected_revision": 1}
+    )
+    assert "paused" in text_of(ok)
+
+
+@pytest.mark.asyncio
+async def test_chat_reschedule_uses_the_existing_task_without_pausing_or_recreating():
+    from unittest.mock import AsyncMock
+
+    gateway = FakeGateway()
+    original = await gateway.create(
+        "t", "u", ObjectiveBrief(title="盯梢", instructions="保留原任务",
+        agentName="assistant", agentVersion="1", schedule=ObjectiveSchedule(intervalMinutes=120)),
+        idempotency_key="original",
+    )
+    gateway.reschedule = AsyncMock(return_value=original.model_copy(update={
+        "schedule": ObjectiveSchedule(intervalMinutes=240), "revision": 2,
+        "next_check_at": NOW + timedelta(hours=4),
+    }))
+    tools = {tool.name: tool.handler for tool in
+             overlay(gateway, conversation_surface="assistant").tools}
+    assert "assistant_create_task" in tools
+    status = text_of(await tools["assistant_task_status"]({}))
+    assert "每120分钟" in status
+    result = text_of(await tools["assistant_update_task"]({
+        "objective_id": original.objective_id, "expected_revision": 1,
+        "action": "reschedule", "interval_minutes": 240,
+    }))
+    gateway.reschedule.assert_awaited_once_with("t", "u", original.objective_id,
+        expected_revision=1, interval_minutes=240, timezone=None)
+    assert "每4小时" in result and "下次检查" in result
+    assert len(gateway.created) == 1 and gateway.objectives[original.objective_id] == original
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fields", [
+    {}, {"interval_minutes": True}, {"interval_minutes": 14}, {"interval_minutes": 525601},
+    {"interval_minutes": "240"}, {"interval_minutes": 240, "timezone": ""},
+    {"interval_minutes": 240, "expected_revision": True},
+])
+async def test_invalid_schedule_tool_request_never_changes_a_task(fields):
+    from unittest.mock import AsyncMock
+
+    gateway = FakeGateway()
+    gateway.reschedule = AsyncMock(side_effect=AssertionError("must not write"))
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    await tools["assistant_update_task"]({"action": "reschedule", "objective_id": "o",
+        "expected_revision": 1, **fields})
+    gateway.reschedule.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_add_context_records_a_note_for_the_next_execution():
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    await tools["assistant_create_task"]({"task": "任务"})
+    result = await tools["assistant_add_context"](
+        {"objective_id": "objective_0001", "context": "优先用 CSV 格式"}
+    )
+    assert "已补充" in text_of(result)
+    assert gateway.notes == [("objective_0001", "优先用 CSV 格式")]
+    empty = await tools["assistant_add_context"]({"objective_id": "objective_0001", "context": " "})
+    assert "1–8000" in text_of(empty)
+
+
+@pytest.mark.asyncio
+async def test_enqueue_failure_reports_instead_of_raising():
+    gateway = FakeGateway()
+    gateway.enqueue_error = ConflictError("already running")
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    result = await tools["assistant_create_task"]({"task": "任务"})
+    assert "未能创建" in text_of(result)
+
+
+@pytest.mark.asyncio
+async def test_manage_work_binds_the_original_thread():
+    gateway = FakeGateway()
+    gateway.bindings = [
+        {
+            "thread_id": "task-thread-1",
+            "title": "季度报告",
+            "agent_name": "kai-personal-assistant",
+            "agent_version": "1",
+            "project_id": None,
+            "managed_objective_id": None,
+        }
+    ]
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    result = await tools["assistant_manage_work"]({"thread_id": "task-thread-1"})
+    body = text_of(result)
+    assert "已接管原任务" in body and "task-thread-1" in body
+    objective = gateway.objectives["objective_0001"]
+    assert objective.managed_thread_id == "task-thread-1"
+    # The execution continues on the original thread, not a stand-in.
+    assert gateway.records["objective_0001"][0].thread_id == "task-thread-1"
+    # A second takeover reports the existing coordinator instead of duplicating.
+    gateway.bindings[0]["managed_objective_id"] = "objective_0001"
+    again = await tools["assistant_manage_work"]({"thread_id": "task-thread-1"})
+    assert "不重复接管" in text_of(again)
+
+
+@pytest.mark.asyncio
+async def test_manage_work_follow_only_does_not_execute():
+    gateway = FakeGateway()
+    gateway.bindings = [
+        {
+            "thread_id": "task-thread-2",
+            "title": "采购跟进",
+            "agent_name": "kai-personal-assistant",
+            "agent_version": "1",
+            "project_id": None,
+            "managed_objective_id": None,
+        }
+    ]
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    result = await tools["assistant_manage_work"](
+        {"thread_id": "task-thread-2", "mode": "follow_only"}
+    )
+    assert "只跟进" in text_of(result)
+    assert gateway.records.get("objective_0001") is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_target_lists_candidates_for_ambiguous_names():
+    gateway = FakeGateway()
+    gateway.bindings = [
+        {
+            "thread_id": "thread-a",
+            "title": "季度报告",
+            "agent_name": "agent-a",
+            "agent_version": "1",
+            "project_id": None,
+            "managed_objective_id": None,
+        },
+        {
+            "thread_id": "thread-b",
+            "title": "季度报告 二稿",
+            "agent_name": "agent-a",
+            "agent_version": "1",
+            "project_id": None,
+            "managed_objective_id": None,
+        },
+    ]
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    result = await tools["assistant_resolve_target"]({"query": "季度报告"})
+    body = text_of(result)
+    assert "thread-a" in body and "thread-b" in body
+
+
+@pytest.mark.asyncio
+async def test_send_instruction_reports_the_delivery_status():
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    await tools["assistant_create_task"]({"task": "任务"})
+    gateway.instruct_outcome = {"status": "accepted", "message": "已提交当前运行"}
+    accepted = await tools["assistant_send_instruction"](
+        {"objective_id": "objective_0001", "context": "改用 CSV"}
+    )
+    assert "accepted" in text_of(accepted) and "已送达当前执行" in text_of(accepted)
+    gateway.instruct_outcome = {"status": "queued", "message": "当前执行未就绪"}
+    queued = await tools["assistant_send_instruction"](
+        {"objective_id": "objective_0001", "context": "改用 CSV"}
+    )
+    assert "queued" in text_of(queued) and "下一次执行" in text_of(queued)
+
+
+@pytest.mark.asyncio
+async def test_status_includes_the_latest_checkpoint():
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    await tools["assistant_create_task"]({"task": "任务"})
+    from types import SimpleNamespace
+
+    gateway.checkpoint_summaries = [SimpleNamespace(summary="已完成数据校验，下一步生成图表")]
+    status = await tools["assistant_task_status"]({})
+    assert "已完成数据校验" in text_of(status)
+
+
+@pytest.mark.asyncio
+async def test_delegate_to_specialist_reports_missing_config_without_starting():
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    result = await tools["assistant_delegate_to_specialist"](
+        {"name": "费用监控", "task": "长期关注某账号花费"}
+    )
+    body = text_of(result)
+    assert "pending_input" in body and "schedule_minutes" in body and "缺项不启动" in body
+    call = gateway.delegate_calls[0]
+    assert call["mode"] == "autonomous"
+
+
+@pytest.mark.asyncio
+async def test_applied_delegate_receipt_matches_the_enqueued_execution():
+    surface = None
+    """applied 的回执只描述真实入队：带执行与线程，且不再出现"待补充配置"。"""
+    gateway = FakeGateway()
+    gateway.delegate_outcome = {
+        "handover_id": "handover-1",
+        "specialist_id": "specialist-1",
+        "objective_id": "objective-9",
+        "status": "applied",
+        "missing": [],
+        "created_specialist": True,
+        "execution_id": "objective_run_abc",
+        "thread_id": "assistant_objective-9",
+    }
+    delegation = overlay(gateway, conversation_surface=surface)
+    tools = {tool.name: tool.handler for tool in delegation.tools}
+    result = await tools["assistant_delegate_to_specialist"](
+        {"name": "费用监控", "task": "长期关注花费"}
+    )
+    body = text_of(result)
+    if surface == "assistant":
+        assert "已交给「费用监控」" in body
+        assert "applied" not in body and "objective-9" not in body and "handover-1" not in body
+    else:
+        assert "applied" in body
+        assert "首次执行已入队" in body
+        assert "objective_run_abc" in body and "assistant_objective-9" in body
+    assert "待补充配置" not in body
+    assert ("现在只向用户简短确认已转交并结束本轮" in body) is (surface == "assistant")
+    if surface == "assistant":
+        assert "不要因后台结果暂未返回而自己再查一遍" in delegation.instructions
+    assert len(gateway.delegate_calls) == 1
+    assert not gateway.created
+
+
+@pytest.mark.asyncio
+async def test_delegate_replay_reports_receipt_without_recreating():
+    gateway = FakeGateway()
+    gateway.delegate_outcome = {
+        "handover_id": "handover-1",
+        "specialist_id": "specialist-1",
+        "objective_id": "objective-9",
+        "status": "sent",
+        "missing": [],
+        "created_specialist": False,
+    }
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    result = await tools["assistant_delegate_to_specialist"](
+        {"name": "费用监控", "task": "长期关注花费"}
+    )
+    assert "复用已有实例" in text_of(result)
+
+
+@pytest.mark.asyncio
+async def test_specialist_status_lists_instances_and_receipts():
+    gateway = FakeGateway()
+    from types import SimpleNamespace
+
+    gateway.specialists = [
+        SimpleNamespace(
+            specialist_id="specialist-1",
+            name="费用监控",
+            status=SimpleNamespace(value="needs_input"),
+            revision=2,
+        )
+    ]
+    gateway.handovers = [
+        SimpleNamespace(specialist_id="specialist-1", status=SimpleNamespace(value="pending_input"))
+    ]
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    result = await tools["assistant_specialist_status"]({})
+    body = text_of(result)
+    assert "费用监控" in body and "pending_input" in body
+
+
+@pytest.mark.asyncio
+async def test_current_availability_is_not_overridden_by_a_historical_pending_receipt():
+    from types import SimpleNamespace
+
+    gateway = FakeGateway()
+    gateway.specialists = [SimpleNamespace(
+        specialist_id="specialist-coding", name="编码协同", revision=3,
+        status=SimpleNamespace(value="active"), config={},
+    )]
+    gateway.handovers = [SimpleNamespace(
+        specialist_id="specialist-coding", status=SimpleNamespace(value="pending_input"),
+    )]
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    text = text_of(await tools["assistant_specialist_status"]({}))
+    assert '"availability": "active"' in text
+    assert '"missing_local_permissions": []' in text
+    assert "不代表当前接单状态" in text
+    assert "pending_input" in text  # historical fact retained, not silently discarded
+
+
+def test_directory_keeps_real_permission_blocks_and_excludes_main_contact():
+    from types import SimpleNamespace
+
+    from harness.assistant.constants import primary_specialist_id
+
+    entries = [SimpleNamespace(
+        specialist_id="coding", name="编码协同", status=SimpleNamespace(value="needs_input"),
+        config={"required_local_tools": ["run_commands"], "local_tool_permissions": []},
+    ), SimpleNamespace(specialist_id=primary_specialist_id("t", "u"))]
+    snapshot = specialist_directory_instructions(entries, "t", "u")
+    assert '"availability": "needs_input"' in snapshot
+    assert '"missing_local_permissions": ["run_commands"]' in snapshot
+    assert primary_specialist_id("t", "u") not in snapshot
+
+
+@pytest.mark.asyncio
+async def test_read_only_observer_overlay_has_no_delegation_rights():
+    gateway = FakeGateway()
+    overlay_observer = assistant_delegation_overlay(
+        gateway,
+        Run(
+            run_id="run-obs",
+            session_id="session-1",
+            tenant_id="t",
+            status=RunStatus.RUNNING,
+            idempotency_key="k",
+            created_at=NOW,
+            updated_at=NOW,
+        ),
+        Session(
+            session_id="session-1",
+            tenant_id="t",
+            user_id="u",
+            agent_name="kai-personal-assistant",
+            agent_version="1",
+            created_at=NOW,
+            environment="production",
+            runtime_type="claude-agent-sdk",
+        ),
+        coordinator_thread=True,
+        read_only=True,
+    )
+    names = {tool.name for tool in overlay_observer.tools}
+    assert names == {"assistant_task_status"}
+    assert "不得创建新任务" in (overlay_observer.instructions or "")
+
+
+@pytest.mark.asyncio
+async def test_memory_gateway_scopes_to_specialist_when_set():
+    from harness.assistant.memory_tools import MemoryBankGateway
+
+    class Bank:
+        def __init__(self) -> None:
+            self.seen: list[str] = []
+
+        async def search(
+            self, tenant_id: str, user_id: str, agent_name: str, query: str
+        ) -> list[object]:
+            self.seen.append(agent_name)
+            return []
+
+    bank = Bank()
+    await MemoryBankGateway(bank).search("t", "u", "audit-agent", "q")
+    assert bank.seen == ["audit-agent"]
+    await MemoryBankGateway(bank, scope="specialist:cost-monitor").search(
+        "t", "u", "audit-agent", "q"
+    )
+    assert bank.seen[-1] == "specialist:cost-monitor"
+
+
+@pytest.mark.asyncio
+async def test_specialist_memory_scope_resolves_duty_threads():
+    from types import SimpleNamespace as _Ns
+
+    from harness.assistant.delegation import specialist_memory_scope
+
+    class Assistant:
+        class repository:  # noqa: N801
+            @staticmethod
+            async def get(tenant_id: str, user_id: str, objective_id: str):
+                if objective_id == "objective-spec":
+                    return _Ns(specialist_id="specialist-1")
+                return _Ns(specialist_id=None)
+
+            @staticmethod
+            async def get_specialist(tenant_id: str, user_id: str, specialist_id: str):
+                return _Ns(slug="cost-monitor")
+
+    class Agui:
+        async def get_thread_record_for_session(self, **kwargs: Any) -> Any:
+            thread = str(kwargs["session_id"])
+            if thread == "no-binding":
+                raise NotFoundError("none")
+            return _Ns(thread_id=thread)
+
+    session = Session(
+        session_id="assistant_objective-spec",
+        tenant_id="t",
+        user_id="u",
+        agent_name="audit-agent",
+        agent_version="1",
+        created_at=NOW,
+        environment="production",
+        runtime_type="claude-agent-sdk",
+    )
+    assert await specialist_memory_scope(Assistant(), Agui(), session) == (
+        "specialist:cost-monitor"
+    )
+    plain = session.model_copy(update={"session_id": "assistant_objective-plain"})
+    assert await specialist_memory_scope(Assistant(), Agui(), plain) is None
+    unbound = session.model_copy(update={"session_id": "no-binding"})
+    assert await specialist_memory_scope(Assistant(), Agui(), unbound) is None
+
+
+@pytest.mark.asyncio
+async def test_delegate_emits_ui_handover_event_for_the_main_thread():
+    """转交成功即发 ui.handover 事件：主对话流内轻量状态行的数据源（免轮询）。"""
+    captured: list[dict[str, object]] = []
+
+    async def emit(payload: dict[str, object]) -> None:
+        captured.append(payload)
+
+    tools = {
+        tool.name: tool.handler
+        for tool in overlay(FakeGateway(), coordinator_thread=True, emit=emit).tools
+    }
+    result = await tools["assistant_delegate_to_specialist"](
+        {"name": "行业快报监控", "task": "每天上午汇总", "mode": "autonomous"}
+    )
+
+    assert "转交回执" in text_of(result)
+    assert captured and captured[0]["specialist_name"] == "行业快报监控"
+    assert captured[0]["status"] == "pending_input"
+    assert captured[0]["specialist_id"] == "specialist-1"
+    assert captured[0]["handover_id"] == "handover-1"
+    assert captured[0]["run_id"] == "run-1"
+    assert captured[0]["created_at"] == NOW.isoformat()
+    assert captured[0]["updated_at"] == NOW.isoformat()
+
+
+@pytest.mark.asyncio
+async def test_delegate_without_emit_still_succeeds():
+    """emit 缺省（旧调用方）不影响转交本身。"""
+    tools = {
+        tool.name: tool.handler
+        for tool in overlay(FakeGateway(), coordinator_thread=True).tools
+    }
+    result = await tools["assistant_delegate_to_specialist"](
+        {"name": "行业快报监控", "task": "每天上午汇总", "mode": "autonomous"}
+    )
+    assert "转交回执" in text_of(result)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("interval", [None, 15, 1440])
+async def test_specialist_tool_defaults_to_one_off_and_only_schedules_explicit_intervals(interval):
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    args = {"name": "编码协同", "task": "检查改动"}
+    if interval is not None:
+        args["interval_minutes"] = interval
+    await tools["assistant_delegate_to_specialist"](args)
+    schedule = gateway.delegate_calls[0]["schedule"]
+    assert (schedule.interval_minutes if schedule else None) == interval
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("interval", [True, False, 1, 525601, "60", 60.1])
+async def test_specialist_tool_rejects_invalid_interval_before_creating_a_bot(interval):
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    result = await tools["assistant_delegate_to_specialist"](
+        {"name": "coding", "task": "check", "interval_minutes": interval}
+    )
+    assert "interval_minutes" in text_of(result)
+    assert not gateway.delegate_calls
+
+
+@pytest.mark.asyncio
+async def test_standalone_bot_conversation_uses_its_owned_profile_and_domain_memory():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from harness.assistant.delegation import specialist_instructions, specialist_memory_scope
+    from harness.assistant.models import Specialist
+    bot = Specialist(
+        specialistId="specialist_coding", tenantId="t", userId="u", name="编码协同",
+        slug="coding", description="按需检查代码，不自行定时", agentName="audit-agent",
+        agentVersion="1", createdAt=NOW, updatedAt=NOW,
+        config={"credential_ref:private": "internal-only"},
+    )
+    repo = SimpleNamespace(get_specialist=AsyncMock(return_value=bot), get=AsyncMock())
+    agui = SimpleNamespace(get_thread_record_for_session=AsyncMock(
+        return_value=SimpleNamespace(thread_id="assistant_specialist_coding")
+    ))
+    session = Session(
+        session_id="bot-chat", tenant_id="t", user_id="u", agent_name="audit-agent",
+        agent_version="1", created_at=NOW,
+    )
+    assert await specialist_memory_scope(SimpleNamespace(repository=repo), agui, session) == (
+        "specialist:coding"
+    )
+    repo.get.assert_not_awaited()
+    repo.get_specialist.assert_awaited_once_with("t", "u", "specialist_coding")
+    instructions = specialist_instructions(bot)
+    assert "编码协同" in instructions and "按需" in instructions
+    assert "internal-only" not in instructions
+    from harness.assistant.delegation import specialist_role_overlay
+
+    child = specialist_role_overlay(bot)
+    primary = specialist_role_overlay(bot)
+    assert child.require_public_preface is False
+    assert primary.require_public_preface is False
+    assert child.tools == primary.tools == ()
+    assert child.instructions == primary.instructions
+    assert "编码协同" in child.instructions
+    assert "直接开始执行" not in child.instructions
+    assert "不要再次创建" not in child.instructions
+    repo.get_specialist.side_effect = NotFoundError("not owned")
+    assert await specialist_memory_scope(SimpleNamespace(repository=repo), agui, session) is None
+
+
+@pytest.mark.asyncio
+async def test_follow_only_project_subscribes_each_original_without_executing_and_retries_once():
+    gateway = FakeGateway()
+    gateway.bindings = [{
+        "thread_id": "original", "title": "report", "agent_name": "audit",
+        "agent_version": "1", "project_id": None, "managed_objective_id": None,
+    }]
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    args = {"thread_id": "original", "thread_ids": ["second"], "mode": "follow_only"}
+    await tools["assistant_manage_work"](args)
+    await tools["assistant_manage_work"](args)
+    assert len(gateway.created) == 1
+    assert not gateway.records
+    assert gateway.bound_notifications == [True, True]
+
+
+@pytest.mark.asyncio
+async def test_conversation_can_query_and_disable_one_subscription_with_cas():
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    await tools["assistant_create_task"]({"task": "existing duty"})
+    query = {"objective_id": "objective_0001"}
+    body = text_of(await tools["assistant_work_notifications"](query))
+    assert '"revision": 1' in body and 'managed-one' in body
+    assert gateway.notification_changes == []
+    change = query | {"managed_id": "managed-one", "enabled": False, "expected_revision": 1}
+    body = text_of(await tools["assistant_work_notifications"](change))
+    assert "已保存" in body and '"revision": 2' in body
+    assert gateway.notification_changes == [{"managed_id": "managed-one", "enabled": False}]
+    assert "未能确认" in text_of(await tools["assistant_work_notifications"](change))
+    assert len(gateway.records["objective_0001"]) == 1  # no new execution
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fields", [
+    {"enabled": "false", "managed_id": "m", "expected_revision": 1},
+    {"enabled": False, "expected_revision": 1},
+    {"enabled": False, "managed_id": "m", "expected_revision": True},
+    {"enabled": False, "managed_id": "m"},
+])
+async def test_notification_tool_rejects_ambiguous_mutations(fields):
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    await tools["assistant_work_notifications"]({"objective_id": "o"} | fields)
+    assert not gateway.notification_changes
+
+
+@pytest.mark.asyncio
+async def test_main_bot_chat_can_create_explicit_work_without_duplicating_specialist_dispatch():
+    gateway = FakeGateway()
+    chat = overlay(gateway, conversation_surface="assistant")
+    tools = {tool.name: tool.handler for tool in chat.tools}
+    assert "assistant_create_task" in tools
+    assert "assistant_specialist_status" in tools and "assistant_manage_work" in tools
+    assert "assistant_delegate_to_specialist" not in tools
+    assert not gateway.delegate_calls
+    assert not gateway.created
+    args = {"title": "新建盯梢", "task": "每4小时核对", "interval_minutes": 240}
+    await tools["assistant_create_task"](args)
+    await tools["assistant_create_task"](args)
+    assert len(gateway.created) == 1 and gateway.created[0].schedule.interval_minutes == 240
+    assert len(gateway.records["objective_0001"]) == 1
+    assert "assistant_create_task" in {tool.name for tool in overlay(gateway).tools}

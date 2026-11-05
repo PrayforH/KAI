@@ -41,6 +41,7 @@ dependencies = [
     "websockets>=15,<17",
     "libarchive-c>=5.3,<6",
     "pgvector>=0.4,<0.5",
+    "qrcode==8.2",
 ]
 
 [project.optional-dependencies]
@@ -64,6 +65,9 @@ deepagents = [
     # No checkpointer package: session continuity stays with the platform, which
     # replays the session's durable history into each Run. Binding a LangGraph
     # thread would switch that replay off (see runtime/deepagents_events.py).
+]
+feishu = [
+    "lark-oapi==1.7.5",
 ]
 
 [project.scripts]

@@ -1,0 +1,32 @@
+#!/bin/bash
+set -euo pipefail
+export DISPLAY=:99 XAUTHORITY=/run/kai-desktop/Xauthority SHELL=/bin/bash
+export TZ="${TZ:-Asia/Shanghai}"
+export XDG_RUNTIME_DIR=/run/kai-desktop
+export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/kai-desktop/bus
+# Bare Xvfb has no settings daemon to set org.a11y.Status.IsEnabled.
+# Chromium needs both this session opt-in and its renderer accessibility flag.
+export ACCESSIBILITY_ENABLED=1 QT_ACCESSIBILITY=1
+unset NO_AT_BRIDGE
+dbus-daemon --session --address="$DBUS_SESSION_BUS_ADDRESS" --nofork &
+bus_pid=$!
+for i in $(seq 1 100); do
+  if [ -S /run/kai-desktop/bus ]; then break; fi
+  sleep 0.05
+done
+python3 -c 'import tkinter; from PIL import ImageTk'
+Xvfb :99 -screen 0 1280x800x24 -nolisten tcp -auth "$XAUTHORITY" &
+display_pid=$!
+for i in $(seq 1 100); do
+  if xdotool getdisplaygeometry >/dev/null 2>&1; then break; fi
+  sleep 0.1
+done
+xdotool getdisplaygeometry
+openbox &
+x11vnc -display :99 -auth "$XAUTHORITY" -unixsock /run/kai-desktop/vnc.sock -rfbport 0 -rfbportv6 0 -no6 \
+  -nopw -forever -shared &
+vnc_pid=$!
+python3 /usr/local/lib/kai-desktop/desktop-shell.py &
+shell_pid=$!
+# Closing the browser does not tear down the computer's display service.
+wait -n "$bus_pid" "$display_pid" "$vnc_pid" "$shell_pid"

@@ -1,0 +1,759 @@
+/* Assistant presentation only. Task and project conversations keep the workbench UI.
+   Every rule is bounded by the current shell surface; never scope from body :has(). */
+
+/* 浅色本体（白/浅灰）的中性底板与气泡色：深浅主题各给一套，
+   白底白字的白外观因此不会消失。具体取值由 --kai-bot-* 变量带进来。 */
+:root {
+  --kai-bot-neutral-bubble: #3a3a3c;
+  --kai-bot-neutral-bubble-ink: #f2f2f7;
+}
+
+html[data-color-mode="light"] {
+  --kai-bot-neutral-bubble: #e8e8ec;
+  --kai-bot-neutral-bubble-ink: #1c1c1e;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .aui-thread-viewport {
+  padding-top: 12px;
+}
+
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message {
+  padding: 6px 0 2px;
+  margin: 10px 0;
+}
+
+/* AG-UI 的内容槽位在本仓库是空壳（真实回答在 .assistant-answer），
+   不能给它画气泡，否则每轮多出一个 28px 空胶囊。 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message > .aui-assistant-message-content:not(:has(.aui-md)) {
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+}
+
+/* 令牌取自客户端（app.asar 的 index CSS）：
+   --conversation-bubble-max-width: min(640px,100%)、文本 14px/22px、
+   助手气泡 6% 前景填充、用户气泡为每个 bot 的强调色。 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message .assistant-answer {
+  box-sizing: border-box;
+  width: fit-content;
+  max-width: min(640px, 92%);
+  padding: 12px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--codex-ink, #ededed);
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .aui-user-message-content,
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-user-message .aui-user-message-content {
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 18px;
+  background: var(--kai-bot-bubble, #126fd4);
+  color: var(--kai-bot-bubble-ink, #fff);
+  box-shadow: none;
+}
+
+/* 历史消息的正文在原生文本槽里（.assistant-answer 只承载当前/最新回答）：
+   给有内容的槽位同样画气泡，避免老消息是一片不带底色的裸文本。 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message:not(:has(.assistant-answer)) > .aui-assistant-message-content:has(.aui-md) {
+  box-sizing: border-box;
+  width: fit-content;
+  max-width: min(640px, 92%);
+  padding: 10px 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* 用户消息整体靠右 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-user-message {
+  align-items: flex-end;
+  margin: 14px 0 6px;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-user-message > .aui-user-message-content {
+  max-width: min(640px, 86%);
+}
+
+/* 状态行（已完成·耗时）居中、极小号、去掉方框感 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .execution-ribbon {
+  justify-content: center;
+  width: 100%;
+  margin: 4px auto 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #7d7d7d;
+  font-size: 12px;
+  text-align: center;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .execution-ribbon > * {
+  border: 0;
+  background: transparent;
+}
+
+/* 聊天里不出现「已完成 · 耗时」这类运行状态行与完成时间戳 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .execution-ribbon.phase-completed {
+  display: none;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .execution-ribbon .execution-duration {
+  display: none;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .turn-completion {
+  display: none;
+}
+
+/* 对话索引刻度（右侧细虚线）在聊天形态里是噪音，先隐藏 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .conversation-index {
+  display: none;
+}
+
+/* 左栏滚动条隐藏（滚轮/触控板仍可滚），整体更像聊天应用 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .task-list-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .task-list-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* 消息操作栏：只留「复制 / 回复」，收到气泡外侧，悬停才出现，卡片更紧凑 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message {
+  position: relative;
+}
+
+/* Bot controls hug the reply bubble; workbench controls retain their footer. */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-answer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-answer-row > .assistant-answer {
+  min-width: 0;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-message-controls {
+  position: static;
+  flex: 0 0 auto;
+  margin: 0 0 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message:hover .assistant-message-controls,
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message:focus-within .assistant-message-controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-feedback-actions {
+  min-height: 22px;
+  gap: 2px;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-message-copy {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  padding: 4px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: #7d7d7d;
+  background: rgba(29, 29, 29, 0.92);
+  cursor: pointer;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-message-copy:hover {
+  color: #ededed;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 用户消息的操作栏放到气泡左侧的空白里，同样是 24px 紧凑图标 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-user-message {
+  position: relative;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-user-answer-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-user-answer-row > .aui-user-message-content {
+  min-width: 0;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-user-action-bar {
+  position: static;
+  flex: 0 0 auto;
+  margin: 0 0 4px;
+  min-height: 22px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-user-message:hover .harness-user-action-bar,
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-user-message:focus-within .harness-user-action-bar {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-user-action-bar .user-message-action,
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-user-action-bar button {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  padding: 4px;
+  border-radius: 6px;
+  color: #7d7d7d;
+}
+
+/* 更紧凑：气泡内边距与消息间距收一档，一轮里不再隔出 35px 的空档 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message {
+  padding: 2px 0 0;
+  margin: 8px 0;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message .assistant-answer {
+  padding: 10px 14px;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-user-message {
+  margin: 10px 0 4px;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-user-message + .harness-assistant-message,
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-user-message + .pre-response-activity {
+  padding-top: 2px;
+  margin-top: 2px;
+}
+
+/* 助手正文行距与段落间距更像聊天 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .aui-md {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--codex-ink, #e6e6e6);
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .aui-md p {
+  margin-bottom: 10px;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .aui-md h1,
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .aui-md h2,
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .aui-md h3 {
+  color: #f5f5f5;
+}
+
+/* 气泡内的首尾块不带额外外边距，上下留白统一由气泡 padding 决定。 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .aui-md > :first-child {
+  margin-top: 0;
+}
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .aui-md > :last-child {
+  margin-bottom: 0;
+}
+
+/* 输入框：更大的圆角、更轻的边框，像聊天输入条 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-composer-shell .aui-composer-root {
+  border-radius: 22px;
+  background: #1d1d1d;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-composer-shell .aui-composer-input {
+  border-radius: 22px 22px 0 0;
+}
+
+/* Assistant live status: text only, with a restrained light sweep. */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .grok-activity-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 0;
+  max-width: min(640px, 92%);
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .grok-face {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  /* 浅色本体坐在中性灰底板上（像 Grok 的白色外观），否则白底白脸看不见。 */
+  border-radius: 8px;
+  background: var(--kai-bot-surface, transparent);
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .grok-face svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .grok-face-body {
+  fill: var(--kai-bot-accent, #126fd4);
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .grok-face-eye {
+  fill: var(--kai-bot-ink, rgba(255, 255, 255, 0.92));
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* idle / 完成 / 失败：慢眨眼（客户端的 blink 周期感） */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .grok-face-eye[data-blink="true"] {
+  animation: kai-blink 4.2s infinite;
+}
+
+@keyframes kai-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.12); }
+}
+
+/* working：轻微浮动 + 呼吸感（比照 bounce 的 0.62s 一档，但压低幅度） */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .grok-face[data-state="working"] svg {
+  animation: kai-bob 1.4s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+
+@keyframes kai-bob {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-2px) scale(1.03, 0.97); }
+}
+
+/* done：一次弹跳定格（spin/bounce/nod 家族里的 bounce 语义） */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .grok-face[data-state="done"] svg {
+  animation: kai-pop 0.62s ease-out 1;
+  transform-origin: center bottom;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .grok-face[data-state="failed"] svg {
+  animation: kai-nod 0.5s ease-out 1;
+  transform-origin: center bottom;
+}
+
+@keyframes kai-pop {
+  0% { transform: translateY(0) scale(1); }
+  40% { transform: translateY(-4px) scale(1.06, 0.94); }
+  75% { transform: translateY(1px) scale(0.97, 1.03); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+@keyframes kai-nod {
+  0% { transform: rotate(0deg); }
+  35% { transform: rotate(-7deg); }
+  70% { transform: rotate(4deg); }
+  100% { transform: rotate(0deg); }
+}
+
+/* 短语：已显现的词稳定，新词 fade-up（statusReveal 的 web 等价物） */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .grok-phrase {
+  color: var(--codex-muted, #9a9a9a);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .grok-phrase-word[data-new="true"] {
+  display: inline-block;
+  animation: kai-phrase-in 180ms ease-out;
+}
+
+@keyframes kai-phrase-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .grok-phrase-caret {
+  display: inline-block;
+  width: 6px;
+  height: 14px;
+  margin-left: 3px;
+  border-radius: 2px;
+  background: var(--kai-bot-text, var(--kai-bot-accent, #126fd4));
+  animation: kai-caret 0.9s ease-in-out infinite;
+  vertical-align: -2px;
+}
+
+@keyframes kai-caret {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 0.9; }
+}
+
+/* 过程摘录：活动行下方的一行一条小列表（最近 ≤5 条工具/运行步骤）。
+   只在进行中渲染；与纯文字状态对齐，不附加符号。 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .chat-activity-steps {
+  display: grid;
+  gap: 2px;
+  margin: 2px 0 0;
+  padding: 0;
+  max-width: min(640px, 92%);
+  list-style: none;
+  color: var(--codex-muted, #8a8a8a);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .chat-activity-steps li {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .chat-activity-steps li::before {
+  content: none;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .chat-activity-steps li[data-tone="failed"] {
+  color: #d98b8b;
+}
+
+/* ── 主对话流内的转交状态行：居中、细字、随消息滚动（非置顶条） ── */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .handover-inline {
+  display: grid;
+  gap: 2px;
+  justify-items: stretch;
+  width: 100%;
+  margin: 6px 0 2px;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .handover-inline-item {
+  width: 100%;
+  min-width: 0;
+}
+/* 转交后缺配置的补齐卡：贴会话顶部、随内容滚动（非置顶条） */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .specialist-setup-card {
+  margin: 12px auto 4px;
+  width: min(640px, 92%);
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid #333;
+  border-radius: 14px;
+  background: #1b1b1b;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .specialist-setup-title {
+  margin: 0;
+  color: #ededed;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .specialist-setup-hint,
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .specialist-setup-done {
+  margin: 0;
+  color: #9a9a9a;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .specialist-setup-done {
+  color: #35c26a;
+  font-size: 13px;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .specialist-setup-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: #9a9a9a;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .specialist-setup-options {
+  display: flex;
+  gap: 6px;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .specialist-setup-options button {
+  padding: 5px 12px;
+  border: 1px solid #3a3a3a;
+  border-radius: 999px;
+  background: transparent;
+  color: #cfcfcf;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .specialist-setup-options button[data-selected="true"] {
+  border-color: #4c8dff;
+  background: rgba(76, 141, 255, 0.16);
+  color: #f2f2f2;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .specialist-setup-options button:disabled {
+  cursor: default;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .specialist-setup-error {
+  margin: 0;
+  color: #ff7a7a;
+  font-size: 12px;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .specialist-setup-credentials {
+  display: grid;
+  gap: 8px;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .specialist-setup-credentials > summary {
+  color: #8a8a8a;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .specialist-setup-submit {
+  justify-self: start;
+  padding: 8px 18px;
+  border: 0;
+  border-radius: 999px;
+  background: #f5f5f5;
+  color: #111;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .specialist-setup-submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+/* Input and approval components supply their own card frame. */
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] :is(.handover-ask-card, .handover-approval-card, .handover-credential-card) {
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+/* Incoming results and outgoing deliveries share one centered event line. */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .assistant-event-line {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 7px;
+  margin: 8px 0 14px;
+  color: var(--muted-ink);
+  font-size: 13px;
+  line-height: 1.5;
+}
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .assistant-event-line a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
+  text-decoration: none;
+  min-width: 0;
+}
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .assistant-event-line a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .assistant-event-line .bot-rail-avatar {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+}
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .assistant-event-line a:focus-visible {
+  outline: 2px solid var(--codex-accent, #9ec1ff);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .handover-local-tool-permission-card {
+  width: min(640px, 92%);
+  margin: 6px auto 2px;
+  padding: 10px 12px;
+  border: 1px solid #3a3a3a;
+  border-radius: 14px;
+  background: #1b1b1b;
+  text-align: left;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .handover-local-tool-title {
+  margin: 0 0 6px;
+  color: #d2a83a;
+  font-size: 12px;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .handover-local-tool-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  color: #dcdcdc;
+  font-size: 13px;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .handover-local-tool-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .handover-local-tool-actions button {
+  padding: 7px 14px;
+  border: 1px solid #3a3a3a;
+  border-radius: 9px;
+  background: #242424;
+  color: #ededed;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .handover-local-tool-actions button[data-action="allow"] {
+  border-color: #4c8dff;
+  background: #1f4f95;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .handover-local-tool-error {
+  margin: 6px 0 0;
+  color: #ff9a8a;
+  font-size: 12px;
+}
+
+/* Questions follow assistant content on the left; only event receipts center. */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .handover-inline-item > :is(.handover-ask-card, .handover-approval-card, .handover-credential-card, .handover-local-tool-permission-card, .specialist-setup-card) {
+  box-sizing: border-box;
+  width: min(640px, 100%);
+  max-width: 100%;
+  justify-self: start;
+  margin: 8px 0 2px;
+  text-align: left;
+}
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] :is(.handover-ask-title, .handover-approval-title, .handover-local-tool-title) {
+  margin: 0 0 8px;
+  text-align: left;
+  font-size: 13px;
+  color: var(--muted-ink);
+}
+
+/* Setup and local consent share the Bot question-card frame and actions. */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] :is(.specialist-setup-card, .handover-local-tool-permission-card, .handover-credential-card) {
+  box-sizing: border-box;
+  width: min(640px, 100%);
+  margin: 8px 0 10px;
+  padding: 18px;
+  border: 1px solid var(--codex-line);
+  border-radius: 22px;
+  background: transparent;
+  color: var(--codex-ink);
+  text-align: left;
+}
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .handover-local-tool-list { color: var(--codex-ink); font-size: 14px; gap: 8px; }
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .handover-local-tool-actions { justify-content: flex-end; margin-top: 16px; }
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] :is(.handover-local-tool-actions button, .specialist-setup-submit) { min-height: 36px; padding: 8px 16px; border: 0; border-radius: 999px; font: inherit; font-size: 13px; }
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .handover-local-tool-actions button { background: transparent; color: var(--codex-muted); }
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] :is(.handover-local-tool-actions button[data-action="allow"], .specialist-setup-submit) { background: var(--codex-ink); color: var(--codex-surface); }
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .specialist-setup-submit { justify-self: end; }
+
+/* Progress is readable prose, updated directly from public execution events. */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .grok-phrase {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-progress-wait {
+  margin: 4px 0 8px;
+  color: var(--codex-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Chat chronology stays scoped to Bot conversations. */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .assistant-chat-time {
+  align-self: stretch;
+  text-align: center;
+  color: var(--muted-foreground, #888);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 20px 0 12px;
+}
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .assistant-answer-row + .assistant-answer-row {
+  margin-top: 7px;
+}
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .assistant-exchange-line {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted-foreground, #888);
+  margin: 14px 0;
+}
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .assistant-exchange-line .assistant-event-line {
+  margin: 0;
+}
+
+/* Restrict motion to live Bot status text, never task/project output or saved messages. */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .grok-activity-row[data-state="working"] .grok-phrase {
+  color: var(--codex-muted);
+  background: linear-gradient(105deg, var(--codex-muted) 35%, var(--codex-ink) 49%, var(--codex-muted) 63%);
+  background-size: 240% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: assistant-status-sweep 2.4s linear infinite;
+}
+@keyframes assistant-status-sweep { from { background-position: 180% 0; } to { background-position: -80% 0; } }
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .grok-activity-row[data-state="working"] .grok-phrase {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+  }
+}
+/* History loads silently on reader gestures; there is no visible button.
+   Pending sends use the same bubble as sent messages and go out on their own,
+   so there is no stuck section or resend control to place here. */
+.console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-pending-messages { display: grid; gap: 12px; }
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .steering-user-message-bubble {
+  padding: 10px 14px;
+  border-radius: 18px;
+  background: var(--kai-bot-bubble, #126fd4);
+  color: var(--kai-bot-bubble-ink, #fff);
+  font-size: inherit;
+  line-height: 1.6;
+}
+
+/* The live status sits above the composer, so it shares the composer's column
+   (`width: min(800px, 100%); margin-inline: auto`). Full viewport width left it
+   hugging the far-left gutter as soon as the window got wide. */
+.console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-message-tail-slot { flex-shrink: 0; width: min(800px, 100%); max-width: 800px; margin-inline: auto; padding-bottom: 12px; }
+
+/* The @ message shows in the conversation it was typed in (user bubble, right
+   aligned, bot accent) with the handover receipt line underneath. */
+.console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .handover-mention-text {
+  box-sizing: border-box;
+  width: fit-content;
+  max-width: min(640px, 86%);
+  margin: 6px 0 2px auto;
+  padding: 10px 14px;
+  border-radius: 18px;
+  background: var(--kai-bot-bubble, #126fd4);
+  color: var(--kai-bot-bubble-ink, #fff);
+  font-size: 14px;
+  line-height: 22px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

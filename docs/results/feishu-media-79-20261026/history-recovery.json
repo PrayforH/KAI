@@ -1,0 +1,14 @@
+{
+  "transport": "normal AG-UI application service, not a Feishu event",
+  "runId": "run_066673f2a25646af8132e1949e3cb264",
+  "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+  "promptCount": 21,
+  "status": "succeeded",
+  "answer": "会话已保留",
+  "restoredFromDurableInputs": [
+    "run_76779e365c1a4570889fab0e2ea16169",
+    "run_5102aeb6fd4f4343a5daa9fe756acfd4",
+    "run_acd94d4197ef42aab9cd26c43948f40d"
+  ],
+  "existingRunRowsModified": false
+}

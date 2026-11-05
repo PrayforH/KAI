@@ -19,8 +19,9 @@ from collections.abc import (
     Mapping,
     Sequence,
 )
-from contextlib import AbstractContextManager, nullcontext, suppress
+from contextlib import AbstractAsyncContextManager, AbstractContextManager, nullcontext, suppress
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, TypeVar, cast
 from uuid import uuid4
@@ -97,7 +98,7 @@ from harness.sandbox.base import (
     sandbox_enforcement_rank,
     trust_enforcement_floor,
 )
-from harness.sandbox.lease import SandboxLease, SandboxLeaseService
+from harness.sandbox.lease import SandboxLease, SandboxLeaseError, SandboxLeaseService
 
 RuntimeAssetStager = Callable[[str, str, str, str, Path, bool], Awaitable[tuple[str, ...]]]
 ProjectSkillResolver = Callable[[tuple[str, ...], AgentRuntimeType], tuple[SkillSnapshot, ...]]
@@ -284,7 +285,8 @@ class RunOrchestrator:
         context_service: ContextService | None = None,
         sandbox_leases: SandboxLeaseService | None = None,
         platform_tools_factory: (
-            Callable[[Run, Session], Awaitable[PlatformToolOverlay]] | None
+            Callable[[Run, Session, SandboxHandle, SandboxProvider], Awaitable[PlatformToolOverlay]]
+            | None
         ) = None,
     ) -> None:
         if cancellation_poll_interval_seconds <= 0:
@@ -355,7 +357,16 @@ class RunOrchestrator:
         ):
             self._observability.annotate_current_io(output_value=text)
 
-    async def _interaction_guidance(self, run: Run) -> str:
+    async def _interaction_guidance(
+        self, run: Run,
+    ) -> str:
+        if (
+            run.input.get("conversation_surface") == "assistant"
+            and not run.input.get("studio_builder")
+        ):
+            # Bot behavior comes from its identity and current request. Avoid a
+            # second planner or another layer of mandatory business steps.
+            return ""
         if self._interaction_planner is None or run.input.get("studio_builder"):
             return ""
         with self._stage("harness.presentation.plan", {"run.id": run.run_id}):
@@ -552,6 +563,20 @@ class RunOrchestrator:
             fingerprints[relative] = hashlib.sha256(content).hexdigest()
         return fingerprints
 
+    @staticmethod
+    async def _publication_baseline(
+        sandbox: SandboxProvider,
+        handle: SandboxHandle,
+        local: Mapping[str, str],
+    ) -> Mapping[str, str]:
+        reader = getattr(sandbox, "workspace_baseline", None)
+        if reader is None:
+            return local
+        baseline = await cast(Callable[[SandboxHandle], Awaitable[Mapping[str, str]]], reader)(
+            handle
+        )
+        return {**local, **baseline}
+
     async def _publish_workspace_outputs(
         self,
         *,
@@ -578,6 +603,15 @@ class RunOrchestrator:
             for event in prior_events
             if event.type == "artifact.ready" and isinstance(event.payload.get("source_path"), str)
         }
+        published_contents = {
+            (
+                event.payload.get("name"),
+                event.payload.get("media_type"),
+                event.payload.get("sha256"),
+            )
+            for event in prior_events
+            if event.type == "artifact.ready"
+        }
         remaining = self._output_artifact_max_bytes
         published_count = 0
         skipped_count = 0
@@ -601,14 +635,22 @@ class RunOrchestrator:
                 relative,
                 max_bytes=remaining,
             )
+            name = relative.removeprefix("outputs/")
+            media_type = mimetypes.guess_type(resolved.name)[0] or "application/octet-stream"
+            fingerprint = (name, media_type, hashlib.sha256(content).hexdigest())
+            # A declared root file can also be copied into outputs/. Reuse the
+            # existing publication so Web and channel delivery see one artifact.
+            if fingerprint in published_contents:
+                continue
             remaining -= len(content)
             artifact = await self._artifacts.upload(
                 tenant_id=tenant_id,
                 run_id=run.run_id,
-                name=relative.removeprefix("outputs/"),
-                media_type=(mimetypes.guess_type(resolved.name)[0] or "application/octet-stream"),
+                name=name,
+                media_type=media_type,
                 content=content,
             )
+            published_contents.add(fingerprint)
             payload = artifact.model_dump(mode="json")
             payload["source"] = source
             payload["source_path"] = relative
@@ -664,7 +706,7 @@ class RunOrchestrator:
                     tenant_id=tenant_id,
                     run=run,
                     workspace=handle.path,
-                    baseline=baseline,
+                    baseline=await self._publication_baseline(sandbox, handle, baseline),
                     final_response=final_response,
                     message_id=message_id,
                 )
@@ -696,6 +738,68 @@ class RunOrchestrator:
         except Exception:  # noqa: BLE001 - preserve the primary runtime failure
             return False
         return True
+
+    async def _acquire_lease_reconciling_dead_runs(
+        self,
+        *,
+        run: Run,
+        provider: str,
+        sandbox_id: str,
+    ) -> SandboxLease:
+        """Acquire the session lease, self-healing a zombie from a dead Run.
+
+        A Worker crash (or a deploy restart) can leave a live lease whose bound
+        Run already ended; every later Run of the Session then fails with
+        "already holds a live sandbox lease". On that exact error, ask the lease
+        service to reconcile: it releases the blocking lease only when this
+        Run-bound lookup confirms the blocking Run is terminal, records a
+        `sandbox.lease.reconciled` event for observability, and retries once.
+        A lease whose Run is still active (or unverifiable) is never touched.
+        """
+        assert self._sandbox_leases is not None
+        arguments = {
+            "tenant_id": run.tenant_id,
+            "session_id": run.session_id,
+            "run_id": run.run_id,
+            "owner": f"run-fence:{run.fencing_token}",
+            "provider": provider,
+            "sandbox_id": sandbox_id,
+        }
+        try:
+            return await self._sandbox_leases.acquire(**arguments)
+        except SandboxLeaseError:
+            tenant_id = run.tenant_id
+
+            async def lease_run_is_terminal(blocked_run_id: str) -> bool:
+                return await self._lease_run_is_terminal(tenant_id, blocked_run_id)
+
+            released = await self._sandbox_leases.reconcile_dead_run_lease(
+                run.tenant_id,
+                run.session_id,
+                run_is_terminal=lease_run_is_terminal,
+            )
+            if released is None:
+                raise
+            await self._events.append(
+                tenant_id=run.tenant_id,
+                run_id=run.run_id,
+                session_id=run.session_id,
+                event_type="sandbox.lease.reconciled",
+                payload={
+                    "released_lease_id": released.lease_id,
+                    "released_run_id": released.run_id,
+                    "released_owner": released.owner,
+                },
+            )
+            return await self._sandbox_leases.acquire(**arguments)
+
+    async def _lease_run_is_terminal(self, tenant_id: str, run_id: str) -> bool:
+        """Lease-layer lookup: only a verifiably terminal Run may be reconciled."""
+        try:
+            blocked = await self._runs.get(tenant_id, run_id)
+        except Exception:  # noqa: BLE001 - unverifiable ownership must not be touched
+            return False
+        return blocked.status in RunStatus.terminal_statuses()
 
     async def _await_cancellable(
         self,
@@ -1183,9 +1287,7 @@ class RunOrchestrator:
                         pass
                 return result
 
-    async def _execute(  # pyright: ignore[reportGeneralTypeIssues]
-        self, tenant_id: str, run_id: str
-    ) -> Run:
+    async def _execute(self, tenant_id: str, run_id: str) -> Run:
         run = await self._runs.get(tenant_id, run_id)
         if run.status.is_terminal:
             return run
@@ -1201,18 +1303,8 @@ class RunOrchestrator:
         if run.status is not RunStatus.QUEUED and not is_resume and not is_provision_recovery:
             raise ConflictError(f"run is already owned or paused: {run_id} ({run.status.value})")
 
-        handle: SandboxHandle | None = None
-        terminal_status: RunStatus | None = None
-        lease: SandboxLease | None = None
         active_sandbox = self._sandbox
-        output_baseline: Mapping[str, str] | None = None
-        final_response_text = ""
-        final_response_message_id: str | None = None
-        workspace_policy = WorkspacePolicy()
-        workspace_durable = True
-        latest_runtime_result_payload: Mapping[str, Any] | None = None
         provisioning_started_at = None
-
         try:
             if not is_resume:
                 if is_provision_recovery:
@@ -1229,6 +1321,49 @@ class RunOrchestrator:
             session = await self._sessions.get(tenant_id, run.session_id)
             if self._sandbox_resolver is not None:
                 active_sandbox = await self._sandbox_resolver(tenant_id, session)
+            factory = getattr(active_sandbox, "run_scope", None)
+            scope = (
+                cast(Callable[[Run], AbstractAsyncContextManager[None]], factory)(run)
+                if factory is not None
+                else nullcontext()
+            )
+            async with scope:
+                return await self._execute_in_sandbox(
+                    run,
+                    session,
+                    active_sandbox,
+                    is_resume=is_resume,
+                    provisioning_started_at=provisioning_started_at,
+                )
+        except Exception as error:
+            while isinstance(error, ExceptionGroup):
+                group = cast(ExceptionGroup[Exception], error)
+                if len(group.exceptions) != 1:
+                    return await self._handle_unexpected_error(tenant_id, run_id, group)
+                error = group.exceptions[0]
+            return await self._handle_unexpected_error(tenant_id, run_id, error)
+
+    async def _execute_in_sandbox(  # pyright: ignore[reportGeneralTypeIssues]
+        self,
+        run: Run,
+        session: Session,
+        active_sandbox: SandboxProvider,
+        *,
+        is_resume: bool,
+        provisioning_started_at: datetime | None,
+    ) -> Run:
+        tenant_id, run_id = run.tenant_id, run.run_id
+        handle: SandboxHandle | None = None
+        terminal_status: RunStatus | None = None
+        lease: SandboxLease | None = None
+        output_baseline: Mapping[str, str] | None = None
+        final_response_text = ""
+        final_response_message_id: str | None = None
+        workspace_policy = WorkspacePolicy()
+        workspace_durable = True
+        latest_runtime_result_payload: Mapping[str, Any] | None = None
+
+        try:
             await self._ensure_quota_admission(tenant_id, run_id, session)
             with self._stage("harness.sandbox.provision", {"run.id": run_id}):
                 handle = await self._await_cancellable(
@@ -1241,15 +1376,12 @@ class RunOrchestrator:
                 # Durable ownership: the lease outlives this process, so a Worker
                 # that dies mid-Run leaves a record a reaper can reclaim and an
                 # operator can audit.
-                lease = await self._sandbox_leases.acquire(
-                    tenant_id=tenant_id,
-                    session_id=run.session_id,
-                    run_id=run_id,
-                    owner=f"run-fence:{run.fencing_token}",
+                lease = await self._acquire_lease_reconciling_dead_runs(
+                    run=run,
                     provider=handle.provider,
                     sandbox_id=handle.sandbox_id,
                 )
-            payload: dict[str, object] = {
+            provision_payload: dict[str, object] = {
                 "provider": handle.provider,
                 "isolation": handle.isolation_level.value,
                 "enforcement": enforcement.value,
@@ -1263,7 +1395,7 @@ class RunOrchestrator:
                     run.session_id,
                 )
                 floor = trust_enforcement_floor(trust_state.trust_high_watermark)
-                payload.update(
+                provision_payload.update(
                     {
                         "trust_watermark": trust_state.trust_high_watermark.value,
                         "trust_floor": floor.value,
@@ -1273,13 +1405,13 @@ class RunOrchestrator:
                     }
                 )
             if lease is not None:
-                payload.update({"lease_id": lease.lease_id, "lease_epoch": lease.epoch})
+                provision_payload.update({"lease_id": lease.lease_id, "lease_epoch": lease.epoch})
             await self._events.append(
                 tenant_id=tenant_id,
                 run_id=run_id,
                 session_id=run.session_id,
                 event_type="sandbox.provisioned",
-                payload=payload,
+                payload=provision_payload,
             )
             policy_resolution = (
                 await self._policy_resolver(
@@ -1312,6 +1444,10 @@ class RunOrchestrator:
                 if self._workspace_policy_resolver is not None
                 else WorkspacePolicy()
             )
+            if handle.persistent_workspace:
+                # The owner disk is authoritative. A stale Session archive must
+                # never be uploaded over it, nor replace it with a partial mirror.
+                workspace_policy = WorkspacePolicy(restore_session=False, archive_on_complete=False)
             if self._workspaces is not None and workspace_policy.restore_session:
                 with self._stage("harness.workspace.restore", {"run.id": run_id}):
                     restored = await self._workspaces.restore_latest(
@@ -1492,6 +1628,17 @@ class RunOrchestrator:
             async def sync_workspace() -> None:
                 await active_sandbox.collect(handle)
 
+            artifact_file_plane = _bind_sandbox_file_plane(active_sandbox, handle)
+
+            async def read_workspace_file(path: str, max_bytes: int) -> bytes:
+                assert artifact_file_plane is not None
+                return await artifact_file_plane.download_file(path, max_bytes=max_bytes)
+
+            platform_tools = (
+                await self._platform_tools_factory(run, session, handle, active_sandbox)
+                if self._platform_tools_factory
+                else PlatformToolOverlay()
+            )
             interaction_guidance = await self._interaction_guidance(run)
             artifact_publisher = (
                 ArtifactPublisher(
@@ -1504,7 +1651,9 @@ class RunOrchestrator:
                     sync_workspace=sync_workspace,
                     max_file_bytes=self._output_artifact_max_bytes,
                     observability=self._observability,
-                    validate_generated_html=bool(interaction_guidance),
+                    validate_generated_html=(bool(interaction_guidance)
+                        or run.input.get("conversation_surface") == "assistant"),
+                    read_workspace_file=read_workspace_file if artifact_file_plane else None,
                 )
                 if self._artifacts is not None
                 else None
@@ -1533,9 +1682,13 @@ class RunOrchestrator:
             branch_projection = (
                 raw_branch_projection if isinstance(raw_branch_projection, str) else ""
             )
+            quoted = run.input.get("quoted_message_context")
+            quoted_projection = quoted if isinstance(quoted, str) else ""
             context_projection = "\n\n".join(
                 section
-                for section in (project_projection, recovery_projection, branch_projection)
+                for section in (
+                    project_projection, recovery_projection, branch_projection, quoted_projection,
+                )
                 if section.strip()
             )
             if recovery_projection:
@@ -1563,11 +1716,7 @@ class RunOrchestrator:
                     },
                 )
             context = RuntimeContext(
-                platform_tools=(
-                    await self._platform_tools_factory(run, session)
-                    if self._platform_tools_factory
-                    else PlatformToolOverlay()
-                ),
+                platform_tools=platform_tools,
                 run=run,
                 session=session,
                 workspace=handle.path,
@@ -1982,7 +2131,9 @@ class RunOrchestrator:
                     tenant_id=tenant_id,
                     run=run,
                     workspace=handle.path,
-                    baseline=output_baseline,
+                    baseline=await self._publication_baseline(
+                        active_sandbox, handle, output_baseline
+                    ),
                     final_response=final_response_text,
                     message_id=final_response_message_id,
                 )
@@ -2048,8 +2199,8 @@ class RunOrchestrator:
             # persist child terminals and the parent terminal immediately while
             # credential revocation and sandbox destruction still run in
             # ``finally``. This keeps provider cleanup and MinIO/archive latency
-            # out of the cancellation SLO and deliberately discards partial
-            # workspace mutations from the cancelled Run.
+            # out of the cancellation SLO and skips publishing partial outputs.
+            # A persistent Computer retains its owner's on-disk mutations.
             workspace_durable = True
             latest = await self._runs.get(tenant_id, run_id)
             if latest.status is RunStatus.CANCELLING:

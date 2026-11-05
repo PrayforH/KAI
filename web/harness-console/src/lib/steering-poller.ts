@@ -10,7 +10,7 @@ class SteeringReadError extends Error {
   constructor(readonly status: number) { super(`Steering status HTTP ${status}`); }
 }
 
-function readSteeringState(runId: string): Promise<SteeringState> {
+export function readSteeringState(runId: string): Promise<SteeringState> {
   const url = `/api/harness/runs/${encodeURIComponent(runId)}/steer`;
   return readClientResource(url, async () => {
     const response = requireAuthenticatedResponse(await fetch(url, { cache: "no-store" }));

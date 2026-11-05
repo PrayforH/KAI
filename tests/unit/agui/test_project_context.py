@@ -327,3 +327,32 @@ async def test_rejected_request_does_not_move_an_existing_thread(tmp_path: Path)
         tenant_id="tenant-a", user_id="user-1", thread_id="thread-original"
     )
     assert binding.project_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("surface,project,expected", [
+    ("assistant", False, True), ("task", False, False), (None, False, False),
+    ("assistant", True, False),
+])
+async def test_conversation_presentation_is_per_send_and_never_leaks_to_projects(
+    tmp_path: Path, surface: str | None, project: bool, expected: bool,
+) -> None:
+    container = build_memory_container()
+    tenant_id, user_id = "tenant-a", "user-1"
+    await _publish_agent(container, tenant_id, user_id, tmp_path)
+    request = _request("assistant_historical")
+    request.forwarded_props = {"conversationSurface": surface} if surface else {}
+    if project:
+        item = await container.projects.create(
+            tenant_id=tenant_id, user_id=user_id, name="工作项目"
+        )
+        await container.agui.create_project_thread(
+            tenant_id=tenant_id, user_id=user_id, thread_id=request.thread_id,
+            agent_name="echo-agent", agent_version="0.1.0", agent_owner_user_id=user_id,
+            space_id=None, project_id=item.project_id, connection_mode="caller_owned",
+        )
+    result = await container.agui.create_run_with_result(
+        tenant_id=tenant_id, user_id=user_id, agent_name="echo-agent", agent_version="0.1.0",
+        request=request,
+    )
+    assert (result.run.input.get("conversation_surface") == "assistant") is expected

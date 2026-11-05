@@ -1,0 +1,13 @@
+
+> harness-console@0.3.1 test
+> vitest run --run tests/assistant-channel-status.spec.tsx tests/feishu-connection.spec.tsx tests/weixin-connection.spec.tsx tests/assistant-manager.spec.tsx
+
+
+ RUN  v4.1.10 /Users/xiaokai/.codex/worktrees/kai-assistant-feishu/agent studio/web/harness-console
+
+
+ Test Files  4 passed (4)
+      Tests  22 passed (22)
+   Start at  13:44:37
+   Duration  769ms (transform 414ms, setup 0ms, import 914ms, tests 358ms, environment 1.29s)
+

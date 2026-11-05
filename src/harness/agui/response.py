@@ -1,8 +1,22 @@
 """Shared response projection for production chat and Studio preview."""
 from harness.core.events import RunEvent
+from harness.core.ports import EventRepository
 from harness.runtime.message_mapper import safe_model_text
 
+HISTORY_SNAPSHOT_VERSION = 5
 _RESPONSE_BOUNDARY_PREFIXES = ("approval.", "subagent.", "tool.")
+
+
+async def recorded_response_text(
+    events: EventRepository, tenant_id: str, run_id: str, *, terminal: bool
+) -> str:
+    """Read a saved final answer without replaying screenshots and tool results."""
+    if terminal:
+        snapshots = await events.list_after(tenant_id, run_id, 0, types=("history.snapshot",))
+        for snapshot in reversed(snapshots):
+            if snapshot.payload.get("version") == HISTORY_SNAPSHOT_VERSION:
+                return str(snapshot.payload.get("response_text", ""))
+    return final_response_text(await events.list_after(tenant_id, run_id, 0))
 
 def final_response_text(events: list[RunEvent]) -> str:
     """Return only the answer emitted after the last auditable action.

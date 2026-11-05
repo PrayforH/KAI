@@ -1,16 +1,90 @@
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from ag_ui.core import RunAgentInput, UserMessage
 from httpx import ASGITransport, AsyncClient
 
+from harness.agui import routes as history_routes
 from harness.agui.routes import _HISTORY_SNAPSHOT_VERSION as HISTORY_SNAPSHOT_VERSION
 from harness.api.app import create_memory_app
 from harness.api.dependencies import ApiContainer
+from harness.assistant.models import MentionMessage
 from harness.core.models import Run
 
 FIXTURE_MANIFEST = Path("tests/fixtures/agents/echo-agent/agent.yaml")
 HEADERS = {"X-Tenant-ID": "tenant-a", "X-User-ID": "user-1"}
+
+
+@pytest.mark.asyncio
+async def test_main_history_hydrates_only_the_visible_receipt_and_skips_it_for_304() -> None:
+    app = create_memory_app()
+    now = datetime(2026, 11, 4, tzinfo=UTC)
+    notices = [MentionMessage(
+        message_id=f"receipt-{i}", text="", created_at=now + timedelta(seconds=i),
+        run_id=f"child-{i}", target_thread_id="child-thread", source={
+            "direction": "received", "runStatus": "succeeded",
+        }) for i in range(2)]
+    async def metadata(
+        *_args: object, **kwargs: object,
+    ) -> tuple[list[MentionMessage], int]:
+        assert kwargs["hydrate_results"] is False
+        return (notices, 2) if kwargs["direction"] == "received" else ([], 0)
+    async def hydrate_message(_tenant: str, item: MentionMessage) -> MentionMessage:
+        return item.model_copy(update={"text": "结果正文"})
+
+    hydrate = AsyncMock(side_effect=hydrate_message)
+    assistant = SimpleNamespace(
+        repository=SimpleNamespace(conversation_notices=AsyncMock(return_value=([], 0)),
+                                   conversation_notice_sources=AsyncMock(return_value={})),
+        mention_messages=metadata, hydrate_mention_result=hydrate,
+    )
+    app.state.container = replace(app.state.container, assistant=assistant)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        path = "/v1/agui/threads/kai-personal-assistant-v1/history?limit=1"
+        result = await client.get(path, headers=HEADERS)
+        assert result.status_code == 200
+        hydrate.assert_awaited_once_with("tenant-a", notices[1])
+        assert _texts(result.json(), "assistant") == ["结果正文"]
+        hydrate.reset_mock()
+        unchanged = await client.get(
+            path, headers={**HEADERS, "If-None-Match": result.headers["etag"]}
+        )
+        assert unchanged.status_code == 304
+        hydrate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_idle_history_validator_skips_projection_but_never_skips_ownership(monkeypatch):
+    app = create_memory_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        await _drive_turn(app.state.container, "conditional-history", ["first"])
+        path = "/v1/agui/threads/conditional-history/history?limit=1"
+        first = await client.get(path, headers=HEADERS)
+        assert first.status_code == 200
+        tag = first.headers["etag"]
+        reconstruct = AsyncMock(wraps=history_routes._history_messages_for_run)
+        monkeypatch.setattr(history_routes, "_history_messages_for_run", reconstruct)
+        unchanged = await client.get(path, headers={**HEADERS, "If-None-Match": tag})
+        assert unchanged.status_code == 304 and unchanged.content == b""
+        reconstruct.assert_not_awaited()
+        compressed_validator = await client.get(
+            path, headers={**HEADERS, "If-None-Match": f"W/{tag}"}
+        )
+        assert compressed_validator.status_code == 304
+        reconstruct.assert_not_awaited()
+        other = await client.get(
+            path, headers={**HEADERS, "X-User-ID": "other", "If-None-Match": tag}
+        )
+        assert other.status_code in (403, 404)
+        await _drive_turn(app.state.container, "conditional-history", ["first", "second"])
+        changed = await client.get(path, headers={**HEADERS, "If-None-Match": tag})
+        assert changed.status_code == 200 and changed.headers["etag"] != tag
+        assert _texts(changed.json(), "user") == ["second"]
 
 
 async def _drive_turn(container: ApiContainer, thread_id: str, prompts: list[str]) -> str:
@@ -141,6 +215,78 @@ async def test_history_keeps_unread_thread_empty() -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/v1/agui/threads/thread-history-3/history", headers=HEADERS)
         assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("edit_last", [False, True])
+async def test_submit_from_partial_history_preserves_unloaded_prefix(edit_last: bool) -> None:
+    app = create_memory_app()
+    thread = "thread-paged-followup"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        container = app.state.container
+        for length in range(1, 5):
+            await _drive_turn(container, thread, [f"turn {i}" for i in range(length)])
+        page = (
+            await client.get(f"/v1/agui/threads/{thread}/history?limit=2", headers=HEADERS)
+        ).json()
+        assert page["total"] == 4 and page["has_more"]
+        messages = [message for message in page["messages"] if message["role"] == "user"]
+        if edit_last:
+            messages.pop()
+        messages.append({"id": "new-client-message", "role": "user", "content": "new turn"})
+        creation = await container.agui.create_run_with_result(
+            tenant_id="tenant-a",
+            user_id="user-1",
+            agent_name="echo-agent",
+            agent_version="0.1.0",
+            request=RunAgentInput(
+                thread_id=thread,
+                run_id="new-client-run",
+                messages=messages,
+                tools=[],
+                state={},
+                context=[],
+                forwarded_props={},
+            ),
+        )
+        expected = [f"turn {i}" for i in range(3 if edit_last else 4)] + ["new turn"]
+        assert creation.run.input["conversation_prompts"] == expected
+        await container.worker.execute("tenant-a", creation.run.run_id)
+        full = (
+            await client.get(f"/v1/agui/threads/{thread}/history?limit=100", headers=HEADERS)
+        ).json()
+        assert _texts(full, "user") == expected
+        assert full["total"] == len(expected)
+
+
+@pytest.mark.asyncio
+async def test_partial_history_anchor_cannot_import_another_threads_prefix() -> None:
+    app = create_memory_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        container = app.state.container
+        await _drive_turn(container, "other-thread", ["hidden", "shared"])
+        foreign = (await _thread_runs(container, "other-thread"))[0]
+        creation = await container.agui.create_run_with_result(
+            tenant_id="tenant-a",
+            user_id="user-1",
+            agent_name="echo-agent",
+            agent_version="0.1.0",
+            request=RunAgentInput(
+                thread_id="own-thread",
+                run_id="new-client-run",
+                messages=[
+                    UserMessage(id=f"user-{foreign.run_id}", content="shared"),
+                    UserMessage(id="new", content="followup"),
+                ],
+                tools=[],
+                state={},
+                context=[],
+                forwarded_props={},
+            ),
+        )
+        assert creation.run.input["conversation_prompts"] == ["shared", "followup"]
 
 
 @pytest.mark.asyncio

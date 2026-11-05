@@ -1,0 +1,66 @@
+[
+  {
+    "run": "fixture-run-0",
+    "status": "succeeded"
+  },
+  {
+    "run": "fixture-run-1",
+    "status": "succeeded"
+  },
+  {
+    "run": "fixture-run-2",
+    "status": "succeeded"
+  },
+  {
+    "computerId": "computer_124a44f10f1c4182ad44fb9e5874e378",
+    "image": "sha256:0486fc96228881d7896c7979472e2d9e3ff0723703a2ce36278e4f797b515ae3",
+    "retired": [
+      "sha256:9b926012e692cec7a060124926a2b7638cf81faa13ccd3cb73d72704e11fb88c"
+    ],
+    "volume": "kai-computer-124a44f10f1c4182ad44fb9e5874e378",
+    "state": "registered",
+    "epoch": 6
+  },
+  {
+    "purpose": "start",
+    "owner": "computer-run-817a4b46daf648969733c03bfcf58886",
+    "runId": null,
+    "state": "released",
+    "epoch": 1
+  },
+  {
+    "purpose": "execute",
+    "owner": "computer-run-817a4b46daf648969733c03bfcf58886",
+    "runId": "fixture-run-1",
+    "state": "released",
+    "epoch": 2
+  },
+  {
+    "purpose": "recover",
+    "owner": "fixture-image-upgrade",
+    "runId": null,
+    "state": "released",
+    "epoch": 3
+  },
+  {
+    "purpose": "start",
+    "owner": "computer-run-30570008a3c648a99decd7b56ab87895",
+    "runId": null,
+    "state": "released",
+    "epoch": 4
+  },
+  {
+    "purpose": "execute",
+    "owner": "computer-run-30570008a3c648a99decd7b56ab87895",
+    "runId": "fixture-run-2",
+    "state": "released",
+    "epoch": 5
+  },
+  {
+    "purpose": "recover",
+    "owner": "fixture-cleanup",
+    "runId": null,
+    "state": "released",
+    "epoch": 6
+  }
+]

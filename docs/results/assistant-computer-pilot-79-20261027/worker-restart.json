@@ -1,0 +1,45 @@
+{
+  "checkedAt": "2026-10-27T04:23:37.228759+00:00",
+  "activeTasksBefore": 0,
+  "workerRestarted": true,
+  "workerHealthy": true,
+  "startedBefore": "2026-10-27T04:06:27.1398621Z",
+  "startedAfter": "2026-10-27T04:23:26.640346822Z",
+  "computerBefore": {
+    "id": "computer_76649d1de93843289142040974d587f9",
+    "provider": "262941df38841f8bbfed06baedde379516c2021781badc642f570a3aa3d198ae",
+    "epoch": 3,
+    "state": "idle"
+  },
+  "computerInstancePreserved": true,
+  "knownPilotFilesUnchanged": true,
+  "files": {
+    "uid": 28000,
+    "files": [
+      {
+        "path": "/home/kai/workspace/computer-pilot/identity.txt",
+        "sha256": "bafc97c650b43ebc7a0c839322affd4b7de22cdf39f23c117be25b79c035770b",
+        "bytes": 27,
+        "mtimeNs": 1793074299757011798
+      },
+      {
+        "path": "/home/kai/bin/kai79-pilot",
+        "sha256": "5729e5dcadfde6f03401999d921a53b25cf549c1c6c1ca928f76b5c03c1da834",
+        "bytes": 53,
+        "mtimeNs": 1793074299762011875
+      },
+      {
+        "path": "/home/kai/workspace/outputs/computer-pilot-first.txt",
+        "sha256": "ecc423d6e9e859e05742753864db80c487decbba37c68b04503bee71e269978d",
+        "bytes": 119,
+        "mtimeNs": 1793074299773012044
+      },
+      {
+        "path": "/home/kai/workspace/outputs/computer-pilot-second.txt",
+        "sha256": "a755469f56249201b7ac34dde0255a3674a338616fbd0037562f2eb778cc10c3",
+        "bytes": 359,
+        "mtimeNs": 1793074440500179337
+      }
+    ]
+  }
+}

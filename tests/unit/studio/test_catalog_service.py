@@ -41,13 +41,12 @@ def make_mcp_capability(**updates: object) -> McpCapability:
     return base.model_copy(update=updates)  # type: ignore[arg-type]
 
 
-def test_default_catalog_exposes_separate_deepseek_v4_routes() -> None:
+def test_default_catalog_exposes_current_connection_presets() -> None:
     routes = {item.route_id: item for item in default_capability_catalog().model_routes}
 
-    assert routes["deepseek-v4-flash"].models == ("deepseek-v4-flash",)
-    assert routes["deepseek-v4-pro"].models == ("deepseek-v4-pro",)
+    assert routes["deepseek-flash"].models == ("deepseek-flash",)
+    assert routes["minimax-m3-1-flash"].models == ("MiniMax-M3.1-flash",)
     assert "new-api-default" not in routes
-    assert routes["glm-5-3-flash"].models == ("glm-5.3-flash",)
     assert "anthropic-official" not in routes
 
 
@@ -566,7 +565,7 @@ async def test_get_retires_legacy_deepseek_route_in_system_migrated_catalog() ->
     assert routes["deepseek-v4-flash"].models == ("deepseek-v4-flash",)
     assert routes["deepseek-v4-pro"].models == ("deepseek-v4-pro",)
     assert routes["deepseek-v4-flash"].credential_reference == "CUSTOM_NEW_API_KEY"
-    assert routes["glm-5-3-flash"].models == ("glm-5.3-flash",)
+    assert routes["minimax-m3-1-flash"].models == ("MiniMax-M3.1-flash",)
 
 
 @pytest.mark.asyncio
@@ -919,7 +918,7 @@ async def test_deleting_a_route_pinned_by_published_versions_is_refused() -> Non
     published = ("public-opinion-agent@0.3.20", "public-opinion-agent@0.3.22")
 
     async def route_references(tenant_id: str, route_id: str) -> tuple[str, ...]:
-        return published if route_id == "deepseek-v4-flash" else ()
+        return published if route_id == "deepseek-flash" else ()
 
     service = CapabilityCatalogService(
         repository,
@@ -927,14 +926,14 @@ async def test_deleting_a_route_pinned_by_published_versions_is_refused() -> Non
         published_route_references=route_references,
     )
 
-    impact = await service.impact("route-guard", "admin-a", "modelRoute", "deepseek-v4-flash")
+    impact = await service.impact("route-guard", "admin-a", "modelRoute", "deepseek-flash")
     assert impact.published_agent_versions == published
 
     with pytest.raises(ConflictError, match="published:public-opinion-agent@0.3.22"):
         await service.delete_model(
             tenant_id="route-guard",
             user_id="admin-a",
-            resource_id="deepseek-v4-flash",
+            resource_id="deepseek-flash",
             expected_revision=1,
         )
 
@@ -942,10 +941,12 @@ async def test_deleting_a_route_pinned_by_published_versions_is_refused() -> Non
     result = await service.delete_model(
         tenant_id="route-guard",
         user_id="admin-a",
-        resource_id="glm-5-3-flash",
+        resource_id="minimax-m3-1-flash",
         expected_revision=1,
     )
-    assert "glm-5-3-flash" not in {item.route_id for item in result.record.catalog.model_routes}
+    assert "minimax-m3-1-flash" not in {
+        item.route_id for item in result.record.catalog.model_routes
+    }
 
 
 @pytest.mark.asyncio
@@ -965,7 +966,7 @@ async def test_disabling_a_route_pinned_by_published_versions_is_refused() -> No
     )
 
     async def route_references(tenant_id: str, route_id: str) -> tuple[str, ...]:
-        return ("public-opinion-agent@0.3.22",) if route_id == "deepseek-v4-flash" else ()
+        return ("public-opinion-agent@0.3.22",) if route_id == "deepseek-flash" else ()
 
     service = CapabilityCatalogService(
         repository,
@@ -978,7 +979,7 @@ async def test_disabling_a_route_pinned_by_published_versions_is_refused() -> No
             tenant_id="route-disable-guard",
             user_id="admin-a",
             resource_type="modelRoute",
-            resource_id="deepseek-v4-flash",
+            resource_id="deepseek-flash",
             expected_revision=1,
         )
 
@@ -986,11 +987,11 @@ async def test_disabling_a_route_pinned_by_published_versions_is_refused() -> No
         tenant_id="route-disable-guard",
         user_id="admin-a",
         resource_type="modelRoute",
-        resource_id="glm-5-3-flash",
+        resource_id="minimax-m3-1-flash",
         expected_revision=1,
     )
     assert not next(
-        item for item in result.record.catalog.model_routes if item.route_id == "glm-5-3-flash"
+        item for item in result.record.catalog.model_routes if item.route_id == "minimax-m3-1-flash"
     ).enabled
 
 @pytest.mark.asyncio

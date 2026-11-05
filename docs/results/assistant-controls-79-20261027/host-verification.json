@@ -1,0 +1,60 @@
+{
+  "schema": "0050",
+  "preserved": {
+    "users": {
+      "before": 12,
+      "after": 12,
+      "allOriginalIdsPreserved": true
+    },
+    "sessions": {
+      "before": 280,
+      "after": 280,
+      "allOriginalIdsPreserved": true
+    },
+    "runs": {
+      "before": 802,
+      "after": 808,
+      "allOriginalIdsPreserved": true
+    },
+    "feishu_bindingsUnchanged": true,
+    "feishu_connectionsUnchanged": true,
+    "weixinBindingAndCredentialUnchanged": true
+  },
+  "containers": {
+    "api": {
+      "image": "kai/assistant-api:20261027-r18",
+      "imageId": "sha256:b621c031285b589292d5ce94daa34ed915485207422171785c42c1622cdbf628",
+      "state": "running",
+      "restarts": 0,
+      "health": "healthy"
+    },
+    "worker": {
+      "image": "kai/assistant-api:20261027-r18",
+      "imageId": "sha256:b621c031285b589292d5ce94daa34ed915485207422171785c42c1622cdbf628",
+      "state": "running",
+      "restarts": 0,
+      "health": "healthy"
+    },
+    "weixin": {
+      "image": "kai/weixin-receiver:20261027-r18",
+      "imageId": "sha256:2dfa9a8bc53b8d8d0fa99f0e8ea61af3f60dbbc857930e7a22f835c627cfc5b5",
+      "state": "running",
+      "restarts": 0,
+      "health": null
+    },
+    "feishu": {
+      "image": "kai/feishu-receiver:20261027-r19",
+      "imageId": "sha256:8fa980127c8f75522573461017b831b0bbe669e627a7cee4a687f1b004112743",
+      "state": "running",
+      "restarts": 0,
+      "health": null
+    },
+    "web": {
+      "image": "kai/assistant-web:20261026-r16",
+      "imageId": "sha256:8371d939169be255126fff30299b3b086e0becc59664103b507b2fec3772819f",
+      "state": "running",
+      "restarts": 0,
+      "health": "healthy"
+    }
+  }
+}

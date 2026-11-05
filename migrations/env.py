@@ -6,6 +6,9 @@ from alembic import context
 from sqlalchemy import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from harness.computer import (
+    storage as _computer_storage,  # noqa: F401  # pyright: ignore[reportUnusedImport]
+)
 from harness.storage.models import Base
 
 config = context.config

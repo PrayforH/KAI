@@ -1,0 +1,30 @@
+{
+  "timestamp": "2026-10-23T08:33:17.164435+00:00",
+  "appId": "cli_aa51ac4376b9dc0e",
+  "appVersion": "1.0.0",
+  "base": "http://172.20.10.7:3501",
+  "httpsDeepLinksEnabled": false,
+  "credentialValidated": true,
+  "realIncomingMessage": true,
+  "realReplyVisible": true,
+  "bindingConfirmed": true,
+  "cardExecutionConfirmed": true,
+  "resultVisibleInFeishu": true,
+  "objectiveId": "objective_0a14571cf2724bb98c5652bafed4feff",
+  "objectiveStatus": "completed",
+  "runId": "run_3cd20acb726840bbaf304b8248714d49",
+  "executionStatus": "succeeded",
+  "summary": "验收成功",
+  "connection": {
+    "configured": true,
+    "enabled": true,
+    "receiverOnline": true,
+    "receiverState": "receiving",
+    "lastEventAt": "2026-10-23T08:31:17.871891Z",
+    "bound": true,
+    "notifications": true,
+    "boundAt": "2026-10-23T08:29:07.849948Z",
+    "pendingDeliveries": 0,
+    "failedDeliveries": 0
+  }
+}

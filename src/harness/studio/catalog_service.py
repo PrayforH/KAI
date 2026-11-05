@@ -35,7 +35,7 @@ _RETIRED_PLATFORM_MODEL_ROUTES = frozenset({"anthropic-official", "new-api-defau
 # Tavily was removed from the platform default catalog; persisted catalogs may
 # still carry platform or personal copies of the retired reference until this
 # migration strips them on load.
-_EDITABLE_PLATFORM_MCP_REFERENCES = frozenset()
+_EDITABLE_PLATFORM_MCP_REFERENCES: frozenset[str] = frozenset()
 
 
 def _retire_platform_mcp_servers(
@@ -76,10 +76,13 @@ def _mcp_is_mutable_by(item: McpCapability, user_id: str) -> bool:
 def _retire_platform_model_routes(
     catalog: CapabilityCatalog,
 ) -> CapabilityCatalog | None:
+    # A refresh must not invalidate an Agent selection. Retiring a referenced
+    # route requires an explicit rebind, rather than silently changing models.
+    bound_routes = set(catalog.agent_model_bindings.values())
     routes = tuple(
-        route
-        for route in catalog.model_routes
+        route for route in catalog.model_routes
         if route.route_id not in _RETIRED_PLATFORM_MODEL_ROUTES
+        or route.route_id in bound_routes
     )
     if len(routes) == len(catalog.model_routes):
         return None
@@ -219,12 +222,9 @@ def _upgrade_system_managed_catalog(
         (route for route in catalog.model_routes if route.route_id == "new-api-default"),
         None,
     )
-    routes = [
-        route
-        for route in catalog.model_routes
-        if route.route_id not in _RETIRED_PLATFORM_MODEL_ROUTES
-    ]
-    changed = len(routes) != len(catalog.model_routes)
+    retired = _retire_platform_model_routes(catalog)
+    routes = list((retired or catalog).model_routes)
+    changed = retired is not None
     normalized_routes: list[ModelRouteCapability] = []
     for route in routes:
         if "vision" in route.capabilities and route.model_type == "chat":

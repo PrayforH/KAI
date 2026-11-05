@@ -149,3 +149,72 @@ async def test_an_empty_identity_is_rejected() -> None:
         await acquire(subject, owner=" ")
     with pytest.raises(ValueError, match="sandbox id"):
         await acquire(subject, sandbox_id="")
+
+
+@pytest.mark.asyncio
+async def test_a_terminal_run_lease_is_reconciled_to_released() -> None:
+    """run 已终态 + lease 仍 live → 一次对账回收为 released，且可重复（幂等）。"""
+    subject, clock = service()
+    await acquire(subject)
+    clock[0] = START + timedelta(seconds=10)
+    released = await subject.reconcile_dead_run_lease(
+        "tenant-a", "session-1", run_is_terminal=_terminal
+    )
+
+    assert released is not None
+    assert released.state is SandboxLeaseState.RELEASED
+    assert released.released_at == clock[0]
+    assert [item.state for item in await subject.live("tenant-a")] == []
+    # 幂等：第二次对账没有可回收对象。
+    assert (
+        await subject.reconcile_dead_run_lease("tenant-a", "session-1", run_is_terminal=_terminal)
+        is None
+    )
+    # 回收后同会话可立即再取，epoch 递增。
+    second = await acquire(subject, run_id="run-2", owner="worker-2", sandbox_id="sandbox-2")
+    assert second.epoch == 2
+
+
+@pytest.mark.asyncio
+async def test_a_live_run_lease_is_never_reconciled() -> None:
+    """终态外的 live lease 不得误回收。"""
+    subject, _ = service()
+    await acquire(subject)
+    assert (
+        await subject.reconcile_dead_run_lease("tenant-a", "session-1", run_is_terminal=_running)
+        is None
+    )
+    live = await subject.live("tenant-a")
+    assert [item.state for item in live] == [SandboxLeaseState.ACTIVE]
+
+
+@pytest.mark.asyncio
+async def test_an_unverifiable_run_is_never_reconciled() -> None:
+    """查询失败的 Run（无法核实归属）不允许被猜测回收。"""
+    subject, _ = service()
+    await acquire(subject)
+
+    async def broken(_run_id: str) -> bool:
+        raise RuntimeError("run store unavailable")
+
+    with pytest.raises(RuntimeError, match="run store unavailable"):
+        await subject.reconcile_dead_run_lease("tenant-a", "session-1", run_is_terminal=broken)
+    assert [item.state for item in await subject.live("tenant-a")] == [SandboxLeaseState.ACTIVE]
+
+
+@pytest.mark.asyncio
+async def test_another_sessions_lease_is_out_of_scope() -> None:
+    subject, _ = service()
+    await acquire(subject)
+    assert (
+        await subject.reconcile_dead_run_lease("tenant-a", "session-2", run_is_terminal=_terminal)
+        is None
+    )
+
+
+async def _terminal(_run_id: str) -> bool:
+    return True
+
+
+async def _running(_run_id: str) -> bool:
+    return False

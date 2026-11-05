@@ -582,3 +582,71 @@ async def test_stalled_context_control_is_still_bounded_and_evicts_connection(
         await harness.query("stalled")
     assert harness.transports[0].closed
     assert harness.key not in harness.pool.entries
+
+
+@pytest.mark.asyncio
+async def test_real_sdk_streaming_interrupt_and_correction_share_one_connection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    from tests.unit.runtime.test_steering import setup_inbox
+
+    _, _, service, inbox = await setup_inbox(assistant=True)
+
+    class RedirectCLI(FakeCLI):
+        calls: list[str] = []
+
+        async def write(self, data: str) -> None:
+            frame = json.loads(data)
+            if frame["type"] == "control_request":
+                subtype = frame["request"]["subtype"]
+                self.calls.append(subtype)
+                await self.queue.put({"type": "control_response", "response": {
+                    "subtype": "success", "request_id": frame["request_id"], "response": {},
+                }})
+                if subtype == "interrupt":
+                    await self.queue.put({
+                        "type": "result", "subtype": "interrupted", "is_error": True,
+                        "duration_ms": 1, "duration_api_ms": 1, "num_turns": 1,
+                        "session_id": "sdk", "stop_reason": "interrupt",
+                    })
+            elif frame["type"] == "user":
+                text = frame["message"]["content"]
+                self.calls.append(text)
+                if text == "original":
+                    await self.queue.put({"type": "system", "subtype": "init", "session_id": "sdk"})
+                else:
+                    await self.queue.put({
+                        "type": "user", "message": {"role": "user", "content": text},
+                        "session_id": "sdk",
+                    })
+                    await self.queue.put({
+                        "type": "result", "subtype": "success", "is_error": False,
+                        "duration_ms": 1, "duration_api_ms": 1, "num_turns": 1,
+                        "session_id": "sdk", "stop_reason": "end_turn", "result": "corrected",
+                    })
+
+    async def correct():
+        while not (await service.steering_state("t", "r"))["available"]:
+            await asyncio.sleep(0)
+        await service.steer("t", "r", "correction", "new direction")
+
+    transport = RedirectCLI()
+    # Override the cold-CLI prohibition only for this explicit, model-free wire.
+    def client(*, options: ClaudeAgentOptions, transport: Transport):
+        return ClaudeSDKClient(options=options, transport=transport)
+    monkeypatch.setattr("harness.runtime.claude_sdk.ClaudeSDKClient", client)
+    task = asyncio.create_task(correct())
+    try:
+        async with asyncio.timeout(3):
+            messages = [message async for message in _client_query(
+                "original", ClaudeAgentOptions(cwd=str(tmp_path)),
+                transport=transport, steering=inbox,
+            )]
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    assert transport.calls == ["initialize", "original", "interrupt", "new direction"]
+    results = [message for message in messages if isinstance(message, ResultMessage)]
+    assert len(results) == 1 and not results[0].is_error and results[0].result == "corrected"
+    state = await service.steering_state("t", "r")
+    assert state["requests"][0]["status"] == "accepted"

@@ -1,0 +1,10 @@
+{
+  "checkedAt": "2026-10-27T02:46:31.512921+00:00",
+  "fixtureControllerStopped": true,
+  "fixtureDatabaseContainerAndAnonymousVolumesRemoved": true,
+  "fixtureVolumesRemoved": [
+    "kai-computer-56162813bf53439f8dc21d217851b6b6",
+    "kai-computer-56162813bf53439f8dc21d217851b6b6-control"
+  ],
+  "generatedTestCredentialRemoved": true
+}

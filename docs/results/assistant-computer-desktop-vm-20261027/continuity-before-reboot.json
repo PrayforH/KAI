@@ -1,0 +1,14 @@
+{
+  "identitySha256": "84f59be05117630aa2b4b17e54dc1a2338ecc9a502c5cda8376dd88cb6ca1064",
+  "identityMtimeNs": 1793080520461373600,
+  "toolSha256": "9022146f30f9f98d05ab4469488fb283174eb36fcd8338ab26f6b996af4d8d8f",
+  "toolMode": 448,
+  "controlInactive": true,
+  "bootId": "056a2cc3-3ca6-4d9e-8779-af90a659c520",
+  "sshAllowUsers": [
+    "allowusers kai-admin"
+  ],
+  "kernel9pConfig": [
+    "# CONFIG_NET_9P is not set"
+  ]
+}

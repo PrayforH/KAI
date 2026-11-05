@@ -66,13 +66,17 @@ from harness.runtime.artifact_tools import (
     artifact_execution_context,
     create_artifact_mcp_server,
 )
+from harness.runtime.assistant_preface import AssistantPreface
 from harness.runtime.base import (
     RuntimeContext,
     RuntimeEvent,
     RuntimeExecutionTimeoutError,
     RuntimeResultError,
 )
-from harness.runtime.execution_contract import VISIBLE_EXECUTION_CONTRACT
+from harness.runtime.execution_contract import (
+    VISIBLE_EXECUTION_CONTRACT,
+    visible_execution_contract,
+)
 from harness.runtime.hooks import SdkDiagnosticTail, sdk_diagnostic_summary
 from harness.runtime.mcp_credentials import redact_mcp_credentials
 from harness.runtime.memory_tools import create_memory_mcp_server, memory_execution_context
@@ -107,7 +111,13 @@ from harness.runtime.tools import (
     enforce_published_tool_directory,
 )
 from harness.runtime.warm_sdk import WarmEntry, WarmSdkPool, WarmSdkRequest
-from harness.runtime.web_tools import WEB_BUILTINS, WEB_CONTRACT, WEB_SERVER, WEB_TOOL_NAMES
+from harness.runtime.web_tools import (
+    WEB_ASSISTANT_CONTRACT,
+    WEB_BUILTINS,
+    WEB_CONTRACT,
+    WEB_SERVER,
+    WEB_TOOL_NAMES,
+)
 
 # Compaction can mirror an entire image-heavy transcript in one JSON frame.
 # Keep a finite limit, with room for the aggregate frame rather than one image.
@@ -135,7 +145,7 @@ _ANTHROPIC_AUTO_PERMISSION_MODELS = frozenset(
 )
 
 
-def _sandbox_tool_contract(tool_names: list[str]) -> str:
+def _sandbox_tool_contract(tool_names: list[str], *, workspace: str | None = None) -> str:
     mappings = [
         f"- {builtin} -> {proxy_tool_name(builtin)}"
         for builtin in sorted(SANDBOX_BUILTINS)
@@ -143,6 +153,14 @@ def _sandbox_tool_contract(tool_names: list[str]) -> str:
     ]
     if not mappings:
         return ""
+    location = (
+        f"\nThese file and command tools execute with working directory {json.dumps(workspace)}. "
+        "The SDK's local current directory is a control mirror, not the tools' working "
+        "directory. Do not use that local directory in file paths or shell commands. "
+        "Query pwd and HOME through the command tool when you need their actual values."
+        if workspace
+        else ""
+    )
     return (
         "\n\n## Current sandbox file tools\n"
         "Native filesystem tools are disabled in this session. Use the exact MCP tool "
@@ -150,6 +168,7 @@ def _sandbox_tool_contract(tool_names: list[str]) -> str:
         "This applies to resumed conversations too. A disabled native tool error does "
         "not mean the sandbox is unavailable; retry with its listed MCP replacement.\n"
         + "\n".join(mappings)
+        + location
         + "\nUse workspace-relative paths. For a requested report file, write it under "
         "outputs/, verify the file using an available read or command tool, and return "
         "the exact path for artifact collection. If publish_artifact is listed among "
@@ -457,7 +476,10 @@ async def _client_query(
 SDK_STEERING_RECEIPT_TIMEOUT_SECONDS = 10.0
 
 
-async def _completed_run_messages(client: ClaudeSDKClient | WarmEntry) -> AsyncIterator[object]:
+async def _completed_run_messages(
+    client: ClaudeSDKClient | WarmEntry,
+    redirecting: Callable[[], bool] = lambda: False,
+) -> AsyncIterator[object]:
     """Hide intermediate results until the CLI has finished its background work.
 
     The caller owns the Run timeout/cancellation and the one response reader.
@@ -486,7 +508,7 @@ async def _completed_run_messages(client: ClaudeSDKClient | WarmEntry) -> AsyncI
             elif status in {"running", "pending"}:
                 active.add(message.task_id)
         if isinstance(message, ResultMessage):
-            if message.is_error or (state in {None, "idle"} and not active):
+            if redirecting() or message.is_error or (state in {None, "idle"} and not active):
                 result = None
                 yield message
             else:
@@ -512,19 +534,47 @@ async def _steerable_response(
     pending: dict[str, SteeringInput] = {}
     terminal_result: ResultMessage | None = None
     receipt_deadline: float | None = None
+    immediate = steering.run.input.get("conversation_surface") == "assistant"
+    redirecting = False
+    redirect_queue: list[SteeringInput] = []
+    redirect_deadline: float | None = None
 
-    async def deliver() -> None:
-        for item in await steering.read():
-            await steering.sending(item)
-            pending[item.request_id] = item
-            try:
-                async with asyncio.timeout(10):
-                    await client.query(item.text)
-            except Exception:
-                pending.pop(item.request_id, None)
-                await steering.acknowledge(item, error="运行未接收引导，请在下一条消息中重试")
-            # A transport write is not consumption. --replay-user-messages
-            # acknowledges the input when the CLI takes it into a turn.
+    async def send(item: SteeringInput) -> None:
+        await steering.sending(item)
+        pending[item.request_id] = item
+        try:
+            async with asyncio.timeout(10):
+                await client.query(item.text)
+        except Exception:
+            pending.pop(item.request_id, None)
+            await steering.acknowledge(item, error="运行未接收引导，请在下一条消息中重试")
+        # A transport write is not consumption. --replay-user-messages
+        # acknowledges the input when the CLI takes it into a turn.
+
+    async def deliver(*, at_boundary: bool = False) -> None:
+        nonlocal redirecting, redirect_deadline
+        inputs = await steering.read()
+        if not inputs:
+            return
+        if immediate and not at_boundary and (redirecting or not pending):
+            redirect_queue.extend(inputs)
+            if not redirecting:
+                # Like the official streaming client: interrupt, consume its
+                # terminal boundary, then send corrections in the same session.
+                redirecting = True
+                redirect_deadline = asyncio.get_running_loop().time() + 10
+                try:
+                    async with asyncio.timeout(10):
+                        await client.interrupt()
+                except Exception:
+                    redirecting = False
+                    redirect_deadline = None
+                    for item in redirect_queue:
+                        await steering.acknowledge(item, error="未能调整当前会话")
+                    redirect_queue.clear()
+            return
+        for item in inputs:
+            await send(item)
 
     async def fail_pending() -> None:
         for item in list(pending.values()):
@@ -535,12 +585,17 @@ async def _steerable_response(
         while not closed:
             async with lock:
                 if not closed:
+                    if (
+                        redirect_deadline is not None
+                        and asyncio.get_running_loop().time() >= redirect_deadline
+                    ):
+                        raise TimeoutError("SDK interrupt did not reach its response boundary")
                     await deliver()
             await asyncio.sleep(0.25)
 
     await steering.open()
     polling = asyncio.create_task(poll())
-    messages = _completed_run_messages(client).__aiter__()
+    messages = _completed_run_messages(client, lambda: redirecting).__aiter__()
     next_message: asyncio.Task[object] | None = None
 
     async def receive_next() -> object:
@@ -592,6 +647,24 @@ async def _steerable_response(
                         receipt_deadline = None
             if isinstance(message, ResultMessage):
                 async with lock:
+                    if redirecting:
+                        redirecting = False
+                        redirect_deadline = None
+                        queued, redirect_queue = redirect_queue, []
+                        for item in queued:
+                            await send(item)
+                        # This result belongs to the interrupted response, not
+                        # the corrected request. Never publish it as Run failure.
+                        if pending:
+                            terminal_result = message
+                            receipt_deadline = (
+                                asyncio.get_running_loop().time()
+                                + SDK_STEERING_RECEIPT_TIMEOUT_SECONDS
+                            )
+                            continue
+                    if not message.is_error:
+                        # Close the 250ms polling race at a natural boundary.
+                        await deliver(at_boundary=True)
                     if pending and not message.is_error:
                         # Inputs can merge before one result or be consumed after
                         # it. Count acknowledged inputs, never query() calls.
@@ -735,7 +808,11 @@ class ClaudeSdkRuntime:
                     )
 
     async def _options(
-        self, context: RuntimeContext, route: ModelRoute
+        self,
+        context: RuntimeContext,
+        route: ModelRoute,
+        *,
+        preface: AssistantPreface | None = None,
     ) -> tuple[ClaudeAgentOptions, ResolvedTools]:
         manifest = self._snapshot.manifest
         permission_mode = permission_mode_for_route(route)
@@ -825,9 +902,17 @@ class ClaudeSdkRuntime:
         if (
             remote_transport
             and self._remote_memory_mcp is not None
+            and self._remote_memory_mcp.enabled
             and context.identity is not None
         ):
-            resolved_tools = self._remote_memory_mcp.attach(resolved_tools, context.identity)
+            # 与提取/投影同判：职责线程的远程记忆读写也落在 specialist:{slug}，
+            # 否则 Bot 会话的提议写进底层 agent 名下，读侧 specialist scope 看不到。
+            identity = (
+                await self._memory_bank.scoped_identity(context.identity)
+                if self._memory_bank is not None
+                else context.identity
+            )
+            resolved_tools = self._remote_memory_mcp.attach(resolved_tools, identity)
             mcp_servers = dict(resolved_tools.mcp_servers)
             allowed_tools = list(resolved_tools.allowed_tools)
             builtin_tools = list(resolved_tools.builtin_tools)
@@ -925,6 +1010,9 @@ class ClaudeSdkRuntime:
                     context.sandbox_command_executor,
                     proxied,
                     image_aware="vision" in route.capabilities,
+                    computer_workspace=context.sandbox_provider in {
+                        "docker-computer", "vm-computer", "remote-computer",
+                    },
                 )
                 for builtin in sorted(proxied):
                     allowed_tools.append(proxy_tool_name(builtin))
@@ -939,9 +1027,18 @@ class ClaudeSdkRuntime:
                 for tool in snapshot.manifest.spec.tools
                 if tool.builtin in WEB_BUILTINS
             )
+        if context.run.input.get("assistant_scope") and not web_builtins:
+            # 助理默认跟随平台联网：平台配好联网、本人没关闭时，
+            # 主助理与子助理都能搜索/抓取，不必逐个 Bot 重新发布带联网工具的智能体。
+            # 密钥与开关仍是平台那一份；关掉即不装配，任务/项目面不受影响。
+            if await self._tool_resolver.web_allowed(context.identity):
+                web_builtins.update(WEB_BUILTINS)
         if web_builtins and not await self._tool_resolver.web_allowed(context.identity):
             web_builtins.clear()
             builtin_tools = [name for name in builtin_tools if name not in WEB_BUILTINS]
+        # Describe available capabilities without overriding the Bot profile
+        # or imposing a domain-specific action sequence.
+        assistant_web = bool(context.run.input.get("assistant_scope") and web_builtins)
         if web_builtins:
             if remote_transport:
                 raise ToolResolutionError("当前远程 CLI 尚不支持平台内置联网工具，请使用已有 MCP。")
@@ -1045,7 +1142,7 @@ class ClaudeSdkRuntime:
                 ),
                 prompt=(
                     f"{snapshot.system_prompt.rstrip()}\n\n{VISIBLE_EXECUTION_CONTRACT}\n{WEB_CONTRACT}"
-                    f"{_sandbox_tool_contract(subagent_tools)}"
+                    f"{_sandbox_tool_contract(subagent_tools, workspace=context.remote_workspace)}"
                 ),
                 tools=subagent_tools,
                 model="inherit",
@@ -1096,9 +1193,12 @@ class ClaudeSdkRuntime:
             allowed_tools=[] if permission_mode == "auto" else allowed_tools,
             mcp_servers=mcp_servers,
             system_prompt=(
-                f"{self._snapshot.system_prompt.rstrip()}\n\n{VISIBLE_EXECUTION_CONTRACT}\n{WEB_CONTRACT}"
+                f"{WEB_ASSISTANT_CONTRACT if assistant_web else ''}"
+                f"{self._snapshot.system_prompt.rstrip()}\n\n"
+                f"{visible_execution_contract(require_public_preface=context.platform_tools.require_public_preface)}\n"
+                f"{'' if assistant_web else WEB_CONTRACT}"
                 f"{delegation_contract}{_knowledge_mode_contract(context)}"
-                f"{_sandbox_tool_contract(allowed_tools)}"
+                f"{_sandbox_tool_contract(allowed_tools, workspace=context.remote_workspace)}"
                 f"\n{context.platform_tools.instructions}"
                 f"\n{context.interaction_projection}"
             ),
@@ -1129,6 +1229,7 @@ class ClaudeSdkRuntime:
                     },
                     result_trust_by_tool=resolved_tools.result_trust,
                     delegate_allowed_to_sdk_permissions=(permission_mode == "auto"),
+                    preface=preface,
                 )
                 if self._tool_gate is not None
                 else None
@@ -1263,7 +1364,14 @@ class ClaudeSdkRuntime:
                 "harness.tool.exposure_mode": (self._snapshot.manifest.spec.tool_exposure_mode),
             },
         ):
-            options, resolved_tools = await self._options(context, decision.route)
+            preface = AssistantPreface(
+                enabled=context.run.input.get("conversation_surface") == "assistant"
+                and context.platform_tools.require_public_preface
+                and not context.run.input.get("studio_builder")
+            )
+            options, resolved_tools = await self._options(
+                context, decision.route, preface=preface
+            )
             if self._observability is not None:
                 self._observability.annotate_current_span(
                     {
@@ -1320,7 +1428,10 @@ class ClaudeSdkRuntime:
             )
             if self._memory_bank is not None and context.identity is not None:
                 execution_context.enter_context(
-                    memory_execution_context(self._memory_bank, context.identity)
+                    memory_execution_context(
+                        self._memory_bank,
+                        await self._memory_bank.scoped_identity(context.identity),
+                    )
                 )
             run_knowledge_bindings = knowledge_bindings_for_run(
                 context.run.input, context.session.knowledge_snapshot_bindings
@@ -1563,6 +1674,27 @@ class ClaudeSdkRuntime:
                         ]
                     if self._tool_gate is not None:
                         mapped = [event for event in mapped if event.type != "tool.request"]
+                    for event in mapped:
+                        # Public model text means the user already has a visible
+                        # sentence, so the preface nudge is no longer needed.
+                        if event.type == "message.delta" and str(
+                            event.payload.get("text", "")
+                        ).strip():
+                            preface.note_public_text()
+                    if preface.nudged:
+                        # The withheld call was not a real step. Keep its result
+                        # out of the durable log and the live projection so the
+                        # user never sees a failed step for a nudge.
+                        mapped = [
+                            event
+                            for event in mapped
+                            if not (
+                                event.type == "tool.result"
+                                and preface.is_nudged_tool(
+                                    str(event.payload.get("tool_call_id", ""))
+                                )
+                            )
+                        ]
                     if isinstance(message, StreamEvent):
                         for event in mapped:
                             if event.type == "reasoning.delta":

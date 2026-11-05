@@ -1,0 +1,29 @@
+{
+  "originalSettingsPreserved": true,
+  "schema": "0046",
+  "services": {
+    "api": {
+      "health": "healthy",
+      "restarts": 0,
+      "imageId": "sha256:25bcf31ed2fb6afcfe622219277003c76b5ac4feba9f658b9015f3cebe2771d1"
+    },
+    "worker": {
+      "health": "healthy",
+      "restarts": 0,
+      "imageId": "sha256:25bcf31ed2fb6afcfe622219277003c76b5ac4feba9f658b9015f3cebe2771d1"
+    },
+    "web": {
+      "health": "healthy",
+      "restarts": 0,
+      "imageId": "sha256:90369a568d81938f6efb9e0380c797e1a3f2e28cb3f91662d3f14ea15421ae89"
+    },
+    "https": {
+      "health": "healthy",
+      "restarts": 0,
+      "imageId": "sha256:6769dc3a703c719c1d2756bda113659be28ae16cf0da58dd5fd823d6b9a050ea"
+    }
+  },
+  "receiverImage": "kai/feishu-receiver:20261026-r2",
+  "receiverImageId": "sha256:1488232a85083ecd1b44084d58585692c02c3c8cf0ec642fbd33162e38f18ca4",
+  "receiverRunning": false
+}

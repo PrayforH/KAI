@@ -15,6 +15,9 @@ import {
   type ProductIconName,
 } from "../../components/product-icon";
 import { SecretInput } from "../../components/secret-input";
+import { RemoteChannels } from "../../components/agent-studio/remote-channels";
+import { AssistantVault } from "../../components/assistant-vault";
+import { AssistantBotSettings } from "../../components/assistant-bot-settings";
 import { ThemeSelector } from "../../components/theme-toggle";
 import { ProcessDisplaySettings } from "../../components/process-display-settings";
 import { useFollowUpPreference, useInternalAgentsPreference } from "../../lib/interface-preferences";
@@ -39,6 +42,9 @@ type SettingsSectionId =
   | "models"
   | "api"
   | "configuration"
+  | "assistant"
+  | "vault"
+  | "bots"
   | "appearance"
   | "security"
   | "data"
@@ -74,6 +80,12 @@ const SETTINGS_NAV: ReadonlyArray<{
     description: "创建按能力授权的 API 密钥，将对话、任务和 Agent 安全接入外部系统。",
     icon: "api",
   },
+  { id: "assistant", href: "#assistant", label: "助理", icon: "agent",
+    description: "" },
+  { id: "vault", href: "#vault", label: "助理资料库", icon: "security",
+    description: "登录密钥、卡片与联系信息都归你所有，按 Bot 授权后才可用。" },
+  { id: "bots", href: "#bots", label: "机器人", icon: "agent",
+    description: "管理归档和隐藏的机器人。" },
   {
     id: "configuration",
     href: "#configuration",
@@ -348,7 +360,7 @@ function SettingsContent() {
             <header className="settings-title">
               <p>设置中心</p>
               <h1 id="settings-page-title">{activeNavigation.label}</h1>
-              <span>{activeNavigation.description}</span>
+              {activeNavigation.description && <span>{activeNavigation.description}</span>}
             </header>
 
             <section
@@ -420,10 +432,19 @@ function SettingsContent() {
               </section>
             )}
 
+            <section className="settings-section" id="assistant" hidden={activeSection !== "assistant"}>
+              {activeSection === "assistant" && <RemoteChannels />}
+            </section>
+            <section className="settings-section" id="vault" hidden={activeSection !== "vault"}>
+              {activeSection === "vault" && <AssistantVault />}
+            </section>
+            <section className="settings-section" id="bots" hidden={activeSection !== "bots"}>
+              {activeSection === "bots" && <AssistantBotSettings />}
+            </section>
             <section className="settings-section" id="configuration" hidden={activeSection !== "configuration"}>
               <div className="settings-form settings-configuration">
                 <label className="settings-preference-row">
-                  <span><strong>运行中的补充消息</strong><small>Enter 使用所选方式，Alt Enter 临时切换。带附件的消息会加入队列。</small></span>
+                  <span><strong>任务中的补充消息</strong><small>用于任务和项目任务，Alt Enter 临时切换。助理会话默认直接补充到当前工作。</small></span>
                   <select aria-label="补充消息默认行为" value={followUpBehavior} onChange={(event) => setFollowUpBehavior(event.target.value === "steer" ? "steer" : "queue")}>
                     <option value="queue">加入队列</option><option value="steer">调整方向</option>
                   </select>

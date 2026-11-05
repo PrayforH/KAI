@@ -1,0 +1,76 @@
+{
+  "feishu": {
+    "configured": true,
+    "enabled": true,
+    "receiverOnline": true,
+    "receiverState": "receiving",
+    "lastEventAt": "2026-10-26T05:21:38.837182Z",
+    "bound": true,
+    "notifications": true,
+    "boundAt": "2026-10-26T03:06:22.964163Z",
+    "pendingDeliveries": 0,
+    "failedDeliveries": 0
+  },
+  "weixin": {
+    "bound": false,
+    "enabled": false,
+    "online": false,
+    "state": "disconnected",
+    "loginStatus": "expired",
+    "expiresAt": "2026-10-26T05:23:48.241190+00:00",
+    "lastEventAt": null,
+    "lastReplyAt": null,
+    "errorCode": null,
+    "pendingMessages": 0,
+    "failedMessages": 0,
+    "receiverLabel": "79 · 微信接收器"
+  },
+  "diagnostics": {
+    "checkedAt": "2026-10-26T05:22:00.949629+00:00",
+    "checks": [
+      {
+        "key": "binding",
+        "label": "微信绑定",
+        "status": "pending",
+        "detail": "请扫码连接，然后在微信助理里发一句文字完成验证。"
+      },
+      {
+        "key": "receiver",
+        "label": "消息连接",
+        "status": "pending",
+        "detail": "请扫码连接，然后在微信助理里发一句文字完成验证。"
+      },
+      {
+        "key": "incoming",
+        "label": "文字接收",
+        "status": "pending",
+        "detail": "请扫码连接，然后在微信助理里发一句文字完成验证。"
+      },
+      {
+        "key": "chat",
+        "label": "助理会话",
+        "status": "pending",
+        "detail": "请扫码连接，然后在微信助理里发一句文字完成验证。"
+      },
+      {
+        "key": "reply",
+        "label": "文字回复",
+        "status": "pending",
+        "detail": "请扫码连接，然后在微信助理里发一句文字完成验证。"
+      }
+    ]
+  },
+  "history": {
+    "total": 32,
+    "has_more": false,
+    "run_id": "run_04fa0dab5f744ffeb3ac9566ee73c88a"
+  },
+  "latest": {
+    "runId": "run_04fa0dab5f744ffeb3ac9566ee73c88a",
+    "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+    "status": "succeeded",
+    "promptCount": 32,
+    "answer": "飞书共享会话正常"
+  },
+  "messages": []
+}

@@ -1,0 +1,20 @@
+{
+  "checkedAt": "2026-10-27T01:11:55.717359+00:00",
+  "volume": "kai-computer-probe-12af8fb05de04fd6b359864ee631e10d",
+  "initialInstance": "9ebe316b-b248-47d9-9a81-080c57460064",
+  "physicalExpirationRenewed": true,
+  "freshClientSameInstance": true,
+  "firstInstanceDeletionConfirmed404": true,
+  "replacementInstance": "5a7b5083-b1c3-4593-92f0-a9cb38c55135",
+  "retainedFiles": {
+    "/kai/workspace/probe.txt": "2e2f1671b31cfdaa7054a9a01744229750063b107d5832e28c1aa40b3c5adf61",
+    "/kai/home/.config/chromium/Default/Preferences": "ae37df75a0f091158ff33fb4437fbf6b74c6168899d662c0d77010ff384dbfd6",
+    "/kai/home/bin/kai-v0-tool": "bb1b6616c595ca4cb5937d13fadc10a82de03713243e9f509da33c74beed3a2e"
+  },
+  "homeAndUserInstalledTool": "/kai/home\nKAI-TOOL79-V0",
+  "volumeRecreatedIfMissing": false,
+  "scope": "Probe files, user tool and profile-directory bytes only; no real browser login, agent Run or desktop tested.",
+  "testInstancesRemoved": true,
+  "testVolumeRemoved": true,
+  "dockerTestContainersAbsent": true
+}

@@ -19,6 +19,9 @@ class PlatformTool:
 class PlatformToolOverlay:
     tools: tuple[PlatformTool, ...] = ()
     instructions: str = ""
+    # Server-resolved Bot roles may execute without a mandatory acknowledgement.
+    # This is presentation guidance, never a tool permission or client override.
+    require_public_preface: bool = True
 
     @property
     def names(self) -> tuple[str, ...]:

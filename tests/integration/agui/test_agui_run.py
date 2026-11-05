@@ -1102,3 +1102,39 @@ async def test_video_generation_is_a_durable_task_with_media_history() -> None:
             assert sum(item.method == "POST" for item in captured) == 1
         for task in container.model_configurations._video_monitors.values():
             task.cancel()
+
+
+@pytest.mark.asyncio
+async def test_personal_assistant_coordinate_resumes_without_cross_user_history() -> None:
+    app = create_memory_app(auto_execute=True)
+    thread = "kai-personal-assistant-v1"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        for user in ("user-1", "user-2"):
+            headers = {**HEADERS, "X-User-ID": user}
+            published = await client.post(
+                "/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=headers
+            )
+            assert published.status_code == 201
+            response = await client.post(
+                "/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
+                json=_request(thread_id=thread, run_id=f"assistant-{user}", prompt=user),
+                headers=headers,
+            )
+            assert response.status_code == 200
+        first = await app.state.container.agui.get_binding(
+            tenant_id="tenant-a", user_id="user-1", thread_id=thread
+        )
+        second = await app.state.container.agui.get_binding(
+            tenant_id="tenant-a", user_id="user-2", thread_id=thread
+        )
+        assert first.session_id != second.session_id
+        response = await client.post(
+            "/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
+            json=_request(thread_id=thread, run_id="assistant-followup", prompt="continue"),
+            headers=HEADERS,
+        )
+        assert response.status_code == 200
+        resumed = await app.state.container.agui.get_binding(
+            tenant_id="tenant-a", user_id="user-1", thread_id=thread
+        )
+        assert resumed.session_id == first.session_id

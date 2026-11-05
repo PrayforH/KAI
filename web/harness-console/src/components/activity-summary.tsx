@@ -1,5 +1,7 @@
 "use client";
 import { useConversationRedactor } from "./conversation-redaction";
+import { useConversationScope } from "../lib/conversation-scope";
+import { useAssistantSurface } from "./assistant-bot-context";
 import { hasPendingProcessProse } from "../lib/process-response";
 import { isProgressNoise } from "../lib/message-text";
 
@@ -87,7 +89,7 @@ interface CommentaryNode {
   text: string;
   sequence: number;
   source: "progress" | "reasoning_summary" | "reasoning" | "guidance";
-  steeringStatus?: "pending" | "accepted";
+  steeringStatus?: "pending" | "accepted" | "unknown";
 }
 
 type ProcessCategory = "setup" | "model" | "result";
@@ -220,10 +222,10 @@ function commentaryNodes(view: RunViewModel, includePending: boolean): Commentar
     if (item.event_type.startsWith("run.steer.")) {
       const key = `guidance:${String(item.metadata.request_id ?? item.id)}`;
       if (item.event_type === "run.steer.failed") grouped.delete(key);
-      else if (item.summary && (item.event_type === "run.steer.accepted" ||
+      else if (item.summary && (item.event_type === "run.steer.unknown" || item.event_type === "run.steer.accepted" ||
         (item.event_type === "run.steer.requested" && ["queued", "running", "waiting_approval"].includes(view.phase)))) {
         grouped.set(key, { id: key, sequence: item.sequence, text: item.summary, source: "guidance",
-          steeringStatus: item.event_type === "run.steer.accepted" ? "accepted" : "pending" });
+          steeringStatus: item.event_type === "run.steer.unknown" ? "unknown" : item.event_type === "run.steer.accepted" ? "accepted" : "pending" });
       }
       continue;
     }
@@ -715,6 +717,8 @@ export function ActivitySummary({
   progressText?: string;
 }) {
   const detailed = useDetailedProcess();
+  const assistantSurface = useAssistantSurface();
+  const compact = (Boolean(useConversationScope()?.compactComposer) || assistantSurface) && !detailed;
   const observed = useRunViewModel();
   const durableView = useMemo(() => reduceRunViewModel(undefined, activity), [activity]);
   const view = observed?.runId === activity.run_id ? observed : durableView;
@@ -760,7 +764,7 @@ export function ActivitySummary({
   }, [active, view.runId, view.elapsedMs]);
   // Automatic disclosure follows the run phase. Explicit user choices survive
   // completion and history hydration; failures default open for diagnostics.
-  const defaultOpen = active || view.phase === "failed";
+  const defaultOpen = !compact && (active || view.phase === "failed");
   const open = manuallyOpen ?? defaultOpen;
   const elapsed = elapsedAnchor.current
     ? activeElapsedMs(view, now, elapsedAnchor.current)
@@ -809,11 +813,12 @@ export function ActivitySummary({
         <span className="execution-duration">· {elapsedCopy}</span>
         {hasContent && <span className="execution-chevron"><CodexResponseIcon name="chevronDown" /></span>}
       </Disclosure>
-      <CompactionProgressIndicator view={view} />
-      <SubagentProgress tasks={view.tasks} active={active} />
+      {(!compact || open) && <CompactionProgressIndicator view={view} />}
+      {(!compact || open) && <SubagentProgress tasks={view.tasks} active={active} />}
+      {compact && failure && !open && <p className="execution-publication-notice" role="alert">{failure.summary}</p>}
       {publicationNotice?.summary && <p className="execution-publication-notice" role="status">{publicationNotice.summary}</p>}
       {active && progressText && <p className="execution-publication-notice" role="status">{progressText}</p>}
-      {runDetails && detailsAvailable ? (
+      {runDetails && detailsAvailable && (!compact || open) ? (
         <button
           type="button"
           className="execution-details-trigger"

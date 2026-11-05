@@ -49,3 +49,34 @@ it("shows pending guidance without queue pause or action controls", () => {
   expect(host.querySelector("button")).toBeNull();
   expect(host.textContent).not.toContain("已暂停");
 });
+
+it("shows successive assistant sends as independent bubbles before a run is ready", () => {
+  host = document.createElement("div"); document.body.append(host); root = createRoot(host);
+  act(() => root.render(<PromptQueue chat items={seed.map(item => ({ ...item, intent: "steer" }))}
+    paused={false} busy canSteer={false} sendingIds={[]} onChange={vi.fn()} onPause={vi.fn()} onGuide={vi.fn()} onSend={vi.fn()} />));
+  expect([...host.querySelectorAll(".steering-user-message-bubble")].map(node => node.textContent)).toEqual(["first", "second"]);
+  expect(host.querySelector(".prompt-queue")).toBeNull();
+  expect(host.querySelector("button")).toBeNull();
+});
+
+
+it("renders every chat send as a plain bubble, with no stuck section or resend control", () => {
+  host = document.createElement("div"); document.body.append(host); root = createRoot(host);
+  act(() => root.render(<PromptQueue chat items={[
+    { ...seed[0], receipt: "unknown" }, { ...seed[1], receipt: "failed" },
+  ]} paused busy={false} canSteer={false} sendingIds={[]} onChange={vi.fn()} onPause={vi.fn()} onGuide={vi.fn()} onSend={vi.fn()} />));
+  expect([...host.querySelectorAll(".steering-user-message-bubble")].map(node => node.textContent)).toEqual(["first", "second"]);
+  expect(host.querySelector("details")).toBeNull();
+  expect(host.textContent).not.toContain("未发送的补充消息");
+  expect(host.querySelector("button")).toBeNull();
+  expect(host.querySelector("small")).toBeNull();
+});
+
+it("places a reconciled send beside its own turn", () => {
+  host = document.createElement("div"); document.body.append(host); root = createRoot(host);
+  act(() => root.render(<div className="harness-thread-frame"><article data-turn-id="assistant-run-9" /><PromptQueue chat items={[
+    { ...seed[0], receipt: "unknown", historyRunId: "run-9" },
+  ]} paused busy={false} canSteer={false} sendingIds={[]} onChange={vi.fn()} onPause={vi.fn()} onGuide={vi.fn()} onSend={vi.fn()} /></div>));
+  expect([...host.querySelectorAll(".steering-user-message-bubble")].map(node => node.textContent)).toEqual(["first"]);
+  expect(host.querySelector("details")).toBeNull();
+});

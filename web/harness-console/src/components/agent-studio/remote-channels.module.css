@@ -1,0 +1,24 @@
+.channels { max-width: 1060px; color: var(--codex-ink, #202124); }
+.header { margin-bottom: 24px; }
+.header h2 { margin: 0 0 8px; font-size: 21px; font-weight: 600; letter-spacing: -.3px; }
+.header p { margin: 0; color: var(--codex-muted, #73767c); font-size: 14px; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.channel { min-width: 0; }
+.card { height: 100%; min-height: 172px; box-sizing: border-box; padding: 25px 26px; border-radius: 20px; background: var(--codex-surface-subtle, #f6f7f8); border: 1px solid var(--codex-line, #dddfe3); font: 14px/1.65 var(--codex-font-ui, -apple-system, "PingFang SC", sans-serif); }
+.cardTop, .identity { display: flex; align-items: center; }
+.cardTop { justify-content: space-between; gap: 16px; }
+.identity { gap: 14px; min-width: 0; }
+.identity svg { width: 42px; height: 42px; flex-shrink: 0; }
+.identity h3 { margin: 0; font-size: 18px; font-weight: 600; white-space: nowrap; }
+.state { color: var(--codex-muted, #73767c); font-size: 11px; }
+.state[data-online=true] { color: #16856b; }
+.card p { margin: 19px 0 0; max-width: 390px; color: var(--codex-muted, #73767c); font-size: 14px; }
+.action { flex-shrink: 0; padding: 6px 14px; border: 0; border-radius: 8px; background: var(--codex-ink, #202124); color: var(--codex-surface, #fff); font: inherit; font-size: 13px; font-weight: 550; cursor: pointer; }
+.action:disabled { opacity: .5; cursor: default; }
+.action:focus-visible { outline: 2px solid #3370ff; outline-offset: 3px; }
+.detailCard { padding: 0 !important; border: 0 !important; background: transparent !important; }
+.management { width: min(610px, calc(100vw - 32px)) !important; }
+.management h2 { margin: 0; }
+.management section { max-width: none; }
+@media (max-width: 850px) { .grid { grid-template-columns: 1fr; } .channels { max-width: 650px; } }
+@media (max-width: 450px) { .card { padding: 20px; } .identity { gap: 10px; } .identity h3 { font-size: 17px; } }

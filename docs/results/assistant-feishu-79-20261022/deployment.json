@@ -1,0 +1,30 @@
+{
+  "status": "deployed",
+  "images": {
+    "api": "sha256:ed15725a6fee8d5a51f45ae80410163e16f29f780a746121018212dd73e809f4",
+    "worker": "sha256:ed15725a6fee8d5a51f45ae80410163e16f29f780a746121018212dd73e809f4",
+    "web": "sha256:2948312dba79e24c88f3862248b81b533d1a4253ff3dbe1763173ca324232fa1"
+  },
+  "schema": "0045",
+  "before": {
+    "users": 12,
+    "sessions": 277,
+    "runs": 742,
+    "artifacts": 205,
+    "projects": 1,
+    "assistant_objectives": 1,
+    "assistant_executions": 1,
+    "assistant_inbox": 1
+  },
+  "after": {
+    "users": 12,
+    "sessions": 277,
+    "runs": 742,
+    "artifacts": 205,
+    "projects": 1,
+    "assistant_objectives": 1,
+    "assistant_executions": 1,
+    "assistant_inbox": 1
+  },
+  "timestamp": "2026-10-22T11:38:02.972088+00:00"
+}

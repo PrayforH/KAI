@@ -1,0 +1,39 @@
+{
+  "images": {
+    "api": "kai/assistant-api:20261026-r2",
+    "worker": "kai/assistant-api:20261026-r2",
+    "web": "kai/assistant-web:20261026-r2"
+  },
+  "imageIds": {
+    "api": "sha256:25bcf31ed2fb6afcfe622219277003c76b5ac4feba9f658b9015f3cebe2771d1",
+    "worker": "sha256:25bcf31ed2fb6afcfe622219277003c76b5ac4feba9f658b9015f3cebe2771d1",
+    "web": "sha256:90369a568d81938f6efb9e0380c797e1a3f2e28cb3f91662d3f14ea15421ae89"
+  },
+  "countsBefore": {
+    "users": 12,
+    "sessions": 278,
+    "runs": 747,
+    "artifacts": 210,
+    "projects": 1,
+    "assistant_objectives": 1,
+    "assistant_executions": 1,
+    "assistant_inbox": 1
+  },
+  "countsAfter": {
+    "users": 12,
+    "sessions": 278,
+    "runs": 747,
+    "artifacts": 210,
+    "projects": 1,
+    "assistant_objectives": 1,
+    "assistant_executions": 1,
+    "assistant_inbox": 1
+  },
+  "schema": "0046",
+  "dataPreserved": true,
+  "feishuLiveConfigured": false,
+  "apiSourceCommit": "103431c0",
+  "webSourceCommit": "d7aa53b8",
+  "externalHistoryFix": "update AG-UI source before rendering message clients",
+  "externalAppendFix": "preserve current conversation prompt path before appending"
+}

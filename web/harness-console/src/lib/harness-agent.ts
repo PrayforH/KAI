@@ -13,15 +13,18 @@ import {
   type ActivityPatchOperation,
   activityStore,
 } from "./activity-store";
+import { handoverStore } from "./handover-store";
 import { liveResponseStore } from "./live-response-store";
 import { runStreamStore } from "./run-stream-store";
 import { runReuseStore } from "./run-reuse-store";
 import { redirectOnUnauthorized } from "./client-auth";
+import type { ReplyReference } from "./reply-references";
 
 export interface HarnessHttpAgentConfig extends HttpAgentConfig {
   cancelFetch?: typeof fetch;
   modelRouteOverride?: string | null;
   knowledgeReferences?: readonly string[];
+  conversationSurface?: "assistant" | "task";
   onRunSucceeded?: () => void;
 }
 
@@ -179,13 +182,16 @@ export class HarnessHttpAgent extends HttpAgent {
   private cancellation?: { key: string; promise: Promise<void> };
   private modelRouteOverride?: string;
   private knowledgeReferences?: readonly string[];
+  private replyOverride?: ReplyReference;
   private onRunSucceeded?: () => void;
+  private conversationSurface?: "assistant" | "task";
 
   constructor(config: HarnessHttpAgentConfig) {
     const {
       cancelFetch,
       modelRouteOverride,
       knowledgeReferences,
+      conversationSurface,
       onRunSucceeded,
       ...httpConfig
     } = config;
@@ -216,6 +222,7 @@ export class HarnessHttpAgent extends HttpAgent {
     this.modelRouteOverride = modelRouteOverride || undefined;
     this.knowledgeReferences = knowledgeReferences?.length ? knowledgeReferences : undefined;
     this.onRunSucceeded = onRunSucceeded;
+    this.conversationSurface = conversationSurface;
     const cancelTransport = cancelFetch ?? globalThis.fetch.bind(globalThis);
     this.cancelFetch = async (input, init) => {
       const response = await cancelTransport(input, init);
@@ -230,7 +237,10 @@ export class HarnessHttpAgent extends HttpAgent {
       runId: input.runId,
       idKind: "client",
     };
-    return compactActivityStream(super.run(this.withModelOverride(input)));
+    const outgoing = this.withModelOverride(input);
+    // The reference rides exactly one send; a retry re-quotes deliberately.
+    this.replyOverride = undefined;
+    return compactActivityStream(super.run(outgoing));
   }
 
   adoptActiveRun(threadId: string, serverRunId: string): void {
@@ -242,7 +252,7 @@ export class HarnessHttpAgent extends HttpAgent {
   }
 
   private withModelOverride<T extends object>(input: T): T {
-    if (!this.modelRouteOverride && !this.knowledgeReferences) {
+    if (!this.conversationSurface && !this.modelRouteOverride && !this.knowledgeReferences && !this.replyOverride) {
       return input;
     }
     const current = input as T & { forwardedProps?: Record<string, unknown> };
@@ -250,12 +260,26 @@ export class HarnessHttpAgent extends HttpAgent {
       ...input,
       forwardedProps: {
         ...current.forwardedProps,
+        ...(this.conversationSurface ? { conversationSurface: this.conversationSurface } : {}),
         ...(this.modelRouteOverride ? { modelRoute: this.modelRouteOverride } : {}),
         ...(this.knowledgeReferences
           ? { knowledgeReferences: [...this.knowledgeReferences] }
           : {}),
+        ...(this.replyOverride
+          ? {
+              replyTo: {
+                messageId: this.replyOverride.messageId,
+                ...(this.replyOverride.excerpt ? { excerpt: this.replyOverride.excerpt } : {}),
+              },
+            }
+          : {}),
       },
     };
+  }
+
+  /** Attach the composer's quote reference to the next outgoing run. */
+  setReplyTo(reply: ReplyReference | null) {
+    this.replyOverride = reply ?? undefined;
   }
 
   override runAgent(
@@ -283,6 +307,7 @@ export class HarnessHttpAgent extends HttpAgent {
       ...subscriber,
       onRunStartedEvent: async (params) => {
         if (options?.signal?.aborted) return;
+        console.log("[kai-debug] run started", params.event.runId, "thread", runtimeThreadId);
         liveResponseStore.startRun(params.event.runId, runtimeThreadId);
         runStreamStore.startRun(params.event.runId, runtimeThreadId);
         return subscriber?.onRunStartedEvent?.(params);
@@ -294,6 +319,7 @@ export class HarnessHttpAgent extends HttpAgent {
       },
       onTextMessageContentEvent: async (params) => {
         if (options?.signal?.aborted) return;
+        console.log("[kai-debug] text delta", params.event.messageId, params.event.delta?.length);
         liveResponseStore.append(
           params.event.messageId,
           params.event.delta,
@@ -317,6 +343,16 @@ export class HarnessHttpAgent extends HttpAgent {
           liveResponseStore.hideForTool(runtimeThreadId);
         }
         return subscriber?.onToolCallStartEvent?.(params);
+      },
+      onCustomEvent: async (params) => {
+        if (options?.signal?.aborted) return;
+        if (params.event.name === "ui.handover" && typeof window !== "undefined") {
+          handoverStore.ingest(params.event.value);
+        }
+        if (params.event.name === "ui.assistant_delivery" && typeof window !== "undefined") {
+          handoverStore.ingestDelivery(params.event.value);
+        }
+        return subscriber?.onCustomEvent?.(params);
       },
       onRunFinishedEvent: async (params) => {
         if (options?.signal?.aborted) return;

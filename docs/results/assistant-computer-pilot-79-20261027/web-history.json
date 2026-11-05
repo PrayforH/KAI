@@ -1,0 +1,32 @@
+{
+  "checkedAt": "2026-10-27T04:31:31.724200+00:00",
+  "kind": "production-authenticated-history-API",
+  "reads": [
+    {
+      "httpStatus": 200,
+      "total": 64,
+      "latestRunId": "run_a5fbec8984604dcfa6b626acd9d7550c",
+      "weixinTurnPresent": true,
+      "feishuTurnPresent": true,
+      "testMarkerPresent": true
+    },
+    {
+      "httpStatus": 200,
+      "total": 64,
+      "latestRunId": "run_a5fbec8984604dcfa6b626acd9d7550c",
+      "weixinTurnPresent": true,
+      "feishuTurnPresent": true,
+      "testMarkerPresent": true
+    }
+  ],
+  "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+  "freshHTTPClients": true,
+  "temporaryAuthSessionLoggedOut": true,
+  "browserRenderedBeforeWeixin": {
+    "webReloadRunId": "run_52e3453e319049ef8311f8023532322d",
+    "workerRestartRunId": "run_100324515f1a45948c6fe72372affa1f",
+    "feishuRunId": "run_6096615eb19349229c056f51c9199122"
+  },
+  "browserRenderedWeixinTurn": false,
+  "browserNote": "The user was actively using Chrome; final Weixin synchronization verified with two authenticated history API reads without taking over the browser."
+}

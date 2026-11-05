@@ -738,7 +738,7 @@ def test_steering_receipt_keeps_run_running_and_its_sequence() -> None:
 
 
 def test_pending_and_failed_steering_are_activity_facts_without_changing_run_status() -> None:
-    for event_type in ("run.steer.requested", "run.steer.failed"):
+    for event_type in ("run.steer.requested", "run.steer.failed", "run.steer.unknown"):
         guidance = event(
             event_type, {"request_id": "input-1", "text": "保留目录", "error": "未收到确认"}, 3
         )
@@ -746,6 +746,9 @@ def test_pending_and_failed_steering_are_activity_facts_without_changing_run_sta
         assert activity is not None
         assert activity["status"] == "running"
         assert activity["items"][-1]["metadata"]["request_id"] == "input-1"
+        assert activity["items"][-1]["summary"] == "保留目录"
+        if event_type == "run.steer.unknown":
+            assert activity["items"][-1]["title"] == "补充接收状态待核对"
         patch = activity_projection(guidance)[0].model_dump(by_alias=True)["patch"]
         assert all(item["path"] != "/status" for item in patch)
 

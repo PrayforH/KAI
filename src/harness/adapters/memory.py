@@ -766,6 +766,7 @@ class InMemoryAguiThreadBindingRepository:
         archived: bool = False,
         project_id: str | None = None,
         offset: int = 0,
+        query: str | None = None,
     ) -> list[AguiThreadBinding]:
         matches = [
             binding
@@ -774,6 +775,8 @@ class InMemoryAguiThreadBindingRepository:
             and item_user == user_id
             and (binding.archived_at is not None) is archived
             and (project_id is None or binding.project_id == project_id)
+            and (not query or query.lower() in (binding.title or "").lower()
+                 or query.lower() in binding.thread_id.lower())
         ]
         return sorted(
             matches,

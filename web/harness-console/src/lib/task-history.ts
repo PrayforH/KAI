@@ -9,9 +9,10 @@ import {
 import { fromAgUiMessages } from "@assistant-ui/react-ag-ui";
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import type { ApprovalDetails } from "../components/approval-card";
-import { latestHistoryRunActivity } from "./activity-schema";
+import { latestHistoryRunActivity, type RunActivity } from "./activity-schema";
 import { activityStore } from "./activity-store";
 import { requireAuthenticatedResponse } from "./client-auth";
+import { setThreadReplyReferences } from "./reply-references";
 
 export interface TaskSummary {
   thread_id: string;
@@ -40,6 +41,9 @@ export const TASK_LIST_REQUEST_TIMEOUT_MS = 8_000;
 export const THREAD_HISTORY_PREFETCH_TTL_MS = 30_000;
 const threadHistoryCacheMax = 8;
 const THREAD_HISTORY_PAGE_RUNS = 10;
+/** Earlier pages trade payload for far fewer round trips while paging back;
+ * the latest page keeps its small size so thread open stays fast. */
+export const THREAD_HISTORY_EARLIER_PAGE_RUNS = 30;
 const threadHistoryAccumulatedMax = 8;
 
 export interface ThreadHistoryResponse {
@@ -55,6 +59,7 @@ export interface ThreadHistoryResponse {
     toolCallId?: string;
     tool_call_id?: string;
   }>;
+  replies?: Record<string, { messageId?: string; excerpt?: string | null }>;
   next_cursor?: string | null;
   has_more?: boolean;
   total?: number;
@@ -69,6 +74,7 @@ const activeStatuses = new Set([
 ]);
 
 const threadHistoryRequests = new Map<string, Promise<ThreadHistoryResponse | null>>();
+const historyValidators = new Map<string, { etag: string; history: ThreadHistoryResponse }>();
 const threadHistorySnapshots = new Map<
   string,
   { receivedAt: number; history: ThreadHistoryResponse | null }
@@ -118,7 +124,9 @@ function waitForHistoryPoll(signal: AbortSignal, milliseconds = 500) {
 
 function historyUrl(threadId: string, before?: string) {
   const base = `/api/agui/threads/${encodeURIComponent(threadId)}/history`;
-  const query = new URLSearchParams({ limit: String(THREAD_HISTORY_PAGE_RUNS) });
+  const query = new URLSearchParams({
+    limit: String(before ? THREAD_HISTORY_EARLIER_PAGE_RUNS : THREAD_HISTORY_PAGE_RUNS),
+  });
   if (before) query.set("before", before);
   return `${base}?${query.toString()}`;
 }
@@ -140,19 +148,31 @@ async function loadThreadHistory(
   }
 
   function createRequest(): Promise<ThreadHistoryResponse | null> {
-    return fetch(historyUrl(threadId, before), { cache: "no-store" })
+    const validator = isLatestPage ? historyValidators.get(threadId) : undefined;
+    return fetch(historyUrl(threadId, before), { cache: "no-store",
+      ...(validator ? { headers: { "If-None-Match": validator.etag } } : {}),
+    })
       .then(requireAuthenticatedResponse)
       .then(async (response) => {
+        if (response.status === 304 && validator) return validator.history;
         if (response.status === 404) return null;
         if (!response.ok) {
           throw new Error((await response.text()) || `HTTP ${response.status}`);
         }
-        return response.json() as Promise<ThreadHistoryResponse>;
+        const history = await response.json() as ThreadHistoryResponse;
+        if (isLatestPage) {
+          historyValidators.delete(threadId);
+          const etag = response.headers.get("etag");
+          if (etag && !activeStatuses.has(history.status)) historyValidators.set(threadId, { etag, history });
+          while (historyValidators.size > threadHistoryCacheMax) historyValidators.delete(historyValidators.keys().next().value!);
+        }
+        return history;
       })
       .then((history) => {
         if (isLatestPage && threadHistoryRequests.get(threadId) === request) {
           if (!history || !activeStatuses.has(history.status)) cacheThreadHistory(threadId, history);
           seedAccumulatedHistory(threadId, history);
+          setThreadReplyReferences(threadId, history?.replies);
         }
         return history;
       })
@@ -231,10 +251,11 @@ export async function loadFullThreadHistory(
   return messages;
 }
 
-export function invalidateThreadHistory(threadId: string): void {
+export function invalidateThreadHistory(threadId: string, options: { keepPages?: boolean } = {}): void {
   threadHistoryRequests.delete(threadId);
   threadHistorySnapshots.delete(threadId);
-  resetAccumulatedHistory(threadId);
+  historyValidators.delete(threadId);
+  if (!options.keepPages) resetAccumulatedHistory(threadId);
 }
 
 export interface AccumulatedThreadHistory {
@@ -247,6 +268,13 @@ export interface AccumulatedThreadHistory {
 
 interface AccumulationEntry extends AccumulatedThreadHistory {
   loading: boolean;
+  expanded?: boolean;
+}
+
+/** Fresh page copies win, without duplicating messages at a moving page boundary. */
+function mergeHistoryMessages(earlier: ThreadHistoryResponse["messages"], latest: ThreadHistoryResponse["messages"]) {
+  const current = new Set(latest.map(message => message.id));
+  return [...earlier.filter(message => !current.has(message.id)), ...latest];
 }
 
 const accumulatedHistory = new Map<string, AccumulationEntry>();
@@ -271,13 +299,15 @@ function seedAccumulatedHistory(
     resetAccumulatedHistory(threadId);
     return;
   }
+  const previous = accumulatedHistory.get(threadId);
   accumulatedHistory.delete(threadId);
   accumulatedHistory.set(threadId, {
-    messages: history.messages,
-    nextCursor: history.next_cursor ?? null,
-    hasMore: history.has_more ?? false,
+    messages: previous?.expanded ? mergeHistoryMessages(previous.messages, history.messages) : history.messages,
+    nextCursor: previous?.expanded ? previous.nextCursor : history.next_cursor ?? null,
+    hasMore: previous?.expanded ? previous.hasMore : history.has_more ?? false,
     total: history.total ?? history.messages.length,
-    loading: false,
+    loading: previous?.loading ?? false,
+    expanded: previous?.expanded,
   });
   while (accumulatedHistory.size > threadHistoryAccumulatedMax) {
     const oldest = accumulatedHistory.keys().next().value;
@@ -300,14 +330,17 @@ export function useThreadHistoryPagination(
   );
   const importRepositoryRef = useRef(options.importRepository);
   importRepositoryRef.current = options.importRepository;
+  const activeThread = useRef<string | null>(threadId);
 
   useEffect(() => {
+    activeThread.current = threadId;
     setSnapshot(accumulatedHistory.get(threadId) ?? null);
     const listener = () => setSnapshot(accumulatedHistory.get(threadId) ?? null);
     const listeners = accumulationListeners.get(threadId) ?? new Set<() => void>();
     listeners.add(listener);
     accumulationListeners.set(threadId, listeners);
     return () => {
+      activeThread.current = null;
       listeners.delete(listener);
       if (listeners.size === 0) accumulationListeners.delete(threadId);
     };
@@ -321,19 +354,21 @@ export function useThreadHistoryPagination(
     publishAccumulatedHistory(threadId);
     try {
       const page = await loadThreadHistory(threadId, undefined, entry.nextCursor);
-      if (!page) return;
+      if (!page) throw new Error("Earlier history is unavailable");
       // Another reader may have seeded newer messages while this page was in flight:
       // prepend to the current list rather than to the pre-request snapshot, or those
       // messages are dropped and a stale list is imported back into the runtime.
       const latest = accumulatedHistory.get(threadId) ?? entry;
       accumulatedHistory.set(threadId, {
-        messages: [...page.messages, ...latest.messages],
+        messages: mergeHistoryMessages(page.messages, latest.messages),
         nextCursor: page.next_cursor ?? null,
         hasMore: page.has_more ?? false,
         total: page.total ?? latest.total,
         loading: false,
+        expanded: true,
       });
       publishAccumulatedHistory(threadId);
+      if (activeThread.current !== threadId) return;
       importRepositoryRef.current(
         ExportedMessageRepository.fromArray(
           fromAgUiMessages(accumulatedHistory.get(threadId)?.messages ?? [], {
@@ -359,9 +394,25 @@ export function useThreadHistoryPagination(
   };
 }
 
+/**
+ * A transcript stores the activity it saw while streaming, so a run that ended
+ * right after the last write still says "running". The thread's own latest-run
+ * status is authoritative: settling it here keeps a refresh from replaying a
+ * live status row over a turn that already finished.
+ */
+export function settleHistoryActivity(
+  activity: RunActivity,
+  threadStatus: string,
+): RunActivity {
+  if (activeStatuses.has(threadStatus) || !activeStatuses.has(activity.status)) return activity;
+  return { ...activity, status: threadStatus };
+}
+
 function publishHistoryActivity(history: ThreadHistoryResponse, threadId: string) {
-  const restoredActivity = latestHistoryRunActivity(history.messages);
-  if (restoredActivity) {
+  const restored = latestHistoryRunActivity(history.messages);
+  if (!restored) return;
+  const restoredActivity = settleHistoryActivity(restored, history.status);
+  if (JSON.stringify(restoredActivity) !== JSON.stringify(activityStore.getSnapshot())) {
     activityStore.publish(restoredActivity, threadId, { replaceRun: true });
   }
 }
@@ -506,9 +557,10 @@ export async function setTaskArchived(
 
 export function createThreadHistoryAdapter(
   threadId: string,
-  options: { onActiveRun?: (serverRunId: string) => void; isLocalOnly?: () => boolean } = {},
+  options: { onActiveRun?: (serverRunId: string) => void; isLocalOnly?: () => boolean; reuseInitialSnapshot?: boolean } = {},
 ): ThreadHistoryAdapter & { dispose(): void; loadSnapshot(onLoaded?: (repository: ReturnType<typeof ExportedMessageRepository.fromArray>) => void | boolean): Promise<ReturnType<typeof ExportedMessageRepository.fromArray>> } {
   const disposal = new AbortController();
+  let snapshotLoaded = false;
   return {
     async loadSnapshot(onLoaded) {
       if (options.isLocalOnly?.()) {
@@ -516,12 +568,17 @@ export function createThreadHistoryAdapter(
         onLoaded?.(repository);
         return repository;
       }
-      invalidateThreadHistory(threadId);
+      // Revalidate the latest page, but keep an initial load already in flight.
+      // Dropping that request made runtime startup and external sync fetch the
+      // same history twice. Earlier-page state belongs to the reader as well.
+      if (!options.reuseInitialSnapshot || snapshotLoaded) threadHistorySnapshots.delete(threadId);
+      snapshotLoaded = true;
       const history = await loadThreadHistory(threadId).catch((error) => {
         if (disposal.signal.aborted) return null;
         throw error;
       });
-      const converted = history ? fromAgUiMessages(history.messages, { showThinking: true }) : [];
+      const messages = options.reuseInitialSnapshot ? accumulatedHistory.get(threadId)?.messages : undefined;
+      const converted = history ? fromAgUiMessages(messages ?? history.messages, { showThinking: true }) : [];
       const repository = ExportedMessageRepository.fromArray(converted);
       // Import terminal text before publishing the phase that stops recovery polling.
       const accepted = !disposal.signal.aborted && onLoaded?.(repository) !== false;
@@ -540,7 +597,7 @@ export function createThreadHistoryAdapter(
       }
       publishHistoryActivity(history, threadId);
       const repository = ExportedMessageRepository.fromArray(
-        fromAgUiMessages(history.messages, { showThinking: true }),
+        fromAgUiMessages(options.reuseInitialSnapshot ? accumulatedHistory.get(threadId)?.messages ?? history.messages : history.messages, { showThinking: true }),
       );
       if (!history.run_id || history.run_id.startsWith("video_job_") || !activeStatuses.has(history.status)) {
         return repository;
@@ -643,14 +700,18 @@ interface EarlierPagination {
 export function useAutoLoadEarlierMessages(
   frame: RefObject<HTMLElement | null>,
   pagination: EarlierPagination,
-): void {
+  options: { readerDriven?: boolean } = {},
+): () => Promise<void> {
   const state = useRef(pagination);
   state.current = pagination;
+  const loadPage = useRef<() => Promise<void>>(async () => undefined);
 
   useEffect(() => {
     const viewport = frame.current?.querySelector<HTMLElement>(".aui-thread-viewport");
     if (!viewport) return;
     let inFlight = false;
+    let readerIntentUntil = 0;
+    let touchY = 0;
 
     function keepPlace(previousHeight: number, previousTop: number) {
       const grown = viewport!.scrollHeight - previousHeight;
@@ -677,19 +738,42 @@ export function useAutoLoadEarlierMessages(
         inFlight = false;
       }
     }
+    loadPage.current = loadEarlierPage;
 
     function fillViewport() {
-      if (viewport!.scrollHeight <= viewport!.clientHeight + 1) void loadEarlierPage();
+      if (!options.readerDriven && viewport!.scrollHeight <= viewport!.clientHeight + 1) void loadEarlierPage();
     }
 
     function onScroll() {
+      if (options.readerDriven && performance.now() > readerIntentUntil) return;
       if (viewport!.scrollTop <= LOAD_EARLIER_THRESHOLD_PX) void loadEarlierPage();
     }
 
+    function readEarlier() {
+      readerIntentUntil = performance.now() + 800;
+      onScroll();
+    }
+    const onWheel = (event: WheelEvent) => { if (event.deltaY < 0) readEarlier(); };
+    const onKey = (event: KeyboardEvent) => { if (["ArrowUp", "PageUp", "Home"].includes(event.key)) readEarlier(); };
+    const onTouchStart = (event: TouchEvent) => { touchY = event.touches[0]?.clientY ?? 0; };
+    const onTouchMove = (event: TouchEvent) => { if ((event.touches[0]?.clientY ?? 0) > touchY) readEarlier(); };
+
     viewport.addEventListener("scroll", onScroll, { passive: true });
+    viewport.addEventListener("wheel", onWheel, { passive: true });
+    viewport.addEventListener("keydown", onKey);
+    viewport.addEventListener("touchstart", onTouchStart, { passive: true });
+    viewport.addEventListener("touchmove", onTouchMove, { passive: true });
     fillViewport();
-    return () => viewport.removeEventListener("scroll", onScroll);
-  }, [frame, pagination.hasMore, pagination.loading]);
+    return () => {
+      loadPage.current = async () => undefined;
+      viewport.removeEventListener("scroll", onScroll);
+      viewport.removeEventListener("wheel", onWheel);
+      viewport.removeEventListener("keydown", onKey);
+      viewport.removeEventListener("touchstart", onTouchStart);
+      viewport.removeEventListener("touchmove", onTouchMove);
+    };
+  }, [frame, pagination.hasMore, pagination.loading, options.readerDriven]);
+  return useCallback(() => loadPage.current(), []);
 }
 
 /** Create a durable independent snapshot; never re-use the source SDK session. */

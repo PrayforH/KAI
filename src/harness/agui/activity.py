@@ -5,8 +5,10 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 from ag_ui.core import ActivityDeltaEvent, ActivitySnapshotEvent, BaseEvent
+from pydantic import ValidationError
 
 from harness.agui.failure import failure_message
+from harness.assistant.receipts import AssistantControlReceipt
 from harness.core.events import RunEvent
 from harness.runtime.audit_redaction import redact_text, redact_tool_arguments
 from harness.runtime.input_redaction import redact_internal_agent_asset_events
@@ -243,6 +245,16 @@ def _item(
 
 
 def _activity_item(event: RunEvent) -> dict[str, Any] | None:
+    if event.type == "ui.assistant_control":
+        try:
+            receipt = AssistantControlReceipt.model_validate(event.payload)
+        except ValidationError:
+            return None
+        return _item(
+            event, kind="result", status="succeeded", title="助理设置回执",
+            summary=receipt.summary,
+            metadata={"assistant_control": receipt.model_dump(mode="json")},
+        )
     payload = event.payload
     if event.type == "run.queued":
         return _item(
@@ -355,13 +367,17 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
             ),
             metadata=_metadata(retention_seconds=retention_seconds),
         )
-    if event.type in {"run.steer.requested", "run.steer.failed"}:
+    if event.type in {"run.steer.requested", "run.steer.failed", "run.steer.unknown"}:
         failed = event.type == "run.steer.failed"
+        unknown = event.type == "run.steer.unknown"
         return _item(
             event,
             kind="analysis",
             status="failed" if failed else "waiting",
-            title="补充说明未送达" if failed else "等待接收补充说明",
+            title=(
+                "补充接收状态待核对" if unknown
+                else "补充说明未送达" if failed else "等待接收补充说明"
+            ),
             summary=str(payload.get("text", "")),
             metadata=_metadata(request_id=payload.get("request_id"), error=payload.get("error")),
         )

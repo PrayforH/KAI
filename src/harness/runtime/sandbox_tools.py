@@ -303,6 +303,7 @@ def create_sandbox_tools_mcp_server(
     builtins: Iterable[str],
     *,
     image_aware: bool = False,
+    computer_workspace: bool = False,
 ) -> McpSdkServerConfig:
     """Proxy workspace builtins into the sandbox.
 
@@ -411,7 +412,10 @@ def create_sandbox_tools_mcp_server(
     tools = [
         create_sandbox_tool(
             builtin=builtin,
-            description=definitions[builtin][0],
+            description=(
+                definitions[builtin][0].replace("isolated workspace", "selected computer workspace")
+                if computer_workspace else definitions[builtin][0]
+            ),
             schema=definitions[builtin][1],
             executor=executor,
             image_aware=image_aware,

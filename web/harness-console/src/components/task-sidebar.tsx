@@ -14,6 +14,8 @@ import { AccountMenu } from "./account-menu";
 import { useAuth } from "./auth-provider";
 import { ProductBrandMark, ProductWordmark, PRODUCT_NAME } from "./product-brand";
 import { WorkspaceNavigation, type WorkspaceId } from "./workspace-navigation";
+import { BotRail } from "./bot-rail";
+import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
 import { useRunViewModel } from "../lib/activity-store";
 import { approvalStore } from "../lib/approval-store";
 import { useDialogFocus } from "../lib/use-dialog-focus";
@@ -103,6 +105,7 @@ const activeStatuses = new Set(["queued", "running", "waiting_approval", "cancel
 
 export function TaskSidebar({
   currentThreadId,
+  activeBotId = null,
   collapsed,
   overlayOpen = false,
   onToggle,
@@ -116,6 +119,7 @@ export function TaskSidebar({
   onProjectsChanged,
 }: {
   currentThreadId: string;
+  activeBotId?: string | null;
   collapsed: boolean;
   overlayOpen?: boolean;
   onToggle: () => void;
@@ -135,7 +139,8 @@ export function TaskSidebar({
   // Seed from the shared snapshot so navigating to a Studio page and back
   // (a fresh mount) renders the previous list immediately instead of
   // clearing it behind the loading state.
-  const [tasks, setTasks] = useState<TaskSummary[]>(() => peekCachedTasks() ?? []);
+  const [storedTasks, setTasks] = useState<TaskSummary[]>(() => peekCachedTasks() ?? []);
+  const tasks = useMemo(() => storedTasks.filter(task => task.thread_id !== PERSONAL_ASSISTANT_THREAD), [storedTasks]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(() => peekCachedTasks() === null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -153,7 +158,7 @@ export function TaskSidebar({
   const expandButtonRef = useRef<HTMLButtonElement>(null);
   const wasOverlayOpenRef = useRef(false);
   const runView = useRunViewModel();
-  const { user } = useAuth();
+  const { user, membership } = useAuth();
   const [expandedTaskGroups, setExpandedTaskGroups] = useSidebarGroups(user.user_id);
   const sectionId = useId();
   const projectsCollapsed = expandedTaskGroups.has("section:projects:collapsed");
@@ -565,6 +570,7 @@ export function TaskSidebar({
               visible={["knowledge", "agents", "automation", "skills"]}
             />
           </div>
+          {(activeNav === "assistant" || activeNav === "tasks") && <BotRail currentThreadId={currentThreadId} activeBotId={activeBotId} userId={user.user_id} tenantId={membership?.tenant_id} liveRun={runView} groupsState={[expandedTaskGroups, setExpandedTaskGroups]} />}
           <div className="task-list-toolbar task-project-toolbar">
             <div className="task-list-heading">
               <button type="button" className="task-section-toggle"

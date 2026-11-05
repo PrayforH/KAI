@@ -57,6 +57,7 @@ class ArtifactPublisher:
         max_file_bytes: int,
         observability: Observability | None = None,
         validate_generated_html: bool = False,
+        read_workspace_file: Callable[[str, int], Awaitable[bytes]] | None = None,
     ) -> None:
         if max_file_bytes < 1:
             raise ValueError("artifact size limit must be positive")
@@ -70,6 +71,7 @@ class ArtifactPublisher:
         self._max_file_bytes = max_file_bytes
         self._observability = observability
         self._validate_generated_html = validate_generated_html
+        self._read_workspace_file = read_workspace_file
 
     async def publish(
         self,
@@ -112,7 +114,50 @@ class ArtifactPublisher:
         if not path.strip() or relative.is_absolute() or ".." in relative.parts:
             raise ValueError("artifact path must stay within the run workspace")
 
-        await self._sync_workspace()
+        # Collection mirrors only changed files. Persistent computers also
+        # contain unchanged files from earlier turns, so explicit publication
+        # must read the requested file through the bounded sandbox file plane.
+        if self._read_workspace_file is not None:
+            content = await self._read_workspace_file(relative.as_posix(), self._max_file_bytes)
+            source_name = relative.name
+            if len(content) > self._max_file_bytes:
+                raise ValueError(f"artifact exceeds maximum size of {self._max_file_bytes} bytes")
+        else:
+            await self._sync_workspace()
+            resolved = self._local_file(relative)
+            content, source_name = resolved.read_bytes(), resolved.name
+
+        display_name = name.strip() if isinstance(name, str) else ""
+        source_suffix = PurePosixPath(source_name).suffix
+        if display_name and source_suffix and not PurePosixPath(display_name).suffix:
+            display_name = f"{display_name}{source_suffix}"
+        content_type = (
+            media_type or mimetypes.guess_type(source_name)[0] or "application/octet-stream"
+        )
+        if (
+            self._validate_generated_html
+            and content_type.split(";", 1)[0].strip().lower() == "text/html"
+        ):
+            await validate_html_document(content)
+        artifact = await self._artifacts.upload(
+            tenant_id=self._tenant_id,
+            run_id=self._run_id,
+            name=display_name or source_name,
+            media_type=content_type,
+            content=content,
+        )
+        payload = artifact.model_dump(mode="json")
+        payload["source_path"] = relative.as_posix()
+        await self._events.append(
+            tenant_id=self._tenant_id,
+            run_id=self._run_id,
+            session_id=self._session_id,
+            event_type="artifact.ready",
+            payload=payload,
+        )
+        return artifact
+
+    def _local_file(self, relative: PurePosixPath) -> Path:
         root = self._workspace.resolve()
         candidate = self._workspace.joinpath(*relative.parts)
         try:
@@ -127,36 +172,7 @@ class ArtifactPublisher:
         if size > self._max_file_bytes:
             raise ValueError(f"artifact exceeds maximum size of {self._max_file_bytes} bytes")
 
-        display_name = name.strip() if isinstance(name, str) else ""
-        source_suffix = PurePosixPath(resolved.name).suffix
-        if display_name and source_suffix and not PurePosixPath(display_name).suffix:
-            display_name = f"{display_name}{source_suffix}"
-        content = resolved.read_bytes()
-        content_type = (
-            media_type or mimetypes.guess_type(resolved.name)[0] or "application/octet-stream"
-        )
-        if (
-            self._validate_generated_html
-            and content_type.split(";", 1)[0].strip().lower() == "text/html"
-        ):
-            await validate_html_document(content)
-        artifact = await self._artifacts.upload(
-            tenant_id=self._tenant_id,
-            run_id=self._run_id,
-            name=display_name or resolved.name,
-            media_type=content_type,
-            content=content,
-        )
-        payload = artifact.model_dump(mode="json")
-        payload["source_path"] = relative.as_posix()
-        await self._events.append(
-            tenant_id=self._tenant_id,
-            run_id=self._run_id,
-            session_id=self._session_id,
-            event_type="artifact.ready",
-            payload=payload,
-        )
-        return artifact
+        return resolved
 
 
 _artifact_publisher: ContextVar[ArtifactPublisher | None] = ContextVar(

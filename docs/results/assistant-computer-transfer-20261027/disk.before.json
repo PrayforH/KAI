@@ -1,0 +1,22 @@
+[
+  {
+    "path": "/home/kai/workspace/computer-pilot/identity.txt",
+    "sha256": "bafc97c650b43ebc7a0c839322affd4b7de22cdf39f23c117be25b79c035770b",
+    "mtimeNs": 1793074299757011798
+  },
+  {
+    "path": "/home/kai/bin/kai79-pilot",
+    "sha256": "5729e5dcadfde6f03401999d921a53b25cf549c1c6c1ca928f76b5c03c1da834",
+    "mtimeNs": 1793074299762011875
+  },
+  {
+    "path": "/home/kai/workspace/outputs/computer-pilot-first.txt",
+    "sha256": "ecc423d6e9e859e05742753864db80c487decbba37c68b04503bee71e269978d",
+    "mtimeNs": 1793074299773012044
+  },
+  {
+    "path": "/home/kai/workspace/outputs/computer-pilot-second.txt",
+    "sha256": "a755469f56249201b7ac34dde0255a3674a338616fbd0037562f2eb778cc10c3",
+    "mtimeNs": 1793074440500179337
+  }
+]

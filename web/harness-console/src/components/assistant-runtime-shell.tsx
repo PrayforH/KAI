@@ -31,11 +31,15 @@ import { DurableHistorySync } from "./durable-history-sync";
 import { ThreadHistoryReadyProvider } from "./thread-history-ready";
 import { RunCancelProvider } from "./run-cancel-context";
 import { TaskModelProvider } from "./task-model-context";
+import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
+import { ReplySendContext, type ReplyReference } from "./reply-reference";
+import { useMentionHistoryUpdates } from "./assistant-mention-bar";
 
 
 export function AssistantRuntimeShell({
   threadId,
   localOnly = false,
+  conversationSurface = "task",
   agentName,
   agentVersion,
   agentOwnerUserId,
@@ -45,10 +49,12 @@ export function AssistantRuntimeShell({
   modelRoutes,
   modelRouteOverride,
   onModelRouteOverrideChange,
+  onHistoryReady,
   children,
 }: {
   threadId: string;
   localOnly?: boolean;
+  conversationSurface?: "assistant" | "task";
   agentName: string;
   agentVersion: string;
   agentOwnerUserId?: string;
@@ -59,6 +65,7 @@ export function AssistantRuntimeShell({
   modelRoutes: TaskModelRoute[];
   modelRouteOverride: string | null;
   onModelRouteOverrideChange: (routeId: string | null) => void;
+  onHistoryReady?: (threadId: string) => void;
   children: ReactNode;
 }) {
   const localOnlyRef = useRef(localOnly);
@@ -66,6 +73,12 @@ export function AssistantRuntimeShell({
   const runView = useRunViewModel();
   const [historyRevision, setHistoryRevision] = useState(0);
   const [historyReady, setHistoryReady] = useState(false);
+  const settleHistory = useCallback(() => {
+    setHistoryReady(true);
+    onHistoryReady?.(threadId);
+  }, [onHistoryReady, threadId]);
+  const historyRefreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(historyRefreshTimer.current), [threadId]);
   const [knowledgeReferences, setKnowledgeReferences] = useState<string[]>([]);
   const [loadedKnowledgeKey, setLoadedKnowledgeKey] = useState<string | null>(null);
   const knowledgeStorageKey = `harness:thread-knowledge:${threadId}`;
@@ -74,15 +87,17 @@ export function AssistantRuntimeShell({
   )?.id ?? null;
   const refreshDurableHistory = useCallback(() => {
     localOnlyRef.current = false;
-    invalidateThreadHistory(threadId);
     // Let the terminal live answer paint before reconciling the durable snapshot.
     // History remains the recovery source; this only moves its cache refresh off
     // the immediate terminal event path.
-    window.setTimeout(() => {
+    clearTimeout(historyRefreshTimer.current);
+    historyRefreshTimer.current = setTimeout(() => {
+      invalidateThreadHistory(threadId, { keepPages: conversationSurface === "assistant" });
       setHistoryRevision((current) => current + 1);
     }, 250);
-  }, [threadId]);
+  }, [threadId, conversationSurface]);
   const previousLocalOnly = useRef(localOnly);
+  useMentionHistoryUpdates(conversationSurface === "assistant" ? threadId : undefined, refreshDurableHistory);
   useEffect(() => {
     if (previousLocalOnly.current && !localOnly) refreshDurableHistory();
     previousLocalOnly.current = localOnly;
@@ -99,6 +114,7 @@ export function AssistantRuntimeShell({
       url: `/api/agui?${query.toString()}`,
       modelRouteOverride: conversationalModelRouteOverride,
       knowledgeReferences,
+      conversationSurface,
       onRunSucceeded: refreshDurableHistory,
     });
     next.threadId = threadId;
@@ -108,6 +124,7 @@ export function AssistantRuntimeShell({
     agentOwnerUserId,
     agentVersion,
     conversationalModelRouteOverride,
+    conversationSurface,
     knowledgeReferences,
     projectId,
     refreshDurableHistory,
@@ -124,7 +141,9 @@ export function AssistantRuntimeShell({
   const history = useMemo(
     () =>
       createThreadHistoryAdapter(threadId, {
-        isLocalOnly: () => localOnlyRef.current,
+        reuseInitialSnapshot: conversationSurface === "assistant",
+        // Feishu can create the personal conversation while this page is open.
+        isLocalOnly: () => localOnlyRef.current && threadId !== PERSONAL_ASSISTANT_THREAD,
         onActiveRun: (serverRunId) =>
           agentRef.current.adoptActiveRun(threadId, serverRunId),
       }),
@@ -181,12 +200,19 @@ export function AssistantRuntimeShell({
     onCancel: () => agent.cancelActiveRun(),
     onError: (error) => console.error("[Harness Console]", error),
   });
+  const sendReply = useCallback(
+    (reply: ReplyReference | null) => {
+      agent.setReplyTo(reply);
+    },
+    [agent],
+  );
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
+      <ReplySendContext.Provider value={sendReply}>
       <RunCancelProvider value={() => agent.cancelActiveRun()}>
       <ThreadHistoryReadyProvider value={historyReady}>
-      <DurableHistorySync threadId={threadId} revision={historyRevision} history={history} onSettled={() => setHistoryReady(true)} />
+      <DurableHistorySync threadId={threadId} revision={historyRevision} history={history} onSettled={settleHistory} />
       <TaskModelProvider
         routes={modelRoutes}
         agentDefaultRouteId={agentDefaultModelRoute}
@@ -206,7 +232,8 @@ export function AssistantRuntimeShell({
         </TaskKnowledgeProvider>
       </TaskModelProvider>
       </ThreadHistoryReadyProvider>
-    </RunCancelProvider>
+      </RunCancelProvider>
+      </ReplySendContext.Provider>
     </AssistantRuntimeProvider>
   );
 }

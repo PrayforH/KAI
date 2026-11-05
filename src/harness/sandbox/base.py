@@ -46,6 +46,13 @@ _SANDBOX_ENFORCEMENT_BY_PROVIDER: dict[str, SandboxEnforcement] = {
     # OpenSandbox on the gVisor runtime delegates the kernel boundary to the
     # provider; the platform only picks the image and the egress policy.
     "opensandbox": SandboxEnforcement.DELEGATED,
+    # Docker enforces the container boundary; this is not the full gVisor /
+    # network-policy tier, nor an assertion of VM isolation.
+    "docker-computer": SandboxEnforcement.DELEGATED,
+    # The VM provider reuses the same in-guest supervisor fence as Docker
+    # computers; the hypervisor boundary is not claimed as platform isolation.
+    "vm-computer": SandboxEnforcement.DELEGATED,
+    "remote-computer": SandboxEnforcement.DELEGATED,
 }
 
 
@@ -123,6 +130,7 @@ class SandboxHandle(BaseModel):
         default=None, exclude=True, repr=False
     )
     deferred_tool_execution: bool = Field(default=False, exclude=True)
+    persistent_workspace: bool = Field(default=False, exclude=True)
 
 
 class SandboxEgress(BaseModel):

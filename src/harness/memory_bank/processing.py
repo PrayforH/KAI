@@ -63,13 +63,18 @@ class MemoryProcessingController:
                     if run.input.get("eval_run_id") or session.environment == "preview"
                     else "pending"
                 )
+                # 读取与写入必须同 scope：职责线程的自动提取也落在
+                # specialist:{slug}，否则 specialist 会话读不到自己写下的记忆。
+                scope = await self._bank.repository.resolve_session_scope(
+                    run.tenant_id, session.session_id
+                )
                 await db.execute(
                     insert(j)
                     .values(
                         tenant_id=run.tenant_id,
                         run_id=run.run_id,
                         user_id=session.user_id,
-                        agent_name=session.agent_name,
+                        agent_name=scope or session.agent_name,
                         agent_owner_user_id=session.resolved_agent_owner_user_id,
                         session_id=session.session_id,
                         status=status,

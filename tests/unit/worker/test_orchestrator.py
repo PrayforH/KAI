@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
@@ -1076,6 +1077,69 @@ async def test_workspace_outputs_skip_paths_already_published_by_runtime(
     assert completed.status is RunStatus.SUCCEEDED
     assert len(artifact_events) == 1
     assert artifact_events[0].payload["artifact_id"] == "artifact-runtime"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("published_name", "published_content", "published_media_type", "expected_count"),
+    [
+        ("report.md", b"verified output", "text/markdown", 1),
+        ("other.md", b"verified output", "text/markdown", 2),
+        ("report.md", b"previous version", "text/markdown", 2),
+        ("report.md", b"verified output", "text/plain", 2),
+    ],
+)
+async def test_collected_copy_reuses_only_the_same_named_typed_content(
+    tmp_path: Path,
+    published_name: str,
+    published_content: bytes,
+    published_media_type: str,
+    expected_count: int,
+) -> None:
+    orchestrator, _, _, events = await arrange(
+        tmp_path, runtime_override=WorkspaceOutputRuntime(), enable_artifacts=True,
+    )
+    await orchestrator._events.append(
+        tenant_id="tenant-a", run_id="run-1", session_id="session-1",
+        event_type="artifact.ready",
+        payload={
+            "artifact_id": "artifact-explicit",
+            "name": published_name,
+            "media_type": published_media_type,
+            "sha256": hashlib.sha256(published_content).hexdigest(),
+            "source_path": "report.md",
+        },
+    )
+
+    completed = await orchestrator.execute("tenant-a", "run-1")
+    recorded = await events.list_after("tenant-a", "run-1", 0)
+
+    assert completed.status is RunStatus.SUCCEEDED
+    assert len([event for event in recorded if event.type == "artifact.ready"]) == expected_count
+
+
+@pytest.mark.asyncio
+async def test_root_and_outputs_copies_publish_one_deliverable(tmp_path: Path) -> None:
+    class CopiedOutputRuntime(FakeRuntime):
+        async def execute(self, context: RuntimeContext) -> AsyncIterator[RuntimeEvent]:
+            output = context.workspace / "outputs"
+            output.mkdir()
+            (output / "report.md").write_text("same deliverable")
+            (context.workspace / "report.md").write_text("same deliverable")
+            yield RuntimeEvent(type="message.start")
+            yield RuntimeEvent(type="message.delta", payload={"text": "结果：`report.md`"})
+            yield RuntimeEvent(type="message.completed")
+
+    orchestrator, _, _, events = await arrange(
+        tmp_path, runtime_override=CopiedOutputRuntime(), enable_artifacts=True,
+    )
+    completed = await orchestrator.execute("tenant-a", "run-1")
+    recorded = await events.list_after("tenant-a", "run-1", 0)
+    artifacts = [event for event in recorded if event.type == "artifact.ready"]
+
+    assert completed.status is RunStatus.SUCCEEDED
+    assert len(artifacts) == 1
+    assert artifacts[0].payload["source_path"] == "report.md"
 
 
 @pytest.mark.asyncio
@@ -2271,6 +2335,89 @@ async def test_sandbox_event_reports_a_met_floor_for_a_clean_session(
 
 
 @pytest.mark.asyncio
+async def test_a_zombie_lease_from_a_terminal_run_self_heals(tmp_path: Path) -> None:
+    """run 已终态 + lease 仍 live：新 Run 不再秒失败，回收并留观测事件。"""
+
+    leases = SandboxLeaseService(
+        InMemorySandboxLeaseRepository(),
+        clock=lambda: NOW,
+        id_generator=ids(),
+    )
+    orchestrator, _, runs, event_repository = await arrange(tmp_path, sandbox_leases=leases)
+    # 前一个 Run 已取消，但其租约没释放（Worker 崩溃/重启留下的僵尸）。
+    await runs.add(
+        Run(
+            run_id="run-0",
+            session_id="session-1",
+            tenant_id="tenant-a",
+            status=RunStatus.CANCELLED,
+            idempotency_key="idem-0",
+            created_at=NOW,
+            updated_at=NOW,
+            input={"prompt": "earlier"},
+        )
+    )
+    await leases.acquire(
+        tenant_id="tenant-a",
+        session_id="session-1",
+        run_id="run-0",
+        owner="run-fence:0",
+        provider="local",
+        sandbox_id="sandbox-stale",
+    )
+
+    result = await orchestrator.execute("tenant-a", "run-1")
+
+    assert result.status is RunStatus.SUCCEEDED
+    events = await event_repository.list_after("tenant-a", "run-1", 0)
+    reconciled = next(e for e in events if e.type == "sandbox.lease.reconciled")
+    assert reconciled.payload["released_run_id"] == "run-0"
+    stored = await leases.for_run("tenant-a", "run-0")
+    assert stored is not None and stored.state.value == "released"
+
+
+@pytest.mark.asyncio
+async def test_a_live_run_lease_still_blocks_the_session(tmp_path: Path) -> None:
+    """终态外的 live lease 不得被回收：新 Run 照常失败，原租约保持 active。"""
+
+    leases = SandboxLeaseService(
+        InMemorySandboxLeaseRepository(),
+        clock=lambda: NOW,
+        id_generator=ids(),
+    )
+    orchestrator, _, runs, event_repository = await arrange(tmp_path, sandbox_leases=leases)
+    await runs.add(
+        Run(
+            run_id="run-0",
+            session_id="session-1",
+            tenant_id="tenant-a",
+            status=RunStatus.RUNNING,
+            idempotency_key="idem-0",
+            created_at=NOW,
+            updated_at=NOW,
+            input={"prompt": "earlier"},
+        )
+    )
+    await leases.acquire(
+        tenant_id="tenant-a",
+        session_id="session-1",
+        run_id="run-0",
+        owner="run-fence:0",
+        provider="local",
+        sandbox_id="sandbox-stale",
+    )
+
+    result = await orchestrator.execute("tenant-a", "run-1")
+
+    assert result.status is RunStatus.FAILED
+    assert "live sandbox lease" in (result.error_code or "") or result.error_code
+    events = await event_repository.list_after("tenant-a", "run-1", 0)
+    assert not any(e.type == "sandbox.lease.reconciled" for e in events)
+    stored = await leases.for_run("tenant-a", "run-0")
+    assert stored is not None and stored.state.value == "active"
+
+
+@pytest.mark.asyncio
 async def test_run_acquires_reports_and_releases_a_sandbox_lease(tmp_path: Path) -> None:
     """Ownership is durable for the Run and released once its sandbox is gone."""
 
@@ -2392,3 +2539,25 @@ async def test_planner_provider_failure_preserves_runtime_execution(tmp_path: Pa
         if e.type == "presentation.intent"
     )
     assert event.payload["status"] == "fallback"
+
+
+@pytest.mark.asyncio
+async def test_assistant_chat_owns_progress_without_a_serial_display_model(tmp_path: Path):
+    from unittest.mock import AsyncMock, Mock
+
+    planner = Mock()
+    planner.model = "test-display-model"
+    planner.plan = AsyncMock(side_effect=AssertionError("chat must not wait for UI classification"))
+    runtime = CapturingRuntime()
+    orchestrator, _, runs, _ = await arrange(
+        tmp_path, runtime_override=runtime, interaction_planner=planner,
+    )
+    run = await runs.get("tenant-a", "run-1")
+    chat = run.model_copy(update={"input": {**run.input, "conversation_surface": "assistant"}})
+    guidance = await orchestrator._interaction_guidance(chat)  # pyright: ignore[reportPrivateUsage]
+    assert guidance == ""
+    planner.plan.assert_not_awaited()
+    # The same historical thread, opened as a task, keeps the old planning path.
+    planner.plan = AsyncMock(return_value=None)
+    assert await orchestrator._interaction_guidance(run) == ""  # pyright: ignore[reportPrivateUsage]
+    planner.plan.assert_awaited_once()

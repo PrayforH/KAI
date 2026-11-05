@@ -1,10 +1,13 @@
 "use client";
+import { assistantChatReplies, assistantChatMessages, publicChatText } from "../lib/assistant-chat";
+import { AssistantChatTime } from "./assistant-chat-time";
 import { responseTextForDisplay } from "../lib/process-response";
 import { sendComposerWithRecovery } from "../lib/composer-send";
 import { TerminalResponseNotice } from "./terminal-response-notice";
+import { BotRunNotice } from "./bot-run-notice";
 import { TurnCompletionControl } from "./turn-completion";
 import { FollowupInputPlacement } from "./followup-input-placement";
-import { latestConversationInput } from "../lib/conversation-input";
+import { conversationInputDisplay, conversationInputIntro, latestConversationInput } from "../lib/conversation-input";
 import { useConversationScope } from "../lib/conversation-scope";
 import { type TaskSummary, createThreadHistoryAdapter, useAutoLoadEarlierMessages, useThreadHistoryPagination } from "../lib/task-history";
 import { startSteeringPolling } from "../lib/steering-poller";
@@ -49,15 +52,47 @@ import { ConversationThread } from "./conversation-thread";
 import { ConversationIndex } from "./conversation-index";
 import { useRunCancel } from "./run-cancel-context";
 import { PromptQueue } from "./prompt-queue";
+import { useRetainedPromptRecovery } from "./use-retained-prompt-recovery";
+import { SteeringUserMessage } from "./steering-user-message";
 import { useFollowUpPreference } from "../lib/interface-preferences";
 import { useConversationRedactor } from "./conversation-redaction";
 import { SentUserContent } from "./sent-user-content";
 import { ConversationInput } from "./conversation-input";
 import { groupWorkspaceFiles } from "../lib/workspace-file-groups";
+import { setPendingReply } from "../lib/reply-references";
+import { loadComposerReplyDraft, persistComposerReplyDraft } from "../lib/task-composer-draft";
+import { useAssistantBot, useAssistantSurface } from "./assistant-bot-context";
+import { AssistantConversationTail } from "./assistant-conversation-tail";
+import { HandoverInlineRows, shouldShowHandoverRows } from "./handover-row";
+import {
+  MENTION_PREFIX,
+  deliverMentions,
+  mentionIdempotencyKey,
+  parseMentions,
+  removeMentionTokens,
+  useMentionableAssistants,
+} from "../lib/bot-mentions";
+import { handoverStore } from "../lib/handover-store";
+import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
+import { assistantRequest } from "../lib/assistant-client";
+import {
+  ComposerReplyProvider,
+  MessageReplyButton,
+  ReplyComposerBar,
+  ReplySendContext,
+  UserReplyHeader,
+  replyAwareComposerPlaceholder,
+  useComposerReply,
+  type ReplyReference,
+} from "./reply-reference";
 import { ActivitySummary } from "./activity-summary";
 import { TaskAgentSwitcher } from "./task-agent-switcher";
 import { ApprovalCard, type ApprovalDetails } from "./approval-card";
 import { ArtifactCard, isImageArtifact, type ArtifactDetails } from "./artifact-list";
+import { AssistantResults } from "./assistant-results";
+import { assistantControlSummary } from "../lib/assistant-control-receipt";
+import { assistantCopy, assistantPresentation, compactAssistantProgress, compactAssistantReceipt } from "../lib/assistant-copy";
+import { AssistantNoticeSource, noticeExchangeForMessage, noticeSource } from "./assistant-notice-source";
 import { replyWebImages } from "../lib/reply-web-images";
 import { ReplyWebImages } from "./reply-web-images";
 import { ReplyArtifactImages } from "./reply-artifact-images";
@@ -100,7 +135,11 @@ import {
   useRunStream,
 } from "../lib/run-stream-store";
 import { AUTHORING_PROGRESS_PART_NAME, AuthoringProgressPart } from "./authoring-progress";
-import { normalizeMessageText } from "../lib/message-text";
+import {
+  collapseRepeatedAssistantText,
+  isDuplicateAssistantReply,
+  normalizeMessageText,
+} from "../lib/message-text";
 import { inputArtifactIdFromAttachment } from "../lib/input-attachment-adapter";
 import type { TaskAgent } from "../lib/task-agent-catalog";
 import {
@@ -119,7 +158,7 @@ import {
   TaskKnowledgeSelection,
   useTaskKnowledge,
 } from "./task-knowledge-context";
-import { composerTrigger, queueAttachments, queueMayDispatch, restorePromptQueue, type QueuedPrompt } from "../lib/composer-interactions";
+import { composerTrigger, queueAttachments, queueMayDispatch, releaseUncertainSends, restorePromptQueue, settleAssistantFollowup, nextQueuedPrompt, nextSteeringPrompt, reconcilePromptHistory, type QueuedPrompt } from "../lib/composer-interactions";
 
 import { writeTextToClipboard } from "../lib/clipboard";
 import { CodexResponseIcon } from "./codex-response-icon";
@@ -132,7 +171,7 @@ import {
   type PresentationActionHandler,
 } from "./intelligent-ui/presentation-host";
 import { submitUiAction } from "./intelligent-ui/client";
-import { modelBlockSources, presentationsForMessage } from "./intelligent-ui/schema";
+import { modelBlockSources, presentationsForMessage, stripHarnessUiFences } from "./intelligent-ui/schema";
 import { PublishedBlocksProvider } from "./intelligent-ui/turn-context";
 import { hasPendingProjectTaskLaunch, consumeProjectTaskLaunch } from "../lib/project-task-launch";
 import { useProjectTaskLaunch } from "./use-project-task-launch";
@@ -308,6 +347,10 @@ function MessageFeedbackButtons({ runId }: { runId?: string }) {
 function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const conversationScope = useConversationScope();
   const aui = useAui();
+  const replyScope = useComposerReply();
+  const sendReply = useContext(ReplySendContext);
+  const botScope = useAssistantBot();
+  const assistantSurface = useAssistantSurface();
   const { routes, overrideRouteId } = useTaskModel();
   const threadRunning = useAuiState((state) => state.thread.isRunning);
   const threadLoading = useAuiState((state) => state.thread.isLoading);
@@ -329,6 +372,19 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const projectLaunchScope = useContext(ComposerDraftContext);
   const projectLaunchReady = useThreadHistoryReady();
   useTaskComposerSnapshot(projectLaunchReady && !threadLoading && !agentSelection.loading ? projectLaunchScope : null);
+  const replyDraftScope = projectLaunchReady && !threadLoading && !agentSelection.loading ? projectLaunchScope : null;
+  useEffect(() => {
+    // Refresh restores the draft together with its still-valid reference.
+    if (!replyDraftScope || !replyScope) return;
+    const draft = loadComposerReplyDraft(localStorage, replyDraftScope.userId, replyDraftScope.threadId);
+    if (draft && !replyScope.reply) replyScope.startReply(draft);
+    // Restores once per composer mount; later changes persist below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [replyDraftScope]);
+  useEffect(() => {
+    if (!replyDraftScope || !replyScope) return;
+    persistComposerReplyDraft(localStorage, replyDraftScope.userId, replyDraftScope.threadId, replyScope.reply);
+  }, [replyDraftScope, replyScope?.reply]);
   useEffect(() => {
     if (!activeSkillLaunch) {
       seededSkillLaunchRef.current = null;
@@ -377,8 +433,14 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const scope = useContext(ComposerDraftContext);
   const queueKey = scope ? `harness:prompt-queue:${scope.userId}:${scope.threadId}` : null;
   const [queue, setQueue] = useState<QueuedPrompt[]>([]);
-  const [followUpBehavior] = useFollowUpPreference();
+  const [taskFollowUpBehavior] = useFollowUpPreference();
+  const followUpBehavior = assistantSurface ? "steer" : taskFollowUpBehavior;
   const [queueLoaded, setQueueLoaded] = useState(false);
+  useRetainedPromptRecovery({enabled: assistantSurface && queueLoaded && projectLaunchReady,
+    scopeKey: queueKey, items: queue, onAccepted: ids => {
+      setQueue(items => items.filter(item => !ids.has(item.id)));
+      setSteeringIds(idsInFlight => idsInFlight.filter(id => !ids.has(id)));
+    }});
   const [queuePaused, setQueuePaused] = useState(false);
   const [inputError, setInputError] = useState("");
   const [voiceActive, setVoiceActive] = useState(false);
@@ -394,12 +456,22 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const [stopPending, setStopPending] = useState(false);
   const stopInFlight = useRef(false);
   const steeringSentAt = useRef<Record<string, number>>({});
-  const steeringRunId = queue.find((item) => item.steerRunId)?.steerRunId ?? runView?.runId;
+  const steeringInFlight = useRef(new Set<string>());
+  const [steeringDispatchVersion, setSteeringDispatchVersion] = useState(0);
+  const steeringRunId = queue.find((item) => item.steerRunId && steeringIds.includes(item.id))?.steerRunId ?? runView?.runId;
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
   const voiceComposer = useDictationComposer(inputRef, () => aui.composer().getState().text,
     (text) => aui.composer().setText(text), composingRef);
   const knowledge = useTaskKnowledge();
+  // @ 候选只出现在助理面：普通任务与项目任务保持原来的输入行为。
+  const mentionableAssistants = useMentionableAssistants(assistantSurface);
+  // 和普通聊天一样：@ 名字直接写在文本行里，可以有多个；
+  // 提及从输入文本里解析出来，删掉文字提及就跟着消失。
+  const mentions = useMemo(
+    () => parseMentions(composerText, mentionableAssistants),
+    [composerText, mentionableAssistants],
+  );
   const [wikiSlug, setWikiSlug] = useState<string | null>(null);
   useEffect(() => {
     const onOpenWiki = (event: Event) => {
@@ -412,7 +484,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const options = dismissedText === composerText ? [] : composerOptions(
     composerText,
     caret,
-    agentSelection.agents,
+    assistantSurface ? mentionableAssistants : [],
     agentSelection.selected?.skills,
     conversationScope ? [] : knowledge.available,
     knowledge.selected,
@@ -424,7 +496,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       const saved = restorePromptQueue(localStorage.getItem(queueKey));
       setQueue(saved);
       setSteeringIds(saved.filter((item) => item.steerRunId).map((item) => item.id));
-      setQueuePaused(saved.length > 0);
+      setQueuePaused(!assistantSurface && saved.length > 0);
     } catch { setQueue([]); }
     setQueueLoaded(true);
   }, [queueKey]);
@@ -432,21 +504,40 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     if (!queueLoaded || !queueKey) return;
     try { localStorage.setItem(queueKey, JSON.stringify(queue)); } catch { /* Keep the in-memory queue. */ }
   }, [queue, queueKey, queueLoaded]);
+  useEffect(() => {
+    if (!assistantSurface) return;
+    setQueue(items => {
+      if (!items.some(item => item.receipt || item.steerRunId)) return items;
+      const activities = messages.flatMap(message => message.content.flatMap(part => {
+        if (part.type !== "tool-call" || part.toolName !== "harness_run_activity") return [];
+        const parsed = runActivitySchema.safeParse(part.args.activity);
+        return parsed.success ? [parsed.data] : [];
+      }));
+      return reconcilePromptHistory(items, activities);
+    });
+  }, [assistantSurface, messages]);
+  // Nothing is running: an uncertain send has nowhere left to be reconciled
+  // against, so it goes out as its own turn rather than waiting for a resend.
+  useEffect(() => {
+    if (!assistantSurface || !queueLoaded || busy) return;
+    setQueue(items => releaseUncertainSends(items));
+  }, [assistantSurface, queueLoaded, busy]);
   useEffect(() => { setSuggestionIndex(0); }, [composerText]);
   const terminalRun = useRef("");
   useEffect(() => {
-    if (!runView || !["failed", "rejected", "cancelled"].includes(runView.phase) || terminalRun.current === runView.runId) return;
+    if (assistantSurface || !runView || !["failed", "rejected", "cancelled"].includes(runView.phase) || terminalRun.current === runView.runId) return;
     terminalRun.current = runView.runId;
     setQueuePaused(true);
-  }, [runView?.runId, runView?.phase]);
+  }, [assistantSurface, runView?.runId, runView?.phase]);
   useEffect(() => {
     if (busy) { dispatching.current = false; return; }
     if (!queueLoaded || steeringIds.length > 0 || !queue.length || dispatching.current || !queueMayDispatch(busy, queuePaused, runView?.phase)) return;
+    if (assistantSurface && !nextQueuedPrompt(queue)) return;
     // Allow terminal-state effects and durable history synchronization to settle.
     const timer = window.setTimeout(() => {
       if (threadRuntime.getState().isRunning || dispatching.current) return;
       dispatching.current = true;
-      const next = queue[0];
+      const next = assistantSurface ? nextQueuedPrompt(queue)! : queue[0];
       try {
         threadRuntime.append({ role: "user", content: [{ type: "text", text: next.text }], attachments: next.attachments });
         setQueue((current) => current.filter((item) => item.id !== next.id));
@@ -457,7 +548,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       }
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [busy, queue, queueLoaded, queuePaused, runView?.phase, steeringIds, threadRuntime]);
+  }, [assistantSurface, busy, queue, queueLoaded, queuePaused, runView?.phase, steeringIds, threadRuntime]);
   function command(value: string) {
     if (value === "/stop") { void stopRun(); }
     else if (value === "/files") {if (conversationScope) conversationScope.onOpenFiles();else window.dispatchEvent(new Event("harness:open-files"));}
@@ -473,6 +564,18 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     const trigger = composerTrigger(composerText, caret);
     if (!trigger) return;
     if (option.id.startsWith("/")) { command(option.id); return; }
+    // `@` 先选助理：名字直接留在文本行里（和普通聊天一样），只是插入，不提交。
+    if (trigger.symbol === "@" && option.id.startsWith(MENTION_PREFIX)) {
+      const specialistId = option.id.slice(MENTION_PREFIX.length);
+      const bot = mentionableAssistants.find((item) => item.specialistId === specialistId);
+      if (!bot || busy) return;
+      const next = composerText.slice(0, trigger.start) + `@${bot.name} ` + composerText.slice(trigger.end);
+      aui.composer().setText(next);
+      setDismissedText(next);
+      setCaret(trigger.start + bot.name.length + 2);
+      inputRef.current?.focus();
+      return;
+    }
     // `@` selects knowledge bases for this thread; the mention text is removed
     // and the picker stays open so several bases can be toggled in a row.
     if (trigger.symbol === "@") {
@@ -496,26 +599,34 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     if (!composerText.trim() && !composerAttachments.length) return;
     if (queue.length >= 50) { setInputError("队列已满，请先处理或删除部分消息。"); return; }
     try {
-      const next: QueuedPrompt = { id: createRandomId(), text: composerText.trim(), attachments: queueAttachments(composerAttachments) };
+      const next: QueuedPrompt = { id: createRandomId(), text: composerText.trim(), attachments: queueAttachments(composerAttachments),
+        ...(assistantSurface ? { intent: steer ? "steer" as const : "next" as const } : {}) };
       setQueue((current) => [...current, next]);
+      if (assistantSurface) setQueuePaused(false);
       setInputError("");
       aui.composer().setText("");
       await threadRuntime.composer.clearAttachments();
-      if (steer && !next.attachments.length) await guide(next);
+      if (steer && !next.attachments.length && !assistantSurface) await guide(next);
 
     } catch (error) { setInputError(error instanceof Error ? error.message : "无法加入队列"); }
   }
-  const hasPendingSteering = steeringIds.length > 0;
-  const steeringContext = useRef({ runId: runView?.runId, busy, steeringIds });
-  steeringContext.current = { runId: runView?.runId, busy, steeringIds };
+  const steeringContext = useRef({ runId: runView?.runId, busy, steeringIds, queue });
+  steeringContext.current = { runId: runView?.runId, busy, steeringIds, queue };
   useEffect(() => {
-    if (!steeringRunId || (!busy && !hasPendingSteering)) { setSteerAvailable(false); return; }
+    if (!steeringRunId || !busy) {
+      setSteerAvailable(false);
+      // Nothing is running to reconcile against; stale in-flight markers would
+      // block the queued dispatch and resend forever once the run is over.
+      if (!busy) setSteeringIds((ids) => (ids.length ? [] : ids));
+      return;
+    }
     let available = false;
     return startSteeringPolling({
       runId: steeringRunId,
       shouldPoll: () => (steeringContext.current.busy && !available) || steeringContext.current.steeringIds.length > 0,
       onState: (state) => {
-        const steeringIds = steeringContext.current.steeringIds;
+        const steeringIds = steeringContext.current.steeringIds.filter(id =>
+          steeringContext.current.queue.some(item => item.id === id && item.steerRunId === steeringRunId));
         available = state.available;
         setSteerAvailable(state.available && steeringRunId === steeringContext.current.runId);
         for (const id of steeringIds) {
@@ -524,8 +635,12 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
           if (Date.now() - steeringSentAt.current[id] > 10_000) {
             setSteeringIds((ids) => ids.filter((value) => value !== id));
             setQueue((items) => items.map((entry) => entry.id === id ? { ...entry, steerRunId: undefined } : entry));
-            setQueuePaused(true);
-            setInputError("未查到引导接收记录，内容已保留，可再次点击引导核对。");
+            if (assistantSurface) {
+              setQueue((items) => items.map(entry => entry.id === id ? { ...entry, steerRunId: steeringRunId, receipt: "unknown" } : entry));
+            } else {
+              setQueuePaused(true);
+              setInputError("未查到引导接收记录，内容已保留，可再次点击引导核对。");
+            }
           }
         }
         for (const item of state.requests) {
@@ -536,28 +651,45 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
             setSteeringNotice("");
           } else if (["failed", "not_delivered", "unknown"].includes(item.status)) {
             setSteeringIds((ids) => ids.filter((id) => id !== item.request_id));
-            setQueuePaused(true);
-            setQueue((items) => items.map((entry) => entry.id === item.request_id ? { ...entry, steerRunId: undefined } : entry));
-            setInputError(item.status === "unknown" ? "引导接收状态不确定，请先查看回复再决定是否重发。" : item.error || "运行已经结束，补充仍保留在队列中。");
+            if (assistantSurface) {
+              setQueue(items => items.flatMap(entry => {
+                if (entry.id !== item.request_id) return [entry];
+                const next = settleAssistantFollowup(entry, item.status);
+                return next ? [next] : [];
+              }));
+              if (item.status === "not_delivered") setQueuePaused(false);
+            } else {
+              setQueuePaused(true);
+              setQueue((items) => items.map((entry) => entry.id === item.request_id ? { ...entry, steerRunId: undefined } : entry));
+              setInputError(item.status === "unknown" ? "引导接收状态不确定，请先查看回复再决定是否重发。" : item.error || "运行已经结束，补充仍保留在队列中。");
+            }
           }
         }
       },
       onError: () => {
         setSteerAvailable(false);
         if (steeringContext.current.steeringIds.length) {
-          setQueuePaused(true);
-          setInputError("暂时无法核对引导状态；补充已保留，请刷新后核对，避免重复发送。");
+          if (assistantSurface) {
+            const pending = steeringContext.current.steeringIds.filter(id =>
+              steeringContext.current.queue.some(item => item.id === id && item.steerRunId === steeringRunId));
+            setQueue(items => items.map(item => pending.includes(item.id) ? { ...item, receipt: "unknown" } : item));
+            setSteeringIds(ids => ids.filter(id => !pending.includes(id)));
+          } else {
+            setQueuePaused(true);
+            setInputError("暂时无法核对引导状态；补充已保留，请刷新后核对，避免重复发送。");
+          }
         }
       },
     });
-  }, [steeringRunId, busy, hasPendingSteering]);
+  }, [steeringRunId, busy, assistantSurface]);
 
   async function guide(item: QueuedPrompt) {
-    if (!runView?.runId || steeringIds.includes(item.id)) return;
+    if (!runView?.runId || steeringIds.includes(item.id) || steeringInFlight.current.has(item.id)) return;
     if (item.attachments.length) { setInputError("带附件的补充请加入队列；实时引导目前支持文本。"); return; }
+    steeringInFlight.current.add(item.id);
     setSteeringIds((ids) => [...ids, item.id]);
     steeringSentAt.current[item.id] = Date.now();
-    setQueue((items) => items.map((entry) => entry.id === item.id ? { ...entry, steerRunId: runView.runId } : entry));
+    setQueue((items) => items.map((entry) => entry.id === item.id ? { ...entry, steerRunId: runView.runId, receipt: undefined } : entry));
     setInputError("");
     setSteeringNotice("");
     try {
@@ -565,13 +697,32 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request_id: item.id, text: item.text }),
       }));
       if (!response.ok) {
-        setQueuePaused(true);
         setSteeringIds((ids) => ids.filter((id) => id !== item.id));
-        setQueue((items) => items.map((entry) => entry.id === item.id ? { ...entry, steerRunId: undefined } : entry));
-        setInputError("当前运行无法接收引导，内容仍保留在队列中。");
+        if (assistantSurface) {
+          const receipt = response.status === 409 ? "not_delivered" : response.status < 500 ? "failed" : "unknown";
+          setQueue(items => items.map(entry => entry.id === item.id ? settleAssistantFollowup(entry, receipt)! : entry));
+          if (receipt === "not_delivered") setQueuePaused(false);
+        } else {
+          setQueuePaused(true);
+          setQueue((items) => items.map((entry) => entry.id === item.id ? { ...entry, steerRunId: undefined } : entry));
+          setInputError("当前运行无法接收引导，内容仍保留在队列中。");
+        }
       }
-    } catch { setInputError("引导请求状态待确认，正在核对接收结果；请勿重复发送。"); }
+    } catch { if (!assistantSurface) setInputError("引导请求状态待确认，正在核对接收结果；请勿重复发送。"); }
+    finally {
+      steeringInFlight.current.delete(item.id);
+      setSteeringDispatchVersion(version => version + 1);
+    }
   }
+  // Startup may not have a steering channel yet. Keep each sent message visible
+  // and deliver it once the current run is ready, rather than failing a 409.
+  useEffect(() => {
+    if (!assistantSurface || !busy || !steerAvailable || queuePaused) return;
+    const next = nextSteeringPrompt(queue, steeringIds);
+    // Serialize transport writes, not acknowledgement waits. Each following
+    // message can be submitted as soon as the previous POST completes.
+    if (next && steeringInFlight.current.size === 0) void guide(next);
+  }, [assistantSurface, busy, steerAvailable, queuePaused, queue, steeringIds, steeringDispatchVersion]);
   useEffect(() => {
     if (queueLoaded && queue.length === 0 && steeringIds.length === 0) setQueuePaused(false);
   }, [queueLoaded, queue.length, steeringIds.length]);
@@ -605,19 +756,82 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     }
   }
   const composerSendLock = useRef(false);
+  function sendComposerReply() {
+    if (!replyScope?.reply) return;
+    sendReply(replyScope.reply);
+    setPendingReply(replyScope.threadId, replyScope.reply);
+    replyScope.cancelReply();
+  }
+  const mentionKeyRef = useRef<string | null>(null);
+  /** 投递给被 @ 的助理：服务端复用 AG-UI 执行，并关联当前会话的回执与返回结果。 */
+  async function sendMentions() {
+    if (composerSendLock.current) return;
+    composerSendLock.current = true;
+    setInputError("");
+    const key = mentionKeyRef.current ?? mentionIdempotencyKey();
+    mentionKeyRef.current = key;
+    const text = composerText.trim();
+    const sourceThreadId = replyScope?.threadId ?? botScope?.threadId ?? PERSONAL_ASSISTANT_THREAD;
+    const { delivered, failed } = await deliverMentions(mentions, text, async (bot, body) => {
+      const receipt = await assistantRequest<{
+        handoverId: string; runId: string; sourceThreadId: string;
+        targetThreadId: string; createdAt: string;
+      }>(
+        `specialists/${encodeURIComponent(bot.specialistId)}/messages`,
+        "POST",
+        { text: body, sourceThreadId, ...(overrideRouteId ? { modelRoute: overrideRouteId } : {}) },
+        key,
+      );
+      handoverStore.ingestMention({
+        handoverId: receipt.handoverId,
+        specialistId: bot.specialistId,
+        specialistName: bot.name,
+        sourceThreadId: receipt.sourceThreadId,
+        targetThreadId: receipt.targetThreadId,
+        runId: receipt.runId,
+        createdAt: receipt.createdAt,
+        text: body,
+      });
+    });
+    if (failed.length) {
+      // 已送达的 @ 名字从文本里拿掉，失败的留在行里，改完可以再发一次。
+      const deliveredBots = mentions.filter((item) => delivered.includes(item.specialistId));
+      aui.composer().setText(removeMentionTokens(composerText, deliveredBots));
+      setInputError(
+        failed.map((entry) => `${entry.reason}`).join("\n") +
+        (delivered.length ? `\n已送达 ${delivered.length} 个助理。` : ""),
+      );
+      composerSendLock.current = false;
+      return;
+    }
+    mentionKeyRef.current = null;
+    aui.composer().setText("");
+    // 消息已经投给被 @ 的助理：当前会话里的引用就此作废，
+    // 不能在下一条消息里又挂上那条被引用的内容。
+    replyScope?.cancelReply();
+    onSubmitted?.();
+    composerSendLock.current = false;
+  }
+
   async function submitComposer(alternate = false) {
     if (voiceActive || followupVoiceActive) return;
     if (projectLaunchScope) consumeProjectTaskLaunch(projectLaunchScope.userId, projectLaunchScope.threadId);
     if (command(composerText.trim())) return;
     if (videoRoute) { void generateVideo(); return; }
+    // 明确 @了某个助理：点发送才投递给它（消息或工作），当前会话不重复收这份消息。
+    if (assistantSurface && mentions.length) {
+      await sendMentions();
+      return;
+    }
     if (busy || queue.length) {
-      const steer = alternate ? followUpBehavior !== "steer" : followUpBehavior === "steer";
+      const steer = assistantSurface || (alternate ? followUpBehavior !== "steer" : followUpBehavior === "steer");
       void enqueue(busy && steer); return;
     }
     if (composerSendLock.current) return;
     composerSendLock.current = true;
     setInputError("");
     try {
+      sendComposerReply();
       const error = await sendComposerWithRecovery(threadRuntime.composer);
       if (error) setInputError(error);
       else onSubmitted?.();
@@ -803,8 +1017,9 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
           ) : null}
         </>
       ) : null}
-      <PromptQueue items={queue.filter(item => !item.steerRunId || !runView?.items.some(event =>
-        ["run.steer.requested", "run.steer.accepted"].includes(event.event_type) && event.metadata.request_id === item.id))} paused={queuePaused} busy={busy} canSteer={steerAvailable} sendingIds={steeringIds}
+      <AssistantConversationTail threadId={scope?.threadId}>
+      <PromptQueue chat={assistantSurface} items={queue.filter(item => !item.steerRunId || !runView?.items.some(event =>
+        [...(assistantSurface ? [] : ["run.steer.requested"]), "run.steer.accepted", "run.steer.unknown"].includes(event.event_type) && event.metadata.request_id === item.id))} paused={queuePaused} busy={busy} canSteer={steerAvailable} sendingIds={steeringIds}
         onChange={setQueue} onPause={(value) => { dispatching.current = false; setQueuePaused(value); }} onGuide={(item) => void guide(item)}
         onSend={(item) => {
           if (busy || threadRuntime.getState().isRunning || steeringIds.length) return;
@@ -814,9 +1029,11 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
             setQueue((items) => items.filter((entry) => entry.id !== item.id));
           } catch { setInputError("发送失败，消息仍保留在队列中。"); }
         }} />
-      {steeringNotice && <p className="composer-status-announcement" role="status">{steeringNotice}</p>}
+      </AssistantConversationTail>
+      {steeringNotice && !assistantSurface && <p className="composer-status-announcement" role="status">{steeringNotice}</p>}
       {inputError && <p className="composer-input-error" role="alert">{inputError}</p>}
       {!conversationScope?.compactComposer && <TaskKnowledgeSelection disabled={busy || Boolean(conversationScope)} />}
+      <ReplyComposerBar />
       <Composer.Root onSubmitCapture={(event: FormEvent) => { event.preventDefault(); event.stopPropagation(); if (!composingRef.current) submitComposer(); }}>
         <ComposerAssist options={options} index={suggestionIndex} onChoose={chooseSuggestion} />
         {wikiSlug ? (
@@ -829,8 +1046,8 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
         ) : null}
         {helpOpen && <div className="composer-assist composer-help-popover" role="dialog" aria-label="输入帮助">
           <button type="button" onClick={() => setHelpOpen(false)}>关闭</button>
-          <p>/ 执行命令 · @ 选择知识库（可多选） · $ 引用技能</p>
-          <p>运行中 Enter {followUpBehavior === "steer" ? "补充说明" : "加入队列"}，Alt Enter 使用另一种方式，Shift Enter 换行。可在个人设置的配置中更改默认行为。</p>
+          <p>/ 执行命令 · @ 提及助理或选择知识库（可多选） · $ 引用技能</p>
+          <p>{assistantSurface ? "Enter 发送消息，Shift Enter 换行。运行中发送的文字会直接补充到当前工作；附件在当前回复结束后发送。" : <>运行中 Enter {followUpBehavior === "steer" ? "补充说明" : "加入队列"}，Alt Enter 使用另一种方式，Shift Enter 换行。可在个人设置的配置中更改默认行为。</>}</p>
         </div>}
         {activeSkillLaunch && selectedSkill && (
           <div className="composer-skill-context" aria-label="已识别的 Skill 提示" title="直接输入 $技能名 即可，无需额外点选；也可以直接描述需求。">
@@ -850,7 +1067,15 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
           onComposingChange={(value) => { composingRef.current = value; }}
           className="aui-composer-input"
           aria-label="消息输入"
-          placeholder={conversationScope?.composerPlaceholder ?? (busy ? "继续补充…" : "输入消息…")}
+          placeholder={
+            botScope
+              ? `给 ${botScope.name} 发消息`
+              : replyAwareComposerPlaceholder(
+                  replyScope?.threadId,
+                  busy,
+                  conversationScope?.composerPlaceholder,
+                )
+          }
           rows={Math.min(8, Math.max(2, composerText.split("\n").length))}
           aria-controls={options.length ? "composer-suggestions" : undefined}
           aria-activedescendant={options.length ? `composer-option-${suggestionIndex}` : undefined}
@@ -890,7 +1115,8 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
             </svg>
           </Composer.AddAttachment>
 
-          {!conversationScope?.compactComposer && <>{conversationScope ? <button type="button" className="aui-composer-attach" aria-label="配置智能体知识库" title="配置智能体知识库" onClick={conversationScope.onConfigureKnowledge}>@</button> : <TaskKnowledgeControl disabled={runLocked || showStop || videoGenerating} />}
+          {!conversationScope?.compactComposer && !assistantSurface && <>
+          {conversationScope ? <button type="button" className="aui-composer-attach" aria-label="配置智能体知识库" title="配置智能体知识库" onClick={conversationScope.onConfigureKnowledge}>@</button> : <TaskKnowledgeControl disabled={runLocked || showStop || videoGenerating} />}
           <TaskAgentSwitcher
             agents={agentSelection.agents}
             selected={agentSelection.selected}
@@ -915,7 +1141,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
             aria-label={videoGenerating ? "视频生成中" : "生成视频"}
             onClick={() => void generateVideo()} />
         ) : (
-          <ConversationControl action="send" aria-label={busy ? followUpBehavior === "steer" && steerAvailable && !composerAttachments.length ? "补充说明" : "加入队列" : queue.length ? "加入队列" : "发送消息"} title={busy ? `Enter ${followUpBehavior === "steer" ? "补充说明" : "加入队列"} · Alt Enter 切换` : "发送消息"} disabled={voiceActive || followupVoiceActive || (!composerText.trim() && !composerAttachments.length)} onClick={() => submitComposer()} />
+          <ConversationControl action="send" aria-label={assistantSurface ? "发送消息" : busy ? followUpBehavior === "steer" && steerAvailable && !composerAttachments.length ? "补充说明" : "加入队列" : queue.length ? "加入队列" : "发送消息"} title={assistantSurface ? "发送消息" : busy ? `Enter ${followUpBehavior === "steer" ? "补充说明" : "加入队列"} · Alt Enter 切换` : "发送消息"} disabled={voiceActive || followupVoiceActive || (!composerText.trim() && !composerAttachments.length)} onClick={() => submitComposer()} />
         )}
         </div>
       </Composer.Root>
@@ -1143,7 +1369,7 @@ function HarnessToolPart(part: ToolCallMessagePartProps) {
   const args = objectValue(part.args);
   const runView = useRunViewModel();
   if (part.toolName === "harness_video_generation") return <DurableVideoGenerationPart data={args} />;
-  if (part.toolName === "harness_run_activity") {
+  if (part.toolName === "harness_run_activity" || part.toolName === "harness_notice_source") {
     return null;
   }
   if (part.toolName === "Task" || part.toolName === "Agent") {
@@ -1185,16 +1411,17 @@ function HarnessArtifactPart() {
   return null;
 }
 
-const ReasoningPart: ReasoningMessagePartComponent = ({ text, status }) => (
-  <details className="reasoning-card" data-active={status.type === "running"} open={status.type === "running"}>
+const ReasoningPart: ReasoningMessagePartComponent = ({ text, status }) => {
+  const assistantSurface = useAssistantSurface();
+  return <details className="reasoning-card" data-active={status.type === "running"} open={!assistantSurface && status.type === "running"}>
     <summary>
       <span className="reasoning-mark" aria-hidden="true" />
       <span>{status.type === "running" ? "正在思考" : "已思考"}</span>
       <small>{status.type === "running" ? "进行中" : "展开查看"}</small>
     </summary>
     <div>{text}</div>
-  </details>
-);
+  </details>;
+};
 
 type AssistantPartLike = {
   type?: string;
@@ -1204,6 +1431,7 @@ type AssistantPartLike = {
 const responseProjectionToolNames = new Set([
   "harness_video_generation",
   "harness_run_activity",
+  "harness_notice_source",
   "harness_present_artifact",
   "harness_present_ui",
 ]);
@@ -1251,6 +1479,7 @@ function TurnActivity({
   messageId: string;
 }) {
   const activity = useRunActivity();
+  const activitySurface = useAssistantSurface();
   const runView = useRunViewModel();
   const isLast = useAuiState((state) => state.message.isLast);
   const content = useAuiState((state) => state.message.content);
@@ -1295,6 +1524,9 @@ function TurnActivity({
     (!durableActivity && !turnOwnsRun(messageId, displayed.run_id, isLast, runView?.runId))
   ) return null;
 
+  if (activitySurface) {
+    return null;
+  }
   return (
     <div
       className={`latest-activity ${displayed.status}`}
@@ -1427,6 +1659,8 @@ export function responseTextForTurn(messageId: string, nativeText: string, direc
 
 export function HarnessAssistantMessage() {
   const redact = useConversationRedactor();
+  const assistantSurface = useAssistantSurface();
+  const assistantBot = useAssistantBot();
   const conversationScope = useConversationScope();
   const live = useLiveResponse();
   const isLast = useAuiState((state) => state.message.isLast);
@@ -1454,6 +1688,12 @@ export function HarnessAssistantMessage() {
   );
   const responseCandidate = responseTextForTurn(messageId, nativeText, directStream, live, capturedResponse, pendingLive);
   const feedbackRun = feedbackRunId(messageId, isLast, runView?.runId);
+  const isNotice = messageId.startsWith("notice-") || noticeSource(content) !== null;
+  // Select the immutable source, then derive outside the external-store selector.
+  // A new grouping object per getSnapshot causes an update loop on notice turns.
+  const noticeMessages = useAuiState(state => state.thread.messages);
+  const noticeExchange = useMemo(() => isNotice ? noticeExchangeForMessage(noticeMessages, messageId) : null,
+    [isNotice, noticeMessages, messageId]);
   // Requirement: citations must be reachable from the reply itself, not only
   // from the collapsed execution summary. Deduplicate by chunk so repeated
   // retrieval in one run shows one chip per slice.
@@ -1464,7 +1704,33 @@ export function HarnessAssistantMessage() {
     ? currentActivity : undefined;
   const terminalActivity = ownedActivity && (!durable?.success || durable.data.run_id === ownedActivity.run_id)
     ? ownedActivity : durable?.success ? durable.data : undefined;
-  const copyText = redact(responseTextForDisplay(responseCandidate, terminalActivity));
+  const capturedChatActivity = useRef<{ messageId: string; activity: RunActivity } | undefined>(undefined);
+  if (capturedChatActivity.current?.messageId !== messageId) capturedChatActivity.current = undefined;
+  if (terminalActivity) capturedChatActivity.current = { messageId, activity: terminalActivity };
+  const chatActivity = terminalActivity ?? capturedChatActivity.current?.activity;
+  const chatReplies = assistantSurface && !hasVideoGeneration ? assistantChatMessages(chatActivity) : [];
+  // Bot text is already the public AG-UI channel. Show its owned live slot while
+  // the durable activity stream catches up; task prose keeps process gating.
+  const responseText = collapseRepeatedAssistantText(assistantSurface && directStream
+    ? publicChatText(responseCandidate) : responseTextForDisplay(responseCandidate, terminalActivity));
+  const copyText = redact(responseText);
+  const previousAssistantText = useAuiState((state) => {
+    const messages = state.thread.messages;
+    let index = messages.findIndex((message) => message.id === messageId);
+    if (index < 0) index = messages.length;
+    const previous = messages[index - 1];
+    if (!previous || previous.role !== "assistant") return "";
+    return normalizeMessageText(collapseRepeatedAssistantText(
+      previous.content.flatMap((part, partIndex) => (
+        part.type === "text" && !isIntermediateAssistantTextPart(previous.content, partIndex) ? [part.text] : []
+      )).join("\n"),
+    ));
+  });
+  const duplicateAssistantReply = isDuplicateAssistantReply(
+    responseText,
+    previousAssistantText,
+    messageStatus?.type,
+  );
   const capturedCitations = useRef<{ messageId: string; citations: RunCitation[] }>({ messageId, citations: [] });
   const turnCitations = citationsForTurn(messageId, isLast, runView, durable?.success ? durable.data : undefined);
   if (turnCitations) capturedCitations.current = { messageId, citations: turnCitations };
@@ -1482,15 +1748,37 @@ export function HarnessAssistantMessage() {
   });
   const webImages = useMemo(() => turnSettled ? replyWebImages(content, terminalActivity, copyText, userPrompt) : [], [content, terminalActivity, copyText, turnSettled, userPrompt]);
   const turnArtifacts = useMemo(
-    () => turnSettled ? artifactsForTurn(content, runView?.runId, isLast) : [],
-    [content, runView?.runId, isLast, turnSettled],
+    () => turnSettled && !isNotice ? artifactsForTurn(content, runView?.runId, isLast) : [],
+    [content, runView?.runId, isLast, turnSettled, isNotice],
   );
   // Interactive answer blocks arrive on the same tool-call channel artifacts do,
   // so they are present live and after a reload without a second code path.
-  const turnPresentations = useMemo(() => turnSettled ? presentationsForMessage(content) : [], [content, turnSettled]);
+  const compactMain = assistantSurface && !assistantBot && !conversationScope;
+  const allTurnPresentations = useMemo(() => turnSettled ? presentationsForMessage(content) : [], [content, turnSettled]);
+  const turnPresentations = useMemo(() => assistantSurface
+    ? allTurnPresentations.flatMap(item => {
+      const visible = assistantPresentation(item, {hasAttachments: turnArtifacts.length > 0});
+      return visible ? [visible] : [];
+    })
+    : allTurnPresentations, [allTurnPresentations, assistantSurface, turnArtifacts.length]);
   // Only blocks the model authored came from a fence in this answer, so only that
   // many fences may be hidden from the rendered Markdown.
-  const publishedBlocks = useMemo(() => modelBlockSources(turnPresentations), [turnPresentations]);
+  const publishedBlocks = useMemo(() => modelBlockSources(allTurnPresentations), [allTurnPresentations]);
+  const controlSummary = compactMain && !hasVideoGeneration && !turnArtifacts.length && !turnPresentations.length
+    ? assistantControlSummary(terminalActivity) : null;
+  const activeInputMessage = useAuiState(state => latestConversationInput(state.thread.messages)?.messageId);
+  const showingInputCard = activeInputMessage === messageId && !conversationScope?.composerAccessory;
+  const displayCandidate = controlSummary ? redact(controlSummary) : showingInputCard ? conversationInputIntro(copyText) : copyText;
+  const coordinationRequests = terminalActivity?.items.filter(item => item.event_type === "tool.request") ?? [];
+  const coordinationOnly = coordinationRequests.length > 0 && coordinationRequests.every(item =>
+    /^mcp__harness-builder__assistant_(?:resolve_target|manage_work|delegate_to_specialist|work_notifications|update_task|task_status|send_instruction|create_task)$/.test(String(item.metadata.name)));
+  const displayedText = compactMain
+    ? (isNotice ? compactAssistantProgress : coordinationOnly && !showingInputCard ? compactAssistantReceipt : assistantCopy)(stripHarnessUiFences(displayCandidate, publishedBlocks))
+    : assistantSurface ? assistantCopy(displayCandidate) : displayCandidate;
+  const chatBubbles = chatReplies.map(reply => ({ ...reply,
+    text: reply.role === "user" ? redact(reply.text) : assistantCopy(redact(publicChatText(stripHarnessUiFences(reply.text, publishedBlocks)))),
+  })).filter(reply => reply.text.trim());
+  const actionText = showingInputCard ? (compactMain ? assistantCopy(conversationInputDisplay(copyText)) : conversationInputDisplay(copyText)) : displayedText;
   const draftScope = useContext(ComposerDraftContext);
   const runPresentationAction: PresentationActionHandler | undefined = threadRuntime && !conversationScope ? submitUiAction : undefined;
   const actionHistory = useMemo(() => draftScope ? createThreadHistoryAdapter(draftScope.threadId) : null, [draftScope]);
@@ -1503,18 +1791,45 @@ export function HarnessAssistantMessage() {
     }).catch(() => { /* persisted history remains available on refresh */ });
   }, [actionHistory, threadRuntime]);
   const actionBusy = ["running", "queued", "waiting_approval"].includes(runView?.phase ?? "");
+  // 历史/重试偶尔把同一条回答写成相邻两条 assistant；只保留第一条。
+  if (assistantSurface && noticeSource(content)?.direction === "sent") {
+    return <AssistantMessage.Root className="harness-assistant-message assistant-message-event" data-turn-id={messageId}>
+      <AssistantChatTime />
+      <AssistantNoticeSource parts={content} />
+    </AssistantMessage.Root>;
+  }
+  if (duplicateAssistantReply && !isNotice && !controlSummary && !showingInputCard) return null;
+  const responseActions = !hasVideoGeneration ? (
+    <div className="assistant-message-controls">
+      <AssistantActionBar.Root className="assistant-feedback-actions" hideWhenRunning>
+        <MessageCopyButton className="assistant-message-copy" label="复制回答" text={actionText} />
+        {assistantSurface ? (
+          <MessageReplyButton className="assistant-message-copy" label="回复这条回答"
+            excerptOverride={compactMain || controlSummary || showingInputCard ? actionText : undefined} />
+        ) : (
+          <>
+            <MessageFeedbackButtons runId={feedbackRun} />
+            <TurnCompletion />
+          </>
+        )}
+      </AssistantActionBar.Root>
+    </div>
+  ) : null;
   return (
     <AnswerCitationProvider citations={answerCitations}>
     <PublishedBlocksProvider sources={publishedBlocks}>
     <AssistantMessage.Root
       className="harness-assistant-message"
+      data-turn-id={messageId}
+      tabIndex={-1}
       data-test-run={conversationScope && messageId.startsWith("assistant-") ? messageId.replace(/^assistant-/, "") : undefined}
-      data-turn-answer={copyText.replace(/\s+/g, " ").slice(0, 360)}
+      data-turn-answer={displayedText.replace(/\s+/g, " ").slice(0, 360)}
       data-direct-stream={directStream ? "true" : "false"}
     >
-      {!hasVideoGeneration ? <TurnActivity
-        hasDurableProjection={hasRunActivityToolCall(content)}
-        messageId={messageId}
+      {assistantSurface && <AssistantChatTime activity={chatActivity} />}
+      {assistantSurface && isNotice && <AssistantNoticeSource parts={content} exchange={noticeExchange} />}
+      {!hasVideoGeneration && !assistantSurface ? <TurnActivity
+        hasDurableProjection={hasRunActivityToolCall(content)} messageId={messageId}
       /> : null}
       <AssistantMessage.Content
         components={{
@@ -1528,16 +1843,38 @@ export function HarnessAssistantMessage() {
           },
         }}
       />
-      <AssistantResponse key={messageId} text={copyText} streaming={directStream ? live.status === "streaming" && !live.textComplete : messageStatus?.type === "running"} />
+      {/* Bot controls sit beside the bubble; task controls stay below deliverables. */}
+      {chatBubbles.length ? chatBubbles.map(reply => reply.role === "user" ? (
+        <SteeringUserMessage key={reply.id} chat text={reply.text} status={reply.receipt ?? "accepted"} />
+      ) : (
+        <div className="assistant-answer-row" key={reply.id} data-chat-message={reply.id}>
+          <AssistantResponse text={reply.text} streaming={reply.streaming} />
+          <div className="assistant-message-controls">
+            <AssistantActionBar.Root className="assistant-feedback-actions" hideWhenRunning>
+              <MessageCopyButton className="assistant-message-copy" label="复制回答" text={reply.text} />
+              <MessageReplyButton className="assistant-message-copy" label="回复这条回答" excerptOverride={reply.text} />
+            </AssistantActionBar.Root>
+          </div>
+        </div>
+      )) : <div className={assistantSurface ? "assistant-answer-row" : "task-answer-row"}>
+        <AssistantResponse key={messageId} text={displayedText} streaming={!controlSummary && (directStream ? live.status === "streaming" && !live.textComplete : messageStatus?.type === "running")} />
+        {assistantSurface && responseActions}
+      </div>}
       <div className="followup-input-anchor" data-followup-for={messageId} />
-      {!hasVideoGeneration && <TerminalResponseNotice activity={terminalActivity}
-        hasResponse={Boolean(copyText.trim()) || turnPresentations.length > 0 || turnArtifacts.length > 0} />}
+      {!hasVideoGeneration && (assistantSurface ? <BotRunNotice activity={terminalActivity}
+        incomplete={showIncompleteRecovery}
+        hasResponse={Boolean(displayedText.trim()) || showingInputCard || turnPresentations.length > 0 || turnArtifacts.length > 0}
+        retry={<ActionBarPrimitive.Reload aria-label="重试回复" title="重试回复">重试</ActionBarPrimitive.Reload>}
+      /> : <TerminalResponseNotice activity={terminalActivity}
+        hasResponse={Boolean(displayedText.trim()) || showingInputCard || turnPresentations.length > 0 || turnArtifacts.length > 0} />)}
       {turnPresentations.length > 0 ? (
         <div className="intelligent-ui-blocks">
           {turnPresentations.map((presentation) => (
             <IntelligentUiBlock
               key={presentation.presentation_id}
               value={presentation}
+              // 回答正文已在该 turn 的 .assistant-answer 里；text 决策不再复述。
+              suppressText={Boolean(copyText.trim())}
               onAction={runPresentationAction}
               connected={!conversationScope && Boolean(threadRuntime)}
               onSettled={refreshActionHistory}
@@ -1553,8 +1890,7 @@ export function HarnessAssistantMessage() {
       {answerCitations.length > 0 ? (
         <KnowledgeCitations citations={answerCitations} showSources={false} />
       ) : null}
-      {showIncompleteRecovery ? (
-        <div className="aui-message-error">
+      {showIncompleteRecovery ? (assistantSurface ? null : <div className="aui-message-error">
           <span>{incompleteRunGuidance(isLast)}</span>
           <ActionBarPrimitive.Reload
             className="run-retry-button"
@@ -1568,25 +1904,13 @@ export function HarnessAssistantMessage() {
       {!hasVideoGeneration ? (
         <>
         <div className="artifact-summary-line">
-          <ArtifactSummaryRow artifacts={turnArtifacts} />
-        </div>
-        <div className="assistant-message-controls">
-          <AssistantActionBar.Root
-            className="assistant-feedback-actions"
-            hideWhenRunning
-          >
-            <MessageCopyButton
-              className="assistant-message-copy"
-              label="复制回答"
-              text={copyText}
-            />
-            <MessageFeedbackButtons runId={feedbackRun} />
-            <TurnCompletion />
-          </AssistantActionBar.Root>
+          {assistantSurface || conversationScope?.compactComposer ? <AssistantResults artifacts={turnArtifacts} /> : <ArtifactSummaryRow artifacts={turnArtifacts} />}
         </div>
         </>
       ) : null}
+      {!assistantSurface && responseActions}
       {conversationScope?.afterMessage(messageId)}
+      {shouldShowHandoverRows(assistantSurface, Boolean(assistantBot)) ? <HandoverInlineRows messageId={messageId} liveRunId={isLast ? runView?.runId : undefined} /> : null}
     </AssistantMessage.Root>
     </PublishedBlocksProvider>
     </AnswerCitationProvider>
@@ -1609,6 +1933,31 @@ function TurnCompletion() {
   if (!view || view.phase !== "completed") return null;
   return <TurnCompletionControl completedAt={view.updatedAt} onForked={onForked}
     branchScope={isLast && !conversationScope && !threadRunning && !selectComposerDisabled(observed) ? draftScope : null} />;
+}
+
+/**
+ * 流式期 live 气泡：正式回答的消息元素挂载之前（上下文摘要/长前置阶段），
+ * 由 live store（rAF 批量）直接把正文长在一个气泡里——聊天软件的流式观感；
+ * 只挂在当前最后一条用户消息之后；正式消息接管时由同一运行时状态同步卸载。
+ */
+export function LiveStreamingBubble() {
+  const live = useLiveResponse();
+  const activity = useRunActivity();
+  const view = useRunViewModel();
+  const redact = useConversationRedactor();
+  const currentPrompt = useAuiState(state => state.message.isLast && state.thread.isRunning);
+  const publicMessagesVisible = activity?.run_id === live.runId && assistantChatReplies(activity).length > 0;
+  if (!currentPrompt || publicMessagesVisible || view?.runId !== live.runId) return null;
+  if (!live.visible || live.status !== "streaming") return null;
+  const text = assistantCopy(redact(publicChatText(live.text)));
+  if (!text) return null;
+  return (
+    <div className="harness-assistant-message" data-live-preview="true" aria-live="polite">
+      <div className="assistant-answer-row">
+        <AssistantResponse text={text} streaming={!live.textComplete} />
+      </div>
+    </div>
+  );
 }
 
 function EditMessageIcon() {
@@ -1642,6 +1991,7 @@ function useMessageEditor() {
 
 function HarnessUserMessage() {
   const redact = useConversationRedactor();
+  const assistantSurface = useAssistantSurface();
   const message = useAuiState((state) => state.message);
   const isLastMessage = useAuiState((state) => state.message.isLast);
   const threadRunning = useAuiState((state) => state.thread.isRunning);
@@ -1696,9 +2046,22 @@ function HarnessUserMessage() {
       ? activity
       : undefined;
 
+  const messageContent = <SentUserContent key={message.id} text={sensitive ? displayText : undefined} />;
+  const messageActions = (
+    <ActionBarPrimitive.Root className="harness-user-action-bar" autohide="never">
+      <MessageCopyButton className="user-message-action" label="复制消息" text={displayText} />
+      {assistantSurface && <MessageReplyButton label="回复消息" />}
+      {!assistantSurface && isLatestUserMessage && !threadRunning && !sensitive ? (
+        <button className="user-message-action" type="button" aria-label="编辑消息" title="编辑消息" onClick={beginEdit}>
+          <EditMessageIcon />
+        </button>
+      ) : null}
+    </ActionBarPrimitive.Root>
+  );
   return (
     <>
       <UserMessage.Root className="harness-user-message" data-turn-id={message.id} data-turn-label={(displayText || message.attachments?.map(item => item.name).join("、") || "附件消息").replace(/\s+/g, " ").slice(0, 180)} tabIndex={-1}>
+        <UserReplyHeader isLatestUserMessage={isLatestUserMessage} />
         <MessageAttachmentGroup attachments={message.attachments ?? []} />
         <MessagePrimitive.If hasContent>
           {editing ? (
@@ -1725,35 +2088,20 @@ function HarnessUserMessage() {
                 </div>
               </form>
             </div>
-          ) : (
-            <>
-              <SentUserContent key={message.id} text={sensitive ? displayText : undefined} />
-              <ActionBarPrimitive.Root
-                className="harness-user-action-bar"
-                autohide="never"
-              >
-                <MessageCopyButton
-                  className="user-message-action"
-                  label="复制消息"
-                  text={displayText}
-                />
-                {isLatestUserMessage && !threadRunning && !sensitive ? (
-                  <button
-                    className="user-message-action"
-                    type="button"
-                    aria-label="编辑消息"
-                    title="编辑消息"
-                    onClick={beginEdit}
-                  >
-                    <EditMessageIcon />
-                  </button>
-                ) : null}
-              </ActionBarPrimitive.Root>
-            </>
+          ) : assistantSurface ? (
+              <div className="harness-user-answer-row">
+                {messageActions}
+                {messageContent}
+              </div>
+            ) : (
+              <>
+                {messageContent}
+                {messageActions}
+              </>
           )}
         </MessagePrimitive.If>
       </UserMessage.Root>
-      {preResponseActivity ? (
+      {preResponseActivity && !assistantSurface ? (
         <div
           className={`latest-activity pre-response-activity ${preResponseActivity.status}`}
           data-activity-source="pre-response"
@@ -1761,6 +2109,7 @@ function HarnessUserMessage() {
           <ActivitySummary activity={preResponseActivity} />
         </div>
       ) : null}
+      {assistantSurface ? <LiveStreamingBubble /> : null}
     </>
   );
 }
@@ -1794,6 +2143,7 @@ export function AgentThread({
   onForked?: (task: TaskSummary) => void;
 }) {
   const frame = useRef<HTMLDivElement>(null);
+  const assistantSurface = useAssistantSurface();
   const [editor, setEditor] = useState<MessageEditorState>(null);
   // Optional: AgentThread is also rendered by config tests without a runtime
   // provider; without a runtime there is nothing to import earlier pages into.
@@ -1801,7 +2151,7 @@ export function AgentThread({
   const historyPagination = useThreadHistoryPagination(threadId, {
     importRepository: (repository) => threadRuntime?.import(repository),
   });
-  useAutoLoadEarlierMessages(frame, historyPagination);
+  useAutoLoadEarlierMessages(frame, historyPagination, { readerDriven: assistantSurface });
   const composerDraftScope = useMemo(
     () => ({ userId, threadId }),
     [threadId, userId],
@@ -1830,24 +2180,35 @@ export function AgentThread({
         : HarnessComposer,
     [onComposerSubmitted],
   );
+  const [composerReply, setComposerReply] = useState<ReplyReference | null>(null);
+  const composerReplyController = useMemo(
+    () => ({
+      threadId,
+      reply: composerReply,
+      startReply: setComposerReply,
+      cancelReply: () => setComposerReply(null),
+    }),
+    [composerReply, threadId],
+  );
   return (
     <TaskForkContext.Provider value={onForked}>
     <AgentSelectionContext.Provider value={agentSelection}>
       <SkillLaunchContext.Provider value={skillLaunch}>
         <ComposerDraftContext.Provider value={composerDraftScope}>
           <MessageEditorContext.Provider value={{ editor, setEditor }}>
+            <ComposerReplyProvider threadId={threadId}>
             <VideoGenerationProvider task={selectedAgent ? {
               threadId, agentName: selectedAgent.name, agentVersion: selectedAgent.version,
               agentOwnerUserId: selectedAgent.ownerUserId, spaceId: selectedAgent.spaceId,
             } : undefined}>
             <div className="harness-thread-frame" ref={frame}>
             <ConversationIndex frame={frame} threadId={threadId} pagination={historyPagination} />
-            {historyPagination.loading ? (
+            {!assistantSurface && historyPagination.loading ? (
               <div className="history-load-earlier" role="status" aria-live="polite">
                 <span className="history-load-earlier-status">正在加载更早的消息…</span>
               </div>
             ) : null}
-            <ConversationThread threadId={threadId}
+            <ConversationThread key={threadId} threadId={threadId}
             assistantMessage={{
               allowCopy: false,
               allowReload: false,
@@ -1884,6 +2245,7 @@ export function AgentThread({
             />
             </div>
             </VideoGenerationProvider>
+            </ComposerReplyProvider>
           </MessageEditorContext.Provider>
         </ComposerDraftContext.Provider>
       </SkillLaunchContext.Provider>

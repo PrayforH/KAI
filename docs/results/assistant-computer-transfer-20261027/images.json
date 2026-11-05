@@ -1,0 +1,14 @@
+{
+  "api": {
+    "image": "kai/assistant-api:20261027-r21-computer-transfer",
+    "id": "sha256:d310cd7929c2d2b4b4b6cf91bd759eacb66d9f49fce2a584e280770575458934"
+  },
+  "feishu": {
+    "image": "kai/feishu-receiver:20261027-r21-computer-transfer",
+    "id": "sha256:8a3cf5192f8344aea1907ecfa4a910409fc7e7bfd326df983c885fc57ccd6c20"
+  },
+  "weixin": {
+    "image": "kai/weixin-receiver:20261027-r21-computer-transfer",
+    "id": "sha256:312c56977ab6e57b8d7bdeded066141e66278b0f028ec10233d8449387d2a02c"
+  }
+}

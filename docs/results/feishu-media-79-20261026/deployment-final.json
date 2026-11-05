@@ -1,0 +1,51 @@
+{
+  "sourceCommit": "abfa6fe8",
+  "imageRouting": "deepseek-v4-flash -> deepseek-flash",
+  "changedComposePaths": [
+    "services.api.image",
+    "services.feishu.environment.HARNESS_FEISHU_VISION_MODEL_ROUTE",
+    "services.feishu.image",
+    "services.worker.image"
+  ],
+  "credentialValuesPreserved": true,
+  "schemaMigrationRequired": false,
+  "databaseRestored": false,
+  "moduleHashCountVerified": 10,
+  "services": [
+    {
+      "name": "/kai-79-20261013-api-1",
+      "image": "kai/assistant-api:20261026-r6",
+      "imageId": "sha256:5b49cb89a2b920d1510915202e87bb71bec2cfb8e2ab6cce3b7f208cd0528ee8",
+      "state": "healthy",
+      "restartCount": 0
+    },
+    {
+      "name": "/kai-79-20261013-worker-1",
+      "image": "kai/assistant-api:20261026-r6",
+      "imageId": "sha256:5b49cb89a2b920d1510915202e87bb71bec2cfb8e2ab6cce3b7f208cd0528ee8",
+      "state": "healthy",
+      "restartCount": 0
+    },
+    {
+      "name": "/kai-79-20261013-feishu-1",
+      "image": "kai/feishu-receiver:20261026-r6",
+      "imageId": "sha256:580ff2b377181b281b4263aca633aa3b9adf87ee4e18aa8a1c459b549dc44cdd",
+      "state": "running",
+      "restartCount": 0
+    },
+    {
+      "name": "/kai-79-20261013-web-1",
+      "image": "kai/assistant-web:20261026-r2",
+      "imageId": "sha256:90369a568d81938f6efb9e0380c797e1a3f2e28cb3f91662d3f14ea15421ae89",
+      "state": "healthy",
+      "restartCount": 0
+    },
+    {
+      "name": "/kai-79-20261013-https-1",
+      "image": "nginx:1.27-alpine",
+      "imageId": "sha256:6769dc3a703c719c1d2756bda113659be28ae16cf0da58dd5fd823d6b9a050ea",
+      "state": "healthy",
+      "restartCount": 0
+    }
+  ]
+}

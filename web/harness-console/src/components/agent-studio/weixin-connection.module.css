@@ -1,0 +1,8 @@
+.panel { margin-top: 34px; padding-top: 28px; border-top: 1px solid var(--codex-line, #dddfe3); }
+.qr { display: grid; place-items: center; margin: 28px auto 18px; width: 264px; max-width: 100%; aspect-ratio: 1; border-radius: 16px; background: #fff; padding: 12px; }
+.qr img { width: 100%; height: auto; display: block; }
+.caption { text-align: center; font-size: 15px; font-weight: 550; }
+.meta { font-size: 12px; color: var(--codex-muted, #73767c); }
+.success { text-align: center; padding: 22px 0; }
+.success > span { display: grid; place-items: center; margin: 0 auto 20px; width: 56px; height: 56px; border-radius: 50%; color: #16856b; background: #16856b18; font-size: 28px; }
+.success button { margin-top: 24px; }

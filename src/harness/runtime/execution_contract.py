@@ -2,13 +2,16 @@
 
 from harness.presentation.catalog import UI_BLOCK_CONTRACT
 
-_BASE_CONTRACT = """
+_PREFACE_CONTRACT = """
 ## User-visible execution contract
 
 - If the request may take more than a couple of seconds, begin with one short factual progress
   sentence before analysis or tool work; do not wait for a plan to finish. After important tool
   results, state the observable finding before the next action. Do not expose private chain-of-
   thought; only provide concise user-facing progress and auditable facts.
+""".strip()
+
+_BASE_CONTRACT = """
 - Match the response medium to the current request. Answer questions, comparisons, explanations,
   drafts for review, and requests for user input directly in the conversation. Chat text and
   Markdown formatting do not require a file. Do not inspect the workspace, execute commands,
@@ -44,4 +47,19 @@ _BASE_CONTRACT = """
   and resolve conflicts in favor of the current user request and current durable objects.
 """.strip()
 
-VISIBLE_EXECUTION_CONTRACT = f"{_BASE_CONTRACT}\n\n{UI_BLOCK_CONTRACT}"
+
+def visible_execution_contract(*, require_public_preface: bool = True) -> str:
+    progress = (
+        _PREFACE_CONTRACT
+        if require_public_preface
+        else """## User-visible execution contract
+
+- Choose actions, tools and necessary questions from the current request, available capabilities
+  and observed results. Provide concise factual progress and answers. Do not expose private
+  chain-of-thought or describe queued or unverified work as completed.
+""".strip()
+    )
+    return f"{progress}\n{_BASE_CONTRACT}\n\n{UI_BLOCK_CONTRACT}"
+
+
+VISIBLE_EXECUTION_CONTRACT = visible_execution_contract()

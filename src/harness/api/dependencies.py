@@ -41,6 +41,7 @@ from harness.application.memory import UserMemoryService
 from harness.application.runs import RunQuotaPlan, RunService
 from harness.application.sessions import SessionService
 from harness.application.workspaces import WorkspacePolicy, WorkspaceService
+from harness.assistant.service import AssistantService
 from harness.auth.api_access import ApiAccessService, InMemoryApiAccessKeyRepository
 from harness.auth.audit import AuditService
 from harness.auth.repositories import InMemoryAuditRepository, InMemoryAuthRepository
@@ -54,6 +55,8 @@ from harness.automations.repositories import (
     InMemoryAutomationTaskRepository,
 )
 from harness.automations.service import AutomationService
+from harness.computer.desktop import DesktopControlService
+from harness.computer.targets import ComputerTargetService
 from harness.config import Settings
 from harness.context.repositories import InMemoryContextRepository
 from harness.context.service import ContextService
@@ -81,6 +84,9 @@ from harness.evals.repositories import (
 from harness.evals.service import EvalControlPlaneService
 from harness.evolution.repositories import InMemoryEvolutionRepository
 from harness.evolution.service import EvolutionService
+from harness.feishu.configuration import FeishuConnectionControl
+from harness.feishu.models import FeishuSettings
+from harness.feishu.service import FeishuService
 from harness.governance.repositories import InMemoryGovernanceRepository
 from harness.governance.service import GovernanceService
 from harness.inputs.processors import DefaultInputProcessor
@@ -148,6 +154,7 @@ from harness.runtime.fake import FakeRuntime
 from harness.runtime.registry_codex_runtime import RegistryCodexRuntime, RegistryRuntimeRouter
 from harness.runtime.registry_runtime import RegistryClaudeRuntime
 from harness.runtime.sdk_tool_gate import SdkToolGate
+from harness.sandbox.base import SandboxHandle, SandboxProvider
 from harness.sandbox.cubesandbox import build_cubesandbox_provider
 from harness.sandbox.daytona import (
     DaytonaSandboxProvider,
@@ -206,6 +213,7 @@ from harness.studio.skill_builder import (
 from harness.studio.web_configuration import WebConfigurationService
 from harness.triggers.repositories import InMemoryAgentTriggerRepository
 from harness.triggers.service import AgentTriggerService
+from harness.weixin.service import WeixinService
 from harness.worker.orchestrator import RunOrchestrator
 
 
@@ -287,6 +295,13 @@ class ApiContainer:
     agui: AguiRunService
     auto_execute: bool
     presentations: PresentationService
+    assistant: AssistantService | None = None
+    computer_desktop: "DesktopControlService | None" = None
+    computer_targets: ComputerTargetService | None = None
+    weixin: WeixinService | None = None
+    feishu: FeishuService | None = None
+    feishu_connections: FeishuConnectionControl | None = None
+    feishu_factory: Callable[[FeishuSettings], FeishuService] | None = None
     event_wakeup: EventWakeup | None = None
     skill_conversation: SkillConversationService | None = None
     sandbox_maintenance: Callable[[], Awaitable[object]] | None = None
@@ -979,7 +994,12 @@ def build_memory_container(
         quotas=enforced_quotas,
     )
 
-    async def runtime_builder_tools(run, session):
+    async def runtime_builder_tools(
+        run: Run,
+        session: Session,
+        handle: SandboxHandle | None = None,
+        sandbox: SandboxProvider | None = None,
+    ):
         from harness.studio.runtime_builder import builder_overlay
 
         return await builder_overlay(container, event_service, run, session)

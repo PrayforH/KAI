@@ -1,0 +1,10 @@
+{
+  "wechatImageFileVoiceAutoSynced": true,
+  "fullBrowserReloadRestoredHistory": true,
+  "webFollowupAnsweredAllMediaFacts": true,
+  "feishuReplyAutoSyncedToWeb": true,
+  "headerShowsBothChannelsConnected": true,
+  "userConfirmedAllThreeWeChatReplies": true,
+  "nativeWeChatInputUnavailable": "AXError.notImplemented; user sent actual media",
+  "sourceScreenshotsOmitted": "The supplied business document and unrelated private chats are not copied into release evidence."
+}

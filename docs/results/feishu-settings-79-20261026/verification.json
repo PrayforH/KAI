@@ -1,0 +1,108 @@
+{
+  "authenticatedReads": 8,
+  "connection": {
+    "appId": "cli_aa51ac4376b9dc0e",
+    "configured": true,
+    "enabled": true,
+    "revision": 4,
+    "source": "saved",
+    "receiverLabel": "79 · 172.20.105.79",
+    "appliedRevision": 4,
+    "canManage": true
+  },
+  "status": {
+    "configured": true,
+    "enabled": true,
+    "receiverOnline": true,
+    "bound": true,
+    "pendingDeliveries": 0,
+    "failedDeliveries": 0
+  },
+  "diagnostics": {
+    "checkedAt": "2026-10-26T04:48:18.667690Z",
+    "checks": [
+      {
+        "key": "credentials",
+        "label": "应用凭据",
+        "status": "pass",
+        "detail": "App ID 和 Secret 验证成功。"
+      },
+      {
+        "key": "receiver",
+        "label": "长连接",
+        "status": "pass",
+        "detail": "79 · 172.20.105.79 已连接。"
+      },
+      {
+        "key": "events",
+        "label": "消息接收",
+        "status": "pass",
+        "detail": "本次配置已收到事件：2026-10-26T04:46:47.733466+00:00"
+      },
+      {
+        "key": "binding",
+        "label": "本人账号",
+        "status": "pass",
+        "detail": "飞书已绑定到你的 KAI 账号。"
+      },
+      {
+        "key": "reply",
+        "label": "机器人回复",
+        "status": "pass",
+        "detail": "本次配置已投递回复：2026-10-26T04:47:04.997154+00:00"
+      },
+      {
+        "key": "chat",
+        "label": "助理聊天",
+        "status": "pass",
+        "detail": "最近一轮助理已成功处理消息。"
+      },
+      {
+        "key": "attachments",
+        "label": "图片与文件",
+        "status": "pass",
+        "detail": "本次配置已读取附件：2026-10-26T04:46:46.958034+00:00"
+      }
+    ]
+  },
+  "history": {
+    "total": 31,
+    "hasMore": false,
+    "latestRunId": "run_5c801f134b824897a893c10920e93ee8"
+  },
+  "continuation": {
+    "runId": "run_5c801f134b824897a893c10920e93ee8",
+    "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+    "status": "succeeded",
+    "promptCount": 31,
+    "answer": "飞书设置代号 FSSET79-H2M7；图片验收代号 IMGSET79-G4N6（图中文字 IMG79-R2B8）；图文与 Word 组合：IMG79-M7Q4｜COMBOFILE79-N4V7｜81970 元｜MIXFILE79-H6D3。"
+  },
+  "deliveries": [
+    {
+      "category": "connection_test",
+      "status": "sent",
+      "message_id": "om_x100b62d9ff846ca4cf6c213a6af7095",
+      "dedup_key": "connection-test:db19a99df16d483aa7a0eab49c95b0d1"
+    },
+    {
+      "category": "reply",
+      "status": "sent",
+      "message_id": "om_x100b62d9fc0768a0b4ce66a12fb0121",
+      "dedup_key": "chat-result:incoming_93d3b93c24b4486c8b7c52fe5f702ab7"
+    },
+    {
+      "category": "reply",
+      "status": "sent",
+      "message_id": "om_x100b62d9fa5aa0a4ce418d812a7cce5",
+      "dedup_key": "chat-result:incoming_a633040bcf95472bb92a9293cf519cb2"
+    }
+  ],
+  "schema": "0047",
+  "counts": {
+    "users": 12,
+    "sessions": 279,
+    "runs": 778,
+    "input_artifacts": 85,
+    "feishu_bindings": 1
+  }
+}

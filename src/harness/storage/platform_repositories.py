@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any, Literal, cast
 
-from sqlalchemy import CursorResult, column, delete, func, select, update
+from sqlalchemy import CursorResult, column, delete, func, or_, select, update
 from sqlalchemy import cast as sql_cast
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
@@ -838,6 +838,7 @@ class PostgresAguiThreadBindingRepository:
         archived: bool = False,
         project_id: str | None = None,
         offset: int = 0,
+        query: str | None = None,
     ) -> list[AguiThreadBinding]:
         archived_at = AguiThreadBindingRow.payload["archived_at"].as_string()
         updated_at = AguiThreadBindingRow.payload["updated_at"].as_string()
@@ -862,6 +863,12 @@ class PostgresAguiThreadBindingRepository:
         )
         if project_id is not None:
             statement = statement.where(AguiThreadBindingRow.project_id == project_id)
+        if query:
+            statement = statement.where(or_(
+                func.lower(AguiThreadBindingRow.payload["title"].as_string())
+                .contains(query.lower(), autoescape=True),
+                func.lower(AguiThreadBindingRow.thread_id).contains(query.lower(), autoescape=True),
+            ))
         async with self._sessions() as session:
             payloads = (await session.execute(statement)).scalars().all()
             return [AguiThreadBinding.model_validate(payload) for payload in payloads]

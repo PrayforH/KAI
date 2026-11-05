@@ -1,0 +1,429 @@
+"""Isolated Worker orchestration with deterministic runtime and real Computer.
+
+No model credentials or production identity are used. Probe mode uses fixture
+Run/events in memory; canonical mode persists fixture accounts, bindings and
+execution records in the isolated database and exercises node authorization.
+Neither mode is real assistant/model acceptance.
+"""
+
+import argparse
+import asyncio
+import json
+import time
+from collections.abc import AsyncIterator, Mapping, Sequence
+from contextlib import AsyncExitStack
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any, cast
+from uuid import uuid4
+
+import httpx
+from sqlalchemy import Table
+from sqlalchemy.engine import make_url
+
+from harness.adapters.memory import (
+    InMemoryArtifactRepository,
+    InMemoryArtifactStore,
+    InMemoryEventBus,
+    InMemoryEventRepository,
+    InMemoryRunRepository,
+    InMemorySessionRepository,
+)
+from harness.application.artifacts import ArtifactService
+from harness.application.events import EventService
+from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
+from harness.computer.control import HttpComputerControl
+from harness.computer.docker import DockerComputerDriver
+from harness.computer.manager import ComputerAllocation, ComputerManager
+from harness.computer.registry import ComputerRegistry
+from harness.computer.sandbox import ComputerSandboxProvider
+from harness.computer.storage import AssistantComputerRow, ComputerLeaseRow
+from harness.core.errors import NotFoundError
+from harness.core.models import AguiThreadBinding, Run, RunStatus, Session
+from harness.core.ports import EventRepository, RunRepository, SessionRepository
+from harness.runtime.base import RuntimeContext, RuntimeEvent
+from harness.runtime.fake import FakeRuntime
+from harness.sandbox.base import SandboxCommandResult
+from harness.sandbox.lease import SandboxLeaseService
+from harness.storage.database import create_database, create_schema
+from harness.storage.models import AguiThreadBindingRow, TenantMembershipRow, UserRow
+from harness.storage.platform_repositories import PostgresSessionRepository
+from harness.storage.repositories import PostgresEventRepository, PostgresRunRepository
+from harness.storage.sandbox_lease_repository import PostgresSandboxLeaseRepository
+from harness.worker.orchestrator import RunOrchestrator
+
+
+class TimedComputerDriver(DockerComputerDriver):
+    """Record bounded file-plane timings, never command content or credentials."""
+
+    def __init__(self, control: HttpComputerControl, image: str):
+        super().__init__(control, image=image)
+        self.operations: dict[str, dict[str, float | int]] = {}
+
+    async def execute(
+        self,
+        allocation: ComputerAllocation,
+        argv: Sequence[str],
+        *,
+        environment: Mapping[str, str] | None = None,
+        timeout_seconds: float = 30,
+        stdin: bytes | None = None,
+    ) -> SandboxCommandResult:
+        operation = (
+            argv[-1]
+            if len(argv) == 5
+            and tuple(argv[:3]) == ("python3", "-I", "-c")
+            and argv[-1] in {"manifest", "upload", "upload_batch", "stat", "read", "abort"}
+            else "command"
+        )
+        started = time.monotonic()
+        try:
+            return await super().execute(
+                allocation,
+                argv,
+                environment=environment,
+                timeout_seconds=timeout_seconds,
+                stdin=stdin,
+            )
+        finally:
+            metric = self.operations.setdefault(operation, {"calls": 0, "seconds": 0.0})
+            metric["calls"] += 1
+            metric["seconds"] += time.monotonic() - started
+
+
+class ToolsRuntime(FakeRuntime):
+    def __init__(self, report: dict[str, Any]) -> None:
+        super().__init__()
+        self.report = report
+
+    async def execute(self, context: RuntimeContext) -> AsyncIterator[RuntimeEvent]:
+        command, files = context.sandbox_command_executor, context.sandbox_file_plane
+        assert command is not None and files is not None
+        if context.run.input["round"] == 1:
+            content = b"KAI-CHUNK79-" * 300_000
+            await files.upload_files([("inputs/chunk.bin", content), ("inputs/empty", b"")])
+            assert await files.download_file("inputs/chunk.bin", max_bytes=len(content)) == content
+            assert await files.download_file("inputs/empty", max_bytes=0) == b""
+            self.report["chunkedAndEmptyTransferConfirmed"] = True
+            source = (
+                "from pathlib import Path; import os,json; "
+                "assert Path('inputs/staged.txt').read_text()=='current-run-input'; "
+                "assert sum(p.read_bytes()==b'fixture-resource\\n'*1024 "
+                "for p in Path('inputs/assets').glob('*.txt'))=="
+                f"{context.run.input['staging_files']}; "
+                "Path('outputs').mkdir(exist_ok=True); "
+                "Path('outputs/first.txt').write_text('first'); "
+                "Path('project.txt').write_text('retained-project'); "
+                "p=Path.home()/'bin'/'kai-worker-fixture'; "
+                "p.write_text('#!/bin/sh\\nprintf retained-tool'); p.chmod(0o700); "
+                "print(json.dumps({'uids':os.getresuid()}))"
+            )
+            result = await command(["python3", "-c", source], None, 30)
+            assert result.exit_code == 0
+            self.report["taskUids"] = json.loads(result.stdout)["uids"]
+            assert self.report["taskUids"] == [28000, 28000, 28000]
+            self.report["stagedFixtureFilesVerified"] = context.run.input["staging_files"]
+        else:
+            source = (
+                "from pathlib import Path; import subprocess; "
+                "assert Path('project.txt').read_text()=='retained-project'; "
+                "assert Path('outputs/first.txt').read_text()=='first'; "
+                "tool=Path.home()/'bin'/'kai-worker-fixture'; "
+                "assert subprocess.check_output([str(tool)]).decode()=='retained-tool'; "
+                "Path('outputs/second.txt').write_text('second')"
+            )
+            if context.run.input.get("image_marker"):
+                source += (
+                    "; assert Path('/opt/kai-computer/image-upgrade-fixture').read_text().strip()=="
+                    + repr(context.run.input["image_marker"])
+                )
+            result = await command(["python3", "-c", source], None, 30)
+            assert result.exit_code == 0
+            self.report["previousFilesAndExecutableRetained"] = True
+        async for event in super().execute(context):
+            yield event
+
+
+async def probe(
+    config_path: Path,
+    output: Path,
+    staging_files: int = 0,
+    upgrade_signal: Path | None = None,
+) -> None:
+    if not 0 <= staging_files <= 1000:
+        raise ValueError("staging fixture file count exceeds probe bounds")
+    config = json.loads(config_path.read_text())
+    if make_url(config["database_url"]).database != "harness_computer_probe":
+        raise ValueError("Worker probe requires the isolated harness_computer_probe database")
+    canonical = config.get("authorization", "probe") == "canonical"
+    if upgrade_signal is not None and not canonical:
+        raise ValueError("image upgrade acceptance requires canonical fixture authorization")
+    engine, sessions = create_database(config["database_url"])
+    if canonical:
+        tenant, user = config["tenant_id"], config["user_id"]
+        if not tenant.startswith("computer-access-probe-") or not user.startswith("fixture-owner"):
+            raise ValueError("canonical probe requires generated fixture identity")
+        await create_schema(engine)
+    else:
+        async with engine.begin() as connection:
+            await connection.run_sync(
+                lambda sync: AssistantComputerRow.metadata.create_all(
+                    sync,
+                    tables=[
+                        cast(Table, AssistantComputerRow.__table__),
+                        cast(Table, ComputerLeaseRow.__table__),
+                    ],
+                )
+            )
+        tenant, user = "computer-worker-probe-" + uuid4().hex, "fixture-owner"
+    registry = ComputerRegistry(sessions, lease_ttl_seconds=60)
+
+    def clock() -> datetime:
+        return datetime.now(UTC)
+
+    session = Session(
+        session_id="fixture-session",
+        tenant_id=tenant,
+        user_id=user,
+        agent_name="fixture-assistant",
+        agent_version="1",
+        created_at=clock(),
+    )
+    report: dict[str, Any] = {
+        "tenant": tenant,
+        "checkedAt": clock().isoformat(),
+        "scope": (
+            "Real Worker orchestration and Docker Computer; deterministic runtime and "
+            "in-memory Run/events; no real model or production chats"
+        ),
+    }
+    async with AsyncExitStack() as clients:
+
+        def client() -> httpx.AsyncClient:
+            return httpx.AsyncClient(
+                base_url=config["control_url"],
+                trust_env=False,
+                headers={"Authorization": "Bearer " + config["secret"]},
+            )
+
+        connection = await clients.enter_async_context(client())
+        driver = TimedComputerDriver(HttpComputerControl(connection), image=config["image"])
+        run_repository: RunRepository
+        session_repository: SessionRepository
+        events_repository: EventRepository
+        sandbox_leases: SandboxLeaseService | None = None
+        if canonical:
+            run_repository = PostgresRunRepository(sessions, fence_computers=True)
+            session_repository = PostgresSessionRepository(sessions)
+            events_repository = PostgresEventRepository(sessions)
+            sandbox_leases = SandboxLeaseService(PostgresSandboxLeaseRepository(sessions))
+            binding = AguiThreadBinding(
+                tenant_id=tenant,
+                user_id=user,
+                thread_id=PERSONAL_ASSISTANT_THREAD,
+                session_id=session.session_id,
+                created_at=clock(),
+                updated_at=clock(),
+            )
+            async with sessions.begin() as db:
+                db.add(
+                    UserRow(
+                        user_id=user,
+                        email=tenant + "@fixture.invalid",
+                        display_name="fixture",
+                        created_at=clock(),
+                        updated_at=clock(),
+                    )
+                )
+                db.add(
+                    TenantMembershipRow(
+                        tenant_id=tenant, user_id=user, role="owner", created_at=clock()
+                    )
+                )
+                db.add(
+                    AguiThreadBindingRow(
+                        tenant_id=tenant,
+                        user_id=user,
+                        thread_id=binding.thread_id,
+                        session_id=session.session_id,
+                        payload=binding.model_dump(mode="json"),
+                    )
+                )
+            report["scope"] = (
+                "Real Worker, account/thread/Run/lease records in isolated PostgreSQL "
+                "and canonical node authorization; deterministic runtime; "
+                "no real model or production chats"
+            )
+        else:
+            run_repository, session_repository = (
+                InMemoryRunRepository(),
+                InMemorySessionRepository(),
+            )
+            events_repository = InMemoryEventRepository()
+        await session_repository.add(session)
+        report["authorization"] = "canonical" if canonical else "probe"
+        artifacts = ArtifactService(
+            runs=run_repository,
+            repository=InMemoryArtifactRepository(),
+            store=InMemoryArtifactStore(),
+            id_generator=lambda prefix: prefix + uuid4().hex,
+        )
+
+        async def stage(
+            tenant: str, owner: str, name: str, version: str, workspace: Path, graph: bool
+        ) -> tuple[str, ...]:
+            (workspace / "inputs").mkdir(exist_ok=True)
+            (workspace / "inputs/staged.txt").write_text("current-run-input")
+            if staging_files:
+                assets = workspace / "inputs/assets"
+                assets.mkdir()
+                for index in range(staging_files):
+                    (assets / f"{index}.txt").write_bytes(b"fixture-resource\n" * 1024)
+            return ()
+
+        async def execute(index: int, runtime: FakeRuntime) -> Run:
+            run = Run(
+                run_id="fixture-run-" + str(index),
+                session_id=session.session_id,
+                tenant_id=tenant,
+                status=RunStatus.QUEUED,
+                idempotency_key=str(index),
+                created_at=clock(),
+                updated_at=clock(),
+                input={
+                    "prompt": "fixture",
+                    "round": index,
+                    "staging_files": staging_files,
+                    "image_marker": config.get("image_marker") if index == 2 else None,
+                },
+            )
+            await run_repository.add(run)
+            sandbox = ComputerSandboxProvider(
+                registry, driver, session, run_reader=run_repository.get, max_bytes=32 * 1024**2
+            )
+            worker = RunOrchestrator(
+                sessions=session_repository,
+                runs=run_repository,
+                events=EventService(
+                    events_repository,
+                    InMemoryEventBus(),
+                    clock=clock,
+                    id_generator=lambda prefix: prefix + uuid4().hex,
+                ),
+                runtime=runtime,
+                sandbox=sandbox,
+                clock=clock,
+                artifacts=artifacts,
+                runtime_asset_stager=stage,
+                sandbox_leases=sandbox_leases,
+            )
+            result = await worker.execute(tenant, run.run_id)
+            assert result.status is RunStatus.SUCCEEDED, result.error_code
+            return result
+
+        try:
+            await execute(0, FakeRuntime())
+            try:
+                await registry.get(tenant, user)
+            except NotFoundError:
+                report["plainChatAllocatedNoComputer"] = True
+            else:
+                raise AssertionError("plain chat unexpectedly allocated a Computer")
+            await execute(1, ToolsRuntime(report))
+            first = await registry.get(tenant, user)
+            report.update(
+                {
+                    "computerId": first.computer_id,
+                    "volumeRef": first.volume_ref,
+                    "providerRef": first.provider_ref,
+                }
+            )
+            if upgrade_signal is not None:
+                output.with_suffix(".ready.json").write_text(
+                    json.dumps(
+                        {
+                            "oldInstanceIdle": True,
+                            "computerId": first.computer_id,
+                            "sourceImage": first.image,
+                        }
+                    )
+                    + "\n"
+                )
+                async with asyncio.timeout(180):
+                    while not upgrade_signal.exists():
+                        await asyncio.sleep(0.25)
+                report["sourceImageFilePlaneOperations"] = driver.operations
+                connection = await clients.enter_async_context(client())
+                driver = TimedComputerDriver(
+                    HttpComputerControl(connection), image=config["target_image"]
+                )
+                changed = await ComputerManager(
+                    registry, driver, owner="fixture-image-upgrade"
+                ).migrate_image(tenant, user, expected_image=first.image)
+                assert changed.state.value == "registered" and changed.provider_ref is None
+                assert (
+                    changed.image == config["target_image"]
+                    and first.image in changed.retired_images
+                )
+                report["imageMigration"] = {
+                    "sourceImage": first.image,
+                    "targetImage": changed.image,
+                    "afterMaintenanceState": changed.state.value,
+                    "computerIdPreserved": changed.computer_id == first.computer_id,
+                    "workDiskPreserved": changed.volume_ref == first.volume_ref,
+                    "newInstanceDeferredToAuthorizedRun": True,
+                }
+            await execute(2, ToolsRuntime(report))
+            second = await registry.get(tenant, user)
+            assert (first.computer_id, first.volume_ref) == (
+                second.computer_id,
+                second.volume_ref,
+            )
+            if upgrade_signal is None:
+                assert first.provider_ref == second.provider_ref
+            else:
+                assert first.provider_ref != second.provider_ref
+                report["replacementInstanceVerified"] = bool(config["image_marker"])
+                report["providerRefAfter"] = second.provider_ref
+            report["sameComputerAndDiskAcrossFreshProviders"] = True
+            published = {}
+            for index in (1, 2):
+                published[str(index)] = [
+                    e.payload["source_path"]
+                    for e in await events_repository.list_after(
+                        tenant, "fixture-run-" + str(index), 0
+                    )
+                    if e.type == "artifact.ready"
+                ]
+            assert published == {"1": ["outputs/first.txt"], "2": ["outputs/second.txt"]}, published
+            report["publishedPerRound"] = published
+            report["passed"] = True
+        finally:
+            try:
+                computer = await registry.get(tenant, user)
+            except NotFoundError:
+                computer = None
+            if computer is not None:
+                report.update(
+                    {
+                        "volumeRef": computer.volume_ref,
+                        "controlVolumeRef": computer.volume_ref + "-control",
+                    }
+                )
+                token = await registry.claim_recovery(tenant, user, owner="fixture-cleanup")
+                await driver.recover(computer, token)
+                await registry.complete_recovery(token, provider_ref=None)
+                report["fixtureInstanceRemoved"] = True
+            report["filePlaneOperations"] = driver.operations
+            output.write_text(json.dumps(report, indent=2) + "\n")
+            await engine.dispose()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--staging-files", type=int, default=0)
+    parser.add_argument("--upgrade-signal", type=Path)
+    args = parser.parse_args()
+    asyncio.run(probe(args.config, args.output, args.staging_files, args.upgrade_signal))

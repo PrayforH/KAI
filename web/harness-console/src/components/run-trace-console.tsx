@@ -139,6 +139,7 @@ export function RunTraceConsole({
   threadId,
   liveActivity,
   runBusy = false,
+  focusRunId,
   onBack,
   agentName,
   agentVersion,
@@ -149,6 +150,8 @@ export function RunTraceConsole({
   /** True while the task's current run is queued/running; a fall to false
    * triggers one history refetch so the finished turn shows up. */
   runBusy?: boolean;
+  /** Deep link from a failed managed card: select this run's failure node. */
+  focusRunId?: string | null;
   /** Return to the conversation view (the trace view replaces it in place). */
   onBack?: () => void;
   /** The task's agent version; resolves the 系统 node's prompt and tools. */
@@ -329,6 +332,21 @@ export function RunTraceConsole({
       ),
     [history, liveActivity, manifest],
   );
+
+  // 失败回放：深链进入时选中该 run 的异常节点（退而求其次选首个节点），
+  // 让用户落在失败上下文而不是从最新一轮重新找。
+  const focusApplied = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusRunId || focusApplied.current === focusRunId) return;
+    const runNodes = trace.nodes.filter((node) => node.runId === focusRunId);
+    if (!runNodes.length) return;
+    const failed = runNodes.find((node) =>
+      ["failed", "timed_out", "rejected", "error"].includes(node.status),
+    );
+    focusApplied.current = focusRunId;
+    setSelectedId((failed ?? runNodes[0]).id);
+    setActiveTab("overview");
+  }, [focusRunId, trace.nodes]);
 
   // While the task runs (or a live activity is on screen) and no durable run
   // has been parsed yet, poll through the window where history may only hold

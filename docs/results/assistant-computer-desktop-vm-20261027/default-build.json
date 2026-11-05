@@ -1,0 +1,6 @@
+{
+  "defaultBuildSucceeded": true,
+  "image": "sha256:f6ff82bbfc167157aca72e14a0812eb8aa2dad47dbe7405d12e9180273be9b70",
+  "validatedRuntimeImage": "sha256:f6ff82bbfc167157aca72e14a0812eb8aa2dad47dbe7405d12e9180273be9b70",
+  "sameImage": true
+}

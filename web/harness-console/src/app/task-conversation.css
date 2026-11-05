@@ -1,0 +1,9 @@
+/* Task workbench presentation. No Bot bubbles, compact receipts or reply composer. */
+body.codex-theme-v1 .console-shell[data-conversation-surface="task"] .task-answer-row {
+  min-width: 0;
+  width: 100%;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="task"] .harness-assistant-message:is(:hover, :focus-within) > .assistant-message-controls {
+  opacity: 1;
+}

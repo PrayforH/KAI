@@ -29,6 +29,18 @@ const config: HarnessServerConfig = {
 };
 
 describe("Harness same-origin proxies", () => {
+  it("forwards conditional history reads without inventing a body for 304", async () => {
+    const fetcher: typeof fetch = async (_url, init) => {
+      expect(new Headers(init?.headers).get("if-none-match")).toBe('"page-1"');
+      return new Response(null, { status: 304, headers: { ETag: '"page-1"' } });
+    };
+    const response = await proxyAguiRequest(new Request("http://console/api/agui/threads/assistant/history", {
+      headers: { "If-None-Match": '"page-1"' },
+    }), config, fetcher, "threads/assistant/history");
+    expect(response.status).toBe(304);
+    expect(await response.text()).toBe("");
+    expect(response.headers.get("etag")).toBe('"page-1"');
+  });
   it("preserves the sandbox and security headers on an authenticated HTML presentation", async () => {
     const policy = "sandbox allow-scripts; connect-src 'none'";
     const fetcher: typeof fetch = async () => new Response("<html>fixture</html>", {
@@ -543,6 +555,17 @@ describe("Harness proxy response compression", () => {
       new Blob([raw]).stream().pipeThrough(new DecompressionStream("gzip")),
     ).text();
     expect(decompressed).toBe(payload);
+  });
+
+  it("keeps a weak JSON validator after gzip so idle chat history can return 304", async () => {
+    const payload = JSON.stringify({ messages: Array(400).fill({ content: "历史回复" }) });
+    const response = await proxyAguiRequest(new Request(`http://console.test/api/agui/${historyPath}`, {
+      headers: { "Accept-Encoding": "gzip" },
+    }), config, async () => new Response(payload, {
+      headers: { "Content-Type": "application/json", ETag: '"saved-page"' },
+    }), historyPath);
+    expect(response.headers.get("Content-Encoding")).toBe("gzip");
+    expect(response.headers.get("ETag")).toBe('W/"saved-page"');
   });
 
   it("keeps a small JSON reply readable when gzip is accepted", async () => {

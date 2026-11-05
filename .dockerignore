@@ -5,6 +5,7 @@
 .env
 .env.*
 !.env.example
+/private/
 **/.DS_Store
 **/._*
 **/__pycache__

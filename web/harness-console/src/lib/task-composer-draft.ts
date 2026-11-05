@@ -1,5 +1,6 @@
 import type { Attachment, CreateAttachment } from "@assistant-ui/react";
 import { inputArtifactIdFromAttachment } from "./input-attachment-adapter";
+import type { ReplyReference } from "./reply-references";
 
 export interface ComposerDraftStorage {
   getItem(key: string): string | null;
@@ -97,6 +98,41 @@ export function persistTaskComposerSnapshot(storage: ComposerDraftStorage, userI
     if (durable.length) storage.setItem(key, JSON.stringify(durable));
     else storage.removeItem(key);
   } catch { /* retain the in-memory draft */ }
+}
+
+export function persistComposerReplyDraft(
+  storage: ComposerDraftStorage,
+  userId: string,
+  threadId: string,
+  reply: ReplyReference | null,
+) {
+  const key = snapshotKey(userId, threadId) + ":reply";
+  try {
+    if (reply) storage.setItem(key, JSON.stringify(reply));
+    else storage.removeItem(key);
+  } catch { /* browser storage unavailable */ }
+}
+
+export function loadComposerReplyDraft(
+  storage: ComposerDraftStorage,
+  userId: string,
+  threadId: string,
+): ReplyReference | null {
+  try {
+    const raw: unknown = JSON.parse(storage.getItem(snapshotKey(userId, threadId) + ":reply") ?? "null");
+    if (
+      raw && typeof raw === "object" && !Array.isArray(raw) &&
+      typeof (raw as { messageId?: unknown }).messageId === "string" &&
+      (raw as { messageId: string }).messageId.length > 0
+    ) {
+      const value = raw as { messageId: string; excerpt?: unknown };
+      return {
+        messageId: value.messageId,
+        excerpt: typeof value.excerpt === "string" ? value.excerpt : null,
+      };
+    }
+  } catch { /* old or unavailable browser storage */ }
+  return null;
 }
 
 export function loadTaskComposerSnapshot(storage: ComposerDraftStorage, userId: string, threadId: string): TaskComposerSnapshot {

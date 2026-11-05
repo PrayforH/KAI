@@ -1,0 +1,24 @@
+{
+  "identity": "user",
+  "senderAppId": "cli_aa51ac4376b9dc0e",
+  "messages": [
+    {
+      "message_id": "om_x100b62d9ff846ca4cf6c213a6af7095",
+      "msg_type": "text",
+      "content": "KAI 飞书连接测试：机器人回复已送达。网页与飞书共用你的助理会话。",
+      "create_time": "2026-10-26 12:46"
+    },
+    {
+      "message_id": "om_x100b62d9fc0768a0b4ce66a12fb0121",
+      "msg_type": "text",
+      "content": "飞书设置已验证",
+      "create_time": "2026-10-26 12:46"
+    },
+    {
+      "message_id": "om_x100b62d9fa5aa0a4ce418d812a7cce5",
+      "msg_type": "text",
+      "content": "图中文字为 `IMG79-R2B8`，图形是一个绿色的实心三角形，背景纯白、没有其他元素。图片验收代号 IMGSET79-G4N6 已记住。",
+      "create_time": "2026-10-26 12:47"
+    }
+  ]
+}

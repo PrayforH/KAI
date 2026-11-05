@@ -1,0 +1,11 @@
+{
+  "checkedAt": "2026-10-27T06:05:46.376655+00:00",
+  "guestShutdownExitCode": 0,
+  "probeContainerRemoved": true,
+  "remainingProbeContainers": 0,
+  "privateVmDiskRetained": true,
+  "readOnlyBaseRetained": true,
+  "privateSshCredentialsRemainOn79Only": true,
+  "productionComputerRunning": true,
+  "productionVolumesRemoved": false
+}

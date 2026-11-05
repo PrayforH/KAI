@@ -199,3 +199,46 @@ async def test_events_keep_the_active_trace_and_span_for_replay_correlation() ->
     assert emitted.span_id == expected_span_id
     assert expected_trace_id is not None
     assert expected_span_id is not None
+
+
+@pytest.mark.asyncio
+async def test_persisted_projection_failure_does_not_fail_source_or_other_delivery() -> None:
+    from unittest.mock import AsyncMock
+
+    repository = InMemoryEventRepository()
+    bus = InMemoryEventBus()
+    service = EventService(repository, bus, clock=lambda: NOW, id_generator=_ids())
+    broken = AsyncMock(side_effect=ConnectionError("projection unavailable"))
+    recorded = AsyncMock()
+    service.add_persisted_listener(broken)
+    service.add_persisted_listener(recorded)
+    event = await service.append(
+        tenant_id="tenant-a", run_id="run-1", session_id="session-1", event_type="run.succeeded"
+    )
+    recorded.assert_awaited_once_with(event)
+    assert await repository.list_after("tenant-a", "run-1", 0) == [event]
+    assert await bus.read("tenant-a", "run-1") == [event]
+
+
+@pytest.mark.asyncio
+async def test_outbox_replay_redelivers_the_same_source_identity_to_projection() -> None:
+    from unittest.mock import AsyncMock
+
+    repository = InMemoryEventRepository()
+    service = EventService(repository, InMemoryEventBus(), clock=lambda: NOW, id_generator=_ids())
+    projected = AsyncMock()
+    service.add_persisted_listener(projected)
+    arguments = dict(
+        event_id="source-terminal",
+        tenant_id="tenant-a",
+        run_id="run-1",
+        session_id="session-1",
+        event_type="run.succeeded",
+        timestamp=NOW.isoformat(),
+        payload={},
+    )
+    first = await service.append_once(**arguments)
+    replay = await service.append_once(**arguments)
+    assert replay.event_id == first.event_id
+    assert [call.args[0].event_id for call in projected.await_args_list] == [first.event_id] * 2
+    assert len(await repository.list_after("tenant-a", "run-1", 0)) == 1

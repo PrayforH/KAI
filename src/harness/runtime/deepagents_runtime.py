@@ -81,7 +81,7 @@ from harness.runtime.deepagents_context import (
 from harness.runtime.deepagents_events import DeepagentsStreamMapper
 from harness.runtime.deepagents_plan import DeepagentsPlan, build_deepagents_plan
 from harness.runtime.deepagents_tool_gate import DeepagentsToolGate
-from harness.runtime.execution_contract import VISIBLE_EXECUTION_CONTRACT
+from harness.runtime.execution_contract import visible_execution_contract
 from harness.runtime.sandbox_tools import run_bundle_python_tool
 
 # Where the platform materializes immutable Skills. Deliberately the same root
@@ -536,7 +536,7 @@ class DeepagentsRuntime:
         config = self._config
         prompt = (
             f"{config.snapshot.system_prompt.rstrip()}\n\n"
-            f"{VISIBLE_EXECUTION_CONTRACT}\n{context.platform_tools.instructions}"
+            f"{visible_execution_contract(require_public_preface=context.platform_tools.require_public_preface)}\n{context.platform_tools.instructions}"
         )
         # The same answer contract the Claude runtime injects, so an answer over
         # bound knowledge cites and hedging identically across kernels.

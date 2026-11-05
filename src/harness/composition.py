@@ -28,6 +28,22 @@ from harness.application.memory import UserMemoryService
 from harness.application.runs import RunQuotaPlan, RunService
 from harness.application.sessions import SessionService
 from harness.application.workspaces import WorkspacePolicy, WorkspaceService
+from harness.assistant.conversation import PersonalConversation
+from harness.assistant.delegation import (
+    AssistantDelegationGateway,
+    assistant_delegation_overlay,
+    coordinator_session,
+    objective_observer_session,
+    observer_create_scope,
+    session_specialist,
+    specialist_directory_instructions,
+    specialist_role_overlay,
+)
+from harness.assistant.file_delivery import ChannelFiles
+from harness.assistant.memory_tools import MemoryBankGateway, assistant_memory_overlay
+from harness.assistant.messaging import assistant_messaging_overlay
+from harness.assistant.repository import PostgresAssistantRepository
+from harness.assistant.service import AssistantService
 from harness.auth.api_access import ApiAccessService
 from harness.auth.audit import AuditService
 from harness.auth.repositories import PostgresAuditRepository, PostgresAuthRepository
@@ -37,16 +53,24 @@ from harness.automations.pg_repositories import (
     PostgresAutomationTaskRepository,
 )
 from harness.automations.service import AutomationService
+from harness.computer.conventions import (
+    computer_conventions_overlay,
+    office_conventions_overlay,
+)
+from harness.computer.desktop import DesktopControlService
+from harness.computer.runtime import ComputerRuntime
+from harness.computer.targets import ComputerTarget, ComputerTargetService
 from harness.config import Settings
 from harness.context.checkpoint import ContextCheckpointService
 from harness.context.service import ContextService
 from harness.core.errors import NotFoundError, PermissionDeniedError, SandboxGovernanceError
 from harness.core.manifest import AgentManifest, AgentManifestSnapshot
-from harness.core.models import ModelCompatibility, RunStatus, Session
+from harness.core.models import ModelCompatibility, Run, RunStatus, Session
 from harness.core.ports import ArtifactStore, TaskQueue
 from harness.deployments.controller import DeploymentController
 from harness.deployments.queue import DeploymentTaskQueue
 from harness.deployments.service import DeploymentService
+from harness.dictation.service import DictationService, DictationSettings
 from harness.evals.controller import EvalController
 from harness.evals.queue import EvalTaskQueue
 from harness.evals.service import EvalControlPlaneService
@@ -58,6 +82,11 @@ from harness.execution.credentials import (
     CredentialSourceKey,
     InMemoryCredentialBroker,
 )
+from harness.feishu.configuration import FeishuConnectionControl
+from harness.feishu.media import FeishuMedia, FeishuResourceClient, MediaRejectedError
+from harness.feishu.models import FeishuSettings
+from harness.feishu.repository import FeishuRepository
+from harness.feishu.service import FeishuService
 from harness.governance.service import GovernanceService
 from harness.inputs.processors import DefaultInputProcessor
 from harness.knowledge.directory import PlatformUserDirectory
@@ -123,6 +152,7 @@ from harness.runtime.sdk_tool_gate import SdkToolGate
 from harness.runtime.session_store import PostgresSessionStore
 from harness.sandbox.base import (
     SandboxEgress,
+    SandboxHandle,
     SandboxIsolation,
     SandboxProvider,
     provider_meets_enforcement_floor,
@@ -233,6 +263,8 @@ from harness.studio.service import AgentStudioService
 from harness.studio.skill_builder import ControlPlaneSkillConversationService
 from harness.studio.web_configuration import WebConfigurationService
 from harness.triggers.service import AgentTriggerService
+from harness.weixin.media import WeixinMedia, WeixinMediaSettings
+from harness.weixin.service import WeixinService
 from harness.worker.orchestrator import RunOrchestrator, SandboxResolver
 
 
@@ -274,21 +306,19 @@ def _deployment_model_routes(settings: Settings) -> tuple[CcSwitchClaudeConfig, 
             )
         )
 
-    for route_id, model in (
-        ("deepseek-v4-flash", settings.new_api_flash_model),
-        ("deepseek-v4-pro", settings.new_api_pro_model),
-    ):
-        add(
-            route_id,
-            base_url=settings.new_api_base_url,
-            model=model,
-            credential=settings.new_api_key,
-            auth_scheme=settings.new_api_auth_scheme,
-            compatibility=settings.new_api_compatibility,
-            capabilities=settings.new_api_capabilities,
-        )
+    # Official route ids. V4/V4.1 and the pro variant are retired, so the
+    # deployment seeds exactly the routes it still serves.
     add(
-        "minimax-m3",
+        "deepseek-flash",
+        base_url=settings.new_api_base_url,
+        model=settings.new_api_flash_model or settings.new_api_model,
+        credential=settings.new_api_key,
+        auth_scheme=settings.new_api_auth_scheme,
+        compatibility=settings.new_api_compatibility,
+        capabilities=settings.new_api_capabilities,
+    )
+    add(
+        "minimax-m3-1-flash",
         base_url=settings.minimax_m3_base_url,
         model=settings.minimax_m3_model,
         credential=settings.minimax_m3_api_key,
@@ -669,7 +699,8 @@ def build_production_container(
     registry = PostgresAgentRegistry(sessions, skill_blobs)
     team_space_repository = PostgresTeamSpaceRepository(sessions)
     session_repository = PostgresSessionRepository(sessions)
-    runs = PostgresRunRepository(sessions)
+    computer_runtime = ComputerRuntime(settings, sessions, execution_enabled=execution_enabled)
+    runs = PostgresRunRepository(sessions, fence_computers=computer_runtime.enabled)
     approvals = PostgresApprovalRepository(sessions)
     artifact_repository = PostgresArtifactRepository(sessions)
     input_repository = PostgresInputArtifactRepository(sessions)
@@ -887,6 +918,7 @@ def build_production_container(
         enabled=settings.web_tools_enabled,
         provider=settings.web_search_provider,
         api_key=settings.web_search_api_key.get_secret_value(),
+        doubao_api_key=settings.web_doubao_api_key.get_secret_value(),
     )
     model_configurations = ModelConfigurationService(
         capability_catalogs,
@@ -1361,6 +1393,7 @@ def build_production_container(
             # refused rather than served by the default. Without a snapshot the
             # deployment's single setting decides, which is how every session ran
             # before profiles carried a provider.
+            use_computer = await computer_runtime.matches(session)
             provider_id = default_name
             profile = None
             pinned_egress_enforcement = False
@@ -1389,6 +1422,13 @@ def build_production_container(
                 # is refused rather than silently executing weaker than declared.
                 if not provider_meets_enforcement_floor(provider_id, profile.minimum_enforcement):
                     raise RuntimeError("execution_profile_enforcement_below_minimum")
+
+            if use_computer:
+                if profile is not None:
+                    raise SandboxGovernanceError(
+                        "Personal Computer cannot override a pinned execution profile"
+                    )
+                provider_id = await computer_runtime.provider_id(session)
 
             # A Session's trust high-watermark sets the weakest backend it still
             # accepts, independent of any published execution profile: once
@@ -1419,7 +1459,10 @@ def build_production_container(
                     f"{provider_id} provides {enforcement.value}"
                 )
 
-            run_sandbox, run_backend = backends_for(provider_id)
+            if use_computer:
+                run_sandbox = run_backend = await computer_runtime.provider(session, runs.get)
+            else:
+                run_sandbox, run_backend = backends_for(provider_id)
 
             # Set once the Agent's manifests are known; scoped() below applies it
             # to whichever provider this Run ends up with.
@@ -1428,6 +1471,10 @@ def build_production_container(
             def scoped(provider: SandboxProvider) -> SandboxProvider:
                 if egress is None or not egress.is_restrictive():
                     return provider
+                if use_computer:
+                    raise SandboxGovernanceError(
+                        "Personal Computer cannot enforce this Run's egress policy"
+                    )
                 return EgressScopedSandbox(provider, egress)
 
             if settings.sandbox_execution_mode != "worker_cli_deferred":
@@ -1446,6 +1493,12 @@ def build_production_container(
                 for version in (root, *children.values())
             )
             manifests = tuple(snapshot.manifest for snapshot in snapshots)
+            if use_computer and any(
+                manifest.spec.runtime != "claude-agent-sdk" for manifest in manifests
+            ):
+                raise SandboxGovernanceError(
+                    "Personal Computer currently requires the Worker-local SDK runtime"
+                )
             if settings.sandbox_egress_enforcement == "enforced" or pinned_egress_enforcement:
                 catalog_mcp = (await capability_catalogs.get(tenant_id)).catalog.mcp_servers
                 egress = sandbox_egress_policy(
@@ -1482,6 +1535,10 @@ def build_production_container(
                     for tool in snapshot.python_tool_snapshots
                 ),
             ):
+                if use_computer:
+                    raise SandboxGovernanceError(
+                        "Personal Computer cannot run a required remote CLI"
+                    )
                 return scoped(run_backend)
             return scoped(run_sandbox)
 
@@ -1534,10 +1591,162 @@ def build_production_container(
         quotas=enforced_quotas,
     )
 
-    async def runtime_builder_tools(run, session):
+    async def runtime_builder_tools(
+        run: Run,
+        session: Session,
+        handle: SandboxHandle | None = None,
+        sandbox: SandboxProvider | None = None,
+    ):
+        from harness.runtime.platform_tools import PlatformToolOverlay
         from harness.studio.runtime_builder import builder_overlay
 
-        return await builder_overlay(container, events, run, session)
+        overlay = await builder_overlay(container, events, run, session)
+        computer_overlay = (
+            await computer_runtime.gui_overlay(session, sandbox, handle)
+            if handle is not None and sandbox is not None
+            else PlatformToolOverlay()
+        )
+        conventions_overlay = (
+            computer_conventions_overlay()
+            if handle is not None and sandbox is not None
+            else PlatformToolOverlay()
+        )
+        office_overlay = (
+            office_conventions_overlay()
+            if getattr(sandbox, "image_office", False)
+            else PlatformToolOverlay()
+        )
+        delegation_overlay = PlatformToolOverlay()
+        coordinator = False
+        if container.assistant is not None and session.agent_name:
+            coordinator = await coordinator_session(container.agui, session)
+            observer = (
+                False
+                if coordinator
+                else await objective_observer_session(
+                    container.assistant, container.agui, session
+                )
+            )
+            if coordinator or observer:
+                run_tenant, run_id = run.tenant_id, run.run_id
+
+                async def emit_handover(payload: dict[str, object]) -> None:
+                    await events.append(
+                        tenant_id=run_tenant,
+                        run_id=run_id,
+                        session_id=run.session_id,
+                        event_type="ui.handover",
+                        payload=payload,
+                    )
+
+                async def emit_control_receipt(payload: dict[str, object]) -> None:
+                    await events.append(
+                        tenant_id=run_tenant, run_id=run_id, session_id=run.session_id,
+                        event_type="ui.assistant_control", payload=payload,
+                    )
+
+                delegation_overlay = assistant_delegation_overlay(
+                    AssistantDelegationGateway(container.assistant),
+                    run,
+                    session,
+                    coordinator_thread=True,
+                    read_only=observer,
+                    parent_objective_id=(
+                        await observer_create_scope(
+                            container.assistant, container.agui, session
+                        )
+                        if observer
+                        else None
+                    ),
+                    emit=emit_handover,
+                    emit_receipt=emit_control_receipt,
+                )
+        primary_profile = (
+            await container.assistant.primary_profile(session.tenant_id, session.user_id)
+            if container.assistant is not None and coordinator else None
+        )
+        directory_overlay = PlatformToolOverlay()
+        if coordinator and container.assistant is not None:
+            if (run.input.get("conversation_surface") == "assistant"
+                    and run.business_project_id is None
+                    and session.runtime_type in {"claude-agent-sdk", "deepagents"}):
+                directory_overlay = await assistant_messaging_overlay(
+                    container.assistant, events, run, session
+                )
+            else:
+                directory_overlay = PlatformToolOverlay(
+                    instructions=specialist_directory_instructions(
+                        await container.assistant.repository.list_specialists(
+                            session.tenant_id, session.user_id
+                        ), session.tenant_id, session.user_id,
+                    )
+                )
+        memory_overlay = PlatformToolOverlay()
+        specialist = (
+            await session_specialist(container.assistant, container.agui, session)
+            if container.assistant is not None and session.agent_name else None
+        )
+        role_overlay = (
+            specialist_role_overlay(specialist or primary_profile)
+            if specialist or primary_profile else PlatformToolOverlay()
+        )
+        if container.memory_bank is not None and session.agent_name:
+            memory_scope = f"specialist:{specialist.slug}" if specialist else None
+            memory_overlay = assistant_memory_overlay(
+                MemoryBankGateway(container.memory_bank, scope=memory_scope), run, session
+            )
+        file_overlay = PlatformToolOverlay()
+        if (run.input.get("conversation_surface") == "assistant"
+                and run.business_project_id is None):
+            from harness.assistant.artifact_delivery import assistant_file_overlay
+
+            async def file_channel() -> FeishuService:
+                if (container.feishu_connections is not None
+                        and container.feishu_factory is not None):
+                    return container.feishu_factory(
+                        await container.feishu_connections.resolve(run.tenant_id)
+                    )
+                if container.feishu is None:
+                    raise ValueError("飞书连接尚未配置")
+                return container.feishu
+
+            file_overlay = await assistant_file_overlay(
+                artifact_service, run_service, agui, file_channel, run, session,
+            )
+        merged = (
+            overlay.tools
+            + computer_overlay.tools
+            + office_overlay.tools
+            + delegation_overlay.tools
+            + memory_overlay.tools
+            + directory_overlay.tools
+            + file_overlay.tools
+        )
+        instructions = "\n\n".join(
+            layer.instructions
+            for layer in (
+                overlay,
+                computer_overlay,
+                conventions_overlay,
+                office_overlay,
+                delegation_overlay,
+                role_overlay,
+                directory_overlay,
+                memory_overlay,
+                file_overlay,
+            )
+            if layer.instructions
+        )
+        return PlatformToolOverlay(
+            tools=merged,
+            instructions=instructions,
+            require_public_preface=(
+                role_overlay.require_public_preface if specialist or (
+                    coordinator and run.input.get("conversation_surface") == "assistant"
+                    and run.business_project_id is None
+                ) else True
+            ),
+        )
 
     worker = RunOrchestrator(
         platform_tools_factory=runtime_builder_tools,
@@ -1716,6 +1925,7 @@ def build_production_container(
     )
 
     async def close() -> None:
+        await computer_runtime.close()
         if warm_sdk_pool is not None:
             await warm_sdk_pool.close()
         await redis.aclose()
@@ -1751,6 +1961,65 @@ def build_production_container(
         intent_selector=UIIntentSelector.from_settings(settings),
         memory=memory_bank,
     )
+    assistant = AssistantService(
+        PostgresAssistantRepository(sessions),
+        agents=agent_service,
+        auth=auth,
+        projects=project_service,
+        agui=agui,
+        runs=run_service,
+        events=raw_event_repository,
+        event_service=events,
+        quotas=enforced_quotas,
+        team_spaces=team_spaces,
+        unviewed_pause_hours=settings.assistant_unviewed_pause_hours,
+    )
+    assistant.set_cipher(mcp_credential_service.cipher)
+    events.add_persisted_listener(assistant.observe_run_event)
+    feishu_settings = FeishuSettings()
+
+    async def channel_vision_route(tenant_id: str, configured_route: str = "") -> str:
+        catalog = await model_configurations.list(tenant_id)
+        routes = [
+            model
+            for model in catalog.models
+            if model.enabled
+            and model.credential_configured
+            and {"vision", "streaming", "tool_use"}.issubset(model.capabilities)
+            and model.model_type in {"chat", "vision"}
+        ]
+        if configured_route:
+            routes = [model for model in routes if model.route_id == configured_route]
+        if not routes:
+            raise MediaRejectedError("尚未配置可用的图片理解模型，请管理员在 KAI 配置后重试。")
+        return sorted(routes, key=lambda model: (model.model_type != "vision", model.route_id))[
+            0
+        ].route_id
+
+    def feishu_factory(active: FeishuSettings) -> FeishuService:
+        from harness.feishu.file_transport import FeishuFileTransport
+
+        service = FeishuService(
+            FeishuRepository(sessions, active.app_id),
+            active,
+            assistant=assistant,
+            auth=auth,
+            agents=agent_service,
+            conversation=PersonalConversation(
+                agui=agui, runs=run_service, agents=agent_service, events=events
+            ),
+            media=FeishuMedia(
+                FeishuResourceClient(active),
+                input_service,
+                DictationService(DictationSettings()),
+                vision_route=lambda tenant: channel_vision_route(tenant, active.vision_model_route),
+            ),
+        )
+        service.files = ChannelFiles(
+            sessions, artifact_service, mcp_credential_service.cipher, FeishuFileTransport(service)
+        )
+        return service
+
     container = ApiContainer(
         presentations=presentations,
         evolution=evolution,
@@ -1794,6 +2063,32 @@ def build_production_container(
         runs=run_service,
         triggers=trigger_service,
         automations=automation_service,
+        assistant=assistant,
+        computer_desktop=DesktopControlService(sessions),
+        computer_targets=ComputerTargetService(
+            computer_runtime.registry,
+            [ComputerTarget.model_validate(t) for t in settings.assistant_computer_targets],
+        ),
+        weixin=WeixinService(
+            sessions,
+            mcp_credential_service.cipher,
+            PersonalConversation(agui=agui, runs=run_service, agents=agent_service, events=events),
+            auth,
+            media=WeixinMedia(
+                input_service,
+                DictationService(DictationSettings()),
+                vision_route=lambda tenant: channel_vision_route(
+                    tenant, WeixinMediaSettings().vision_model_route
+                ),
+            ),
+        ),
+        feishu=feishu_factory(feishu_settings),
+        feishu_factory=feishu_factory,
+        feishu_connections=FeishuConnectionControl(
+            sessions,
+            mcp_credential_service.cipher,
+            feishu_settings,
+        ),
         projects=project_service,
         approvals=approval_service,
         artifacts=artifact_service,
@@ -1829,4 +2124,13 @@ def build_production_container(
         sandbox_startup=sandbox_startup,
         close=close,
     )
+    if container.weixin is not None:
+        from harness.weixin.file_transport import WeixinFileTransport
+
+        container.weixin.files = ChannelFiles(
+            sessions,
+            artifact_service,
+            mcp_credential_service.cipher,
+            WeixinFileTransport(container.weixin),
+        )
     return container

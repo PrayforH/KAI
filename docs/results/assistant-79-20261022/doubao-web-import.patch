@@ -1,0 +1,20 @@
+--- a/web/harness-console/src/components/web-configuration.tsx
++++ b/web/harness-console/src/components/web-configuration.tsx
+@@ -2,7 +2,7 @@
+ import { useEffect, useState } from "react";
+ import { SecretInput } from "./secret-input";
+ 
+-type Config = {enabled:boolean;effectiveEnabled:boolean;platformEnabled:boolean;provider:"platform"|"minimax"|"tavily";platformProvider:string;credentialConfigured:boolean;personalKeyConfigured:boolean};
++type Config = {enabled:boolean;effectiveEnabled:boolean;platformEnabled:boolean;provider:"platform"|"minimax"|"tavily"|"doubao";platformProvider:string;credentialConfigured:boolean;personalKeyConfigured:boolean};
+ export function WebConfiguration() {
+   const [config,setConfig]=useState<Config|null>(null);
+   const [key,setKey]=useState("");
+@@ -21,7 +21,7 @@
+     {config&&<>
+       <label className="settings-preference-toggle"><input type="checkbox" checked={config.enabled} disabled={busy||!config.platformEnabled} onChange={e=>void save({...config,enabled:e.target.checked})}/><span><strong>允许公开联网</strong><small>关闭后停止这两项工具的后续调用，不改动智能体已发布版本。</small></span></label>
+       {!config.platformEnabled&&<p>当前环境已停用内置联网。</p>}
+-      <label className="settings-preference-row"><span><strong>搜索服务</strong><small>网页读取不需要搜索服务密钥。</small></span><select aria-label="联网搜索服务" disabled={busy} value={config.provider} onChange={e=>{setKey("");void save({...config,provider:e.target.value as Config['provider']})}}><option value="platform">平台默认（{config.platformProvider}）</option><option value="minimax">MiniMax</option><option value="tavily">Tavily</option></select></label>
++      <label className="settings-preference-row"><span><strong>搜索服务</strong><small>网页读取不需要搜索服务密钥。</small></span><select aria-label="联网搜索服务" disabled={busy} value={config.provider} onChange={e=>{setKey("");void save({...config,provider:e.target.value as Config['provider']})}}><option value="platform">平台默认（{config.platformProvider}）</option><option value="minimax">MiniMax</option><option value="tavily">Tavily</option><option value="doubao">豆包（网页与图片）</option></select></label>
+       <label className="settings-web-key"><span>搜索 API Key</span><SecretInput aria-label="搜索 API Key" revealLabel="搜索 API Key" value={key} autoComplete="new-password" onChange={e=>setKey(e.target.value)} placeholder={config.personalKeyConfigured?'已保存个人密钥，输入可替换':config.credentialConfigured?'正在使用平台密钥，可填写个人密钥':'填写该搜索服务的 API Key'}/><small>密钥加密保存，仅供当前账号使用；平台密钥不在页面回显。</small></label>
+       <div className="settings-web-actions"><button type="button" disabled={busy||!key.trim()} onClick={()=>void save(config,false,key)}>保存密钥</button>{config.personalKeyConfigured&&<button type="button" disabled={busy} onClick={()=>{setKey("");void save(config,true)}}>移除个人密钥</button>}</div>
+       <p>智能体勾选工具并保存后可试跑，发布后用于正式对话。搜索还需有效的服务密钥，网页读取取决于环境的网络连接。</p>

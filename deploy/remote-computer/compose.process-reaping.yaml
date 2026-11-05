@@ -1,0 +1,8 @@
+# Merge into the node-private composition and preserve these flags on releases.
+# SSH ProxyCommand children can outlive SSH. PID 1 must adopt and reap them;
+# increasing pids_limit only delays the next connection failure.
+services:
+  computer-control:
+    init: true
+  computer-viewer:
+    init: true

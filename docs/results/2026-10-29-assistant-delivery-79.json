@@ -1,0 +1,175 @@
+{
+  "client_confirmation": "用户确认飞书与微信两端 TXT、HTML 都能下载打开",
+  "files": [
+    {
+      "channel": "weixin",
+      "name": "ping-probe-1029.txt",
+      "artifact_id": "artifact_0d83a92508e34f2894f0ab4eb3bda7bc",
+      "status": "sent",
+      "download": {
+        "http": 200,
+        "hash_matches": true,
+        "disposition": "attachment"
+      },
+      "preview": {
+        "http": 200,
+        "hash_matches": true,
+        "disposition": "inline"
+      },
+      "anonymous_denied": true
+    },
+    {
+      "channel": "feishu",
+      "name": "delivery-DLV79-1029-B.txt",
+      "artifact_id": "artifact_22a2f85f977c4033b2d6f92e152b6e52",
+      "status": "sent",
+      "download": {
+        "http": 200,
+        "hash_matches": true,
+        "disposition": "attachment"
+      },
+      "preview": {
+        "http": 200,
+        "hash_matches": true,
+        "disposition": "inline"
+      },
+      "anonymous_denied": true,
+      "message_receipt_saved": true
+    },
+    {
+      "channel": "feishu",
+      "name": "report-DLV79-1029-B.html",
+      "artifact_id": "artifact_fea183c3b1e94b87ab12a6e329b6ad6c",
+      "status": "sent",
+      "download": {
+        "http": 200,
+        "hash_matches": true,
+        "disposition": "attachment"
+      },
+      "preview": {
+        "http": 200,
+        "hash_matches": true,
+        "disposition": "inline"
+      },
+      "anonymous_denied": true,
+      "message_receipt_saved": true
+    },
+    {
+      "channel": "weixin",
+      "name": "alt-delivery-1029.txt",
+      "artifact_id": "artifact_19e6cb3e85074ea286902e71a4156b7e",
+      "status": "sent",
+      "download": {
+        "http": 200,
+        "hash_matches": true,
+        "disposition": "attachment"
+      },
+      "preview": {
+        "http": 200,
+        "hash_matches": true,
+        "disposition": "inline"
+      },
+      "anonymous_denied": true
+    },
+    {
+      "channel": "weixin",
+      "name": "alt-report-1029.html",
+      "artifact_id": "artifact_e480bb4836964886b3522700ef6e5ca0",
+      "status": "sent",
+      "download": {
+        "http": 200,
+        "hash_matches": true,
+        "disposition": "attachment"
+      },
+      "preview": {
+        "http": 200,
+        "hash_matches": true,
+        "disposition": "inline"
+      },
+      "anonymous_denied": true
+    },
+    {
+      "channel": "feishu",
+      "name": "交付验收-DLV79-1029-A.txt",
+      "artifact_id": "artifact_b2e5dda47bab44eb953f8dc787c9c5e1",
+      "status": "sent",
+      "download": {
+        "http": 200,
+        "hash_matches": true,
+        "disposition": "attachment"
+      },
+      "preview": {
+        "http": 200,
+        "hash_matches": true,
+        "disposition": "inline"
+      },
+      "anonymous_denied": true,
+      "message_receipt_saved": true
+    },
+    {
+      "channel": "feishu",
+      "name": "交付报告-DLV79-1029-A.html",
+      "artifact_id": "artifact_ca5c283a5f8a4e31bbab8d1d739e75ea",
+      "status": "sent",
+      "download": {
+        "http": 200,
+        "hash_matches": true,
+        "disposition": "attachment"
+      },
+      "preview": {
+        "http": 200,
+        "hash_matches": true,
+        "disposition": "inline"
+      },
+      "anonymous_denied": true,
+      "message_receipt_saved": true
+    }
+  ],
+  "channels": {
+    "feishu": {
+      "pending_files": 0,
+      "failed_files": 0,
+      "delivered_files": 4,
+      "receiver_online": true
+    },
+    "weixin": {
+      "online": true,
+      "fileDeliveries": {
+        "sent": 3
+      }
+    }
+  },
+  "thread": "kai-personal-assistant-v1",
+  "history": {
+    "http": 200,
+    "feishu_marker": true,
+    "wechat_marker": true,
+    "file_card_projection": true
+  },
+  "continuity": {
+    "run_ids": [
+      "run_6e57a4c4f1384d23837f51cb1775429d",
+      "run_981c1d60f46b4c0cb4961451d605a3dd",
+      "run_fe2dfc59851045459ccd62454fb64054"
+    ],
+    "all_succeeded": true,
+    "same_session": true,
+    "web_recalled_wechat_code": true,
+    "original_names_republished": [
+      [
+        "delivery-DLV79-1029-B.txt",
+        "1d910b1b90a404f612e3277fd9ceb88946df1378f3cf7a7a0d423d278f572d44"
+      ],
+      [
+        "report-DLV79-1029-B.html",
+        "36cbf52f4b7c556947f5bd24dda9a2c39e166a1df936d1ba7964b9045f90ccc9"
+      ]
+    ]
+  },
+  "browser_download": {
+    "name": "交付报告-DLV79-1029-A.html",
+    "bytes": 903,
+    "sha256": "96ead1b6429d26646917365617850074d68829f35241f2edb508c92cb87e885a",
+    "matches_expected": true
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "phase": "before",
+  "bootId": "1612db01-776b-4c73-88ea-1770b8258a27",
+  "kernel": "6.1.0-54-cloud-amd64",
+  "browserVersion": "Chromium 156.0.8078.47 built on Debian GNU/Linux 12 (bookworm)",
+  "sandbox": {
+    "Layer 1 Sandbox": "Namespace",
+    "PID namespaces": "Yes",
+    "Network namespaces": "Yes",
+    "Seccomp-BPF sandbox": "Yes",
+    "Seccomp-BPF sandbox supports TSYNC": "Yes",
+    "Ptrace Protection with Yama LSM (Broker)": "Yes",
+    "Ptrace Protection with Yama LSM (Non-broker)": "No"
+  },
+  "processes": [
+    {
+      "pid": 4778,
+      "renderer": false,
+      "isolatedPidNamespace": false,
+      "Uid": "28001\t28001\t28001\t28001",
+      "CapEff": "0000000000000000",
+      "NoNewPrivs": "1",
+      "Seccomp": "0"
+    },
+    {
+      "pid": 4876,
+      "renderer": true,
+      "isolatedPidNamespace": true,
+      "Uid": "28001\t28001\t28001\t28001",
+      "CapEff": "0000000000000000",
+      "NoNewPrivs": "1",
+      "Seccomp": "2"
+    },
+    {
+      "pid": 4896,
+      "renderer": true,
+      "isolatedPidNamespace": true,
+      "Uid": "28001\t28001\t28001\t28001",
+      "CapEff": "0000000000000000",
+      "NoNewPrivs": "1",
+      "Seccomp": "2"
+    },
+    {
+      "pid": 4897,
+      "renderer": true,
+      "isolatedPidNamespace": true,
+      "Uid": "28001\t28001\t28001\t28001",
+      "CapEff": "0000000000000000",
+      "NoNewPrivs": "1",
+      "Seccomp": "2"
+    }
+  ],
+  "boundaries": {
+    "profileUnreadable": true,
+    "xauthorityUnreadable": true,
+    "browserEnvironmentUnreadable": true,
+    "browserSignalDenied": true,
+    "x11Denied": true,
+    "sudoDenied": true,
+    "noPublicCdp": true,
+    "vncRequiresAuthentication": true
+  },
+  "continuity": {
+    "marker": "KAI79-DESKTOP-20261027-X7V2",
+    "screenshot": "/var/lib/kai-desktop/desktop-before.png"
+  }
+}

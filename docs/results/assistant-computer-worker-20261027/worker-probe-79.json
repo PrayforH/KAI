@@ -1,0 +1,28 @@
+{
+  "tenant": "computer-worker-probe-323586008df24c45a04ffd59e92ce858",
+  "checkedAt": "2026-10-27T03:06:46.719846+00:00",
+  "scope": "Real Worker orchestration and Docker Computer; deterministic runtime and in-memory Run/events; no real model or production chats",
+  "plainChatAllocatedNoComputer": true,
+  "chunkedAndEmptyTransferConfirmed": true,
+  "taskUids": [
+    28000,
+    28000,
+    28000
+  ],
+  "computerId": "computer_9f087cf34f854632a455b9da880dadcf",
+  "volumeRef": "kai-computer-9f087cf34f854632a455b9da880dadcf",
+  "providerRef": "f9cb9a3809d58dc2699ded24389761bef2e09735318ac59d23c26a169de8532c",
+  "previousFilesAndExecutableRetained": true,
+  "sameComputerAndDiskAcrossFreshProviders": true,
+  "publishedPerRound": {
+    "1": [
+      "outputs/first.txt"
+    ],
+    "2": [
+      "outputs/second.txt"
+    ]
+  },
+  "passed": true,
+  "controlVolumeRef": "kai-computer-9f087cf34f854632a455b9da880dadcf-control",
+  "fixtureInstanceRemoved": true
+}

@@ -15,7 +15,7 @@ longer owns the sandbox before touching it.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Protocol
@@ -205,6 +205,41 @@ class SandboxLeaseService:
             )
             if not await self._repository.replace(updated, expected_epoch=lease.epoch):
                 raise SandboxLeaseError("sandbox lease changed while reclaiming")
+            return updated
+
+    async def reconcile_dead_run_lease(
+        self,
+        tenant_id: str,
+        session_id: str,
+        *,
+        run_is_terminal: Callable[[str], Awaitable[bool]],
+    ) -> SandboxLease | None:
+        """Release the session's live lease when its Run already ended.
+
+        A Worker crash (or deploy restart) can leave a live lease whose bound
+        Run reached a terminal state; every later Run of the Session then fails
+        with "already holds a live sandbox lease". This reconciles exactly that
+        case and nothing else: the lease is released only while it is still
+        ACTIVE and only when the caller-verifiable bound Run is terminal. A
+        lease owned by a live Run, or one already released/reclaimed, stays
+        untouched, and an uncheckable Run (lookup error) is never guessed at.
+        TTL expiry is handled separately by acquire() superseding expired
+        leases. Idempotent: a reconciled lease is no longer live, so a second
+        call returns None.
+        """
+        async with self._lock:
+            previous = await self._repository.latest_for_session(tenant_id, session_id)
+            if previous is None or not previous.is_live(self._clock()):
+                return None
+            if not await run_is_terminal(previous.run_id):
+                return None
+            now = self._clock()
+            updated = previous.model_copy(
+                update={"state": SandboxLeaseState.RELEASED, "released_at": now}
+            )
+            if not await self._repository.replace(updated, expected_epoch=previous.epoch):
+                # Another reconciler released it first; there is nothing left.
+                return None
             return updated
 
     async def live(self, tenant_id: str | None = None) -> Sequence[SandboxLease]:

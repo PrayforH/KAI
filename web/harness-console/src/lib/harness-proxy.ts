@@ -64,7 +64,7 @@ function upstreamHeaders(
     ...config.serviceHeaders,
   });
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
-  for (const name of ["accept", "content-type", "last-event-id", "idempotency-key"]) {
+  for (const name of ["accept", "content-type", "last-event-id", "idempotency-key", "if-none-match"]) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
@@ -203,8 +203,10 @@ async function compressJsonResponse(
   headers.set("content-encoding", "gzip");
   headers.set("content-length", String(compressed.byteLength));
   headers.append("vary", "accept-encoding");
-  // The body is no longer the identity representation the upstream tagged.
-  headers.delete("etag");
+  // Compression changes the bytes, not the JSON. Retain a weak validator so
+  // an idle conversation can revalidate without downloading its history again.
+  const etag = headers.get("etag");
+  if (etag && !etag.startsWith("W/")) headers.set("etag", `W/${etag}`);
   return new Response(compressed, {
     status: upstream.status,
     statusText: upstream.statusText,

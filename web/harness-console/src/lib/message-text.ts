@@ -18,6 +18,39 @@ export function normalizeMessageText(value: string): string {
     .trim();
 }
 
+const REPEATED_BLOCK_FLOOR = 40;
+
+/**
+ * Stream/tool-result merge occasionally appends the same answer again, or a
+ * second copy of its opening, after the first one. Collapse only a suffix that
+ * is byte-identical to a prefix of the same reply and starts on a line
+ * boundary — long enough that it cannot be ordinary repeated prose.
+ */
+export function collapseRepeatedAssistantText(value: string): string {
+  const text = normalizeMessageText(value);
+  if (text.length < REPEATED_BLOCK_FLOOR * 2) return text;
+  for (let index = 1; index < text.length; index += 1) {
+    if (text[index - 1] !== "\n") continue;
+    const tail = text.slice(index).trim();
+    if (tail.length < REPEATED_BLOCK_FLOOR) continue;
+    if (tail.length > text.length - REPEATED_BLOCK_FLOOR) continue;
+    if (!text.startsWith(tail)) continue;
+    return text.slice(0, index).trim();
+  }
+  return text;
+}
+
+/** Adjacent assistant turns with identical text are one duplicated reply. */
+export function isDuplicateAssistantReply(
+  current: string,
+  previous: string,
+  status?: string,
+): boolean {
+  if (status === "running") return false;
+  const text = normalizeMessageText(current);
+  return Boolean(text) && text === normalizeMessageText(previous);
+}
+
 /** Temperature range separators are prose, not GFM strikethrough delimiters.
  * Preserve literal code (including an unfinished streaming code span/fence).
  */

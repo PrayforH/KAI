@@ -1,0 +1,11 @@
+{
+  "transport": "application_service_only",
+  "realFeishuDelivery": false,
+  "sharedThread": "kai-personal-assistant-v1",
+  "runId": "run_7084daf642d748d590de0adad3651362",
+  "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+  "verificationCode": "SYNC79_995b93b22c",
+  "answer": "已同步",
+  "status": "succeeded",
+  "retryRecoveredSameRun": true
+}
