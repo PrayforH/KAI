@@ -167,6 +167,7 @@ def native_request(action: str, request: dict[str, Any]) -> None:
         "display": ":99", "xauthority": "/run/kai-desktop/Xauthority",
         "runtime_dir": "/run/kai-desktop",
         "dbus_address": "unix:path=/run/kai-desktop/bus",
+        "private_desktop_session": True,
     }
     spec = importlib.util.spec_from_file_location("kai_native_desktop", module_path)
     if spec is None or spec.loader is None:

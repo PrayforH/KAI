@@ -108,5 +108,6 @@ def test_vm_native_gate_has_fixed_identity_and_environment(monkeypatch, extra):
         assert actual["native_binary"] == "/opt/kai-agent-desktop/agent-desktop"
         assert actual["dbus_address"] == "unix:path=/run/kai-desktop/bus"
         assert actual["runtime_dir"] == "/run/kai-desktop"
+        assert actual["private_desktop_session"] is True
         assert forwarded == request
         assert Path("/etc/kai-computer/native-desktop.json") in trusted

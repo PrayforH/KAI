@@ -1,12 +1,44 @@
 """Native desktop is a typed capability, never an arbitrary CLI/shell tunnel."""
 
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
-from harness.computer import vm_host
+from harness.computer import native_desktop, vm_host
 from harness.computer.native_desktop import advance_fence, command, uncertain
 from harness.sandbox.base import SandboxCommandResult
+
+
+@pytest.mark.parametrize("wrong", [None, "uid", "service", "pid", "setns"])
+def test_vm_mount_join_is_fixed_to_the_desktop_service_and_fails_closed(
+    tmp_path, monkeypatch, wrong,
+):
+    process = tmp_path / "884"
+    (process / "ns").mkdir(parents=True)
+    (process / "ns/mnt").write_bytes(b"namespace fixture")
+    uid = 0 if wrong == "uid" else 28001
+    (process / "status").write_text("Uid:\t" + "\t".join([str(uid)] * 4) + "\n")
+    service = "other.service" if wrong == "service" else "kai-desktop.service"
+    (process / "cgroup").write_text("0::/system.slice/" + service + "\n")
+    monkeypatch.setattr(native_desktop, "PROC", tmp_path)
+    lookup = Mock(return_value=b"0\n" if wrong == "pid" else b"884\n")
+    monkeypatch.setattr(native_desktop.subprocess, "check_output", lookup)
+    libc = SimpleNamespace(setns=Mock(return_value=-1 if wrong == "setns" else 0))
+    if wrong:
+        with pytest.raises(PermissionError):
+            native_desktop.enter_vm_desktop_mounts(28001, libc)
+    else:
+        native_desktop.enter_vm_desktop_mounts(28001, libc)
+    lookup.assert_called_once_with(
+        ["/usr/bin/systemctl", "show", "--value", "--property=MainPID", "kai-desktop.service"],
+        timeout=2,
+    )
+    if wrong in (None, "setns"):
+        libc.setns.assert_called_once()
+        assert libc.setns.call_args.args[1] == 0x00020000
+    else:
+        libc.setns.assert_not_called()
 
 
 @pytest.mark.parametrize(

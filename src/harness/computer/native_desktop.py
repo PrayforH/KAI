@@ -27,6 +27,38 @@ REF = re.compile(r"@s[a-z0-9]+:e[0-9]+")
 ACTIONS = {"status", "list_apps", "list_windows", "snapshot", "click", "type", "select"}
 MAX_OUTPUT = 48 * 1024
 ROOT = Path("/var/lib/kai-computer")
+PROC = Path("/proc")
+
+
+def enter_vm_desktop_mounts(uid: int, libc: Any) -> None:
+    """Join only the fixed desktop service's PrivateTmp, before dropping UID.
+
+    AT-SPI uses /run, but the native CLI also authenticates to X11 through
+    /tmp/.X11-unix. Keep PrivateTmp enabled instead of publishing that socket.
+    Neither the model nor the operator config can choose a PID or namespace.
+    """
+    raw = subprocess.check_output(
+        ["/usr/bin/systemctl", "show", "--value", "--property=MainPID", "kai-desktop.service"],
+        timeout=2,
+    ).strip()
+    if re.fullmatch(rb"[1-9][0-9]{0,9}", raw) is None:
+        raise PermissionError("private desktop service is not running")
+    process = PROC / raw.decode("ascii")
+    uids = next(
+        (line.split()[1:] for line in (process / "status").read_text().splitlines()
+         if line.startswith("Uid:")), []
+    )
+    groups = (process / "cgroup").read_text().splitlines()
+    if uid == 0 or uids != [str(uid)] * 4 or not any(
+        line.split(":", 2)[-1] == "/system.slice/kai-desktop.service" for line in groups
+    ):
+        raise PermissionError("private desktop service identity changed")
+    fd = os.open(process / "ns/mnt", os.O_RDONLY | os.O_CLOEXEC)
+    try:
+        if libc.setns(fd, 0x00020000) != 0:  # CLONE_NEWNS; never join PID/user namespaces.
+            raise PermissionError("private desktop mount session could not be entered")
+    finally:
+        os.close(fd)
 
 
 @contextmanager
@@ -188,6 +220,8 @@ def run(config: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
     if uid == 0:
         raise PermissionError("desktop actions cannot run as root")
     libc = ctypes.CDLL(None, use_errno=True)
+    if config.get("private_desktop_session", False):
+        enter_vm_desktop_mounts(uid, libc)
     if libc.prctl(38, 1, 0, 0, 0) != 0:  # PR_SET_NO_NEW_PRIVS
         raise PermissionError("native desktop could not drop escalation privileges")
     # This gate handles just one request. Drop the wrapper itself as well as
