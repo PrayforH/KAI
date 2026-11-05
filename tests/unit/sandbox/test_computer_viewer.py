@@ -1,4 +1,4 @@
-"""Browser access needs a live owner session, matching origin and sole input."""
+"""Shared previews require owner login; input requires the current human lease."""
 
 import asyncio
 import struct
@@ -85,6 +85,7 @@ def gateway(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         identities=tmp_path,
         origins=frozenset({ORIGIN}),
         public_origin=ORIGIN,
+        max_viewers_per_target=2,
     )
     auth = httpx.AsyncClient(base_url="http://api", transport=httpx.MockTransport(authenticate))
     with TestClient(viewer.create_viewer_app(settings, client=auth)) as client:
@@ -142,25 +143,61 @@ def wait_for_control(client: TestClient, expected: str) -> None:
     time.sleep(0.1)
 
 
-def test_binary_transport_is_exclusive_and_revocation_closes_it(
+def test_binary_transport_allows_multiple_views_and_revocation_closes_them(
     gateway: tuple[TestClient, dict[str, Any]],
 ) -> None:
     client, state = gateway
+    state["script"] = ECHO_SCRIPT
     with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}) as socket:
         assert socket.receive_bytes() == VERSION
         wait_for_control(client, "human")
         socket.send_bytes(HANDSHAKE + UPDATE_REQUEST)
-        # The child echoes the first four bytes it receives, completing the
-        # round trip through protocol-valid traffic.
-        assert socket.receive_bytes() == VERSION[:4]
+        drain(socket, HANDSHAKE + UPDATE_REQUEST)
 
-        with pytest.raises(WebSocketDisconnect):
-            with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}):
-                pytest.fail("a second input owner was accepted")
-        assert state["connections"] == 1
-        state["active"] = False
-        assert socket.receive()["type"] == "websocket.close"
+        with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}) as second:
+            assert second.receive_bytes() == VERSION
+            assert state["connections"] == 2
+            with pytest.raises(WebSocketDisconnect) as rejected:
+                with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}):
+                    pytest.fail("viewer capacity was exceeded")
+            assert rejected.value.code == 1013
+            assert state["connections"] == 2
+            state["active"] = False
+            assert socket.receive()["type"] == "websocket.close"
+            assert second.receive()["type"] == "websocket.close"
     assert client.get("/computer/status").status_code == 403
+
+
+def test_closing_one_preview_releases_capacity_without_interrupting_another(gateway):
+    client, state = gateway
+    state.update(script=ECHO_SCRIPT, control="observe")
+    headers = {"origin": ORIGIN}
+    with client.websocket_connect("/computer/desktop", headers=headers) as first:
+        assert first.receive_bytes() == VERSION
+        with client.websocket_connect("/computer/desktop", headers=headers) as second:
+            assert second.receive_bytes() == VERSION
+            second.close()
+            assert second.receive()["type"] == "websocket.close"
+        # Teardown terminates a child process before returning its slot.
+        deadline = time.monotonic() + 5
+        while True:
+            try:
+                with client.websocket_connect("/computer/desktop", headers=headers) as replacement:
+                    assert replacement.receive_bytes() == VERSION
+                    first.send_bytes(HANDSHAKE + KEY_A_DOWN + UPDATE_REQUEST)
+                    drain(first, HANDSHAKE + UPDATE_REQUEST)
+                    assert status_json(client)["input_frames"] == {"keyboard": 0, "pointer": 0}
+                    replacement.close()
+                    assert replacement.receive()["type"] == "websocket.close"
+                break
+            except WebSocketDisconnect as error:
+                assert error.code == 1013
+                assert time.monotonic() < deadline, "closed preview did not release capacity"
+                time.sleep(0.02)
+        assert state["connections"] == 3
+        assert status_json(client)["busy"] is True
+        first.close()
+        assert first.receive()["type"] == "websocket.close"
 
 
 def drain(socket: Any, expected: bytes) -> bytes:

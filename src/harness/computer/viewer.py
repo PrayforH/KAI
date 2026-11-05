@@ -240,6 +240,7 @@ class ViewerSettings(BaseModel):
     public_origin: str
     cookie_name: str = "harness_access_token"
     targets: dict[str, SshEndpoint] = Field(default_factory=dict)
+    max_viewers_per_target: int = Field(default=16, ge=1, le=32)
 
     @field_validator("public_origin")
     @classmethod
@@ -337,19 +338,22 @@ def create_viewer_app(
 ) -> FastAPI:
     auth = client or httpx.AsyncClient(base_url=settings.api_url, trust_env=False, timeout=5)
     desktop = DesktopSsh(settings)
-    sessions: dict[str | None, asyncio.Lock] = {}
+    sessions: dict[str | None, int] = {}
 
     @asynccontextmanager
     async def preview_slot(target: str | None) -> AsyncGenerator[bool]:
-        lock = sessions.setdefault(target, asyncio.Lock())
-        if lock.locked():
+        # Tabs may observe the same desktop concurrently. Input still needs
+        # the canonical human lease and a current epoch on every message.
+        # Admission has no await between checking and reserving a slot.
+        active = sessions.get(target, 0)
+        if active >= settings.max_viewers_per_target:
             yield False
             return
-        await lock.acquire()
+        sessions[target] = active + 1
         try:
             yield True
         finally:
-            lock.release()
+            sessions[target] -= 1
 
     input_frames = {"keyboard": 0, "pointer": 0}
 
@@ -388,7 +392,7 @@ def create_viewer_app(
         return {
             "enabled": True,
             "mode": "preview",
-            "busy": any(lock.locked() for lock in sessions.values()),
+            "busy": any(count > 0 for count in sessions.values()),
             "input_frames": dict(input_frames),
             "desktop_url": settings.public_origin + "/assistant/computer",
             "control": control,
@@ -469,7 +473,6 @@ def create_viewer_app(
             logging.getLogger(__name__).warning("desktop connection refused: owner login required")
             await websocket.close(code=1008)
             return
-        # One viewer for this preview. No Agent GUI endpoint exists yet.
         requested = websocket.query_params.get("target")
         try:
             target_id, endpoint, binding = await active_endpoint(token, requested)
@@ -478,6 +481,9 @@ def create_viewer_app(
             return
         async with preview_slot(target_id) as acquired:
             if not acquired:
+                logging.getLogger(__name__).warning(
+                    "desktop connection refused: viewer capacity reached"
+                )
                 await websocket.close(code=1013)
                 return
             control: dict[str, str | int] = {"state": "observe", "epoch": 0}
@@ -613,9 +619,8 @@ def create_viewer_app(
                 )
             finally:
                 # Teardown is bounded and terminates the transport first: a
-                # cancelled pipe reader must never hold the exclusive lock
-                # past a lost client, or the preview locks out every future
-                # connection until restart.
+                # cancelled pipe reader must never hold a preview slot past
+                # a lost client and eventually exhaust the viewer capacity.
                 for task in tasks:
                     task.cancel()
                 if process is not None:
@@ -647,7 +652,7 @@ def main() -> None:
     settings = ViewerSettings.model_validate_json(
         Path(os.environ["KAI_VIEWER_CONFIG"]).read_bytes()
     )
-    # Exactly one process owns the preview's input lock.
+    # One process owns the bounded, per-target preview admission counter.
     uvicorn.run(
         create_viewer_app(settings),
         host="0.0.0.0",

@@ -84,6 +84,7 @@ def selected_viewer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         origins=frozenset({ORIGIN}),
         public_origin=ORIGIN,
         targets={"cloud": endpoint("cloud"), "local": endpoint("local")},
+        max_viewers_per_target=1,
     )
     auth = httpx.AsyncClient(base_url="http://api", transport=httpx.MockTransport(respond))
     with TestClient(viewer.create_viewer_app(settings, client=auth)) as client:
@@ -143,6 +144,27 @@ def test_explicit_unknown_target_never_opens_transport(selected_viewer):
         with client.websocket_connect("/computer/desktop?target=other", headers={"origin": ORIGIN}):
             pytest.fail("unauthorized view was accepted")
     assert opened == []
+
+
+def test_capacity_is_independent_for_each_authorized_target(selected_viewer):
+    client, _, opened = selected_viewer
+    headers = {"origin": ORIGIN}
+    with client.websocket_connect("/computer/desktop?target=cloud", headers=headers) as cloud:
+        assert cloud.receive_bytes() == b"RFB 003.008\n"
+        with client.websocket_connect("/computer/desktop?target=local", headers=headers) as local:
+            assert local.receive_bytes() == b"RFB 003.008\n"
+            with pytest.raises(WebSocketDisconnect) as rejected:
+                with client.websocket_connect("/computer/desktop?target=cloud", headers=headers):
+                    pytest.fail("cloud exceeded its own capacity")
+            assert rejected.value.code == 1013
+            handshake = b"RFB 003.008\n" + b"\x01\x01"
+            local.send_bytes(handshake)
+            assert local.receive_bytes() == handshake
+            local.close()
+            assert local.receive()["type"] == "websocket.close"
+        cloud.close()
+        assert cloud.receive()["type"] == "websocket.close"
+    assert opened == ["cloud", "local"]
 
 
 def test_old_human_epoch_cannot_send_input_while_observation_poll_is_waiting(
