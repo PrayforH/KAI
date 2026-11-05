@@ -69,7 +69,12 @@ class ComputerRuntime:
         control = HttpComputerControl(self.client)
         self.drivers[DOCKER_PROVIDER] = DockerComputerDriver(control, image=image)
         if vm_image:
-            self.drivers[VM_PROVIDER] = VmComputerDriver(control, image=vm_image)
+            self.drivers[VM_PROVIDER] = VmComputerDriver(
+                control, image=vm_image,
+                native_desktop=settings.assistant_computer_vm_native_desktop,
+            )
+        elif settings.assistant_computer_vm_native_desktop:
+            raise ValueError("native VM desktop requires an enabled VM image")
         if settings.assistant_computer_remote_image:
             if re.fullmatch(_IMAGE, settings.assistant_computer_remote_image) is None:
                 raise ValueError("remote computer requires pinned components")

@@ -195,7 +195,8 @@ def run(config: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
     os.setgroups([])
     os.setgid(account.pw_gid)
     os.setuid(uid)
-    base = Path(f"/run/user/{uid}/kai-computer-ax") / config["computer_id"]
+    runtime = config.get("runtime_dir", f"/run/user/{uid}")
+    base = Path(runtime) / "kai-computer-ax" / config["computer_id"]
     base.mkdir(mode=0o700, parents=True, exist_ok=True)
     home = base / hashlib.sha256(scope.encode()).hexdigest()
     home.mkdir(mode=0o700, exist_ok=True)
@@ -213,8 +214,8 @@ def run(config: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
         "HOME": account.pw_dir,
         "DISPLAY": config["display"],
         "XAUTHORITY": config["xauthority"],
-        "XDG_RUNTIME_DIR": f"/run/user/{uid}",
-        "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{uid}/bus",
+        "XDG_RUNTIME_DIR": runtime,
+        "DBUS_SESSION_BUS_ADDRESS": config.get("dbus_address", f"unix:path=/run/user/{uid}/bus"),
         "AGENT_DESKTOP_HOME": str(home),
     }
 

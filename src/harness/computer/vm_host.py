@@ -72,6 +72,7 @@ class VmComputerSpec(BaseModel):
     kvm_device: str = Field(min_length=1, max_length=512)
     network: str = Field(min_length=1, max_length=128)
     adopt: bool = False
+    native_desktop: bool = False
     wait_ssh_seconds: int = Field(default=240, ge=5, le=900)
 
     @field_validator("guest_base_digest")

@@ -80,6 +80,26 @@ async def test_enabled_worker_constructs_only_private_http_transport_without_con
         await engine.dispose()
 
 
+@pytest.mark.asyncio
+async def test_vm_native_tools_require_a_vm_image_and_explicit_capability():
+    engine, sessions = create_database("postgresql+asyncpg://harness:harness@127.0.0.1:1/unused")
+    try:
+        with pytest.raises(ValueError, match="enabled VM image"):
+            ComputerRuntime(configuration(assistant_computer_vm_native_desktop=True),
+                            sessions, execution_enabled=True)
+        runtime = ComputerRuntime(configuration(
+            assistant_computer_vm_image="sha256:" + "b" * 64,
+            assistant_computer_vm_native_desktop=True,
+        ), sessions, execution_enabled=True)
+        try:
+            assert runtime.drivers["vm-computer"].native_desktop is True
+            assert not getattr(runtime.drivers["docker-computer"], "native_desktop", False)
+        finally:
+            await runtime.close()
+    finally:
+        await engine.dispose()
+
+
 def test_unchecked_probe_authorization_cannot_be_selected_for_a_production_database():
     with pytest.raises(ValueError, match="isolated Computer probe"):
         create_app(

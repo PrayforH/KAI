@@ -34,7 +34,9 @@ def main() -> None:
     hashes: dict[str, str] = {}
     for directory, names in (
         (Path(args.runtime_dir), ASSETS),
-        (Path(args.control_dir), ("supervisor.py", "ssh_gate.py", "display_gate.py")),
+        (Path(args.control_dir), (
+            "supervisor.py", "ssh_gate.py", "display_gate.py", "native_desktop.py",
+        )),
     ):
         for name in names:
             path = directory / name

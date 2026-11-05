@@ -1,8 +1,9 @@
 """Lazy persistent Computer tools for a Worker-local model runtime.
 
 A Run scope owns the heartbeat task group. A model-only conversation allocates
-no computer; first tool use acquires the lease, captures the remote baseline,
-and uploads only this Run's staged inputs. Scope failure cancels orchestration.
+no computer; first tool use acquires the lease. Only file/shell/ACP use captures
+the remote baseline and stages inputs; GUI observations do not scan the disk.
+Scope failure cancels orchestration.
 """
 
 import asyncio
@@ -43,6 +44,8 @@ class _Lease:
     scope: _Scope
     stop: asyncio.Event = field(default_factory=asyncio.Event)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    workspace_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    workspace_ready: bool = False
     ready: asyncio.Future[tuple[ComputerAllocation, ComputerWorkspace]] | None = None
     task: asyncio.Task[None] | None = None
 
@@ -131,13 +134,23 @@ class ComputerSandboxProvider:
     async def prepare(self, handle: SandboxHandle) -> None:
         self._lease(handle)
 
-    async def _remote(self, handle: SandboxHandle) -> tuple[ComputerAllocation, ComputerWorkspace]:
+    async def _remote(
+        self, handle: SandboxHandle, *, prepare_workspace: bool = True,
+    ) -> tuple[ComputerAllocation, ComputerWorkspace]:
         lease = self._lease(handle)
         async with lease.lock:
             if lease.ready is None:
                 lease.ready = asyncio.get_running_loop().create_future()
                 lease.task = lease.scope.tasks.create_task(self._hold(lease))
-        return await asyncio.shield(lease.ready)
+        allocation, workspace = await asyncio.shield(lease.ready)
+        if prepare_workspace:
+            async with lease.workspace_lock:
+                if not lease.workspace_ready:
+                    if workspace.baseline is None:
+                        await workspace.capture_baseline()
+                    await workspace.stage(handle.path)
+                    lease.workspace_ready = True
+        return allocation, workspace
 
     async def _hold(self, lease: _Lease) -> None:
         assert lease.ready is not None
@@ -160,8 +173,6 @@ class ComputerSandboxProvider:
                 workspace = ComputerWorkspace(
                     self.driver, allocation, max_bytes=self.max_bytes, max_members=self.max_members
                 )
-                await workspace.capture_baseline()
-                await workspace.stage(lease.handle.path)
                 lease.ready.set_result((allocation, workspace))
                 await lease.stop.wait()
         except BaseException as error:
@@ -197,13 +208,13 @@ class ComputerSandboxProvider:
 
     async def collect(self, handle: SandboxHandle) -> None:
         lease = self._lease(handle)
-        if lease.ready is not None:
+        if lease.ready is not None and lease.workspace_ready:
             _, workspace = await asyncio.shield(lease.ready)
             await workspace.collect(handle.path)
 
     async def workspace_baseline(self, handle: SandboxHandle) -> Mapping[str, str]:
         lease = self._lease(handle)
-        if lease.ready is None:
+        if lease.ready is None or not lease.workspace_ready:
             return {}
         _, workspace = await asyncio.shield(lease.ready)
         return workspace.fingerprints()
@@ -218,7 +229,7 @@ class ComputerSandboxProvider:
     ) -> dict[str, object]:
         """One visible-desktop action through the node's unified control gate."""
 
-        allocation, _ = await self._remote(handle)
+        allocation, _ = await self._remote(handle, prepare_workspace=False)
         return await self.driver.host.desktop(
             allocation.token, operation, payload, expected_epoch=expected_epoch
         )

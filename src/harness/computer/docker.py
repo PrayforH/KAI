@@ -47,6 +47,7 @@ class DockerComputerDriver:
     # property of the computer image, not of the transport; only a provider
     # whose image carries it may promise it to the model.
     image_office = False
+    native_desktop = False
 
     def __init__(self, host: ComputerHost, *, image: str) -> None:
         if not image.strip():

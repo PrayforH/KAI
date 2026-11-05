@@ -8,6 +8,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Mapping, Sequence
 from pathlib import Path
+from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock
 
@@ -95,6 +96,44 @@ def provider(database: DatabaseFixture, tmp_path: Path, *, ttl: int = 10):
     )
     sandbox = ComputerSandboxProvider(registry, cast(DockerComputerDriver, driver), session)
     return registry, driver, sandbox
+
+
+@pytest.mark.asyncio
+async def test_gui_skips_disk_scan_then_concurrent_file_tools_stage_inputs_once(
+    database: DatabaseFixture, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    registry, driver, sandbox = provider(database, tmp_path)
+    _, _, runs, _ = await arrange(tmp_path, sandbox_override=sandbox)
+    run = await runs.get("tenant-a", "run-1")
+    desktop = AsyncMock(return_value={"windows": []})
+    monkeypatch.setattr(driver, "host", SimpleNamespace(desktop=desktop), raising=False)
+    execute = AsyncMock(wraps=driver.execute)
+    monkeypatch.setattr(driver, "execute", execute)
+    (driver.root / "old.txt").write_text("existing owner file")
+    async with sandbox.run_scope(run):
+        handle = await sandbox.provision(run)
+        (handle.path / "inputs").mkdir()
+        (handle.path / "inputs/request.txt").write_text("staged input")
+        await sandbox.desktop_action(handle, "ui", {"action": "list_windows"}, expected_epoch=1)
+        await sandbox.collect(handle)
+        assert await sandbox.workspace_baseline(handle) == {}
+        execute.assert_not_awaited()
+        assert not (driver.root / "inputs/request.txt").exists()
+        await asyncio.gather(
+            sandbox.upload_files(handle, [("one.txt", b"one")]),
+            sandbox.upload_files(handle, [("two.txt", b"two")]),
+        )
+        assert (driver.root / "inputs/request.txt").read_text() == "staged input"
+        operations = [call.args[1][-1] for call in execute.await_args_list]
+        assert operations.count("manifest") == 1
+        # One initial input batch, then the two tool uploads.
+        assert operations.count("upload_batch") == 3
+        assert "old.txt" in await sandbox.workspace_baseline(handle)
+        await sandbox.collect(handle)
+        assert not (handle.path / "old.txt").exists()
+        assert (handle.path / "one.txt").read_bytes() == b"one"
+        assert (handle.path / "two.txt").read_bytes() == b"two"
+    assert (await registry.get("tenant-a", "user-1")).state is ComputerState.IDLE
 
 
 @pytest.mark.asyncio

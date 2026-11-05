@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     # A VM-based persistent computer shares the same control plane; its image
     # is the immutable guest base digest. Empty keeps VM routing disabled.
     assistant_computer_vm_image: str = ""
+    assistant_computer_vm_native_desktop: bool = False
     assistant_computer_default_provider: Literal["docker-computer", "vm-computer"] = (
         "docker-computer"
     )

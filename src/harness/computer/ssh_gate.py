@@ -7,6 +7,7 @@ Run with /usr/bin/python3 -I; no application packages or HOME imports are used.
 """
 
 import ctypes
+import importlib.util
 import json
 import os
 import stat
@@ -21,6 +22,7 @@ MAX_BYTES = 40 * 1024**2
 ROOT = Path("/var/lib/kai-computer")
 SUPERVISOR = Path("/opt/kai-computer/supervisor.py")
 ACTIONS = frozenset({"init", "activate", "renew", "deactivate", "exec"})
+NATIVE_ACTIONS = frozenset({"native_desktop", "native_barrier"})
 ENVIRONMENT = {"PATH": "/usr/local/bin:/usr/bin:/bin", "LANG": "C.UTF-8"}
 
 
@@ -37,7 +39,7 @@ def decode_request(body: bytes) -> tuple[str, dict[str, Any]]:
         or type(value.get("version")) is not int
         or value["version"] != 1
         or not isinstance(action, str)
-        or action not in ACTIONS
+        or action not in ACTIONS | NATIVE_ACTIONS
         or not isinstance(spec, dict)
     ):
         raise ValueError("invalid guest request")
@@ -99,6 +101,12 @@ def run(*, require_workdisk: Callable[[], None] = _require_workdisk) -> None:
     if sys.platform != "linux" or os.geteuid() != 0:
         raise PermissionError("guest control requires its privileged entrypoint")
     action, spec = decode_request(sys.stdin.buffer.read(MAX_BYTES + 1))
+    if action in NATIVE_ACTIONS:
+        # Native UI is not an arbitrary supervisor command. It uses the same
+        # bounded adapter/fence as remote PCs, configured only by the operator.
+        require_workdisk()
+        native_request(action, spec)
+        return
     _trusted(SUPERVISOR.parent, directory=True)
     _trusted(SUPERVISOR, directory=False)
     # The SSH server itself is outside the task namespace. Enforce the same
@@ -136,6 +144,43 @@ def run(*, require_workdisk: Callable[[], None] = _require_workdisk) -> None:
         )
     finally:
         request.unlink(missing_ok=True)
+
+
+def native_request(action: str, request: dict[str, Any]) -> None:
+    path = Path("/etc/kai-computer/native-desktop.json")
+    module_path = Path("/opt/kai-computer/native_desktop.py")
+    identity_path = Path("/etc/kai-computer/identity.json")
+    for entry in (path, module_path, identity_path):
+        _trusted(entry.parent, directory=True)
+        _trusted(entry, directory=False)
+    value = json.loads(path.read_bytes())
+    if (value.keys() != {"enabled", "binary_sha256"} or value["enabled"] is not True
+            or not isinstance(value["binary_sha256"], str)
+            or len(value["binary_sha256"]) != 64
+            or any(c not in "0123456789abcdef" for c in value["binary_sha256"])):
+        raise PermissionError("native VM desktop is not configured")
+    identity = json.loads(identity_path.read_bytes())
+    config = {
+        "computer_id": identity["computer_id"], "desktop_uid": 28001,
+        "native_binary": "/opt/kai-agent-desktop/agent-desktop",
+        "native_binary_sha256": value["binary_sha256"],
+        "display": ":99", "xauthority": "/run/kai-desktop/Xauthority",
+        "runtime_dir": "/run/kai-desktop",
+        "dbus_address": "unix:path=/run/kai-desktop/bus",
+    }
+    spec = importlib.util.spec_from_file_location("kai_native_desktop", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("native desktop adapter is missing")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    with module.locked():
+        if action == "native_barrier":
+            if request.keys() != {"epoch"}:
+                raise ValueError("native desktop barrier is invalid")
+            module.fence(request["epoch"], blocked=True)
+            print('{"drained":true}')
+        else:
+            print(json.dumps(module.run(config, request), ensure_ascii=False))
 
 
 if __name__ == "__main__":

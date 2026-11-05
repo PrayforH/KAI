@@ -12,4 +12,4 @@ VM 内有可见桌面和受执行租约约束的后台 shell，两者属于同�
 
 真实Chrome在独立验收标签发送普通自然语言请求，工时填写运行run_15625fad3de543c9884497416876ffbc成功，sandbox.provisioned与sandbox_leases均为vm-computer，结束lease released。它调用computer_screenshot/click/type/key在VM可见Chromium打开example.com，右侧实际显示Example Domain及kai_shared_desktop=20261105参数；同一Run的Write/Bash生成并读回outputs/shared-desktop-check.txt，聊天出现24字节附件。没有登录、访问凭证或执行禅道业务，原标签用户草稿保留。模型回复中“桌面文件应用可直接看到工作区”未实证，因此追加VM能力说明纠正，不把该句算作验收证据。
 
-最新VM权限说明候选镜像kai/superagent-api:20261105-shared-desktop-v2（sha256:1ae0ef4623a58d2d66e896d68d790d391c331acb1ca8a6644ba0419ac52bd123）已构建，后续与快速操作能力一并发布；目前不能声称这条追加说明已上79。节点证据目录/data/kai-shared-desktop-20261105。
+上述 VM 权限说明已随 kai/superagent-api:20261105-vm-native 发布到79（sha256:3014cf02ab37f2d5999b5d74034e252006b2517da12f75975cf721d5e36ac3da）；快速操作扩展与后续版本另见 ../plans/2026-11-05-vm-fast-computer-use.md。共享桌面节点证据目录/data/kai-shared-desktop-20261105。

@@ -30,7 +30,7 @@ INSTRUCTIONS = (
 )
 
 NATIVE_INSTRUCTIONS = (
-    "这台 Remote Computer 已接入 agent-desktop 原生可访问性接口，优先使用 computer_ui，"
+    "当前电脑已接入 agent-desktop 原生可访问性接口，优先使用 computer_ui，"
     "它操作的仍是真实桌面上已经打开的应用；headless 指无需抢前台焦点的输入方式，"
     "不是另起隐藏浏览器。"
     "不用先截图。先 list_apps/list_windows 定位应用，再 snapshot（默认 interactive+compact；"

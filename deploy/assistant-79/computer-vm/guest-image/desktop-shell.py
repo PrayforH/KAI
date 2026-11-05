@@ -26,6 +26,7 @@ APPS = {
             "--no-first-run",
             "--no-default-browser-check",
             "--restore-last-session",
+            "--force-renderer-accessibility",
         ],
     ),
     "terminal": ("终端", "x-terminal-emulator", []),
