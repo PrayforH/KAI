@@ -48,7 +48,8 @@ def computer_acp_overlay(sandbox: AcpSource, handle: SandboxHandle) -> PlatformT
                 }, "required": ["agent", "prompt"]},
         handler=invoke,
     ),), instructions=(
-        "电脑提供 computer_acp，可用用户在这台电脑上现有的 Claude Code/Codex 登录执行任务（DEMO 可写：权限请求单次放行，不永久授权）。"
+        "电脑提供 computer_acp，可用用户在这台电脑上现有的 Claude Code/Codex 登录执行任务"
+        "（DEMO 可写：权限请求单次放行，不永久授权）。"
         "承接编码任务时可调用该能力；普通 shell 的独立任务账号登录与它不同。"
         "不复制登录凭据，不改权限模式；调用失败如实说明，不把自己的回答当成外部 Agent 的结果。"
     ))

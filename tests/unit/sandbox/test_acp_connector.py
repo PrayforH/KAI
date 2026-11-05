@@ -104,7 +104,9 @@ def test_demo_copy_declares_writes_and_never_readonly() -> None:
 def test_client_keeps_writes_and_answers_permissions_once() -> None:
     """The shipped client must not force read-only modes and must answer
     permission requests with a single-shot allow (never allow_always)."""
-    client = (Path(__file__).parents[2].parent / "src" / "harness" / "computer" / "acp_client.mjs").read_text()
+    client = (
+        Path(__file__).parents[2].parent / "src" / "harness" / "computer" / "acp_client.mjs"
+    ).read_text()
     assert "session/set_mode" not in client
     assert '"outcome": "cancelled"' not in client
     assert "allow_once" in client
