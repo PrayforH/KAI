@@ -1,0 +1,179 @@
+{
+  "run_id": "run_f639208143b846f1914bedb7deb74d1a",
+  "wall_s": 102.755,
+  "queued_to_running_s": 2.1105,
+  "tool_interval_union_s": 27.012,
+  "tool_interval_sum_s": 28.437,
+  "outside_tool_intervals_s": 75.743,
+  "running_outside_tool_intervals_s": 73.6325,
+  "tool_calls": [
+    {
+      "name": "mcp__harness-builder__computer_ui",
+      "action": "list_windows",
+      "start_s": 8.0952,
+      "end_s": 10.3798,
+      "duration_s": 2.2846
+    },
+    {
+      "name": "mcp__harness-builder__computer_screenshot",
+      "action": null,
+      "start_s": 12.2555,
+      "end_s": 13.3661,
+      "duration_s": 1.1105
+    },
+    {
+      "name": "mcp__harness-builder__computer_click",
+      "action": null,
+      "start_s": 15.2732,
+      "end_s": 15.7281,
+      "duration_s": 0.4549
+    },
+    {
+      "name": "mcp__harness-builder__computer_click",
+      "action": null,
+      "start_s": 17.3204,
+      "end_s": 17.6106,
+      "duration_s": 0.2901
+    },
+    {
+      "name": "mcp__harness-builder__computer_screenshot",
+      "action": null,
+      "start_s": 19.0639,
+      "end_s": 20.0079,
+      "duration_s": 0.9441
+    },
+    {
+      "name": "mcp__harness-builder__computer_click",
+      "action": null,
+      "start_s": 22.2282,
+      "end_s": 22.7615,
+      "duration_s": 0.5333
+    },
+    {
+      "name": "mcp__harness-builder__computer_screenshot",
+      "action": null,
+      "start_s": 24.508,
+      "end_s": 25.1535,
+      "duration_s": 0.6455
+    },
+    {
+      "name": "mcp__harness-builder__computer_screenshot",
+      "action": null,
+      "start_s": 26.9921,
+      "end_s": 27.6786,
+      "duration_s": 0.6865
+    },
+    {
+      "name": "mcp__harness-builder__computer_ui",
+      "action": "list_windows",
+      "start_s": 29.6143,
+      "end_s": 31.2191,
+      "duration_s": 1.6048
+    },
+    {
+      "name": "mcp__harness-builder__computer_type",
+      "action": null,
+      "start_s": 34.2694,
+      "end_s": 38.5678,
+      "duration_s": 4.2984
+    },
+    {
+      "name": "mcp__harness-builder__computer_key",
+      "action": null,
+      "start_s": 37.1428,
+      "end_s": 39.1298,
+      "duration_s": 1.9869
+    },
+    {
+      "name": "mcp__harness-builder__computer_ui",
+      "action": "list_windows",
+      "start_s": 39.7812,
+      "end_s": 40.8033,
+      "duration_s": 1.0222
+    },
+    {
+      "name": "mcp__harness-builder__computer_ui",
+      "action": "snapshot",
+      "start_s": 44.1107,
+      "end_s": 46.9599,
+      "duration_s": 2.8492
+    },
+    {
+      "name": "mcp__harness-builder__computer_ui",
+      "action": "click",
+      "start_s": 48.7316,
+      "end_s": 54.0341,
+      "duration_s": 5.3025
+    },
+    {
+      "name": "mcp__harness-builder__computer_ui",
+      "action": "list_windows",
+      "start_s": 55.6314,
+      "end_s": 56.8015,
+      "duration_s": 1.1701
+    },
+    {
+      "name": "mcp__harness-builder__computer_ui",
+      "action": "snapshot",
+      "start_s": 59.365,
+      "end_s": 62.6183,
+      "duration_s": 3.2533
+    }
+  ],
+  "event_timings": [
+    {
+      "type": "runtime.steering.ready",
+      "count": 1,
+      "first_s": 3.9688,
+      "last_s": 3.9688
+    },
+    {
+      "type": "runtime.system",
+      "count": 21,
+      "first_s": 4.258,
+      "last_s": 97.9337
+    },
+    {
+      "type": "reasoning.delta",
+      "count": 666,
+      "first_s": 7.6256,
+      "last_s": 99.3517
+    },
+    {
+      "type": "context.compaction.started",
+      "count": 1,
+      "first_s": 62.6653,
+      "last_s": 62.6653
+    },
+    {
+      "type": "context.compacted",
+      "count": 1,
+      "first_s": 98.0321,
+      "last_s": 98.0321
+    },
+    {
+      "type": "runtime.steering.closed",
+      "count": 1,
+      "first_s": 102.2876,
+      "last_s": 102.2876
+    },
+    {
+      "type": "context.window.observed",
+      "count": 1,
+      "first_s": 102.3972,
+      "last_s": 102.3972
+    },
+    {
+      "type": "runtime.result",
+      "count": 1,
+      "first_s": 102.4223,
+      "last_s": 102.4223
+    },
+    {
+      "type": "context.digest.created",
+      "count": 1,
+      "first_s": 102.7301,
+      "last_s": 102.7301
+    }
+  ]
+}

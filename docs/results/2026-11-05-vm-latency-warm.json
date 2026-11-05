@@ -1,0 +1,83 @@
+{
+  "run_id": "run_37b5e67fcece4a62ad7cecad4e6dd15d",
+  "wall_s": 28.7376,
+  "queued_to_running_s": 2.0598,
+  "tool_interval_union_s": 13.3914,
+  "tool_interval_sum_s": 13.3914,
+  "outside_tool_intervals_s": 15.3462,
+  "running_outside_tool_intervals_s": 13.2863,
+  "tool_calls": [
+    {
+      "name": "mcp__harness-builder__computer_ui",
+      "action": "list_windows",
+      "start_s": 6.1562,
+      "end_s": 8.1932,
+      "duration_s": 2.037
+    },
+    {
+      "name": "mcp__harness-builder__computer_ui",
+      "action": "snapshot",
+      "start_s": 10.8615,
+      "end_s": 14.4292,
+      "duration_s": 3.5677
+    },
+    {
+      "name": "mcp__harness-builder__computer_ui",
+      "action": "click",
+      "start_s": 15.7585,
+      "end_s": 19.7364,
+      "duration_s": 3.978
+    },
+    {
+      "name": "mcp__harness-builder__computer_ui",
+      "action": "snapshot",
+      "start_s": 20.8587,
+      "end_s": 24.6674,
+      "duration_s": 3.8087
+    }
+  ],
+  "event_timings": [
+    {
+      "type": "runtime.steering.ready",
+      "count": 1,
+      "first_s": 3.763,
+      "last_s": 3.763
+    },
+    {
+      "type": "runtime.system",
+      "count": 6,
+      "first_s": 4.0872,
+      "last_s": 24.6988
+    },
+    {
+      "type": "reasoning.delta",
+      "count": 280,
+      "first_s": 5.7199,
+      "last_s": 21.1404
+    },
+    {
+      "type": "runtime.steering.closed",
+      "count": 1,
+      "first_s": 27.8575,
+      "last_s": 27.8575
+    },
+    {
+      "type": "context.window.observed",
+      "count": 1,
+      "first_s": 27.93,
+      "last_s": 27.93
+    },
+    {
+      "type": "runtime.result",
+      "count": 1,
+      "first_s": 27.9556,
+      "last_s": 27.9556
+    },
+    {
+      "type": "context.digest.created",
+      "count": 1,
+      "first_s": 28.7032,
+      "last_s": 28.7032
+    }
+  ]
+}

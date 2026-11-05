@@ -22,3 +22,5 @@
 现有 VM 维护要求：以无人执行、无人持有桌面控制权为前提，停止 Worker/Control/Viewer，正常关机后替换只读 NoCloud 维护 seed，再启动同一 QEMU 与原根盘。ISO 使用 Rock Ridge（保留大小写和精确文件名），附带固定 allowlist 的 SHA256 manifest；不新增登录账号或 SSH key。enable-native-desktop.py 仅更新原生适配器与桌面启动文件，自动逐文件备份，失败回退；二进制版本及摘要由运维预先核对。安装成功后显式开启 Worker 和该 VM 的 native_desktop 两侧能力。裸 Xvfb 必须同时有固定 session bus、ACCESSIBILITY_ENABLED=1 与 Chromium 的 --force-renderer-accessibility，不能仅凭 status 成功判定可用。
 
 检查进展：已完成Vercel原生VM入口及79真实模型／可见页面验证，完整快照和引用点击已从example.com进入IANA，并由新快照读回Example Domains；默认参数暖启动也以4次原生调用、零截图完成About导航（28.738秒）。最终81项相关单测、24项真实PostgreSQL集成测试通过。完整数据、部署摘要与边界见../results/2026-11-05-vm-native-desktop-79.md；工具快照约2.85秒、引用点击约5.30秒，冷启动完整请求仍为102.755秒，不宣称达到Jev速度。首轮空窗口和第2版维护ISO未通过；后续修复裸Xvfb注册、私有桌面挂载会话和有界完整窗口读取预算，未绕开身份检查。下一阶段重点是可见浏览器专用DOM通道、持续连接与模型回合数量，不能仅提高截图压缩。
+
+详细耗时分账、Jev口径差异、可复用与不可直接照搬的部分，以及P0–P4工作包见[延迟分析与Jev借鉴计划](2026-11-05-vm-latency-and-jev.md)，同步飞书11.26。
