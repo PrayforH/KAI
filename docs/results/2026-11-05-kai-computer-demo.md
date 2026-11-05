@@ -46,8 +46,11 @@
 | computer-viewer | `kai/computer-viewer:20261103-native-desktop-v2` | Up 30h |
 | feishu / weixin | `20261102-4aaedddf` / `20261102-d78a8d5a` | 未动 |
 
-**BlockingIO 备注**：computer-control 曾因 uvloop 子进程资源耗尽卡死（`Errno 11`），
-`docker restart` 即恢复；复发时先重启再查泄漏。
+**子进程回收备注（2026-11-05复发修复）**：已确认SSH ProxyCommand辅助进程退出后成为
+容器Python PID1下的僵尸进程。Viewer曾积累57个、pids.current=62/64，新的SSH和docker exec
+无法启动；Control也有126个。两服务现已启用Docker init收养并回收孤儿进程，原进程上限不变；
+70次画面连接/断开及20次控制identity校验后均无僵尸积累。后续发版必须保留
+`deploy/remote-computer/compose.process-reaping.yaml`里的init设置；重启只清除积累，不能代替回收修复。
 
 ### 1.4 gate digest：曾经的阻塞 → 已对齐
 
