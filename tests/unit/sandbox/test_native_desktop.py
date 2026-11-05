@@ -12,7 +12,9 @@ from harness.sandbox.base import SandboxCommandResult
 
 @pytest.mark.parametrize("wrong", [None, "uid", "service", "pid", "setns"])
 def test_vm_mount_join_is_fixed_to_the_desktop_service_and_fails_closed(
-    tmp_path, monkeypatch, wrong,
+    tmp_path,
+    monkeypatch,
+    wrong,
 ):
     process = tmp_path / "884"
     (process / "ns").mkdir(parents=True)
@@ -77,7 +79,10 @@ def test_native_wait_budget_cannot_be_unbounded_or_coerced(timeout):
 def test_partial_observations_can_be_repeated_with_an_explicit_bounded_budget():
     assert "--timeout-ms=8000" in command({"action": "snapshot", "timeout_ms": 8000})
     assert command({"action": "click", "ref": "@sabc:e1", "timeout_ms": 6000}) == [
-        "click", "--timeout-ms=6000", "--", "@sabc:e1",
+        "click",
+        "--timeout-ms=6000",
+        "--",
+        "@sabc:e1",
     ]
 
 
@@ -143,3 +148,41 @@ async def test_unconfigured_native_target_is_refused_before_transport():
             scope="lease",
             revalidate=guard,
         )
+
+
+@pytest.mark.asyncio
+async def test_export_dispatch_requires_vm_lease_and_uses_no_display_transport(monkeypatch):
+    spec = SimpleNamespace(native_desktop=True)
+    service = vm_host.VmDesktopService({"v": spec})
+    calls = []
+
+    class Gate:
+        def __init__(self, target):
+            assert target is spec
+
+        async def call(self, action, payload, **kwargs):
+            calls.append((action, payload))
+            return SandboxCommandResult(
+                exit_code=0, stdout='{"ok":true,"path":"outputs/desktop/f"}', stderr=""
+            )
+
+    monkeypatch.setattr(vm_host, "GuestGate", Gate)
+    checked = []
+
+    async def guard():
+        checked.append(True)
+
+    computer = SimpleNamespace(volume_ref="v", provider="vm-computer")
+    result = await service.operate(
+        computer, "export", {"path": "f"}, scope="lease-1", expected_epoch=4, revalidate=guard
+    )
+    assert result["path"] == "outputs/desktop/f"
+    assert calls[0][0] == "desktop_export"
+    assert calls[0][1]["scope"] == "lease-1" and calls[0][1]["desktop_epoch"] == 4
+    assert checked == [True] and service._sessions == {}
+    computer.provider = "remote-computer"
+    with pytest.raises(ValueError, match="not enabled"):
+        await service.operate(
+            computer, "export", {"path": "f"}, scope="lease-1", expected_epoch=4, revalidate=guard
+        )
+    assert len(calls) == 1

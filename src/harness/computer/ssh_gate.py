@@ -22,7 +22,7 @@ MAX_BYTES = 40 * 1024**2
 ROOT = Path("/var/lib/kai-computer")
 SUPERVISOR = Path("/opt/kai-computer/supervisor.py")
 ACTIONS = frozenset({"init", "activate", "renew", "deactivate", "exec"})
-NATIVE_ACTIONS = frozenset({"native_desktop", "native_barrier"})
+NATIVE_ACTIONS = frozenset({"native_desktop", "native_barrier", "desktop_export"})
 ENVIRONMENT = {"PATH": "/usr/local/bin:/usr/bin:/bin", "LANG": "C.UTF-8"}
 
 
@@ -180,6 +180,16 @@ def native_request(action: str, request: dict[str, Any]) -> None:
                 raise ValueError("native desktop barrier is invalid")
             module.fence(request["epoch"], blocked=True)
             print('{"drained":true}')
+        elif action == "desktop_export":
+            export_path = Path("/opt/kai-computer/desktop_export.py")
+            _trusted(export_path, directory=False)
+            export_spec = importlib.util.spec_from_file_location("kai_desktop_export", export_path)
+            if export_spec is None or export_spec.loader is None:
+                raise RuntimeError("desktop export adapter is missing")
+            exporter = importlib.util.module_from_spec(export_spec)
+            export_spec.loader.exec_module(exporter)
+            module.fence(request["desktop_epoch"], blocked=False)
+            print(json.dumps(exporter.run(request, state_root=ROOT), ensure_ascii=False))
         else:
             print(json.dumps(module.run(config, request), ensure_ascii=False))
 
@@ -187,7 +197,15 @@ def native_request(action: str, request: dict[str, Any]) -> None:
 if __name__ == "__main__":
     try:
         run()
-    except Exception:
+    except Exception as error:
         # Never echo command bodies, environment values, credentials or paths.
-        print("Computer guest control refused the request.", file=sys.stderr)
+        reasons = {
+            "desktop export scope or deadline is invalid": "export_deadline",
+            "desktop export lost its execution lease": "export_lease",
+            "desktop input generation was revoked": "desktop_fence",
+        }
+        reason = reasons.get(str(error), "")
+        diagnostic = f"{type(error).__name__}:{getattr(error, 'errno', None)}:{reason}"
+        print("Computer guest control refused the request. diagnostic=" + diagnostic,
+              file=sys.stderr)
         raise SystemExit(125) from None

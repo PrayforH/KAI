@@ -36,6 +36,7 @@ def main() -> None:
         (Path(args.runtime_dir), ASSETS),
         (Path(args.control_dir), (
             "supervisor.py", "ssh_gate.py", "display_gate.py", "native_desktop.py",
+            "desktop_export.py",
         )),
     ):
         for name in names:

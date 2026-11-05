@@ -10,6 +10,7 @@ import asyncio
 import base64
 import contextlib
 import json
+import logging
 import re
 import time
 from collections.abc import Awaitable, Callable, Mapping
@@ -35,6 +36,7 @@ from harness.computer.desktop_client import (
 from harness.computer.desktop_client import (
     type_text as desktop_type,
 )
+from harness.computer.desktop_export import arguments as export_arguments
 from harness.computer.gate_ack import GateAckError
 from harness.computer.gate_ack import validate as validate_gate_ack
 from harness.computer.models import (
@@ -149,6 +151,11 @@ class GuestGate:
             # SSH transport errors may embed private paths; never reflect them.
             raise RuntimeError("computer guest control transport failed")
         if code == 125 and "refused" in stderr:
+            diagnostic = re.search(r"diagnostic=([A-Za-z]+:[0-9None]+:[a-z_]*)", stderr)
+            if diagnostic:
+                logging.getLogger(__name__).warning(
+                    "computer guest refused %s (%s)", action, diagnostic.group(1)
+                )
             raise ComputerLeaseLostError("computer guest control refused this lease")
         return SandboxCommandResult(
             exit_code=code, stdout=out.decode(errors="replace"), stderr=stderr
@@ -442,7 +449,7 @@ class DisplayTransport:
         return process.stdout, process.stdin
 
 
-GUI_OPERATIONS = frozenset({"screenshot", "move", "click", "type", "key", "scroll", "ui"})
+GUI_OPERATIONS = frozenset({"screenshot", "move", "click", "type", "key", "scroll", "ui", "export"})
 
 
 class VmDesktopService:
@@ -545,6 +552,15 @@ class VmDesktopService:
             ):
                 raise ValueError("native accessibility is not enabled on this computer")
             native_command(dict(payload))
+        if operation == "export":
+            if (
+                computer.provider != "vm-computer"
+                or not getattr(spec, "native_desktop", False)
+                or scope is None
+                or expected_epoch is None
+            ):
+                raise ValueError("desktop export is not enabled on this computer")
+            export_arguments(dict(payload))
         key = computer.volume_ref
         async with self._lock(key):
             # The queue wait may have spanned a takeover, a lease handover or
@@ -552,7 +568,7 @@ class VmDesktopService:
             # authorization still holds.
             await revalidate()
             client = self._sessions.get(key)
-            if client is None and operation != "ui":
+            if client is None and operation not in {"ui", "export"}:
                 client = RfbClient(DisplayTransport(spec))
                 self._sessions[key] = client
             stop = self._stop_event(key)
@@ -560,10 +576,10 @@ class VmDesktopService:
             busy = self._busy_event(key)
             busy.clear()
             try:
-                if operation == "ui":
+                if operation in {"ui", "export"}:
                     task = asyncio.create_task(
                         GuestGate(spec).call(
-                            "native_desktop",
+                            "native_desktop" if operation == "ui" else "desktop_export",
                             {
                                 "scope": scope,
                                 "desktop_epoch": expected_epoch,

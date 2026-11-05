@@ -53,6 +53,13 @@ VM_INSTRUCTIONS = (
     "未经桌面实际核对，不要声称桌面文件应用能直接读取任务目录，也不要绕过账号权限。\n"
 )
 
+EXPORT_INSTRUCTIONS = (
+    "桌面应用生成的交付文件请保存到桌面账号的 ~/deliver（/var/lib/kai-desktop/deliver）。"
+    "调用 computer_export_file，以该目录内的相对路径导出；返回的 outputs/desktop/... "
+    "就是任务工作区文件，可直接使用现有读取、附件发布或文件投递工具。文本、视频等文件共用此通道。"
+    "不要在聊天中传文件编码，也不需要临时HTTP服务；不要导出浏览器profile或凭证。\n"
+)
+
 
 def _text(message: str) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": message}]}
@@ -174,7 +181,11 @@ def computer_gui_overlay(
     async def native(arguments: dict[str, Any]) -> dict[str, Any]:
         payload = dict(arguments)
         if handle.provider == "vm-computer" and payload.get("action") in {
-            "snapshot", "list_windows", "click", "type", "select",
+            "snapshot",
+            "list_windows",
+            "click",
+            "type",
+            "select",
         }:
             # Full-window identity census must finish before refs can act.
             # This is a ceiling, not a delay. Legacy enrolled PCs retain their
@@ -184,6 +195,10 @@ def computer_gui_overlay(
         if "content" in result:
             return result
         return _text(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+
+    async def export_file(arguments: dict[str, Any]) -> dict[str, Any]:
+        result = await act("export", dict(arguments))
+        return result if "content" in result else _text(json.dumps(result, ensure_ascii=False))
 
     native_tools = (
         (
@@ -225,11 +240,19 @@ def computer_gui_overlay(
                         "interactive": {"type": "boolean", "default": True},
                         "skeleton": {"type": "boolean", "default": False},
                         "max_depth": {"type": "integer", "minimum": 1, "maximum": 15},
-                        **({"timeout_ms": {
-                            "type": "integer", "minimum": 500, "maximum": 8000,
-                            "default": 8000,
-                            "description": "有界最长等待；默认8000毫秒，提前完成立即返回",
-                        }} if handle.provider == "vm-computer" else {}),
+                        **(
+                            {
+                                "timeout_ms": {
+                                    "type": "integer",
+                                    "minimum": 500,
+                                    "maximum": 8000,
+                                    "default": 8000,
+                                    "description": "有界最长等待；默认8000毫秒，提前完成立即返回",
+                                }
+                            }
+                            if handle.provider == "vm-computer"
+                            else {}
+                        ),
                     },
                     "required": ["action"],
                 },
@@ -242,6 +265,38 @@ def computer_gui_overlay(
 
     return PlatformToolOverlay(
         tools=(
+            *(
+                (
+                    PlatformTool(
+                        name="computer_export_file",
+                        description=(
+                            "将桌面 ~/deliver 中指定的已完成文件复制到任务工作区 outputs/desktop，"
+                            "返回可供现有文件读取/附件发布工具使用的路径、大小和摘要。"
+                            "文本、视频等格式统一；不覆盖不同的同名文件。"
+                        ),
+                        schema={
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "path": {
+                                    "type": "string",
+                                    "maxLength": 1024,
+                                    "description": "~/deliver 内的相对文件路径，不是任意绝对路径",
+                                },
+                                "name": {
+                                    "type": "string",
+                                    "maxLength": 240,
+                                    "description": "可选：导出文件名，不能包含目录",
+                                },
+                            },
+                            "required": ["path"],
+                        },
+                        handler=export_file,
+                    ),
+                )
+                if handle.provider == "vm-computer" and native_desktop
+                else ()
+            ),
             *native_tools,
             PlatformTool(
                 name="computer_screenshot",
@@ -312,5 +367,7 @@ def computer_gui_overlay(
             ),
         ),
         instructions=(VM_INSTRUCTIONS if handle.provider == "vm-computer" else "")
-        + (NATIVE_INSTRUCTIONS + "\n" if native_desktop else "") + INSTRUCTIONS,
+        + (EXPORT_INSTRUCTIONS if handle.provider == "vm-computer" and native_desktop else "")
+        + (NATIVE_INSTRUCTIONS + "\n" if native_desktop else "")
+        + INSTRUCTIONS,
     )

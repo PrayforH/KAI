@@ -100,7 +100,9 @@ def provider(database: DatabaseFixture, tmp_path: Path, *, ttl: int = 10):
 
 @pytest.mark.asyncio
 async def test_gui_skips_disk_scan_then_concurrent_file_tools_stage_inputs_once(
-    database: DatabaseFixture, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    database: DatabaseFixture,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     registry, driver, sandbox = provider(database, tmp_path)
     _, _, runs, _ = await arrange(tmp_path, sandbox_override=sandbox)
@@ -262,3 +264,33 @@ async def test_worker_task_shutdown_drains_execution_and_resume_reuses_owner_dis
     assert recovered.computer_id == stopped.computer_id
     assert recovered.provider_ref == stopped.provider_ref
     assert driver.calls.count("start") == 1 and driver.calls.count("connect") == 2
+
+
+@pytest.mark.asyncio
+async def test_desktop_export_captures_baseline_before_copy_and_uses_existing_collection(
+    database: DatabaseFixture,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _, driver, sandbox = provider(database, tmp_path)
+    _, _, runs, _ = await arrange(tmp_path, sandbox_override=sandbox)
+    run = await runs.get("tenant-a", "run-1")
+    (driver.root / "old.txt").write_text("retain")
+
+    async def export(*args, **kwargs):
+        target = driver.root / "outputs/desktop/result.bin"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"\0\xffdesktop payload")
+        return {"ok": True, "path": "outputs/desktop/result.bin"}
+
+    monkeypatch.setattr(driver, "host", SimpleNamespace(desktop=export), raising=False)
+    async with sandbox.run_scope(run):
+        handle = await sandbox.provision(run)
+        result = await sandbox.desktop_action(
+            handle, "export", {"path": "result.bin"}, expected_epoch=1
+        )
+        baseline = await sandbox.workspace_baseline(handle)
+        assert "old.txt" in baseline and result["path"] not in baseline
+        await sandbox.collect(handle)
+        assert (handle.path / str(result["path"])).read_bytes() == b"\0\xffdesktop payload"
+        assert not (handle.path / "old.txt").exists()

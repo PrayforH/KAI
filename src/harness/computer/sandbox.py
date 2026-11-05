@@ -229,7 +229,7 @@ class ComputerSandboxProvider:
     ) -> dict[str, object]:
         """One visible-desktop action through the node's unified control gate."""
 
-        allocation, _ = await self._remote(handle, prepare_workspace=False)
+        allocation, _ = await self._remote(handle, prepare_workspace=operation == "export")
         return await self.driver.host.desktop(
             allocation.token, operation, payload, expected_epoch=expected_epoch
         )

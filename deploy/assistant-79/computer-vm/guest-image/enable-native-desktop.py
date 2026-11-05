@@ -19,6 +19,8 @@ FILES = {
     "agent-desktop": ("/opt/kai-agent-desktop/agent-desktop", 0o755),
     "LICENSE": ("/opt/kai-agent-desktop/LICENSE", 0o644),
     "native_desktop.py": ("/opt/kai-computer/native_desktop.py", 0o644),
+    "desktop_export.py": ("/opt/kai-computer/desktop_export.py", 0o644),
+    "desktop-prepare.py": ("/usr/local/lib/kai-desktop/prepare.py", 0o644),
     "ssh_gate.py": ("/opt/kai-computer/ssh_gate.py", 0o644),
     "desktop-start": ("/usr/local/lib/kai-desktop/start", 0o755),
     "desktop-shell.py": ("/usr/local/lib/kai-desktop/desktop-shell.py", 0o644),

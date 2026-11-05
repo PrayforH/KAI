@@ -57,9 +57,6 @@ class StubProvider:
         return self.results.pop(0)
 
 
-
-
-
 async def prepared(database: DatabaseFixture) -> DesktopControlService:
     _, sessions = database
     await ComputerRegistry(sessions).ensure(
@@ -125,10 +122,14 @@ async def test_screenshot_acquires_ownership_and_returns_image(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("target,explicit", [("vm-computer", None), ("vm-computer", 500),
-                                           ("remote-computer", None)])
+@pytest.mark.parametrize(
+    "target,explicit", [("vm-computer", None), ("vm-computer", 500), ("remote-computer", None)]
+)
 async def test_native_vm_wait_default_preserves_explicit_budget_and_legacy_pc_protocol(
-    database: DatabaseFixture, tmp_path: Path, target: str, explicit: int | None,
+    database: DatabaseFixture,
+    tmp_path: Path,
+    target: str,
+    explicit: int | None,
 ) -> None:
     desktop = await prepared(database)
     provider = StubProvider([{"ok": True}], root=tmp_path)
@@ -203,3 +204,23 @@ async def test_actions_renew_ttl_and_bind_the_acquired_epoch(
     assert [call[2] for call in provider.calls] == [1, 1]
     state = await desktop.view("tenant-a", "user-a")
     assert state.revision >= 3
+
+
+@pytest.mark.asyncio
+async def test_desktop_export_uses_the_same_ownership_guard_and_structured_file_reference(
+    database: DatabaseFixture,
+    tmp_path: Path,
+):
+    desktop = await prepared(database)
+    provider = StubProvider(
+        [{"ok": True, "path": "outputs/desktop/report.txt", "size_bytes": 4}], root=tmp_path
+    )
+    overlay = computer_gui_overlay(desktop, provider, provider.handle, native_desktop=True)
+    tool = next(tool for tool in overlay.tools if tool.name == "computer_export_file")
+    result = await tool.handler({"path": "report.txt"})
+    assert "outputs/desktop/report.txt" in text_of(result)
+    assert provider.calls == [("export", {"path": "report.txt"}, 1)]
+    await desktop.request_human("tenant-a", "user-a")
+    refused = await tool.handler({"path": "report.txt"})
+    assert "控制" in text_of(refused)
+    assert len(provider.calls) == 1
