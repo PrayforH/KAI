@@ -1,0 +1,191 @@
+{
+  "run": {
+    "run_id": "run_f639208143b846f1914bedb7deb74d1a",
+    "status": "succeeded",
+    "updated_at": "2026-11-05 05:19:03.849059+00:00"
+  },
+  "leases": [
+    {
+      "provider": "vm-computer",
+      "state": "released"
+    }
+  ],
+  "lifecycle": {
+    "run.queued": "2026-11-05T05:17:21.103937Z",
+    "run.running": "2026-11-05T05:17:23.214419Z",
+    "run.succeeded": "2026-11-05T05:19:03.858931Z"
+  },
+  "calls": [
+    {
+      "name": "mcp__harness-builder__computer_ui",
+      "operation": "list_windows",
+      "ms": 2284.6,
+      "requested_timeout_ms": null,
+      "ok": true,
+      "command": "list-windows",
+      "data_type": "list"
+    },
+    {
+      "name": "mcp__harness-builder__computer_screenshot",
+      "operation": null,
+      "ms": 1110.5
+    },
+    {
+      "name": "mcp__harness-builder__computer_click",
+      "operation": null,
+      "ms": 454.9
+    },
+    {
+      "name": "mcp__harness-builder__computer_click",
+      "operation": null,
+      "ms": 290.1
+    },
+    {
+      "name": "mcp__harness-builder__computer_screenshot",
+      "operation": null,
+      "ms": 944.1
+    },
+    {
+      "name": "mcp__harness-builder__computer_click",
+      "operation": null,
+      "ms": 533.3
+    },
+    {
+      "name": "mcp__harness-builder__computer_screenshot",
+      "operation": null,
+      "ms": 645.5
+    },
+    {
+      "name": "mcp__harness-builder__computer_screenshot",
+      "operation": null,
+      "ms": 686.5
+    },
+    {
+      "name": "mcp__harness-builder__computer_ui",
+      "operation": "list_windows",
+      "ms": 1604.8,
+      "requested_timeout_ms": null,
+      "ok": true,
+      "command": "list-windows",
+      "data_type": "list"
+    },
+    {
+      "name": "mcp__harness-builder__computer_type",
+      "operation": null,
+      "ms": 4298.4
+    },
+    {
+      "name": "mcp__harness-builder__computer_key",
+      "operation": null,
+      "ms": 1986.9
+    },
+    {
+      "name": "mcp__harness-builder__computer_ui",
+      "operation": "list_windows",
+      "ms": 1022.2,
+      "requested_timeout_ms": null,
+      "ok": true,
+      "command": "list-windows",
+      "data_type": "list"
+    },
+    {
+      "name": "mcp__harness-builder__computer_ui",
+      "operation": "snapshot",
+      "ms": 2849.2,
+      "requested_timeout_ms": 8000,
+      "ok": true,
+      "command": "snapshot",
+      "data_type": "dict",
+      "complete": true,
+      "ref_count": 79,
+      "snapshot_id": "s144li48a69u0z",
+      "test_nodes": [
+        {
+          "name": "Example Domain - Chromium",
+          "role": "window"
+        },
+        {
+          "name": "Example Domain",
+          "role": "webarea",
+          "ref_id": "@s144li48a69u0z:e61"
+        },
+        {
+          "name": "Learn more",
+          "role": "link",
+          "ref_id": "@s144li48a69u0z:e62"
+        },
+        {
+          "name": "Learn more",
+          "role": "statictext",
+          "ref_id": "@s144li48a69u0z:e63"
+        },
+        {
+          "name": "Example Domain - Memory usage - 23.6 MB",
+          "role": "tab",
+          "ref_id": "@s144li48a69u0z:e70"
+        }
+      ]
+    },
+    {
+      "name": "mcp__harness-builder__computer_ui",
+      "operation": "click",
+      "ms": 5302.5,
+      "requested_timeout_ms": 8000,
+      "ok": true,
+      "command": "click",
+      "data_type": "dict",
+      "disposition": {
+        "delivery": "delivered_unverified",
+        "retry": "unsafe"
+      },
+      "test_nodes": []
+    },
+    {
+      "name": "mcp__harness-builder__computer_ui",
+      "operation": "list_windows",
+      "ms": 1170.1,
+      "requested_timeout_ms": null,
+      "ok": true,
+      "command": "list-windows",
+      "data_type": "list"
+    },
+    {
+      "name": "mcp__harness-builder__computer_ui",
+      "operation": "snapshot",
+      "ms": 3253.3,
+      "requested_timeout_ms": 8000,
+      "ok": true,
+      "command": "snapshot",
+      "data_type": "dict",
+      "complete": true,
+      "ref_count": 173,
+      "snapshot_id": "s12h6l5srdjviz",
+      "test_nodes": [
+        {
+          "name": "Example Domains - Chromium",
+          "role": "window"
+        },
+        {
+          "name": "Example Domains",
+          "role": "webarea",
+          "ref_id": "@s12h6l5srdjviz:e61"
+        },
+        {
+          "name": "IANA-managed Reserved Domains",
+          "role": "link",
+          "ref_id": "@s12h6l5srdjviz:e85"
+        },
+        {
+          "name": "IANA-managed Reserved Domains",
+          "role": "statictext",
+          "ref_id": "@s12h6l5srdjviz:e86"
+        },
+        {
+          "name": "Example Domains - Memory usage - 55.6 MB",
+          "role": "tab",
+          "ref_id": "@s12h6l5srdjviz:e164"
+        }
+      ]
+    }
+  ]
+}

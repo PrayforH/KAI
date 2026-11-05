@@ -1,0 +1,129 @@
+{
+  "run": {
+    "run_id": "run_37b5e67fcece4a62ad7cecad4e6dd15d",
+    "status": "succeeded",
+    "updated_at": "2026-11-05 05:22:42.314117+00:00"
+  },
+  "leases": [
+    {
+      "provider": "vm-computer",
+      "state": "released"
+    }
+  ],
+  "lifecycle": {
+    "run.queued": "2026-11-05T05:22:13.585256Z",
+    "run.running": "2026-11-05T05:22:15.645103Z",
+    "run.succeeded": "2026-11-05T05:22:42.322874Z"
+  },
+  "calls": [
+    {
+      "name": "mcp__harness-builder__computer_ui",
+      "operation": "list_windows",
+      "ms": 2037.0,
+      "requested_timeout_ms": null,
+      "ok": true,
+      "command": "list-windows",
+      "data_type": "list"
+    },
+    {
+      "name": "mcp__harness-builder__computer_ui",
+      "operation": "snapshot",
+      "ms": 3567.7,
+      "requested_timeout_ms": null,
+      "ok": true,
+      "command": "snapshot",
+      "data_type": "dict",
+      "complete": true,
+      "ref_count": 173,
+      "snapshot_id": "s22w251fk9zf5x",
+      "test_nodes": [
+        {
+          "name": "Example Domains - Chromium",
+          "role": "window"
+        },
+        {
+          "name": "Example Domains",
+          "role": "webarea",
+          "ref_id": "@s22w251fk9zf5x:e61"
+        },
+        {
+          "name": "IANA-managed Reserved Domains",
+          "role": "link",
+          "ref_id": "@s22w251fk9zf5x:e85"
+        },
+        {
+          "name": "IANA-managed Reserved Domains",
+          "role": "statictext",
+          "ref_id": "@s22w251fk9zf5x:e86"
+        },
+        {
+          "name": "Example Domains - Memory usage - 54.6 MB",
+          "role": "tab",
+          "ref_id": "@s22w251fk9zf5x:e164"
+        }
+      ]
+    },
+    {
+      "name": "mcp__harness-builder__computer_ui",
+      "operation": "click",
+      "ms": 3978.0,
+      "requested_timeout_ms": null,
+      "ok": true,
+      "command": "click",
+      "data_type": "dict",
+      "disposition": {
+        "delivery": "delivered_unverified",
+        "retry": "unsafe"
+      },
+      "test_nodes": []
+    },
+    {
+      "name": "mcp__harness-builder__computer_ui",
+      "operation": "snapshot",
+      "ms": 3808.7,
+      "requested_timeout_ms": null,
+      "ok": true,
+      "command": "snapshot",
+      "data_type": "dict",
+      "complete": true,
+      "ref_count": 231,
+      "snapshot_id": "s2axdz76jqlxkf",
+      "test_nodes": [
+        {
+          "name": "About us - Chromium",
+          "role": "window"
+        },
+        {
+          "name": "About us",
+          "role": "webarea",
+          "ref_id": "@s2axdz76jqlxkf:e61"
+        },
+        {
+          "name": "News Announcements, publications and consultations from across the IANA functions.",
+          "role": "link",
+          "ref_id": "@s2axdz76jqlxkf:e83"
+        },
+        {
+          "name": "Announcements, publications and consultations from across the IANA functions.",
+          "role": "statictext",
+          "ref_id": "@s2axdz76jqlxkf:e87"
+        },
+        {
+          "name": "The Organization How the IANA functions are governed, overseen, planned, and continuously improved.",
+          "role": "link",
+          "ref_id": "@s2axdz76jqlxkf:e95"
+        },
+        {
+          "name": "How the IANA functions are governed, overseen, planned, and continuously improved.",
+          "role": "statictext",
+          "ref_id": "@s2axdz76jqlxkf:e99"
+        },
+        {
+          "name": "About us - Memory usage - 60.7 MB",
+          "role": "tab",
+          "ref_id": "@s2axdz76jqlxkf:e222"
+        }
+      ]
+    }
+  ]
+}
