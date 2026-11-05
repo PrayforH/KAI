@@ -146,7 +146,7 @@ async def test_retained_session_history_remains_owned(database: DatabaseFixture)
 
 
 async def use_specialist_binding(
-    database: DatabaseFixture, session: Session, *, enabled: bool = True,
+    database: DatabaseFixture, session: Session, *, enabled: bool | None = True,
 ) -> Specialist:
     _, sessions = database
     bot = Specialist(
@@ -154,7 +154,8 @@ async def use_specialist_binding(
         name="任意名称", slug="coding", description="", agentName=session.agent_name,
         agentVersion=session.agent_version, status=SpecialistStatus.READY,
         createdAt=NOW, updatedAt=NOW,
-        config={"execution_environment": "personal_computer" if enabled else "sandbox"},
+        config=({} if enabled is None else
+                {"execution_environment": "personal_computer" if enabled else "sandbox"}),
     )
     async with sessions.begin() as db:
         row = await db.get(AguiThreadBindingRow,
@@ -172,7 +173,7 @@ async def use_specialist_binding(
 
 
 @pytest.mark.asyncio
-async def test_only_explicitly_enabled_bot_uses_owner_computer_and_keeps_execution_fences(
+async def test_explicit_sandbox_override_revokes_computer_access_and_keeps_execution_fences(
     database: DatabaseFixture,
 ) -> None:
     access, _, computer, token, _, _, session, _ = await seed(database)
@@ -188,6 +189,38 @@ async def test_only_explicitly_enabled_bot_uses_owner_computer_and_keeps_executi
     assert not await access.is_personal_session(session)
     with pytest.raises(ComputerLeaseLostError):
         await access.authorize(computer, token, "exec")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", [None, "sandbox", "unknown", "pending-permission", "project"])
+async def test_default_bot_inherits_owner_desktop_but_not_task_or_ungranted_capabilities(
+    database: DatabaseFixture, change: str | None,
+) -> None:
+    access, _, computer, token, _, _, session, _ = await seed(database)
+    await use_specialist_binding(database, session, enabled=None)
+    _, sessions = database
+    async with sessions.begin() as db:
+        row = await db.get(SpecialistRow, "specialist_fixture")
+        assert row is not None
+        config = dict(row.payload["config"])
+        if change in {"sandbox", "unknown"}:
+            config["execution_environment"] = change
+        elif change == "pending-permission":
+            config["required_local_tools"] = ["use_connected_apps"]
+        elif change == "project":
+            binding = await db.get(AguiThreadBindingRow,
+                (session.tenant_id, session.user_id, "assistant_specialist_fixture"))
+            assert binding is not None
+            binding.project_id = "ordinary-project"
+        row.payload = {**row.payload, "config": config}
+    assert await access.is_personal_session(session) is (change is None)
+    if change is None:
+        await access.authorize(computer, token, "exec")
+        await access.authorize(computer, token, "renew")
+        assert not await CanonicalComputerAccess(sessions, {}).is_personal_session(session)
+    else:
+        with pytest.raises(ComputerLeaseLostError):
+            await access.authorize(computer, token, "exec")
 
 
 @pytest.mark.asyncio

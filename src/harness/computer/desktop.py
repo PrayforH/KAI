@@ -240,7 +240,8 @@ class DesktopControlService:
         if row.state == DesktopState.TAKEOVER_PENDING.value:
             return "桌面正在切换控制权，请稍后重试。"
         if row.state == DesktopState.HUMAN.value:
-            return "用户正在控制电脑；请等待交还后再试。"
+            return ("用户正在控制电脑；请在电脑面板点击“交还助理”后再试，"
+                    "不要通过关闭窗口或切换标签页交还。")
         return "桌面控制权状态异常，请稍后重试。"
 
     @staticmethod

@@ -15,17 +15,24 @@ from harness.runtime.platform_tools import PlatformTool, PlatformToolOverlay
 from harness.sandbox.base import SandboxHandle
 
 INSTRUCTIONS = (
-    "你可以操作用户电脑的可见桌面（与网页右侧显示的是同一台电脑）。\n"
+    "你可以操作用户当前执行电脑的可见桌面，computer_* 工具与该电脑的屏幕预览连接同一个桌面会话。"
+    "右侧可以独立切换查看其他电脑，查看不等于更换执行电脑。\n"
+    "用户要求打开浏览器、访问页面、查看已登录窗口或操作电脑时，使用 computer_* 在这个可见桌面完成，"
+    "复用这里的浏览器窗口和登录态；不要另起 headless 浏览器、临时 profile 或第二个虚拟显示来代替。"
+    "缺少桌面能力或控制权时如实说明，不把后台请求成功说成桌面已打开。\n"
+    "纯命令、文件处理、公开网页检索或明确要求的无界面测试可以在后台完成，这些不会产生可见窗口。\n"
     "截图按像素计费：读文件、看日志、查进程、跑命令一律用 shell，不要截图；"
     "只有必须读取视觉画面时才截图。\n"
     "只看某个区域时传 region（x/y/width/height，单位是桌面像素）；界面偏小可传 scale 0.5–0.8，"
     "两者都能显著降低开销。确需像素定位时可先看全屏，再用 region 复核细节。\n"
     "坐标动作之前要有对应的观测；动作后只在需要确认结果时重新截图。\n"
-    "如果用户正在控制电脑，工具会明确提示，此时等待用户交还，不要重试输入。"
+    "如果用户正在控制电脑，工具会明确提示，请用户在电脑面板点击“交还助理”，等待交还，不要重试输入。"
 )
 
 NATIVE_INSTRUCTIONS = (
     "这台 Remote Computer 已接入 agent-desktop 原生可访问性接口，优先使用 computer_ui，"
+    "它操作的仍是真实桌面上已经打开的应用；headless 指无需抢前台焦点的输入方式，"
+    "不是另起隐藏浏览器。"
     "不用先截图。先 list_apps/list_windows 定位应用，再 snapshot（默认 interactive+compact；"
     "复杂窗口先 skeleton，再 root 深入）。只使用当前运行返回的完整 @s…:e… ref。"
     "每次界面变化后重新观察；不能凭旧 ref 连续盲点。click/type/select 是严格 headless 语义操作，"
@@ -33,6 +40,14 @@ NATIVE_INSTRUCTIONS = (
     "才可重试；结果不确定先观察，不能重复提交。STALE_REF 重新 snapshot；AMBIGUOUS_TARGET "
     "不要反复重试相同控件。不得为恢复 headless 失败而静默转成坐标输入或 headed。"
     "截图保留给视觉内容与必要核对，不用截图代替可访问性树。"
+)
+
+VM_INSTRUCTIONS = (
+    "当前执行目标是你的持久 VM 云电脑：后台 shell/文件工具与可见桌面都在这台 VM 上，"
+    "后台命令不会自动弹出终端或浏览器窗口。"
+    "桌面账号与任务账号有各自的主目录和权限；任务工作区是 /home/kai/workspace，"
+    "不是桌面账号的 HOME。工作区产物可通过聊天附件预览或下载；"
+    "未经桌面实际核对，不要声称桌面文件应用能直接读取任务目录，也不要绕过账号权限。\n"
 )
 
 
@@ -280,5 +295,6 @@ def computer_gui_overlay(
                 handler=lambda arguments: act("key", arguments),
             ),
         ),
-        instructions=(NATIVE_INSTRUCTIONS + "\n" if native_desktop else "") + INSTRUCTIONS,
+        instructions=(VM_INSTRUCTIONS if handle.provider == "vm-computer" else "")
+        + (NATIVE_INSTRUCTIONS + "\n" if native_desktop else "") + INSTRUCTIONS,
     )

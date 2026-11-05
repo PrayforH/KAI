@@ -1010,6 +1010,9 @@ class ClaudeSdkRuntime:
                     context.sandbox_command_executor,
                     proxied,
                     image_aware="vision" in route.capabilities,
+                    computer_workspace=context.sandbox_provider in {
+                        "docker-computer", "vm-computer", "remote-computer",
+                    },
                 )
                 for builtin in sorted(proxied):
                     allowed_tools.append(proxy_tool_name(builtin))

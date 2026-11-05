@@ -128,7 +128,11 @@ class CanonicalComputerAccess:
             or bot.status.value != row.status
             or row.status in {"paused", "archived"}
             or bot.deleted_at is not None
-            or bot.config.get("execution_environment") != "personal_computer"
+            # Owned Bot conversations inherit the account's Computer. An
+            # explicit sandbox override still opts out; ordinary task/project
+            # threads never reach this branch. Selecting a local machine is a
+            # separate, explicit owner action on the canonical registry.
+            or bot.config.get("execution_environment", "personal_computer") != "personal_computer"
             or bot.config.get("conversation_thread_id", binding.thread_id) != binding.thread_id
         ):
             return False

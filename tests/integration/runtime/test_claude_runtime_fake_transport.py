@@ -78,6 +78,7 @@ class RecordingToolGate:
         subagent_skill_names: Mapping[str, Collection[str]] | None = None,
         result_trust_by_tool: Mapping[str, ContextTrust] | None = None,
         delegate_allowed_to_sdk_permissions: bool = False,
+        preface: object | None = None,
     ) -> dict[HookEvent, list[HookMatcher]]:
         self.contexts.append(context)
         return {"PreToolUse": []}
@@ -443,10 +444,13 @@ async def test_resumed_runtime_emits_unavailable_when_stream_has_no_window_outco
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("remote", [False, True])
+@pytest.mark.parametrize(
+    "provider", ["local", "daytona", "docker-computer", "vm-computer", "remote-computer"]
+)
 async def test_runtime_keeps_sdk_control_local_and_describes_remote_tools(
-    tmp_path: Path, remote: bool,
+    tmp_path: Path, provider: str,
 ) -> None:
+    remote = provider != "local"
     snapshot = load_manifest("tests/fixtures/agents/echo-agent/agent.yaml")
     now = datetime.now(UTC)
     version = AgentVersion(
@@ -533,7 +537,7 @@ async def test_runtime_keeps_sdk_control_local_and_describes_remote_tools(
         ),
         workspace=tmp_path,
         sandbox_command_executor=execute_sandbox,
-        sandbox_provider="docker-computer" if remote else "local",
+        sandbox_provider=provider,
         remote_workspace="/home/kai/workspace" if remote else None,
     )
 
