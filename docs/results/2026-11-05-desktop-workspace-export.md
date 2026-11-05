@@ -54,3 +54,7 @@
 API/Worker 118 层、10001:10001；Control 107 层、0:0，Control/Viewer init 保留。Compose SHA-256：`a6c6b720194523cbfac78ccb8ff8d157f0974753354730db255b8e896a9abe41`。操作目录 `/data/kai-desktop-export-20261105/`，维护在无运行/执行租约/人工控制时进行，VM 正常 QMP 关机维护，保留原容器 ID `688eeadcad878326af54679b03985584765ccf48344202be51e953e16f9132ca`、根盘 inode `104203198`、工作卷、浏览器与绑定；Web、Viewer、HTTPS 容器 ID 保持。生产 schema 0065 未运行迁移，仅发布 79。
 
 旧诊断见 [画面续接与视频交付耗时](2026-11-05-desktop-renewal-and-video-delivery.md)。其中「导出待实施」是该批诊断时点的状态，已由本批桥接与实页验收推进；录屏管理和大文件性能仍未完成。
+
+实现提交 `a3179204` 已推送到面向 develop 的 [PR80](https://github.com/PrayforH/KAI/pull/80)，没有绕过必需 CI 合入。API 实装与本地 `desktop_export.py` 的 SHA-256 均为 `845f3f9a82ca61bc75c25af4f7b913324c7ba616092888e9d3e67ca60a27cd5c`。本次专用临时测试 PostgreSQL 容器及其 SSH 转发已清理。
+
+方案与验收同步到[飞书 11.28](https://my.feishu.cn/docx/XV4ndItNmoONoIxQPWgcIyLbnJe)，revision 140，标题 block `doxcnT7FbZDGt5I6t3H33FJJwNg`；已按整节读回核对设计边界、网页验收及分段耗时。
