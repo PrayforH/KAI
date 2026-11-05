@@ -9,6 +9,7 @@ import styles from "./computer-desktop.module.css";
 type TargetSelection = { active_target: string | null; targets: { target_id: string; label: string; binding_key: string }[] };
 type ConnectionState = "connecting" | "connected" | "disconnected" | "unauthorized";
 type ControlState = "observe" | "agent" | "human" | "takeover_pending";
+type DesktopControl = { state: ControlState; binding_key: string; epoch?: number; revision?: number };
 const labels = { connecting: "正在连接", connected: "已连接", disconnected: "连接已断开", unauthorized: "请重新登录" };
 
 
@@ -25,7 +26,14 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
   const [selection, setSelection] = useState<TargetSelection | null>(null);
   const [switching, setSwitching] = useState(false);
   const [selectionError, setSelectionError] = useState("");
-  const viewingExecution = !selection || viewTarget === selection.active_target;
+  const [authority, setAuthority] = useState<DesktopControl | null>(null);
+  const [controlError, setControlError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [actionBusy, setActionBusy] = useState(false);
+  const operationVersion = useRef(0);
+  const actionInFlight = useRef(false);
+  const refreshControl = useRef<() => Promise<void>>(async () => {});
+  const viewingExecution = Boolean(selection && viewTarget === selection.active_target);
   const applyControl = (value: ControlState) => {
     controlRef.current = value;
     setControl(value);
@@ -42,6 +50,7 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
     let initialRetries = 0;
     let connected = false;
     const controller = new AbortController();
+    let polling = false;
     setState("connecting");
     // Full navigations can enter bfcache without React unmounting this tree.
     const leavePage = () => { disposed = true; controller.abort(); rfb?.disconnect(); };
@@ -51,22 +60,31 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
     async function pollControl() {
       // The lease is the authority; the viewer only mirrors it for the UI and
       // stops asking noVNC to send input when the user does not own it.
+      if (disposed || polling || actionInFlight.current) return;
+      polling = true;
+      const version = operationVersion.current;
       try {
         const [response, targets] = await Promise.all([
-          fetch("/api/studio/assistant/computer/desktop", { cache: "no-store", signal: controller.signal }),
-          fetch("/api/studio/assistant/computer/targets", { cache: "no-store", signal: controller.signal }),
+          fetch("/api/studio/assistant/computer/desktop", { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]) }),
+          fetch("/api/studio/assistant/computer/targets", { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]) }),
         ]);
-        const selected = targets.ok ? await targets.json() as TargetSelection : null;
-        if (disposed) return;
-        if (selected) setSelection(selected);
-        if (response.ok) {
-          const value = (await response.json()) as { state?: ControlState; binding_key?: string };
-          const binding = selected?.targets.find(target => target.target_id === targetRef.current)?.binding_key;
-          const next = (!selected || binding && value.binding_key === binding) ? value.state ?? "observe" : "observe";
-          if (!disposed && next !== controlRef.current) applyControl(next);
+        if (!response.ok || !targets.ok) throw new Error("控制状态暂时无法确认，请稍后重试；画面已暂停输入");
+        const selected = await targets.json() as TargetSelection;
+        const value = await response.json() as DesktopControl;
+        if (disposed || version !== operationVersion.current) return;
+        const activeBinding = selected.targets.find(target => target.target_id === selected.active_target)?.binding_key;
+        if (!activeBinding || value.binding_key !== activeBinding) throw new Error("电脑已切换，正在重新确认控制状态");
+        setSelection(selected); setAuthority(value); setControlError("");
+        const next = selected.active_target === targetRef.current ? value.state : "observe";
+        if (next !== controlRef.current) applyControl(next);
+      } catch (error) {
+        if (!disposed && version === operationVersion.current) {
+          applyControl("observe");
+          setControlError(error instanceof Error && error.name === "Error" ? error.message : "控制状态暂时无法确认，请重试；画面已暂停输入");
         }
-      } catch { /* transient; the next tick retries */ }
+      } finally { polling = false; }
     }
+    refreshControl.current = pollControl;
     async function connect() {
       try {
         // Refresh through the existing BFF; the socket uses HttpOnly cookies.
@@ -111,6 +129,7 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
     const poll = setInterval(() => { void pollControl(); }, 2000);
     return () => {
       leavePage(); client.current = null; clearInterval(poll); clearTimeout(retryTimer);
+      refreshControl.current = async () => {};
       window.removeEventListener("pagehide", leavePage);
       window.removeEventListener("pageshow", restorePage);
     };
@@ -118,42 +137,76 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
 
   function viewComputer(targetId: string) {
     if (targetId === targetRef.current) return;
+    operationVersion.current += 1;
     targetRef.current = targetId;
     setViewTarget(targetId); setSelectionError("");
     applyControl("observe"); setRevision(value => value + 1);
   }
 
   async function selectComputer(targetId: string) {
+    if (actionInFlight.current) return;
+    const version = ++operationVersion.current;
+    actionInFlight.current = true;
     setSwitching(true); setSelectionError("");
+    applyControl("observe");
     try {
       const response = await fetch("/api/studio/assistant/computer/targets/select", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target_id: targetId }),
+        signal: AbortSignal.timeout(8000),
       });
+      if (version !== operationVersion.current) return;
       if (!response.ok) {
         setSelectionError(response.status === 409 ? "当前工作仍在原电脑执行，结束并交还控制后可更换助理使用的电脑；现在可以自由切换查看" : "暂时无法更换助理使用的电脑，请重试");
         return;
       }
       const value = await response.json() as TargetSelection;
-      setSelection(value);
+      if (version !== operationVersion.current) return;
+      setSelection(value); setAuthority(null); setActionError("");
       applyControl("observe"); setRevision(value => value + 1);
-    } catch { setSelectionError("暂时无法切换电脑，请重试"); }
-    finally { setSwitching(false); }
+    } catch { if (version === operationVersion.current) setSelectionError("暂时无法切换电脑，请重试"); }
+    finally { actionInFlight.current = false; setSwitching(false); void refreshControl.current(); }
   }
 
   async function changeControl(action: "takeover" | "return") {
-    if (!viewingExecution) return;
-    const binding = selection?.targets.find(target => target.target_id === viewTarget)?.binding_key;
-    if (selection && !binding) return;
-    const query = binding ? `?${new URLSearchParams({ binding_key: binding })}` : "";
-    const response = await fetch(`/api/studio/assistant/computer/desktop/${action}${query}`, { method: "POST" });
-    if (!response.ok) return;
-    const value = (await response.json()) as { state?: ControlState };
-    applyControl(value.state ?? "takeover_pending");
-    // The lease settles takeover_pending after its grace; the poll confirms.
+    if (actionInFlight.current || action === "takeover" && !viewingExecution) return;
+    const binding = selection?.targets.find(target => target.target_id === selection.active_target)?.binding_key;
+    if (!binding) { setActionError("尚未确认助理使用的电脑，请重试控制状态"); return; }
+    const version = ++operationVersion.current;
+    actionInFlight.current = true; setActionBusy(true); setActionError("");
+    // A failed or superseded request must not leave the canvas accepting input.
+    applyControl("observe");
+    try {
+      const response = await fetch(`/api/studio/assistant/computer/desktop/${action}?${new URLSearchParams({ binding_key: binding })}`, {
+        method: "POST", signal: AbortSignal.timeout(8000),
+      });
+      if (!response.ok) throw new Error(response.status === 409
+        ? "控制权或电脑已变化，请重试控制状态后再操作"
+        : response.status === 401 || response.status === 403 ? "暂时无法操作控制权，请确认登录后重试"
+        : "控制权操作未成功，请重试；当前画面仅观看");
+      const value = await response.json() as DesktopControl;
+      if (version !== operationVersion.current) return;
+      setAuthority({ ...value, binding_key: binding });
+      setControlError("");
+      applyControl(viewingExecution ? value.state : "observe");
+    } catch (error) {
+      if (version === operationVersion.current) setActionError(error instanceof Error && error.name === "Error"
+        ? error.message : "控制权请求未完成，请重试控制状态后再操作");
+    } finally {
+      actionInFlight.current = false; setActionBusy(false);
+      void refreshControl.current();
+    }
   }
 
   const viewedLabel = selection?.targets.find(target => target.target_id === viewTarget)?.label ?? "我的电脑";
   const executionLabel = selection?.targets.find(target => target.target_id === selection.active_target)?.label;
+  const activeBinding = selection?.targets.find(target => target.target_id === selection.active_target)?.binding_key;
+  const returnable = authority?.binding_key === activeBinding && (authority?.state === "human" || authority?.state === "takeover_pending");
+  const explanation = controlError ? controlError : !selection ? "正在确认电脑和控制权"
+    : !viewingExecution ? `当前仅观看${viewedLabel}；助理使用的是${executionLabel ?? "另一台电脑"}。要让助理操作这里，请点击“供助理使用”`
+    : control === "human" ? "由你控制：点击画面后可使用鼠标和键盘；完成后点击“交还助理”"
+    : control === "takeover_pending" ? "正在等待助理结束当前动作，交接完成后才能操作"
+    : control === "agent" ? "助理正在操作；需要自行操作时，点击“取得控制权”"
+    : "当前仅观看，点击“取得控制权”后才能操作鼠标和键盘";
   return <section aria-label="我的电脑" className={`${styles.shell} ${embedded ? styles.embedded : ""}`} ref={shell}>
     <header className={styles.windowHeader}>
       {!embedded && <Link href="/assistant" className={styles.back} aria-label="返回我的助理">←</Link>}
@@ -181,29 +234,36 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
       </div>}
     </div>
     <footer className={styles.toolbar}>
-      {selection && selection.targets.length > 1 ? <select className={styles.targetSelect} aria-label="查看电脑"
+      {selection && selection.targets.length > 1 ? <select className={styles.targetSelect} aria-label="查看电脑" disabled={actionBusy || switching}
         value={viewTarget ?? ""} onChange={event => viewComputer(event.target.value)}>
         {selection.targets.map(target => <option key={target.target_id} value={target.target_id}>{target.label}</option>)}
       </select> : <span className={styles.caption}>{viewedLabel}的屏幕</span>}
       <div className={styles.controlPill} data-pending={control === "takeover_pending"}>
         <span className={styles.viewState} role="status">
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 10s3-5 8-5 8 5 8 5-3 5-8 5-8-5-8-5Z"/><circle cx="10" cy="10" r="2"/></svg>
-          {control === "human" ? "由你控制" : control === "takeover_pending" ? "正在交接" : "仅观看"}
+          {controlError ? "控制状态待确认" : control === "human" ? "由你控制" : control === "takeover_pending" ? "正在交接" : control === "agent" ? "助理操作中" : "仅观看"}
         </span>
-        {viewingExecution && (control === "human"
-          ? <button className={styles.primaryAction} onClick={() => void changeControl("return")}>交还助理</button>
-          : <button className={styles.primaryAction} disabled={state !== "connected" || control === "takeover_pending"} onClick={() => void changeControl("takeover")}>取得控制权</button>)}
+        {!selection ? <button className={styles.primaryAction} disabled>正在确认控制权</button> : viewingExecution ? (returnable
+          ? <button className={styles.primaryAction} disabled={actionBusy} onClick={() => void changeControl("return")}>{authority?.state === "takeover_pending" ? "取消接管" : "交还助理"}</button>
+          : <button className={styles.primaryAction} disabled={state !== "connected" || actionBusy || !authority || Boolean(controlError)} onClick={() => void changeControl("takeover")}>{actionBusy ? "正在请求" : "取得控制权"}</button>)
+          : <button className={styles.primaryAction} disabled={switching || actionBusy || !selection} onClick={() => viewTarget && void selectComputer(viewTarget)}>{switching ? "正在切换" : "供助理使用"}</button>}
       </div>
       <details className={styles.more}>
         <summary aria-label="更多电脑操作">···</summary>
         <div className={styles.menu}>
-          {!viewingExecution && viewTarget && <button disabled={switching} onClick={() => void selectComputer(viewTarget)}>供助理使用</button>}
           <button onClick={() => setRevision(value => value + 1)}>重新连接</button>
+          <button onClick={() => void refreshControl.current()}>重试控制状态</button>
         </div>
       </details>
       <span className={styles.connection} role="status">{state === "connected" && control === "agent" ? "助理操作中" : labels[state]}</span>
     </footer>
-    {!viewingExecution && <p className={styles.notice}>助理仍在{executionLabel ?? "原电脑"}工作，切换查看不影响执行</p>}
+    <p className={styles.notice} role="status">{explanation}</p>
+    {selection && selection.targets.length > 1 && <p className={styles.notice}>默认使用云电脑；仅在明确需要时，将本地电脑设为“供助理使用”</p>}
+    {!viewingExecution && returnable && <div className={styles.ownershipNotice}>
+      <span>{executionLabel ?? "助理使用的电脑"}{authority?.state === "human" ? "由你控制" : "正在交接控制权"}</span>
+      <button disabled={actionBusy} onClick={() => void changeControl("return")}>{authority?.state === "takeover_pending" ? "取消接管" : `交还${executionLabel ?? "控制权"}`}</button>
+    </div>}
+    {actionError && <p className={styles.selectionError} role="alert">{actionError}</p>}
     {selectionError && <p className={styles.selectionError} role="alert">{selectionError}</p>}
   </section>;
 }
