@@ -16,7 +16,10 @@ fi
 install -d -o 28000 -g 28000 -m 700 /home/kai
 install -d -m 755 /opt/kai-computer
 install -m 644 "$stage"/*.py /opt/kai-computer/
-install -m 644 "$stage/remote.json" /etc/kai-computer-remote.json
+# The forced display gate runs as the enrolled desktop user, not root.
+# Keep its declaration readable by that user's primary group on every update.
+desktop_gid=$(python3 -c 'import json,pwd,sys; print(pwd.getpwuid(json.load(open(sys.argv[1]))["desktop_uid"]).pw_gid)' "$stage/remote.json")
+install -o root -g "$desktop_gid" -m 640 "$stage/remote.json" /etc/kai-computer-remote.json
 if ! id kai-control >/dev/null 2>&1; then useradd --system --home-dir /var/lib/kai-control --create-home --shell /bin/sh kai-control; fi
 install -d -o kai-control -g kai-control -m 700 /var/lib/kai-control/.ssh
 printf 'restrict,command="sudo -n /usr/bin/python3 -I /opt/kai-computer/remote_gate.py" %s\n' "$(cat "$stage/control.pub")" > /var/lib/kai-control/.ssh/authorized_keys

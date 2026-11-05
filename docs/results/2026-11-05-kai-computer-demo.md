@@ -105,9 +105,10 @@ computer-control（独立容器：registry + 租约 + 驱动）
 - **ACP 降权**：bridge `PR_SET_NO_NEW_PRIVS`→`setgroups([])`→`setgid/setuid`，env 仅
   HOME/USER/LOGNAME/LANG/PATH——Claude/Codex 看到机主登录态，凭据不复制、不给 root。
 - **digest pin**：gate 每次重算
-  `[remote_display_gate, remote_gate, ssh_gate, supervisor, native_desktop]` sha256 与
-  `/etc/kai-computer-remote.json` 的 `image` 比对；`acp_client.mjs`/`acp_bridge.py`
-  **不在** digest 内（可独立替换）。
+  `[remote_display_gate, remote_gate, ssh_gate, supervisor]`，按启用项追加
+  `native_desktop.py`、`acp_bridge.py`、`acp_client.mjs` 后计算 sha256，与
+  `/etc/kai-computer-remote.json` 的 `image` 比对。当前原生桌面和 ACP 都启用，共7文件；
+  ACP 文件不能独立覆盖后仍沿用旧摘要。
 
 ### 2.3 mermaid 总图
 
@@ -239,7 +240,11 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/healthz
 # identity（期望 {"machine_id":...,"computer_id":...,"image":...} JSON；见 D0/D1 档）
 ```
 
-### 4.2 退回只读（两步，均可独立做）
+### 4.2 退回只读（需整组版本校验）
+
+下方命令是历史回退步骤，不能作为当前版本的一键回退：ACP 文件也受摘要保护。
+实际回退须在无活跃运行/租约时恢复匹配的组件组、机内声明、control声明及Registry版本，
+随后重新验证identity和viewer；本次连接修复未回退ACP，也未改任何摘要。
 
 ```bash
 # ① 79 容器回退（只动 computer-control）
@@ -252,18 +257,22 @@ sudo install -m 644 -o root -g root \
   /opt/kai-computer/acp_client.mjs
 ```
 或代码层 `git revert 03db5621`。回滚后描述恢复「仅只读调研」、permission 恢复一律拒绝。
-注意 `acp_client.mjs` 不在 gate digest 内，单独替换不影响 identity。
+注意 `acp_client.mjs` 在当前 gate digest 内，单独替换会影响 identity。
 
 ### 4.3 digest 对齐清单（存档；已全部完成，供复发时照做）
 
-1. 32.45 上重算摘要（native_desktop 启用为 5 文件）：
-   `cat /opt/kai-computer/{remote_display_gate,remote_gate,ssh_gate,supervisor,native_desktop}.py | sha256sum`
+1. 32.45 上重算摘要（当前native_desktop和ACP都启用，共7文件）：
+   `cat /opt/kai-computer/{remote_display_gate.py,remote_gate.py,ssh_gate.py,supervisor.py,native_desktop.py,acp_bridge.py,acp_client.mjs} | sha256sum`
    → 当前值 `72b329d672a3ed9aa8d590f667ff63a72c537dc3fb40372f7fca310c11157f50`；
 2. `/etc/kai-computer-remote.json` 的 `image` 改为该值（确认 `"acp": true`）；
 3. control env `HARNESS_COMPUTER_CONTROL_REMOTE_COMPUTERS[*].guest_base_digest` 改同一值
    （×5 声明），`up -d computer-control`——**两处必须同值**；
-4. `/opt/kai-computer/acp_client.mjs` 刷成 `9ed42ee1` 版（不在 digest 内）；
+4. 组件更新应在第1步计算摘要前完成；`acp_client.mjs`也在摘要内，不可在验证后单独覆盖；
 5. identity 冒烟（§4.1 最后一行），期望返回 identity JSON。
+
+2026-11-05连接修复补充：共享声明必须保持root所有、桌面用户主组可读的0640。
+原子替换、install或备份恢复后均须核对属组；root:root 0640会让普通桌面gate读取失败，
+即使隧道、VNC服务和摘要全部正常，viewer仍会握手失败。详见同日local-computer-recovery记录。
 
 ---
 
