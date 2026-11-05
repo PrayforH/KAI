@@ -38,7 +38,7 @@ NATIVE_INSTRUCTIONS = (
     "每次界面变化后重新观察；不能凭旧 ref 连续盲点。click/type/select 是严格 headless 语义操作，"
     "snapshot 的 identity_unproven=true 表示引用身份尚未证明，不能直接点击；"
     "complete=false 表示观察不完整，未出现的控件不等于不存在。"
-    "可以在 500–8000 毫秒内提高 timeout_ms 后重新观察，或先读取更窄的 root。"
+    "应重新观察完整窗口或读取更窄的 root。"
     "不会抢焦点、剪贴板或鼠标。保留并遵守原始 disposition：仅 retry=safe 且 delivery=not_delivered"
     "才可重试；结果不确定先观察，不能重复提交。STALE_REF 重新 snapshot；AMBIGUOUS_TARGET "
     "不要反复重试相同控件。不得为恢复 headless 失败而静默转成坐标输入或 headed。"
@@ -172,7 +172,15 @@ def computer_gui_overlay(
         )
 
     async def native(arguments: dict[str, Any]) -> dict[str, Any]:
-        result = await act("ui", arguments)
+        payload = dict(arguments)
+        if handle.provider == "vm-computer" and payload.get("action") in {
+            "snapshot", "list_windows", "click", "type", "select",
+        }:
+            # Full-window identity census must finish before refs can act.
+            # This is a ceiling, not a delay. Legacy enrolled PCs retain their
+            # original protocol and receive no new fields implicitly.
+            payload.setdefault("timeout_ms", 8000)
+        result = await act("ui", payload)
         if "content" in result:
             return result
         return _text(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
@@ -217,10 +225,11 @@ def computer_gui_overlay(
                         "interactive": {"type": "boolean", "default": True},
                         "skeleton": {"type": "boolean", "default": False},
                         "max_depth": {"type": "integer", "minimum": 1, "maximum": 15},
-                        "timeout_ms": {
+                        **({"timeout_ms": {
                             "type": "integer", "minimum": 500, "maximum": 8000,
-                            "description": "snapshot/list_windows/引用动作的有界等待，默认2000毫秒",
-                        },
+                            "default": 8000,
+                            "description": "有界最长等待；默认8000毫秒，提前完成立即返回",
+                        }} if handle.provider == "vm-computer" else {}),
                     },
                     "required": ["action"],
                 },

@@ -125,6 +125,31 @@ async def test_screenshot_acquires_ownership_and_returns_image(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("target,explicit", [("vm-computer", None), ("vm-computer", 500),
+                                           ("remote-computer", None)])
+async def test_native_vm_wait_default_preserves_explicit_budget_and_legacy_pc_protocol(
+    database: DatabaseFixture, tmp_path: Path, target: str, explicit: int | None,
+) -> None:
+    desktop = await prepared(database)
+    provider = StubProvider([{"ok": True}], root=tmp_path)
+    provider.handle = provider.handle.model_copy(update={"provider": target})
+    overlay = computer_gui_overlay(desktop, provider, provider.handle, native_desktop=True)
+    tool = next(tool for tool in overlay.tools if tool.name == "computer_ui")
+    assert ("timeout_ms" in tool.schema["properties"]) == (target == "vm-computer")
+    arguments: dict[str, Any] = {"action": "snapshot", "app": "chromium"}
+    if explicit is not None:
+        arguments["timeout_ms"] = explicit
+    original = dict(arguments)
+    await tool.handler(arguments)
+    forwarded = provider.calls[0][1]
+    if target == "vm-computer":
+        assert forwarded["timeout_ms"] == (8000 if explicit is None else explicit)
+    else:
+        assert forwarded == original
+    assert arguments == original
+
+
+@pytest.mark.asyncio
 async def test_screenshot_forwards_region_and_scale(
     database: DatabaseFixture, tmp_path: Any
 ) -> None:
