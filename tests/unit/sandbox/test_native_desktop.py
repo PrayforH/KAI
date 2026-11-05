@@ -68,6 +68,19 @@ def test_user_text_is_a_literal_operand_not_an_option_or_shell_command():
     assert argv == ["type", "--timeout-ms=2000", "--", "@sabc:e1", text]
 
 
+@pytest.mark.parametrize("timeout", [True, -1, 0, 499, 8001, "8000"])
+def test_native_wait_budget_cannot_be_unbounded_or_coerced(timeout):
+    with pytest.raises(ValueError, match="timeout"):
+        command({"action": "snapshot", "timeout_ms": timeout})
+
+
+def test_partial_observations_can_be_repeated_with_an_explicit_bounded_budget():
+    assert "--timeout-ms=8000" in command({"action": "snapshot", "timeout_ms": 8000})
+    assert command({"action": "click", "ref": "@sabc:e1", "timeout_ms": 6000}) == [
+        "click", "--timeout-ms=6000", "--", "@sabc:e1",
+    ]
+
+
 def test_uncertain_native_delivery_never_claims_safe_retry():
     error = uncertain("TIMEOUT", "timed out")["error"]
     assert error["disposition"] == {"delivery": "unknown", "retry": "unsafe"}

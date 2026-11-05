@@ -113,6 +113,7 @@ def command(payload: dict[str, Any]) -> list[str]:
         "interactive",
         "skeleton",
         "max_depth",
+        "timeout_ms",
     }
     if (
         payload.keys() - allowed
@@ -121,14 +122,17 @@ def command(payload: dict[str, Any]) -> list[str]:
     ):
         raise ValueError("native desktop action is invalid")
     action = payload["action"]
+    timeout_ms = payload.get("timeout_ms", 2000)
+    if type(timeout_ms) is not int or not 500 <= timeout_ms <= 8000:
+        raise ValueError("native desktop timeout must be between 500 and 8000 ms")
     argv = [action.replace("_", "-")]
     if action in {"click", "type", "select"}:
-        if payload.keys() - {"action", "ref", "text"}:
+        if payload.keys() - {"action", "ref", "text", "timeout_ms"}:
             raise ValueError("ref actions accept only a ref and text")
         ref = payload.get("ref")
         if not isinstance(ref, str) or REF.fullmatch(ref) is None:
             raise ValueError("use a qualified ref from this run's latest snapshot")
-        argv += ["--timeout-ms=2000", "--", ref]
+        argv += [f"--timeout-ms={timeout_ms}", "--", ref]
         if action != "click":
             text = payload.get("text")
             if not isinstance(text, str) or not 1 <= len(text) <= 2000 or "\0" in text:
@@ -141,7 +145,7 @@ def command(payload: dict[str, Any]) -> list[str]:
         if payload.keys() != {"action"}:
             raise ValueError("inventory action takes no extra arguments")
         return argv
-    if action == "list_windows" and payload.keys() - {"action", "app"}:
+    if action == "list_windows" and payload.keys() - {"action", "app", "timeout_ms"}:
         raise ValueError("window inventory accepts only an app filter")
     for key, flag in (("app", "app"), ("window_id", "window-id"), ("root", "root")):
         if key not in payload:
@@ -156,7 +160,7 @@ def command(payload: dict[str, Any]) -> list[str]:
         if key == "root" and REF.fullmatch(value) is None:
             raise ValueError("snapshot root must be a qualified ref")
         argv.append(f"--{flag}={value}")
-    argv.append("--timeout-ms=2000")
+    argv.append(f"--timeout-ms={timeout_ms}")
     if action == "snapshot":
         surface = payload.get("surface", "window")
         if surface not in {"window", "sheet", "alert", "menu"}:
@@ -278,7 +282,10 @@ def run(config: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
         )
         try:
             try:
-                child.wait(timeout=4)
+                # Leave room for CLI startup, but never outlive the node's
+                # request deadline or the fixed 8-second observation budget.
+                budget = request["payload"].get("timeout_ms", 2000) / 1000 + 2
+                child.wait(timeout=max(0, min(budget, deadline - time.time())))
             except subprocess.TimeoutExpired:
                 return uncertain("TIMEOUT", "Native desktop response timed out")
             if output.tell() > MAX_OUTPUT:

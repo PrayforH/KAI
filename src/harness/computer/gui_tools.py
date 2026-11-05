@@ -36,6 +36,9 @@ NATIVE_INSTRUCTIONS = (
     "不用先截图。先 list_apps/list_windows 定位应用，再 snapshot（默认 interactive+compact；"
     "复杂窗口先 skeleton，再 root 深入）。只使用当前运行返回的完整 @s…:e… ref。"
     "每次界面变化后重新观察；不能凭旧 ref 连续盲点。click/type/select 是严格 headless 语义操作，"
+    "snapshot 的 identity_unproven=true 表示引用身份尚未证明，不能直接点击；"
+    "complete=false 表示观察不完整，未出现的控件不等于不存在。"
+    "可以在 500–8000 毫秒内提高 timeout_ms 后重新观察，或先读取更窄的 root。"
     "不会抢焦点、剪贴板或鼠标。保留并遵守原始 disposition：仅 retry=safe 且 delivery=not_delivered"
     "才可重试；结果不确定先观察，不能重复提交。STALE_REF 重新 snapshot；AMBIGUOUS_TARGET "
     "不要反复重试相同控件。不得为恢复 headless 失败而静默转成坐标输入或 headed。"
@@ -214,6 +217,10 @@ def computer_gui_overlay(
                         "interactive": {"type": "boolean", "default": True},
                         "skeleton": {"type": "boolean", "default": False},
                         "max_depth": {"type": "integer", "minimum": 1, "maximum": 15},
+                        "timeout_ms": {
+                            "type": "integer", "minimum": 500, "maximum": 8000,
+                            "description": "snapshot/list_windows/引用动作的有界等待，默认2000毫秒",
+                        },
                     },
                     "required": ["action"],
                 },
