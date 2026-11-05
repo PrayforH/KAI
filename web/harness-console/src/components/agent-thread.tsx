@@ -488,6 +488,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     agentSelection.selected?.skills,
     conversationScope ? [] : knowledge.available,
     knowledge.selected,
+    !assistantSurface,
   );
   const busy = threadRunning || showStop || runLocked || videoGenerating;
   useEffect(() => {
@@ -576,8 +577,9 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       inputRef.current?.focus();
       return;
     }
-    // `@` selects knowledge bases for this thread; the mention text is removed
-    // and the picker stays open so several bases can be toggled in a row.
+    // `@` selects knowledge bases for this thread (task surface only); the
+    // mention text is removed and the picker stays open so several bases can be
+    // toggled in a row.
     if (trigger.symbol === "@") {
       const reference = option.id.slice(1);
       if (busy) return;
@@ -1046,7 +1048,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
         ) : null}
         {helpOpen && <div className="composer-assist composer-help-popover" role="dialog" aria-label="输入帮助">
           <button type="button" onClick={() => setHelpOpen(false)}>关闭</button>
-          <p>/ 执行命令 · @ 提及助理或选择知识库（可多选） · $ 引用技能</p>
+          <p>{assistantSurface ? "/ 执行命令 · @ 提及助理 · $ 引用技能" : "/ 执行命令 · @ 选择知识库（可多选） · $ 引用技能"}</p>
           <p>{assistantSurface ? "Enter 发送消息，Shift Enter 换行。运行中发送的文字会直接补充到当前工作；附件在当前回复结束后发送。" : <>运行中 Enter {followUpBehavior === "steer" ? "补充说明" : "加入队列"}，Alt Enter 使用另一种方式，Shift Enter 换行。可在个人设置的配置中更改默认行为。</>}</p>
         </div>}
         {activeSkillLaunch && selectedSkill && (

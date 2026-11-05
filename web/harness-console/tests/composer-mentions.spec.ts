@@ -20,19 +20,24 @@ describe("@ 提及助理", () => {
     expect(options.map((option) => option.id)).toEqual([`${MENTION_PREFIX}specialist_b`]);
   });
 
-  it("keeps knowledge bases after the assistants and still multi-selects them", () => {
+  it("never mixes knowledge bases into the assistant surface", () => {
     const bases = [{ reference: "kb-1", displayName: "手册库", kbType: "文件" }];
-    const options = composerOptions("@", 1, ASSISTANTS, [], bases, []);
+    const options = composerOptions("@", 1, ASSISTANTS, [], bases, [], false);
     expect(options.map((option) => option.id)).toEqual([
       `${MENTION_PREFIX}specialist_a`,
       `${MENTION_PREFIX}specialist_b`,
-      "@kb-1",
     ]);
-    expect(options[2]?.description).toContain("可多选");
+  });
+
+  it("still lists knowledge bases on the task surface", () => {
+    const bases = [{ reference: "kb-1", displayName: "手册库", kbType: "文件" }];
+    const options = composerOptions("@", 1, [], [], bases, [], true);
+    expect(options.map((option) => option.id)).toEqual(["@kb-1"]);
+    expect(options[0]?.description).toContain("可多选");
   });
 
   it("offers no assistant when the surface is not the assistant one", () => {
-    const options = composerOptions("@", 1, [], [], [{ reference: "kb-1", displayName: "手册库", kbType: "文件" }], []);
+    const options = composerOptions("@", 1, [], [], [{ reference: "kb-1", displayName: "手册库", kbType: "文件" }], [], true);
     expect(options.map((option) => option.id)).toEqual(["@kb-1"]);
   });
 });
