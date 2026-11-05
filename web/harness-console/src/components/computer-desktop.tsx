@@ -7,10 +7,10 @@ import type RFB from "@novnc/novnc";
 import styles from "./computer-desktop.module.css";
 
 type TargetSelection = { active_target: string | null; targets: { target_id: string; label: string; binding_key: string }[] };
-type ConnectionState = "connecting" | "connected" | "disconnected" | "unauthorized";
+type ConnectionState = "connecting" | "reconnecting" | "connected" | "disconnected" | "unauthorized";
 type ControlState = "observe" | "agent" | "human" | "takeover_pending";
 type DesktopControl = { state: ControlState; binding_key: string; epoch?: number; revision?: number };
-const labels = { connecting: "正在连接", connected: "已连接", disconnected: "连接已断开", unauthorized: "请重新登录" };
+const labels = { connecting: "正在连接", reconnecting: "正在重新连接", connected: "已连接", disconnected: "连接已断开", unauthorized: "请重新登录" };
 
 
 export function ComputerDesktop({ embedded = false, onClose }: { embedded?: boolean; onClose?: () => void }) {
@@ -47,8 +47,8 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
     let disposed = false;
     let rfb: RFB | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    let initialRetries = 0;
-    let connected = false;
+    let retries = 0;
+    let wasConnected = false;
     const controller = new AbortController();
     let polling = false;
     setState("connecting");
@@ -85,14 +85,35 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
       } finally { polling = false; }
     }
     refreshControl.current = pollControl;
+    function retryConnection() {
+      if (disposed || retryTimer !== undefined) return;
+      if (rfb) rfb.viewOnly = true;
+      client.current = null;
+      if (retries >= 5) { setState("disconnected"); return; }
+      setState(wasConnected ? "reconnecting" : "connecting");
+      const delay = Math.min(1500 * 2 ** retries++, 10000);
+      retryTimer = setTimeout(() => { retryTimer = undefined; void connect(); }, delay);
+    }
     async function connect() {
       try {
-        // Refresh through the existing BFF; the socket uses HttpOnly cookies.
-        const session = await fetch("/api/auth/session", { cache: "no-store", signal: controller.signal });
-        if (!session.ok) { if (!disposed) setState("unauthorized"); return; }
-        const status = await fetch("/api/computer/status", { cache: "no-store", signal: controller.signal });
-        if (!status.ok) { if (!disposed) setState(status.status === 403 ? "unauthorized" : "disconnected"); return; }
-        const targets = await fetch("/api/studio/assistant/computer/targets", { cache: "no-store", signal: controller.signal });
+        // A live socket retains its original token. On expiry, refresh through
+        // the BFF before opening another socket with current HttpOnly cookies.
+        const signal = () => AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]);
+        const session = await fetch("/api/auth/session", { cache: "no-store", signal: signal() });
+        if (disposed) return;
+        if (!session.ok) {
+          if (session.status === 401 || session.status === 403) setState("unauthorized");
+          else retryConnection();
+          return;
+        }
+        const status = await fetch("/api/computer/status", { cache: "no-store", signal: signal() });
+        if (disposed) return;
+        if (!status.ok) {
+          if (status.status === 401 || status.status === 403) setState("unauthorized");
+          else retryConnection();
+          return;
+        }
+        const targets = await fetch("/api/studio/assistant/computer/targets", { cache: "no-store", signal: signal() });
         if (targets.ok && !disposed) {
           const value = await targets.json() as TargetSelection;
           targetRef.current ??= value.active_target;
@@ -105,24 +126,30 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
         const url = new URL("/computer/desktop", window.location.href);
         if (targetRef.current) url.searchParams.set("target", targetRef.current);
         url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-        rfb = new RemoteFramebuffer(screen.current, url.toString());
-        client.current = rfb;
-        rfb.viewOnly = controlRef.current !== "human";
-        rfb.scaleViewport = true;
-        rfb.resizeSession = false;
-        rfb.qualityLevel = 6;
-        rfb.compressionLevel = 2;
-        rfb.addEventListener("connect", () => { if (!disposed) { connected = true; setState("connected"); if (!embedded && controlRef.current === "human") rfb?.focus(); } });
-        rfb.addEventListener("disconnect", () => {
-          if (disposed) return;
-          // A recently closed preview may still be draining its SSH pipe.
-          // Bound retries to setup only; never loop after a live session ends.
-          if (!connected && initialRetries++ < 5) retryTimer = setTimeout(() => void connect(), 1500);
-          else setState("disconnected");
+        const connection = new RemoteFramebuffer(screen.current, url.toString());
+        rfb = connection; client.current = connection;
+        connection.viewOnly = controlRef.current !== "human";
+        connection.scaleViewport = true;
+        connection.resizeSession = false;
+        connection.qualityLevel = 6;
+        connection.compressionLevel = 2;
+        let securityFailed = false;
+        connection.addEventListener("connect", () => {
+          if (disposed || rfb !== connection) return;
+          wasConnected = true; retries = 0; setState("connected");
+          if (!embedded && controlRef.current === "human") connection.focus();
         });
-        rfb.addEventListener("securityfailure", () => { if (!disposed) setState("disconnected"); });
+        connection.addEventListener("disconnect", () => {
+          if (disposed || rfb !== connection || securityFailed) return;
+          retryConnection();
+        });
+        connection.addEventListener("securityfailure", () => {
+          if (disposed || rfb !== connection) return;
+          securityFailed = true; connection.viewOnly = true;
+          client.current = null; setState("disconnected");
+        });
       } catch (error) {
-        if (!disposed) { console.error("Desktop initialization failed", error); setState("disconnected"); }
+        if (!disposed) { console.error("Desktop initialization failed", error); retryConnection(); }
       }
     }
     void connect();
@@ -228,7 +255,7 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
         }} />
       {state !== "connected" && <div className={styles.overlay} data-state={state} role="status">
         <div className={styles.stateGlyph}><BotGlyph shape="block" color="#858585" /></div>
-        <strong>{state === "connecting" ? "正在连接电脑" : state === "disconnected" ? "电脑暂未连接" : "请重新登录"}</strong>
+        <strong>{state === "connecting" ? "正在连接电脑" : state === "reconnecting" ? "正在重新连接电脑" : state === "disconnected" ? "电脑暂未连接" : "请重新登录"}</strong>
         {state === "unauthorized" ? <Link href="/login">登录 KAI</Link>
           : state === "disconnected" ? <button onClick={() => setRevision(value => value + 1)}>重新连接</button> : null}
       </div>}

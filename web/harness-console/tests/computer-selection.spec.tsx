@@ -18,17 +18,18 @@ vi.mock("@novnc/novnc", () => ({ default: class {
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 const cloud = { active_target: "cloud", targets: [{ target_id: "cloud", label: "云电脑", binding_key: "c".repeat(64) }, { target_id: "local", label: "本地电脑", binding_key: "a".repeat(64) }] };
 let refused = false, current = "cloud";
-let controlState = "human", controlFailure = 0, readFailure = false;
+let controlState = "human", controlFailure = 0, readFailure = false, sessionStatus = 200;
 let delayedRead: Promise<Response> | null = null;
 let host: HTMLDivElement, root: Root;
 const requests: string[] = [];
 async function flush() { for (let i = 0; i < 10; i++) await act(async () => { await Promise.resolve(); }); }
 beforeEach(() => {
   requests.length = 0; sockets.length = 0; frames.length = 0;
-  refused = false; current = "cloud"; controlState = "human"; controlFailure = 0; readFailure = false; delayedRead = null; disconnected.mockClear();
+  refused = false; current = "cloud"; controlState = "human"; controlFailure = 0; readFailure = false; sessionStatus = 200; delayedRead = null; disconnected.mockClear();
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     requests.push(url);
+    if (url === "/api/auth/session") return Response.json({}, { status: sessionStatus });
     if (url.endsWith("/targets/select")) {
       expect(JSON.parse(init?.body as string)).toEqual({ target_id: "local" });
       if (!refused) current = "local";
@@ -109,7 +110,7 @@ describe("desktop ownership feedback", () => {
   it("keeps returning ownership available after the viewer disconnects", async () => {
     await mount();
     await act(async () => frames.at(-1)!.emit("disconnect"));
-    expect(host.textContent).toContain("电脑暂未连接");
+    expect(host.textContent).toContain("正在重新连接电脑");
     await click("交还助理");
     expect(controlState).toBe("observe");
     expect(frames.at(-1)!.viewOnly).toBe(true);
@@ -148,5 +149,52 @@ describe("desktop ownership feedback", () => {
     await act(async () => { resolve(Response.json({ state: "human", binding_key: "c".repeat(64) })); }); await flush();
     expect(host.textContent).not.toContain("由你控制：");
     expect(frames.at(-1)!.viewOnly).toBe(true);
+  });
+});
+
+describe("desktop session renewal", () => {
+  it("refreshes login and resumes the same target after a live connection closes", async () => {
+    vi.useFakeTimers(); await mount();
+    const previous = frames.at(-1)!;
+    requests.length = 0;
+    await act(async () => previous.emit("disconnect"));
+    expect(previous.viewOnly).toBe(true);
+    expect(host.textContent).toContain("正在重新连接电脑");
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); }); await flush();
+    expect(requests[0]).toBe("/api/auth/session");
+    expect(sockets).toHaveLength(2);
+    expect(sockets.at(-1)).toContain("target=cloud");
+    await act(async () => frames.at(-1)!.emit("connect"));
+    expect(host.textContent).toContain("已连接");
+    // Late events from the old transport cannot disconnect its replacement.
+    await act(async () => previous.emit("disconnect"));
+    expect(host.textContent).toContain("已连接");
+  });
+  it("stops automatic retries when login renewal is denied", async () => {
+    vi.useFakeTimers(); await mount(); sessionStatus = 401;
+    await act(async () => frames.at(-1)!.emit("disconnect"));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); }); await flush();
+    expect(host.textContent).toContain("请重新登录");
+    await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+    expect(sockets).toHaveLength(1);
+  });
+  it("bounds transient retry attempts and leaves a manual reconnect", async () => {
+    vi.useFakeTimers(); await mount(); sessionStatus = 503;
+    requests.length = 0;
+    await act(async () => frames.at(-1)!.emit("disconnect"));
+    await act(async () => { await vi.advanceTimersByTimeAsync(40000); }); await flush();
+    expect(requests.filter(url => url === "/api/auth/session")).toHaveLength(5);
+    expect(host.textContent).toContain("电脑暂未连接");
+    expect(host.textContent).toContain("重新连接");
+    await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+    expect(requests.filter(url => url === "/api/auth/session")).toHaveLength(5);
+  });
+  it("cancels a pending retry when the view is closed", async () => {
+    vi.useFakeTimers(); await mount();
+    await act(async () => frames.at(-1)!.emit("disconnect"));
+    requests.length = 0;
+    await act(async () => root.render(null));
+    await act(async () => { await vi.advanceTimersByTimeAsync(20000); });
+    expect(requests).toEqual([]);
   });
 });
