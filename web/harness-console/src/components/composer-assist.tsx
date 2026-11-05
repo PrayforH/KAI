@@ -10,11 +10,12 @@ export function composerOptions(
   skills: NonNullable<TaskAgent["skills"]> = [],
   knowledgeBases: readonly { reference: string; displayName: string; kbType: string }[] = [],
   selectedKnowledge: readonly string[] = [],
+  includeKnowledge = true,
 ) {
   const trigger = composerTrigger(text, caret);
   if (!trigger) return [];
   if (trigger.symbol === "/") return COMPOSER_COMMANDS.filter((item) => `${item.name} ${item.label}`.toLowerCase().includes(trigger.query)).map((item) => ({ id: item.name, label: item.name, description: `${item.label} · ${item.description}`, agent: undefined as TaskAgent | undefined }));
-  // `@` 先列可访问的助理（按稳定 ID 记住选择），再列知识库（可多选）。
+  // `@` 在助理面板只列助理；任务面板才列知识库（可多选）。两者不混排。
   if (trigger.symbol === "@") {
     const botOptions = assistants
       .filter((bot) => `${bot.name} ${bot.description ?? ""}`.toLowerCase().includes(trigger.query))
@@ -24,6 +25,7 @@ export function composerOptions(
         description: `${bot.description || "子助理"} · 回车提及`,
         agent: undefined as TaskAgent | undefined,
       }));
+    if (!includeKnowledge) return botOptions;
     const knowledgeOptions = knowledgeBases
       .filter((base) =>
         `${base.reference} ${base.displayName}`.toLowerCase().includes(trigger.query),
