@@ -1,9 +1,10 @@
 """Pure lifecycle decisions, shared by Web, workers and channel adapters."""
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from harness.assistant.models import ObjectiveAction, ObjectiveSchedule, ObjectiveStatus
 from harness.core.errors import ConflictError
+from harness.scheduling import Timing
 
 _TRANSITIONS = {
     (ObjectiveStatus.ACTIVE, ObjectiveAction.PAUSE): ObjectiveStatus.PAUSED,
@@ -33,5 +34,6 @@ def next_check(
         raise ValueError("schedule timestamps must include a timezone")
     if schedule is None:
         return None
-    candidate = after + timedelta(minutes=schedule.interval_minutes)
-    return candidate if ends_at is None or candidate <= ends_at else None
+    return Timing.every(schedule.interval_minutes * 60).next_occurrence(
+        after, not_after=ends_at
+    )

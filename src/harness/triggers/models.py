@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import StrEnum
 from typing import Literal
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, model_validator
 
-from harness.automations.cronexpr import next_fire_after, parse_cron
 from harness.core.errors import ConflictError
 from harness.core.models import RunStatus
 from harness.deployments.models import EnvironmentName
+from harness.scheduling import Timing
 from harness.studio.models import StudioModel
 
 
@@ -36,18 +35,25 @@ class TriggerSchedule(StudioModel):
         if (self.interval_seconds is None) == (self.cron is None):
             raise ValueError("Choose exactly one of intervalSeconds or cron")
         try:
-            ZoneInfo(self.timezone)
             if self.cron:
-                parse_cron(self.cron)
-        except (ZoneInfoNotFoundError, ValueError, ConflictError) as error:
+                Timing.cron(self.cron, self.timezone)
+            else:
+                assert self.interval_seconds is not None
+                Timing.every(self.interval_seconds)
+        except (ValueError, ConflictError) as error:
             raise ValueError(str(error)) from error
         return self
 
     def next_after(self, after: datetime) -> datetime:
-        if self.cron:
-            return next_fire_after(self.cron, after, self.timezone)
-        assert self.interval_seconds is not None
-        return after + timedelta(seconds=self.interval_seconds)
+        timing = (
+            Timing.cron(self.cron, self.timezone)
+            if self.cron
+            else Timing.every(self.interval_seconds or 0)
+        )
+        occurrence = timing.next_occurrence(after)
+        if occurrence is None:
+            raise ConflictError("trigger schedule has no future occurrence")
+        return occurrence
 
 
 class TriggerChatOps(StudioModel):

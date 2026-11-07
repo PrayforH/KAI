@@ -1,12 +1,12 @@
-"""Tests for the automation cron evaluator."""
+"""Tests for the shared cron evaluator."""
 
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 import pytest
 
-from harness.automations.cronexpr import next_fire_after, parse_cron
 from harness.core.errors import ConflictError
+from harness.scheduling.cron import next_fire_after, parse_cron
 
 ZONE = ZoneInfo("Asia/Shanghai")
 

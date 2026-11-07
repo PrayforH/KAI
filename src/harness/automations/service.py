@@ -12,7 +12,6 @@ from datetime import UTC, datetime
 from harness.agui.response import final_response_text
 from harness.application.runs import RunService
 from harness.application.sessions import SessionService
-from harness.automations.cronexpr import next_fire_after
 from harness.automations.models import (
     AutomationRecordStatus,
     AutomationRecordTrigger,
@@ -30,6 +29,7 @@ from harness.core.errors import ConflictError, NotFoundError
 from harness.core.events import RunEvent
 from harness.core.models import AguiThreadBinding, RunStatus
 from harness.core.ports import AgentRegistry
+from harness.scheduling import Timing
 
 logger = logging.getLogger(__name__)
 
@@ -52,14 +52,12 @@ def _initial_next_run_at(
 ) -> datetime | None:
     if schedule.type is AutomationScheduleType.ONCE:
         return schedule.at
-    candidate = next_fire_after(schedule.cron or "", now, timezone=schedule.timezone)
-    if (
-        validity.type is AutomationValidityType.UNTIL
-        and validity.until is not None
-        and candidate > validity.until
-    ):
-        return None
-    return candidate
+    return Timing.cron(schedule.cron or "", schedule.timezone).next_occurrence(
+        now,
+        not_after=(
+            validity.until if validity.type is AutomationValidityType.UNTIL else None
+        ),
+    )
 
 
 class AutomationService:
@@ -236,12 +234,14 @@ class AutomationService:
         task = await self.get(tenant_id, user_id, task_id)
         if task.schedule.type is AutomationScheduleType.ONCE:
             return [task.schedule.at] if task.schedule.at else []
+        timing = Timing.cron(task.schedule.cron or "", task.schedule.timezone)
         candidate = self._clock()
         results: list[datetime] = []
         for _ in range(count):
-            candidate = next_fire_after(
-                task.schedule.cron or "", candidate, timezone=task.schedule.timezone
-            )
+            occurrence = timing.next_occurrence(candidate)
+            if occurrence is None:
+                break
+            candidate = occurrence
             results.append(candidate)
         return results
 
@@ -368,14 +368,17 @@ class AutomationService:
 
         if task.schedule.type is AutomationScheduleType.ONCE:
             return None, AutomationStatus.EXPIRED
-        candidate = next_fire_after(
-            task.schedule.cron or "", from_time, timezone=task.schedule.timezone
+        candidate = Timing.cron(
+            task.schedule.cron or "", task.schedule.timezone
+        ).next_occurrence(
+            from_time,
+            not_after=(
+                task.validity.until
+                if task.validity.type is AutomationValidityType.UNTIL
+                else None
+            ),
         )
-        if (
-            task.validity.type is AutomationValidityType.UNTIL
-            and task.validity.until is not None
-            and candidate > task.validity.until
-        ):
+        if candidate is None:
             return None, AutomationStatus.EXPIRED
         return candidate, AutomationStatus.ACTIVE
 

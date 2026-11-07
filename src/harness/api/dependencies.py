@@ -1330,28 +1330,35 @@ _ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
 }
 
 
-def ensure_permission(identity: Identity, permission: str) -> None:
+def has_permission(identity: Identity, permission: str) -> bool:
+    """Whether this identity may use one capability, without raising."""
+
     if identity.permissions is not None:
-        if permission not in identity.permissions:
-            raise HTTPException(
-                status_code=403,
-                detail={
-                    "code": "permission_denied",
-                    "message": f"API key permission required: {permission}",
-                },
-            )
-        return
+        return permission in identity.permissions
     granted: set[str] = set()
     for role in identity.roles:
         granted.update(_ROLE_PERMISSIONS.get(role, frozenset()))
-    if "*" not in granted and permission not in granted:
+    return "*" in granted or permission in granted
+
+
+def ensure_permission(identity: Identity, permission: str) -> None:
+    if has_permission(identity, permission):
+        return
+    if identity.permissions is not None:
         raise HTTPException(
             status_code=403,
             detail={
                 "code": "permission_denied",
-                "message": f"Permission required: {permission}",
+                "message": f"API key permission required: {permission}",
             },
         )
+    raise HTTPException(
+        status_code=403,
+        detail={
+            "code": "permission_denied",
+            "message": f"Permission required: {permission}",
+        },
+    )
 
 
 async def require_owned_session(

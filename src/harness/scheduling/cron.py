@@ -1,10 +1,13 @@
-"""Minimal five-field cron expression evaluation for automation schedules.
+"""Five-field cron evaluation, shared by every scheduled surface.
 
-Supports the subset the automation UI emits and power users may paste:
-``*``, lists (``a,b``), ranges (``a-b``), and step values (``*/n``, ``a-b/n``)
-over minute, hour, day-of-month, month, and day-of-week (0=Sunday, 6=Saturday,
-7 is accepted as Sunday). When both day-of-month and day-of-week are
-restricted, a day matches either - the standard Vixie cron behaviour.
+The supported subset is the one the console emits and power users paste:
+``*``, lists (``a,b``), ranges (``a-b``), and steps (``*/n``, ``a-b/n``)
+over minute, hour, day-of-month, month, and day-of-week (0=Sunday; 7 is
+accepted as Sunday). When both day-of-month and day-of-week are restricted a
+day matches either — standard Vixie behaviour.
+
+This module owns no product concept: no task, session, notification, or
+storage type appears here. Callers give an expression, an instant, and a zone.
 """
 
 from __future__ import annotations
@@ -38,7 +41,7 @@ def _parse_atom(atom: str, field: int) -> set[int]:
     if "/" in atom:
         atom, step_text = atom.split("/", 1)
         if not step_text.isdigit() or int(step_text) < 1:
-            raise ConflictError(f"automation cron step must be a positive integer: {atom}")
+            raise ConflictError(f"cron step must be a positive integer: {atom}")
         step = int(step_text)
     if atom == "*":
         start, end = low, high
@@ -46,7 +49,7 @@ def _parse_atom(atom: str, field: int) -> set[int]:
         start_text, end_text = atom.split("-", 1)
         start, end = _parse_value(start_text, field), _parse_value(end_text, field)
         if start > end:
-            raise ConflictError(f"automation cron range is inverted: {atom}")
+            raise ConflictError(f"cron range is inverted: {atom}")
     else:
         start = end = _parse_value(atom, field)
     values = {value for value in range(start, end + 1, step) if low <= value <= high}
@@ -56,7 +59,7 @@ def _parse_atom(atom: str, field: int) -> set[int]:
             values.add(0)
         values.discard(7)
     if not values:
-        raise ConflictError(f"automation cron field has no valid values: {atom}")
+        raise ConflictError(f"cron field has no valid values: {atom}")
     return values
 
 
@@ -66,14 +69,14 @@ def _parse_value(text: str, field: int) -> int:
     if normalized in names:
         return names[normalized]
     if not normalized.isdigit():
-        raise ConflictError(f"automation cron value is not a number: {text}")
+        raise ConflictError(f"cron value is not a number: {text}")
     return int(normalized)
 
 
 def parse_cron(expression: str) -> tuple[set[int], ...]:
     fields = expression.split()
     if len(fields) != 5:
-        raise ConflictError("automation cron expression must have exactly 5 fields")
+        raise ConflictError("cron expression must have exactly 5 fields")
     return tuple(_parse_atom(atom, index) for index, atom in enumerate(fields))
 
 
@@ -101,7 +104,7 @@ def next_fire_after(
     try:
         zone = ZoneInfo(timezone)
     except Exception as error:
-        raise ConflictError(f"automation schedule timezone is invalid: {timezone}") from error
+        raise ConflictError(f"cron timezone is invalid: {timezone}") from error
     minute_values, hour_values, day_values, month_values, weekday_values = parse_cron(expression)
     local = after.astimezone(zone).replace(second=0, microsecond=0) + timedelta(minutes=1)
 
@@ -142,4 +145,4 @@ def next_fire_after(
                 local = local.replace(minute=minute)
             continue
         return local
-    raise ConflictError("automation cron expression never fires: " + expression)
+    raise ConflictError("cron expression never fires: " + expression)

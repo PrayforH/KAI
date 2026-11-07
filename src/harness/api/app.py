@@ -49,6 +49,7 @@ from harness.policy.profiles import PolicyProfileRegistry
 from harness.projects import api as projects_routes
 from harness.quota.repositories import QuotaExceededError
 from harness.reliability import api as reliability_routes
+from harness.scheduling import api as scheduling_routes
 from harness.sharing import api as sharing_routes
 from harness.sharing import groups_api as group_routes
 from harness.studio import api as studio_routes
@@ -367,6 +368,7 @@ def create_app(container: ApiContainer) -> FastAPI:
     app.include_router(trigger_routes.studio_router)
     app.include_router(automations_routes.router)
     app.include_router(assistant_routes.router)
+    app.include_router(scheduling_routes.router)
     app.include_router(computer_routes.router)
     app.include_router(feishu_routes.router)
     app.include_router(weixin_routes.router)

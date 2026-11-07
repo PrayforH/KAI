@@ -57,7 +57,7 @@ class AutomationSchedule(StudioModel):
         if self.type is AutomationScheduleType.CRON:
             if not self.cron:
                 raise ValueError("cron schedules require a cron expression")
-            from harness.automations.cronexpr import parse_cron
+            from harness.scheduling.cron import parse_cron
 
             parse_cron(self.cron)
         return self
