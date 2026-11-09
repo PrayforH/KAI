@@ -181,7 +181,7 @@ async def test_send_links_real_child_run_and_retry_does_not_execute_again():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("origin", ["task-ordinary", "assistant_other_user"])
-async def test_send_rejects_non_assistant_or_foreign_origin_before_any_receipt(origin):
+async def test_send_rejects_unowned_origin_before_any_receipt(origin):
     service, repo = _service(_specialist())
     service._agui.get_binding.side_effect = NotFoundError("not owned")
     with pytest.raises((ConflictError, NotFoundError)):

@@ -105,7 +105,7 @@ async def test_run_captures_instructions_memories_and_documents(tmp_path: Path) 
         project_id=project.project_id,
         input_artifact_id=artifact.input_artifact_id,
     )
-    await container.agui.create_project_thread(
+    await container.agui.create_task_thread(
         tenant_id=tenant_id,
         user_id=user_id,
         thread_id="thread-project",
@@ -155,7 +155,7 @@ async def test_task_outliving_its_project_runs_without_project_context(
         name="临时项目",
         instructions="只在项目存在时生效",
     )
-    await container.agui.create_project_thread(
+    await container.agui.create_task_thread(
         tenant_id=tenant_id,
         user_id=user_id,
         thread_id="thread-detached",
@@ -346,7 +346,7 @@ async def test_conversation_presentation_is_per_send_and_never_leaks_to_projects
         item = await container.projects.create(
             tenant_id=tenant_id, user_id=user_id, name="工作项目"
         )
-        await container.agui.create_project_thread(
+        await container.agui.create_task_thread(
             tenant_id=tenant_id, user_id=user_id, thread_id=request.thread_id,
             agent_name="echo-agent", agent_version="0.1.0", agent_owner_user_id=user_id,
             space_id=None, project_id=item.project_id, connection_mode="caller_owned",

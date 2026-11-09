@@ -5,9 +5,9 @@ import { handoverStore, liveMentionsForThread, useHandoverNotices } from "../lib
 import { watchMentionCompletion } from "../lib/mention-completion";
 
 /** Refresh the durable timeline on delivery and completion; never render a footer list. */
-export function useMentionHistoryUpdates(threadId: string | undefined, onChange: () => void) {
+export function useMentionHistoryUpdates(threadId: string | undefined, onChange: () => void, seed = true) {
   const notices = useHandoverNotices();
-  useEffect(() => { if (threadId) void handoverStore.seed(); }, [threadId]);
+  useEffect(() => { if (seed && threadId) void handoverStore.seed(); }, [seed, threadId]);
   // Durable history already contains old receipts. Replaying every old Run's
   // SSE on mount flooded the first screen with tool traces and refreshes.
   const owned = useMemo(() => threadId ? liveMentionsForThread(notices, threadId) : [], [notices, threadId]);

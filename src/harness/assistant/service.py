@@ -588,11 +588,9 @@ class AssistantService:
         reply_to_run_id: str | None = None,
     ) -> SpecialistHandover:
         # A client supplies the origin, never another user's identity. Reserve
-        # the personal address for this authenticated user; other origins must
-        # already be owned assistant conversations.
+        # the personal address for this authenticated user; other origins
+        # must already be owned conversations.
         if source_thread_id != PERSONAL_ASSISTANT_THREAD:
-            if not source_thread_id.startswith("assistant_"):
-                raise ConflictError("助理消息只能从助理会话发送")
             await self._agui.get_binding(
                 tenant_id=tenant_id,
                 user_id=user_id,

@@ -1110,7 +1110,7 @@ class AguiRunService:
             for item in resolved
         ]
 
-    async def create_project_thread(
+    async def create_task_thread(
         self,
         *,
         tenant_id: str,
@@ -1121,9 +1121,9 @@ class AguiRunService:
         agent_owner_user_id: str,
         space_id: str | None,
         connection_mode: Literal["caller_owned", "service_owned"],
-        project_id: str,
+        project_id: str | None = None,
     ) -> StoredAguiThreadBinding:
-        """Persist an empty task and its project without starting a model run."""
+        """Persist an empty task without starting a model run."""
         await self._resolve_binding(
             tenant_id=tenant_id,
             user_id=user_id,

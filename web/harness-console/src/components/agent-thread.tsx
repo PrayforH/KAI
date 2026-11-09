@@ -9,7 +9,7 @@ import { TurnCompletionControl } from "./turn-completion";
 import { FollowupInputPlacement } from "./followup-input-placement";
 import { conversationInputDisplay, conversationInputIntro, latestConversationInput } from "../lib/conversation-input";
 import { useConversationScope } from "../lib/conversation-scope";
-import { type TaskSummary, createThreadHistoryAdapter, useAutoLoadEarlierMessages, useThreadHistoryPagination } from "../lib/task-history";
+import { type TaskSummary, createThreadHistoryAdapter, notifyTaskListChanged, useAutoLoadEarlierMessages, useThreadHistoryPagination } from "../lib/task-history";
 import { startSteeringPolling } from "../lib/steering-poller";
 import { ConversationControl } from "./conversation-control";
 import { MessageAttachmentGroup } from "./message-attachment-view";
@@ -459,8 +459,8 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const composingRef = useRef(false);
   const voiceComposer = useDictationComposer(inputRef, () => aui.composer().getState().text,
     (text) => aui.composer().setText(text), composingRef);
-  // @ 候选只出现在助理面：普通任务与项目任务保持原来的输入行为。
-  const mentionableAssistants = useMentionableAssistants(assistantSurface);
+  const canMentionAssistants = assistantSurface || Boolean(scope && !conversationScope);
+  const mentionableAssistants = useMentionableAssistants(canMentionAssistants);
   // 和普通聊天一样：@ 名字直接写在文本行里，可以有多个；
   // 提及从输入文本里解析出来，删掉文字提及就跟着消失。
   const mentions = useMemo(
@@ -761,7 +761,29 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     const key = mentionKeyRef.current ?? mentionIdempotencyKey();
     mentionKeyRef.current = key;
     const text = composerText.trim();
-    const sourceThreadId = replyScope?.threadId ?? botScope?.threadId ?? PERSONAL_ASSISTANT_THREAD;
+    const sourceThreadId = scope?.threadId ?? replyScope?.threadId ?? botScope?.threadId ?? PERSONAL_ASSISTANT_THREAD;
+    if (!assistantSurface) {
+      const agent = agentSelection.selected;
+      try {
+        if (!agent) throw new Error("正在加载当前对话，请稍后再试。");
+        const response = await fetch("/api/agui/threads", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            thread_id: sourceThreadId,
+            agent_name: agent.name,
+            agent_version: agent.version,
+            agent_owner_user_id: agent.ownerUserId,
+            space_id: agent.spaceId,
+          }),
+        });
+        if (!response.ok) throw new Error("无法保存当前对话，请重试。");
+      } catch (error) {
+        setInputError(error instanceof Error ? error.message : "无法保存当前对话，请重试。");
+        composerSendLock.current = false;
+        return;
+      }
+    }
     const { delivered, failed } = await deliverMentions(mentions, text, async (bot, body) => {
       const receipt = await assistantRequest<{
         handoverId: string; runId: string; sourceThreadId: string;
@@ -783,6 +805,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
         text: body,
       });
     });
+    if (!assistantSurface && delivered.length) notifyTaskListChanged();
     if (failed.length) {
       // 已送达的 @ 名字从文本里拿掉，失败的留在行里，改完可以再发一次。
       const deliveredBots = mentions.filter((item) => delivered.includes(item.specialistId));
@@ -809,7 +832,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     if (command(composerText.trim())) return;
     if (videoRoute) { void generateVideo(); return; }
     // 明确 @了某个助理：点发送才投递给它（消息或工作），当前会话不重复收这份消息。
-    if (assistantSurface && mentions.length) {
+    if (mentions.length) {
       await sendMentions();
       return;
     }
@@ -1036,7 +1059,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
         ) : null}
         {helpOpen && <div className="composer-assist composer-help-popover" role="dialog" aria-label="输入帮助">
           <button type="button" onClick={() => setHelpOpen(false)}>关闭</button>
-          <p>{assistantSurface ? "/ 执行命令 · @ 提及助理 · $ 引用技能" : "/ 执行命令 · + 添加附件或知识库 · $ 引用技能"}</p>
+          <p>{assistantSurface ? "/ 执行命令 · @ 提及助理 · $ 引用技能" : "/ 执行命令 · @ 提及助理 · + 添加附件或知识库 · $ 引用技能"}</p>
           <p>{assistantSurface ? "Enter 发送消息，Shift Enter 换行。运行中发送的文字会直接补充到当前工作；附件在当前回复结束后发送。" : <>运行中 Enter {followUpBehavior === "steer" ? "补充说明" : "加入队列"}，Alt Enter 使用另一种方式，Shift Enter 换行。可在个人设置的配置中更改默认行为。</>}</p>
         </div>}
         {activeSkillLaunch && selectedSkill && (
@@ -1101,7 +1124,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
         <div className="composer-toolbar">
           <ComposerAddControl filesOnly={filesOnly} knowledgeDisabled={runLocked || showStop || videoGenerating}
             configureKnowledge={conversationScope?.onConfigureKnowledge} />
-          {assistantSurface && !botScope && <button type="button" className="aui-composer-attach composer-mention-trigger"
+          {canMentionAssistants && !botScope && <button type="button" className="aui-composer-attach composer-mention-trigger"
             aria-label="提及助理" title="提及助理" disabled={busy}
             aria-controls={options[0] && "bot" in options[0] ? "composer-suggestions" : undefined} onClick={openAssistantMentions}>@</button>}
 
@@ -1781,7 +1804,7 @@ export function HarnessAssistantMessage() {
   }, [actionHistory, threadRuntime]);
   const actionBusy = ["running", "queued", "waiting_approval"].includes(runView?.phase ?? "");
   // 历史/重试偶尔把同一条回答写成相邻两条 assistant；只保留第一条。
-  if (assistantSurface && noticeSource(content)?.direction === "sent") {
+  if (noticeSource(content)?.direction === "sent") {
     return <AssistantMessage.Root className="harness-assistant-message assistant-message-event" data-turn-id={messageId}>
       <AssistantChatTime />
       <AssistantNoticeSource parts={content} />
@@ -1817,7 +1840,7 @@ export function HarnessAssistantMessage() {
       data-direct-stream={directStream ? "true" : "false"}
     >
       {assistantSurface && <AssistantChatTime activity={chatActivity} />}
-      {assistantSurface && isNotice && <AssistantNoticeSource parts={content} exchange={noticeExchange} />}
+      {isNotice && <AssistantNoticeSource parts={content} exchange={noticeExchange} />}
       {!hasVideoGeneration && !assistantSurface ? <TurnActivity
         hasDurableProjection={hasRunActivityToolCall(content)} messageId={messageId}
       /> : null}

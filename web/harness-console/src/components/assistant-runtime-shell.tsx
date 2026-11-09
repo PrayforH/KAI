@@ -69,7 +69,6 @@ export function AssistantRuntimeShell({
   children: ReactNode;
 }) {
   const localOnlyRef = useRef(localOnly);
-  localOnlyRef.current = localOnly;
   const runView = useRunViewModel();
   const [historyRevision, setHistoryRevision] = useState(0);
   const [historyReady, setHistoryReady] = useState(false);
@@ -97,8 +96,9 @@ export function AssistantRuntimeShell({
     }, 250);
   }, [threadId, conversationSurface]);
   const previousLocalOnly = useRef(localOnly);
-  useMentionHistoryUpdates(conversationSurface === "assistant" ? threadId : undefined, refreshDurableHistory);
+  useMentionHistoryUpdates(threadId, refreshDurableHistory, conversationSurface === "assistant");
   useEffect(() => {
+    if (previousLocalOnly.current !== localOnly) localOnlyRef.current = localOnly;
     if (previousLocalOnly.current && !localOnly) refreshDurableHistory();
     previousLocalOnly.current = localOnly;
   }, [localOnly, refreshDurableHistory]);
