@@ -41,6 +41,20 @@ describe("Harness same-origin proxies", () => {
     expect(await response.text()).toBe("");
     expect(response.headers.get("etag")).toBe('"page-1"');
   });
+  it("forwards task search, pagination and the matching total", async () => {
+    const fetcher: typeof fetch = async (input) => {
+      const url = new URL(String(input));
+      expect(url.pathname).toBe("/v1/agui/threads");
+      expect(url.search).toBe("?q=report&limit=1&offset=1");
+      return Response.json([], { headers: { "X-Total-Count": "1" } });
+    };
+    const response = await proxyAguiRequest(
+      new Request("http://console/api/agui/threads?q=report&limit=1&offset=1"),
+      config, fetcher, "threads",
+    );
+    expect(response.headers.get("X-Total-Count")).toBe("1");
+    expect(await response.json()).toEqual([]);
+  });
   it("preserves the sandbox and security headers on an authenticated HTML presentation", async () => {
     const policy = "sandbox allow-scripts; connect-src 'none'";
     const fetcher: typeof fetch = async () => new Response("<html>fixture</html>", {

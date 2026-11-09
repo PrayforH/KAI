@@ -37,6 +37,7 @@ const RESPONSE_HEADERS = [
   "x-harness-auth-error",
   "x-inference-time-s",
   "x-request-id",
+  "x-total-count",
 ];
 
 const TRACE_HEADERS = ["traceparent", "tracestate", "baggage"] as const;
