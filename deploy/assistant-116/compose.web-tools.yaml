@@ -1,0 +1,9 @@
+x-web-tools: &web-tools
+  HARNESS_WEB_TOOLS_ENABLED: "true"
+  HARNESS_WEB_SEARCH_PROVIDER: doubao
+
+services:
+  api:
+    environment: *web-tools
+  worker:
+    environment: *web-tools
