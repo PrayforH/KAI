@@ -13,6 +13,7 @@ vi.mock("../src/lib/assistant-client", () => ({
 }));
 
 import { BotProfileDialog } from "../src/components/bot-profile-dialog";
+import { BotSidePanel } from "../src/components/bot-side-panel";
 
 const pageSource = readFileSync(join(process.cwd(), "src/app/page.tsx"), "utf8");
 
@@ -32,6 +33,7 @@ afterEach(async () => {
   if (root) await act(async () => root!.unmount());
   root = undefined;
   host.remove();
+  vi.unstubAllGlobals();
 });
 
 async function flush(rounds = 6) {
@@ -152,5 +154,43 @@ describe("bot profile dialog", () => {
       appearance: { color: "#126fd4", avatar: "blob" },
       expectedRevision: 3,
     });
+  });
+});
+
+describe("Bot side panel", () => {
+  it("shows scoped activity, computer and library without an empty suggestions section", async () => {
+    const openComputer = vi.fn();
+    const manageDuties = vi.fn();
+    assistantRequest.mockImplementation(async (path: string) => {
+      if (path === "specialists/specialist_demo") return detail();
+      if (path === "vault") return [
+        { itemId: "granted", title: "这只 Bot 的资料", grants: [{ specialistId: "specialist_demo", status: "ok" }] },
+        { itemId: "other", title: "另一只 Bot 的资料", grants: [{ specialistId: "specialist_other", status: "ok" }] },
+      ];
+      throw new Error(path);
+    });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      expect(url).toContain("thread_id=bot-thread");
+      return Response.json([
+        { artifact_id: "a", run_id: "r", thread_id: "bot-thread", name: "交付.txt" },
+        { artifact_id: "b", run_id: "r", thread_id: "other-thread", name: "其他.txt" },
+      ]);
+    }));
+    await act(async () => root!.render(<BotSidePanel botId="specialist_demo" name="演示 Bot" tone="#126fd4"
+      threadId="bot-thread" ready={false} onClose={vi.fn()} onDetails={vi.fn()} onDuties={manageDuties}
+      onComputer={openComputer} />));
+    await flush();
+    expect(host.textContent).toContain("即将进行");
+    expect(host.textContent).toContain("Bot 的电脑");
+    expect(host.textContent).not.toContain("建议");
+    await act(async () => buttonByText("管理例行任务")!.click());
+    expect(manageDuties).toHaveBeenCalledOnce();
+    await act(async () => buttonByText("资料库")!.click());
+    await flush();
+    expect(host.textContent).toContain("交付.txt");
+    expect(host.textContent).toContain("这只 Bot 的资料");
+    expect(host.textContent).not.toContain("其他.txt");
+    expect(host.textContent).not.toContain("另一只 Bot 的资料");
+    expect(host.textContent).not.toContain("Bot 的电脑");
   });
 });

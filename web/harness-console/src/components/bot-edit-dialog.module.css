@@ -274,3 +274,24 @@
 }
 .tabs > button[aria-selected="true"] { background: #333; color: #f0f0f0; }
 .tabPanel { display: grid; gap: 16px; }
+
+.compactHeading { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.compactHeading h3, .compactHeading button { margin: 0; color: var(--codex-muted); font-size: 14px; }
+.compactHeading button, .compactRoutine .routineCopy { padding: 0; border: 0; background: transparent; cursor: pointer; }
+.compactRoutine { border-color: var(--codex-line); background: transparent; }
+.compactRoutine .routineCopy { flex: 1; text-align: left; color: var(--codex-ink); }
+.compactRoutine .routineCopy strong { color: inherit; }
+.routineToggle {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: var(--codex-surface-hover);
+  cursor: pointer;
+}
+.routineToggle::before { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #aaa; }
+.routineToggle[aria-checked="true"] { background: #126fd4; }
+.routineToggle[aria-checked="true"]::before { left: 16px; background: #fff; }
+.routineToggle:disabled { opacity: .6; cursor: default; }

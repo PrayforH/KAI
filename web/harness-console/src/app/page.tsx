@@ -19,6 +19,7 @@ import {
 import { AgentThread } from "../components/agent-thread";
 import { usePrimaryBot } from "../components/use-primary-bot";
 import { BotProfileDialog } from "../components/bot-profile-dialog";
+import { BotSidePanel } from "../components/bot-side-panel";
 import { AuthProvider, useAuth } from "../components/auth-provider";
 import { AssistantChannelStatus } from "../components/assistant-channel-status";
 import { assistantRequest } from "../lib/assistant-client";
@@ -99,17 +100,19 @@ const TASK_SIDEBAR_COMPACT_QUERY = "(max-width: 820px)";
 function SidebarPanelToggle({
   expanded,
   onToggle,
+  label = "任务上下文",
 }: {
   expanded: boolean;
   onToggle: () => void;
+  label?: string;
 }) {
   return (
     <button
       type="button"
       className="header-icon-button"
-      aria-label={expanded ? "收起任务上下文" : "打开任务上下文"}
+      aria-label={`${expanded ? "收起" : "打开"}${label}`}
       aria-expanded={expanded}
-      title={expanded ? "收起任务上下文" : "打开任务上下文"}
+      title={`${expanded ? "收起" : "打开"}${label}`}
       onClick={onToggle}
     >
       <SidebarPanelIcon />
@@ -136,15 +139,17 @@ function HeaderUtilities({
   computerControl,
   taskRailOpen,
   onToggleTaskRail,
+  railLabel,
 }: {
   computerControl?: ReactNode;
   taskRailOpen: boolean;
   onToggleTaskRail: () => void;
+  railLabel?: string;
 }) {
   return (
     <div className="header-utilities">
       {computerControl}
-      <SidebarPanelToggle expanded={taskRailOpen} onToggle={onToggleTaskRail} />
+      <SidebarPanelToggle expanded={taskRailOpen} onToggle={onToggleTaskRail} label={railLabel} />
     </div>
   );
 }
@@ -257,7 +262,7 @@ function AuthenticatedHome() {
   }, [user.user_id]);
   const showComputer = (open: boolean) => {
     setComputerOpen(open);
-    if (open) { setTaskRailOpen(false); setRailExpanded(false); }
+    if (open) { setBotSideOpen(false); setTaskRailOpen(false); setRailExpanded(false); }
     try {
       const url = new URL(window.location.href);
       if (url.searchParams.has("computer")) { url.searchParams.delete("computer"); window.history.replaceState(null, "", url.href); }
@@ -397,6 +402,7 @@ function AuthenticatedHome() {
   const [catalogRefreshKey, setCatalogRefreshKey] = useState(0);
   const [taskSidebarOpen, setTaskSidebarOpen] = useState(true);
   const [taskRailOpen, setTaskRailOpen] = useState(false);
+  const [botSideOpen, setBotSideOpen] = useState(false);
   const [railExpanded, setRailExpanded] = useState(false);
   const [railPreview, setRailPreview] = useState<(PreviewTarget & { nonce: number }) | null>(null);
   const previewNonce = useRef(0);
@@ -406,6 +412,7 @@ function AuthenticatedHome() {
       const detail = (event as CustomEvent).detail as (PreviewTarget & { expanded?: boolean }) | undefined;
       if (!detail?.artifact_id) return;
       setComputerOpen(false);
+      setBotSideOpen(false);
       previewNonce.current += 1;
       setRailPreview({ ...detail, nonce: previewNonce.current });
       setTaskRailOpen(true);
@@ -897,7 +904,7 @@ function AuthenticatedHome() {
   }
 
   useEffect(() => {
-    const openFiles = () => setTaskRailOpen(true);
+    const openFiles = () => { setBotSideOpen(false); setTaskRailOpen(true); };
     const newTask = () => startNewTask();
     window.addEventListener("harness:open-files", openFiles);
     window.addEventListener("harness:new-task", newTask);
@@ -975,12 +982,6 @@ function AuthenticatedHome() {
                 >
                   {bot ? bot.name : "我的助理"}
                 </button>
-                {botParam && bot?.specialistId === botParam && <>
-                  <button type="button" className="task-context-bot-action"
-                    onClick={() => setBotSettings({ id: botParam, tab: "details" })}>详情</button>
-                  <button type="button" className="task-context-bot-action"
-                    onClick={() => setBotSettings({ id: botParam, tab: "duties" })}>例行任务</button>
-                </>}
                 {/* 主助理页头保留 IM 通道状态（飞书/微信）：它属于主助理的跨渠道会话，
                     与资料记录在不在无关；只有进到某个子 Bot 会话（?bot=）才不显示。 */}
                 {!botParam && readyConversation === threadId && <AssistantChannelStatus />}
@@ -1021,13 +1022,20 @@ function AuthenticatedHome() {
               computerControl={assistantEntry ? (
                 <>
                   {computerOpen && <DesktopOccupancyChip />}
-                  <AssistantComputerLink open={computerOpen} ready={readyConversation === threadId} onToggle={() => showComputer(!computerOpen)} />
+                  {!botParam && <AssistantComputerLink open={computerOpen} ready={readyConversation === threadId} onToggle={() => showComputer(!computerOpen)} />}
                 </>
               ) : undefined}
-              taskRailOpen={taskRailOpen}
+              taskRailOpen={botParam && assistantEntry ? botSideOpen : taskRailOpen}
+              railLabel={botParam && assistantEntry ? " Bot 侧栏" : undefined}
               onToggleTaskRail={() => {
                 showComputer(false);
-                setTaskRailOpen((current) => !current);
+                if (botParam && assistantEntry) {
+                  setTaskRailOpen(false);
+                  setBotSideOpen(current => !current);
+                } else {
+                  setBotSideOpen(false);
+                  setTaskRailOpen(current => !current);
+                }
                 setRailExpanded(false);
               }}
             />
@@ -1151,6 +1159,27 @@ function AuthenticatedHome() {
           </section>
           </AssistantComputerPane>
         </div>
+        {assistantEntry && botSideOpen && botParam && bot?.specialistId === botParam && (
+          <BotSidePanel
+            key={botParam}
+            botId={botParam}
+            name={bot.name}
+            tone={bot.appearance?.color ?? botAccent(botParam)}
+            shape={bot.appearance?.avatar}
+            threadId={bot.threadId ?? ""}
+            ready={readyConversation === threadId}
+            onClose={() => setBotSideOpen(false)}
+            onDetails={() => {
+              setBotSideOpen(false);
+              setBotSettings({ id: botParam, tab: "details" });
+            }}
+            onDuties={() => {
+              setBotSideOpen(false);
+              setBotSettings({ id: botParam, tab: "duties" });
+            }}
+            onComputer={() => showComputer(true)}
+          />
+        )}
         <WorkbenchRail
           key={threadId}
           open={taskRailOpen}

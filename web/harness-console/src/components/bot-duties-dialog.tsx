@@ -13,7 +13,7 @@ const executionStatus: Record<Execution["status"], string> = {
   pending: "排队中", running: "执行中", succeeded: "已完成", failed: "执行失败", cancelled: "已取消",
 };
 
-export function BotDuties({ specialistId }: { specialistId: string }) {
+export function BotDuties({ specialistId, onManage }: { specialistId: string; onManage?: () => void }) {
   const [duties, setDuties] = useState<Duty[] | null>(null);
   const [error, setError] = useState("");
   const [changing, setChanging] = useState<string | null>(null);
@@ -44,6 +44,23 @@ export function BotDuties({ specialistId }: { specialistId: string }) {
     } finally {
       setChanging(null);
     }
+  }
+
+  if (onManage) {
+    const scheduled = duties?.filter(duty => duty.schedule && ["active", "paused"].includes(duty.status));
+    return <section className={styles.routines} aria-label="即将进行">
+      <div className={styles.compactHeading}><h3>即将进行</h3><button type="button" onClick={onManage}>管理例行任务</button></div>
+      {error && <p role="alert">{error}</p>}
+      {scheduled?.length === 0 && <p className={styles.routineState}>暂无例行任务</p>}
+      {scheduled?.map(duty => <div className={`${styles.routine} ${styles.compactRoutine}`} key={duty.objectiveId}>
+        <button type="button" className={styles.routineCopy} onClick={onManage}>
+          <strong>{duty.title}</strong><small>{duty.status === "paused" ? "已暂停" : "已启用"}</small>
+        </button>
+        <button type="button" role="switch" className={styles.routineToggle} aria-label={duty.title}
+          aria-checked={duty.status === "active"} disabled={changing !== null}
+          onClick={() => void change(duty, duty.status === "active" ? "pause" : "resume")} />
+      </div>)}
+    </section>;
   }
 
   return <div className={styles.routines}>
