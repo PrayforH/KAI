@@ -30,15 +30,19 @@ ROOT = Path("/var/lib/kai-computer")
 PROC = Path("/proc")
 
 
-def enter_vm_desktop_mounts(uid: int, libc: Any) -> None:
-    """Join only the fixed desktop service's PrivateTmp, before dropping UID.
+def enter_vm_desktop_mounts(uid: int, libc: Any, unit: str = "kai-desktop.service") -> None:
+    """Join the authorized desktop service's PrivateTmp before dropping UID.
 
     AT-SPI uses /run, but the native CLI also authenticates to X11 through
     /tmp/.X11-unix. Keep PrivateTmp enabled instead of publishing that socket.
     Neither the model nor the operator config can choose a PID or namespace.
     """
+    if unit != "kai-desktop.service" and re.fullmatch(
+        r"desktop-session@desktop_[a-f0-9]{24}\.service", unit,
+    ) is None:
+        raise ValueError("private desktop service name is invalid")
     raw = subprocess.check_output(
-        ["/usr/bin/systemctl", "show", "--value", "--property=MainPID", "kai-desktop.service"],
+        ["/usr/bin/systemctl", "show", "--value", "--property=MainPID", unit],
         timeout=2,
     ).strip()
     if re.fullmatch(rb"[1-9][0-9]{0,9}", raw) is None:
@@ -49,8 +53,18 @@ def enter_vm_desktop_mounts(uid: int, libc: Any) -> None:
          if line.startswith("Uid:")), []
     )
     groups = (process / "cgroup").read_text().splitlines()
+    expected_group = f"/system.slice/{unit}"
+    if unit != "kai-desktop.service":
+        expected_group = subprocess.check_output(
+            ["/usr/bin/systemctl", "show", "--value", "--property=ControlGroup", unit],
+            timeout=2,
+        ).decode().strip()
+        if not expected_group.startswith("/system.slice/") or not expected_group.endswith(
+            f"/{unit}"
+        ):
+            raise PermissionError("private desktop service cgroup is invalid")
     if uid == 0 or uids != [str(uid)] * 4 or not any(
-        line.split(":", 2)[-1] == "/system.slice/kai-desktop.service" for line in groups
+        line.split(":", 2)[-1] == expected_group for line in groups
     ):
         raise PermissionError("private desktop service identity changed")
     fd = os.open(process / "ns/mnt", os.O_RDONLY | os.O_CLOEXEC)
@@ -195,7 +209,9 @@ def uncertain(code: str, message: str) -> dict[str, Any]:
     }
 
 
-def run(config: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
+def run(
+    config: dict[str, Any], request: dict[str, Any], *, state_root: Path | None = None,
+) -> dict[str, Any]:
     if request.keys() != {"scope", "deadline", "payload", "desktop_epoch"}:
         raise ValueError("native desktop request shape is invalid")
     scope = request["scope"]
@@ -205,7 +221,7 @@ def run(config: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(deadline, (int, float)) or not time.time() <= deadline <= time.time() + 15:
         raise ValueError("native desktop request expired")
     args = command(request["payload"])
-    state = json.loads((ROOT / "state.json").read_bytes())
+    state = json.loads(((state_root or ROOT) / "state.json").read_bytes())
     if (
         not state.get("active")
         or state.get("lease_id") != scope
@@ -225,7 +241,7 @@ def run(config: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
         raise PermissionError("desktop actions cannot run as root")
     libc = ctypes.CDLL(None, use_errno=True)
     if config.get("private_desktop_session", False):
-        enter_vm_desktop_mounts(uid, libc)
+        enter_vm_desktop_mounts(uid, libc, config.get("desktop_unit", "kai-desktop.service"))
     if libc.prctl(38, 1, 0, 0, 0) != 0:  # PR_SET_NO_NEW_PRIVS
         raise PermissionError("native desktop could not drop escalation privileges")
     # This gate handles just one request. Drop the wrapper itself as well as
@@ -274,6 +290,7 @@ def run(config: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
         child = subprocess.Popen(
             [str(binary), *args],
             env=env,
+            cwd=config.get("workspace"),
             stdin=subprocess.DEVNULL,
             stdout=output,
             stderr=subprocess.DEVNULL,

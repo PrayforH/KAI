@@ -113,7 +113,8 @@ def run(*, require_workdisk: Callable[[], None] = _require_workdisk) -> None:
     if action in NATIVE_ACTIONS:
         # Native UI is not an arbitrary supervisor command. It uses the same
         # bounded adapter/fence as remote PCs, configured only by the operator.
-        require_workdisk()
+        if "desktop_id" not in spec:
+            require_workdisk()
         native_request(action, spec)
         return
     if action == DESKTOP_ACTION:
@@ -147,14 +148,7 @@ def run(*, require_workdisk: Callable[[], None] = _require_workdisk) -> None:
         )
     identity: list[str] = []
     if scope and action == "exec":
-        _trusted(CONTROL.parent, directory=True)
-        _trusted(CONTROL, directory=False)
-        loader = importlib.util.spec_from_file_location("kai_computer_control", CONTROL)
-        if loader is None or loader.loader is None:
-            raise RuntimeError("desktop slot module is missing")
-        module = importlib.util.module_from_spec(loader)
-        loader.loader.exec_module(module)
-        account = module.slot_account(scope)
+        account = _load_control().slot_account(scope)
         identity = [str(account.pw_uid), str(account.pw_gid), account.pw_dir]
     root = SUPERVISOR_ROOT if not scope else SUPERVISOR_ROOT / "scopes" / scope
     _private_directory(root)
@@ -204,7 +198,55 @@ def desktop_request(request: dict[str, Any]) -> None:
     print(json.dumps({"op": request["op"], "state": result.stdout.strip()}))
 
 
+def _load_control():
+    _trusted(CONTROL.parent, directory=True)
+    _trusted(CONTROL, directory=False)
+    spec = importlib.util.spec_from_file_location("kai_computer_control", CONTROL)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("desktop slot module is missing")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _native_slot(desktop_id: str) -> dict[str, object]:
+    control = _load_control()
+    account = control.slot_account(desktop_id)
+    settings = control.SESSIONS / f"{desktop_id}.env"
+    _trusted(settings.parent, directory=True)
+    _trusted(settings, directory=False)
+    values = dict(line.split("=", 1) for line in settings.read_text().splitlines())
+    if (
+        values["DESKTOP_ID"] != desktop_id
+        or values["UNIX_USER"] != account.pw_name
+        or not control.DISPLAY.fullmatch(values["DISPLAY_NUMBER"])
+        or values["WORKSPACE"] != f"{account.pw_dir}/workspace"
+    ):
+        raise PermissionError("native desktop does not match the prepared slot")
+    runtime = control.RUNTIME / desktop_id
+    return {
+        "desktop_uid": account.pw_uid,
+        "desktop_unit": f"desktop-session@{desktop_id}.service",
+        "display": ":" + values["DISPLAY_NUMBER"],
+        "xauthority": str(runtime / "Xauthority"),
+        "runtime_dir": str(runtime),
+        "dbus_address": f"unix:path={runtime}/bus",
+        "workspace": values["WORKSPACE"],
+    }
+
+
 def native_request(action: str, request: dict[str, Any]) -> None:
+    state_root = None
+    slot: dict[str, object] = {}
+    if "desktop_id" in request:
+        if action != "native_desktop":
+            raise ValueError("desktop slot is only accepted for native UI")
+        desktop_id = request["desktop_id"]
+        if not isinstance(desktop_id, str) or SLOT.fullmatch(desktop_id) is None:
+            raise ValueError("guest scope is invalid")
+        slot = _native_slot(desktop_id)
+        state_root = SUPERVISOR_ROOT / "scopes" / desktop_id
+        request = {key: item for key, item in request.items() if key != "desktop_id"}
     path = Path("/etc/kai-computer/native-desktop.json")
     module_path = Path("/opt/kai-computer/native_desktop.py")
     identity_path = Path("/etc/kai-computer/identity.json")
@@ -227,6 +269,7 @@ def native_request(action: str, request: dict[str, Any]) -> None:
         "dbus_address": "unix:path=/run/kai-desktop/bus",
         "private_desktop_session": True,
     }
+    config.update(slot)
     spec = importlib.util.spec_from_file_location("kai_native_desktop", module_path)
     if spec is None or spec.loader is None:
         raise RuntimeError("native desktop adapter is missing")
@@ -249,7 +292,11 @@ def native_request(action: str, request: dict[str, Any]) -> None:
             module.fence(request["desktop_epoch"], blocked=False)
             print(json.dumps(exporter.run(request, state_root=ROOT), ensure_ascii=False))
         else:
-            print(json.dumps(module.run(config, request), ensure_ascii=False))
+            result = (
+                module.run(config, request, state_root=state_root)
+                if state_root is not None else module.run(config, request)
+            )
+            print(json.dumps(result, ensure_ascii=False))
 
 
 if __name__ == "__main__":

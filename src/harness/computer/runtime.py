@@ -221,11 +221,7 @@ class ComputerRuntime:
             self.desktop,
             sandbox,
             handle,
-            # Bot accessibility remains on the slot's pixel transport.
-            native_desktop=(
-                sandbox.bot_desktop is None
-                and bool(getattr(sandbox.driver, "native_desktop", False))
-            ),
+            native_desktop=sandbox.driver.native_desktop,
             shared_bot_workspace=sandbox.bot_desktop is not None,
         )
         if not getattr(sandbox.driver, "acp", False):

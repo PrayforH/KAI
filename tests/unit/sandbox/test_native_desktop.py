@@ -92,11 +92,12 @@ def test_uncertain_native_delivery_never_claims_safe_retry():
 
 
 @pytest.mark.asyncio
-async def test_native_dispatch_uses_the_same_lease_guard_and_skips_rfb(monkeypatch):
+@pytest.mark.parametrize("desktop_id", [None, "desktop_" + "a" * 24])
+async def test_native_dispatch_uses_the_same_lease_guard_and_skips_rfb(monkeypatch, desktop_id):
     calls = []
     spec = SimpleNamespace(native_desktop=True)
     service = vm_host.VmDesktopService({"remote": spec})
-    computer = SimpleNamespace(volume_ref="remote")
+    computer = SimpleNamespace(volume_ref="remote", provider="vm-computer")
 
     class Gate:
         def __init__(self, target):
@@ -115,10 +116,12 @@ async def test_native_dispatch_uses_the_same_lease_guard_and_skips_rfb(monkeypat
 
     monkeypatch.setattr(vm_host, "GuestGate", Gate)
     result = await service.operate(
-        computer, "ui", {"action": "snapshot"}, scope="lease-1", expected_epoch=3, revalidate=guard
+        computer, "ui", {"action": "snapshot"}, scope="lease-1", expected_epoch=3, revalidate=guard,
+        desktop_id=desktop_id,
     )
     assert result["ok"] is True and checked == [True]
     assert calls[0][0] == "native_desktop" and calls[0][1]["scope"] == "lease-1"
+    assert calls[0][1].get("desktop_id") == desktop_id
     assert service._sessions == {}
     assert await service.wait_drained("remote", timeout=0.1)
 

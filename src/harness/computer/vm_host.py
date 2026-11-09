@@ -578,7 +578,7 @@ class VmDesktopService:
             raise ValueError("desktop operation is not supported")
         spec = self._spec(computer)
         if desktop_id is not None:
-            if computer.provider != PROVIDER or operation in {"ui", "export"}:
+            if computer.provider != PROVIDER or operation == "export":
                 raise ValueError("this operation is not available on a Bot desktop")
         if operation == "ui":
             if (
@@ -622,6 +622,7 @@ class VmDesktopService:
                                 "desktop_epoch": expected_epoch,
                                 "deadline": time.time() + 12,
                                 "payload": dict(payload),
+                                **({"desktop_id": desktop_id} if desktop_id is not None else {}),
                             },
                             timeout_seconds=10,
                         )

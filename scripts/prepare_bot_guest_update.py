@@ -19,7 +19,7 @@ DESKTOP_DIR = "deploy/assistant-79/computer-vm/guest-image"
 FILES = (
     *((f"{CONTROL_DIR}/{name}", f"/opt/kai-computer/{name}", "0644") for name in (
         "computer_control.py", "display_gate.py", "ssh_gate.py", "supervisor.py",
-        "acp_bridge.py", "desktop_export.py",
+        "acp_bridge.py", "desktop_export.py", "native_desktop.py",
     )),
     (
         f"{DESKTOP_DIR}/desktop-session@.service",
