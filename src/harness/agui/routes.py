@@ -58,7 +58,7 @@ from harness.context.models import SessionContextDigest, SessionContextOverview
 from harness.context.window import compaction_observation, context_window_view
 from harness.core.errors import ConflictError, NotFoundError
 from harness.core.events import RunEvent
-from harness.core.models import AguiThreadBinding, ApprovalRequest, ApprovalStatus, Run
+from harness.core.models import AguiThreadBinding, ApprovalRequest, ApprovalStatus, Run, RunStatus
 from harness.presentation import presentations_for_events
 from harness.presentation.schema import Presentation
 from harness.runtime.input_redaction import redact_internal_agent_asset_events
@@ -378,6 +378,7 @@ class AguiThreadHistory(BaseModel):
     thread_id: str
     status: str
     run_id: str | None = None
+    pending_approval: ApprovalRequest | None = None
     messages: list[AguiHistoryMessage]
     next_cursor: str | None = None
     has_more: bool = False
@@ -1327,10 +1328,23 @@ async def get_agui_thread_history(
         messages = [
             AguiHistoryMessage.model_validate(item) for item in snapshot.messages
         ] + messages
+    pending_approval = None
+    if before is None and latest is not None and latest.status is RunStatus.WAITING_APPROVAL:
+        now = datetime.now(UTC)
+        approvals = await container.approvals.list_for_runs(identity.tenant_id, [latest.run_id])
+        pending_approval = next(
+            (
+                item
+                for item in approvals
+                if item.status is ApprovalStatus.PENDING and item.expires_at > now
+            ),
+            None,
+        )
     body = AguiThreadHistory(
         thread_id=thread_id,
         status=latest.status.value if latest is not None else "idle",
         run_id=latest.run_id if latest is not None else None,
+        pending_approval=pending_approval,
         messages=messages,
         next_cursor=_encode_history_position(*page[0][:2]) if has_more and page else None,
         has_more=has_more,

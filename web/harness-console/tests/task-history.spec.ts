@@ -1,6 +1,7 @@
 import type { ChatModelRunOptions } from "@assistant-ui/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { activityStore } from "../src/lib/activity-store";
+import { approvalStore } from "../src/lib/approval-store";
 import {
   createThreadHistoryAdapter,
   invalidateThreadHistory,
@@ -27,8 +28,24 @@ describe("thread history activity restoration", () => {
   });
   afterEach(() => {
     activityStore.clear();
+    approvalStore.reset();
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("restores the pending approval from the active thread history", async () => {
+    const approval = { approval_id: "approval-history", run_id: "run-approval", tool_name: "Write" };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(Response.json({
+      thread_id: "assistant-approval",
+      status: "waiting_approval",
+      run_id: approval.run_id,
+      pending_approval: approval,
+      messages: [],
+    })));
+    const history = createThreadHistoryAdapter("assistant-approval");
+    await history.load();
+    expect(approvalStore.getSnapshot()).toEqual({ visible: true, details: approval });
+    history.dispose();
   });
 
   function historyResponse(status: string, text: string) {

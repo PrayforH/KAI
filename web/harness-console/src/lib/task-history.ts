@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import type { ApprovalDetails } from "../components/approval-card";
 import { latestHistoryRunActivity, type RunActivity } from "./activity-schema";
 import { activityStore } from "./activity-store";
+import { approvalStore } from "./approval-store";
 import { requireAuthenticatedResponse } from "./client-auth";
 import { setThreadReplyReferences } from "./reply-references";
 
@@ -50,6 +51,7 @@ export interface ThreadHistoryResponse {
   thread_id: string;
   status: string;
   run_id?: string | null;
+  pending_approval?: ApprovalDetails;
   messages: Array<{
     id: string;
     role: string;
@@ -408,7 +410,10 @@ export function settleHistoryActivity(
   return { ...activity, status: threadStatus };
 }
 
-function publishHistoryActivity(history: ThreadHistoryResponse, threadId: string) {
+function publishHistoryState(history: ThreadHistoryResponse, threadId: string) {
+  if (history.pending_approval && history.pending_approval.run_id === history.run_id) {
+    approvalStore.show(history.pending_approval, threadId);
+  }
   const restored = latestHistoryRunActivity(history.messages);
   if (!restored) return;
   const restoredActivity = settleHistoryActivity(restored, history.status);
@@ -587,7 +592,7 @@ export function createThreadHistoryAdapter(
       const repository = ExportedMessageRepository.fromArray(converted);
       // Import terminal text before publishing the phase that stops recovery polling.
       const accepted = !disposal.signal.aborted && onLoaded?.(repository) !== false;
-      if (history && accepted) publishHistoryActivity(history, threadId);
+      if (history && accepted) publishHistoryState(history, threadId);
       return repository;
     },
     async load() {
@@ -600,7 +605,7 @@ export function createThreadHistoryAdapter(
       if (!history) {
         return ExportedMessageRepository.fromArray([]);
       }
-      publishHistoryActivity(history, threadId);
+      publishHistoryState(history, threadId);
       const repository = ExportedMessageRepository.fromArray(
         fromAgUiMessages(options.reuseInitialSnapshot ? accumulatedHistory.get(threadId)?.messages ?? history.messages : history.messages, { showThinking: true }),
       );
@@ -642,7 +647,7 @@ export function createThreadHistoryAdapter(
           throw error;
         }
         if (!history) return;
-        publishHistoryActivity(history, threadId);
+        publishHistoryState(history, threadId);
         if (history.run_id && activeStatuses.has(history.status)) {
           options.onActiveRun?.(history.run_id);
         }
