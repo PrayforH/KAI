@@ -7,25 +7,31 @@ remains available to existing callers but is not part of the batch input flow.
 from __future__ import annotations
 
 import asyncio
+import base64
 import io
+import json
 import re
 import wave
 from collections.abc import Awaitable, Callable
 from typing import Literal, cast
+from uuid import uuid4
 
 import httpx
 from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from websockets.asyncio.client import connect
+from websockets.exceptions import WebSocketException
 
 
 class DictationSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="HARNESS_DICTATION_", extra="ignore")
 
     enabled: bool = False
-    engine: Literal["sensevoice", "qwen3", "gateway", "funasr_realtime"] = "sensevoice"
+    engine: Literal["sensevoice", "qwen3", "qwen3_meeting", "gateway", "funasr_realtime"] = "sensevoice"
     sensevoice_url: str = "http://172.20.109.229:18009"
     qwen3_url: str = "http://172.20.109.229:18008"
     qwen3_model: str = "Qwen3-ASR-1.7B"
+    qwen3_meeting_url: str = ""
     vad_url: str = "http://172.20.109.229:18010"
     gateway_url: str = "http://172.20.109.174:4000"
     gateway_key: SecretStr = SecretStr("")
@@ -161,6 +167,8 @@ class DictationService:
         # Dictation submits one complete recording after microphone capture stops.
         # Keep the shorter VAD limit independent from this recording limit.
         validate_wav(content, self.settings.max_session_seconds)
+        if self.settings.engine == "qwen3_meeting":
+            return await self._transcribe_meeting(content)
         if self.settings.engine == "sensevoice":
             url = self.settings.sensevoice_url
             data = {"language": "auto", "use_itn": "true"}
@@ -181,13 +189,47 @@ class DictationService:
             raise DictationError("语音识别服务返回了无效文字")
         return re.sub(r"<\|[^|]*\|>", "", text).strip()
 
+    async def _transcribe_meeting(self, content: bytes) -> str:
+        with wave.open(io.BytesIO(content), "rb") as audio:
+            pcm = audio.readframes(audio.getnframes())
+        try:
+            async with asyncio.timeout(self.settings.timeout_seconds), connect(
+                self.settings.qwen3_meeting_url, proxy=None, max_size=65_536, max_queue=640,
+            ) as socket:
+                await socket.send(json.dumps({
+                    "type": "start", "session_id": f"kai-dictation-{uuid4().hex}",
+                    "sample_rate": 16_000,
+                }))
+                acknowledgement = json.loads(await socket.recv())
+                if not isinstance(acknowledgement, dict) or acknowledgement.get("type") != "started":
+                    raise DictationError("会议语音服务未确认录音会话")
+                for sequence, offset in enumerate(range(0, len(pcm), 16_000)):
+                    await socket.send(json.dumps({
+                        "type": "audio", "sequence": sequence, "start_sample": offset // 2,
+                        "sample_rate": 16_000,
+                        "data": base64.b64encode(pcm[offset:offset + 16_000]).decode("ascii"),
+                    }))
+                await socket.send(json.dumps({"type": "stop"}))
+                async for raw in socket:
+                    message = json.loads(raw)
+                    if not isinstance(message, dict):
+                        break
+                    if message.get("type") == "final_utterance":
+                        text = message.get("text")
+                        if isinstance(text, str) and len(text) <= 12_000:
+                            return re.sub(r"<\|[^|]*\|>", "", text).strip()
+                        break
+                    if message.get("type") in {"error", "stopped", "completed", "session_ended"}:
+                        break
+        except (OSError, TimeoutError, ValueError, WebSocketException) as error:
+            raise DictationError("会议语音识别服务暂时不可用，请重试") from error
+        raise DictationError("会议语音服务未返回有效文字")
+
     async def refine(
         self,
         draft: str,
         complete: Callable[[str, str], Awaitable[str]],
     ) -> RefineResult:
-        import json
-
         try:
             text = await asyncio.wait_for(
                 complete(_REFINE_PROMPT, json.dumps({"draft": draft}, ensure_ascii=False)),
