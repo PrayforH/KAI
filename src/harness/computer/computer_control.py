@@ -12,6 +12,7 @@ import pwd
 import re
 import shutil
 import socket
+import stat
 import subprocess
 import sys
 import time
@@ -222,7 +223,7 @@ def _ensure_account(session: SessionPlan) -> None:
         # silently hand another Bot's files to this one.
         _validate_account(account, session.home)
         return
-    identifier = _allocate_uid(session.desktop_id)
+    identifier = _uid_for_new_account(session)
     subprocess.run(
         ["/usr/sbin/groupadd", "--gid", str(identifier), session.unix_user],
         check=True,
@@ -245,6 +246,24 @@ def _ensure_account(session: SessionPlan) -> None:
         check=True,
         env=ENVIRONMENT,
     )
+
+
+def _uid_for_new_account(session: SessionPlan) -> int:
+    try:
+        home = Path(session.home).lstat()
+    except FileNotFoundError:
+        return _allocate_uid(session.desktop_id)
+    # A rebuilt guest must recreate the account with the persisted directory's
+    # UID. Allocation order may have changed if two slot hashes collided.
+    if (
+        not stat.S_ISDIR(home.st_mode)
+        or stat.S_IMODE(home.st_mode) != 0o700
+        or not UID_BASE <= home.st_uid < UID_BASE + UID_SPAN
+        or home.st_gid != home.st_uid
+        or _taken(home.st_uid)
+    ):
+        raise PermissionError("desktop home cannot restore a private account")
+    return home.st_uid
 
 
 def _allocate_uid(desktop_id: str) -> int:
