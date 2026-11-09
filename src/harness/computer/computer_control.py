@@ -148,17 +148,41 @@ def _prepare(session: SessionPlan) -> None:
     BOTS.mkdir(mode=0o755, parents=True, exist_ok=True)
     RUNTIME.mkdir(mode=0o711, parents=True, exist_ok=True)
     _ensure_account(session)
-    owner = (pwd.getpwnam(session.unix_user).pw_uid, pwd.getpwnam(session.unix_user).pw_gid)
-    for path in (Path(session.home), Path(session.profile), Path(session.workspace)):
-        path.mkdir(mode=0o700, parents=True, exist_ok=True)
-        os.chown(path, *owner)
-        if path.stat().st_mode & 0o077:
-            os.chmod(path, 0o700)
+    account = pwd.getpwnam(session.unix_user)
+    owner = (account.pw_uid, account.pw_gid)
+    home = _open_directory(Path(session.home), owner)
+    try:
+        for name in ("chromium", "workspace"):
+            os.close(_open_directory(Path(name), owner, parent=home))
+    finally:
+        os.close(home)
     SESSIONS.mkdir(mode=0o700, parents=True, exist_ok=True)
     _write_environment(session)
     _systemctl("enable", _unit(session))
     if status(session) != "active":
         _systemctl("start", _unit(session))
+
+
+def _open_directory(
+    path: Path, owner: tuple[int, int], *, parent: int | None = None
+) -> int:
+    try:
+        os.mkdir(path, mode=0o700, dir_fd=parent)
+    except FileExistsError:
+        pass
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+    try:
+        info = os.fstat(fd)
+        if info.st_uid == 0:
+            # A newly created directory is still root-owned after a crash.
+            os.fchown(fd, *owner)
+        elif (info.st_uid, info.st_gid) != owner:
+            raise PermissionError("desktop directory belongs to another account")
+        os.fchmod(fd, 0o700)
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
 
 
 def _write_environment(session: SessionPlan) -> None:
@@ -176,8 +200,12 @@ def _ensure_account(session: SessionPlan) -> None:
     if account is not None:
         # A slot is addressed by its own hash-derived name; a changed UID would
         # silently hand another Bot's files to this one.
-        if not UID_BASE <= account.pw_uid < UID_BASE + UID_SPAN:
-            raise ValueError("desktop account is outside the bot UID range")
+        if (
+            not UID_BASE <= account.pw_uid < UID_BASE + UID_SPAN
+            or account.pw_gid != account.pw_uid
+            or account.pw_dir != session.home
+        ):
+            raise ValueError("desktop account does not match the slot")
         return
     identifier = _allocate_uid(session.desktop_id)
     subprocess.run(

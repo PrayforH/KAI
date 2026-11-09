@@ -16,7 +16,7 @@ KillMode=control-group
 TimeoutStopSec=25
 StandardOutput=journal+console
 StandardError=journal+console
-# Root only to create the private runtime directory and X cookie; the X server,
+# Root only to create the private runtime directory; the X server,
 # window manager, RFB socket and browser then run as the slot's own account.
 NoNewPrivileges=true
 ProtectSystem=strict

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Start one Bot desktop. Runs as guest root only to create the private runtime
-# directory and X cookie, then drops to the slot's own unprivileged account.
+# directory, then drops to the slot's own unprivileged account.
 set -euo pipefail
 umask 077
 desktop_id="${1:-}"
@@ -28,10 +28,6 @@ gid="$(id -g "$UNIX_USER")"
 install -d -m 0711 -o root -g root /run/kai-bots
 runtime="/run/kai-bots/$desktop_id"
 install -d -m 0700 -o "$UNIX_USER" -g "$UNIX_USER" "$runtime"
-cookie="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-xauth -f "$runtime/Xauthority" add ":$DISPLAY_NUMBER" . "$cookie"
-chown "$UNIX_USER:$UNIX_USER" "$runtime/Xauthority"
-chmod 0600 "$runtime/Xauthority"
 exec setpriv --reuid="$uid" --regid="$gid" --init-groups \
   env -i PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 TZ="${TZ:-Asia/Shanghai}" \
   HOME="$HOME" DISPLAY=":$DISPLAY_NUMBER" XAUTHORITY="$runtime/Xauthority" \

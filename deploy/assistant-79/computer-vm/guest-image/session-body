@@ -3,6 +3,8 @@
 # RFB socket and the kiosk shell. Every path comes from session-start's env.
 set -euo pipefail
 : "${DISPLAY:?}" "${XAUTHORITY:?}" "${XDG_RUNTIME_DIR:?}" "${VNC_SOCKET:?}"
+cookie="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+xauth -f "$XAUTHORITY" add "$DISPLAY" . "$cookie"
 export SHELL=/bin/bash
 export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
 # Bare Xvfb has no settings daemon to set org.a11y.Status.IsEnabled.
