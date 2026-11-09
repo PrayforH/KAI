@@ -18,6 +18,13 @@ describe("assistant and original task page ownership", () => {
     expect(resolve(true, "thread=kai-personal-assistant-v1")).toBe("/assistant");
     expect(resolve(true, "")).toBeNull();
   });
+  it("discards task launch coordinates on the assistant entry", () => {
+    expect(resolve(true, "project=old&tab=files&agent=builder&version=1&owner=me&skill=skill-creator&run=owned"))
+      .toBe("/assistant?run=owned");
+    expect(resolve(true, "bot=specialist-a&project=old&skillScope=agent&computer=open"))
+      .toBe("/assistant?bot=specialist-a&computer=open");
+    expect(resolve(false, "project=kept&skill=skill-creator")).toBeNull();
+  });
   it("encodes task coordinates without inheriting bot state or adding query instructions", () => {
     const url = new URL(taskThreadHref("原任务&bot=other#fragment"), "https://kai.test");
     expect(url.pathname).toBe("/");

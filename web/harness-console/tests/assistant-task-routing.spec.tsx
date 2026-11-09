@@ -108,6 +108,15 @@ it("normalizes an old main-assistant link without leaving the same page empty", 
   expect(host.querySelector("[data-thread]")?.getAttribute("data-assistant-surface")).toBe("true");
 });
 
+it("keeps assistant content and URL aligned when task launch parameters leak into a link", async () => {
+  window.history.replaceState(null, "", "/assistant?project=stale&skill=skill-creator&agent=agent&version=1&owner=user");
+  await mount(true);
+  expect(state.router.replace.mock.calls).toEqual([["/assistant"]]);
+  expect(window.location.pathname).toBe("/assistant");
+  expect(host.querySelector("[data-thread]")?.getAttribute("data-thread")).toBe(PERSONAL_ASSISTANT_THREAD);
+  expect(loadOrCreateThread(createUserScopedStorage(window.localStorage, "user"))).toBe("old-thread");
+});
+
 
 it("keeps project-linked tasks in the workbench surface, including browser navigation back from a Bot", async () => {
   state.task.project_id = "project-audit";

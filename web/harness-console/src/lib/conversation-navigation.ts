@@ -5,27 +5,26 @@ export function taskThreadHref(threadId: string): string {
   return `/?${new URLSearchParams({ thread: threadId })}`;
 }
 
+const TASK_LAUNCH_PARAMS = [
+  "project", "tab", "agent", "version", "space", "owner",
+  "skill", "skillScope", "agentDraft", "agentLabel",
+];
+
 /** Keep old result links usable while giving each conversation one page owner. */
 export function canonicalConversationHref(assistantEntry: boolean, search: URLSearchParams): string | null {
   const thread = search.get("thread");
-  const bot = assistantEntry ? search.get("bot") : null;
-  if (assistantEntry && bot && thread) {
-    const next = new URLSearchParams(search);
-    next.delete("thread");
-    return `/assistant?${next}`;
-  }
-  if (!thread) return null;
-  if (assistantEntry && thread !== PERSONAL_ASSISTANT_THREAD) {
+  if (assistantEntry && !search.get("bot") && thread && thread !== PERSONAL_ASSISTANT_THREAD) {
     const next = new URLSearchParams(search);
     next.delete("bot");
     next.delete("computer");
     return `/?${next}`;
   }
-  if (thread === PERSONAL_ASSISTANT_THREAD) {
-    const next = new URLSearchParams(search);
-    next.delete("thread");
-    next.delete("bot");
-    return `/assistant${next.size ? `?${next}` : ""}`;
-  }
-  return null;
+  if (!assistantEntry && thread !== PERSONAL_ASSISTANT_THREAD) return null;
+
+  const next = new URLSearchParams(search);
+  next.delete("thread");
+  if (!assistantEntry) next.delete("bot");
+  for (const key of TASK_LAUNCH_PARAMS) next.delete(key);
+  if (assistantEntry && next.toString() === search.toString()) return null;
+  return `/assistant${next.size ? `?${next}` : ""}`;
 }

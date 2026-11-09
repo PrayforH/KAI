@@ -214,13 +214,14 @@ function AuthenticatedHome() {
   const { user, membership } = useAuth();
   const primaryProfile = usePrimaryBot(user.user_id, membership?.tenant_id);
   useEffect(() => {
+    if (assistantEntry) return;
     const query = new URLSearchParams(window.location.search);
     const projectId = query.get("project");
     if (projectId && !query.has("thread")) {
       const tab = query.get("tab");
       router.replace(`${projectHref(projectId)}${tab ? `?tab=${encodeURIComponent(tab)}` : ""}`);
     }
-  }, [router]);
+  }, [assistantEntry, router]);
   const [showInternalAgents] = useInternalAgentsPreference();
   const [threadId, setThreadId] = useState("");
   const [loadedBot, setBot] = useState<AssistantBot | null>(null);
@@ -460,22 +461,22 @@ function AuthenticatedHome() {
   useEffect(() => {
     let active = true;
     const storage = createUserScopedStorage(window.localStorage, user.user_id);
-    const storedThreadId = loadOrCreateThread(storage);
     const selectionRevision = taskSelectionRevision.current;
     const initialSearch = new URLSearchParams(window.location.search);
     const openingBot = assistantEntry && initialSearch.has("bot");
-    const requestedSkillLaunch = parseSkillCreatorLaunch(initialSearch);
+    const requestedSkillLaunch = assistantEntry ? null : parseSkillCreatorLaunch(initialSearch);
     const canonicalHref = canonicalConversationHref(assistantEntry, initialSearch);
     if (canonicalHref) {
       router.replace(canonicalHref);
       if (assistantEntry !== canonicalHref.startsWith("/assistant")) return;
     }
-    const requestedThreadId = assistantEntry ? PERSONAL_ASSISTANT_THREAD : initialSearch.get("thread");
-    // Opening an assistant must not overwrite the last ordinary task selection.
+    const requestedThreadId = initialSearch.get("thread");
+    // Opening an assistant must not create or overwrite the ordinary task selection.
+    const storedThreadId = assistantEntry ? null : loadOrCreateThread(storage);
     const initialThreadId = assistantEntry ? PERSONAL_ASSISTANT_THREAD : requestedThreadId
       ? selectThread(storage, requestedThreadId)
-      : storedThreadId === PERSONAL_ASSISTANT_THREAD ? createNewThread(storage) : storedThreadId;
-    const hasRequestedAgent = Boolean(
+      : storedThreadId && storedThreadId !== PERSONAL_ASSISTANT_THREAD ? storedThreadId : createNewThread(storage);
+    const hasRequestedAgent = !assistantEntry && Boolean(
       initialSearch.get("agent") &&
       initialSearch.get("version") &&
       (initialSearch.get("space") || initialSearch.get("owner")),
@@ -533,7 +534,7 @@ function AuthenticatedHome() {
           loadTaskModelRoutes().catch(() => []),
           summary,
         ]);
-        if (!active) return;
+        if (!active || window.location.pathname !== (assistantEntry ? "/assistant" : "/")) return;
         // Catalog data can still refresh, but an older load cannot select a task
         // after the user has clicked New Task or chosen another conversation.
         if (taskSelectionRevision.current !== selectionRevision ||
@@ -548,7 +549,7 @@ function AuthenticatedHome() {
         const requestedVersion = search.get("version");
         const requestedSpaceId = search.get("space");
         const requestedOwnerUserId = search.get("owner");
-        const requestedAgent = requestedName && requestedVersion &&
+        const requestedAgent = hasRequestedAgent && requestedName && requestedVersion &&
           (requestedSpaceId || requestedOwnerUserId)
           ? findTaskAgent(catalog.agents, {
               name: requestedName,
