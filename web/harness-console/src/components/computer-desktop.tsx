@@ -7,10 +7,10 @@ import type RFB from "@novnc/novnc";
 import styles from "./computer-desktop.module.css";
 
 type TargetSelection = { active_target: string | null; targets: { target_id: string; label: string; binding_key: string }[] };
-type ConnectionState = "connecting" | "reconnecting" | "connected" | "disconnected" | "unauthorized" | "waiting";
+type ConnectionState = "connecting" | "reconnecting" | "connected" | "disconnected" | "unauthorized" | "waiting" | "starting";
 type ControlState = "observe" | "agent" | "human" | "takeover_pending";
 type DesktopControl = { state: ControlState; binding_key: string; desktop_id?: string; owner?: string | null; epoch?: number; revision?: number };
-const labels = { connecting: "正在连接", reconnecting: "正在重新连接", connected: "已连接", disconnected: "连接已断开", unauthorized: "请重新登录", waiting: "等待 Bot 桌面" };
+const labels = { connecting: "正在连接", reconnecting: "正在重新连接", connected: "已连接", disconnected: "连接已断开", unauthorized: "请重新登录", waiting: "等待 Bot 桌面", starting: "正在启动 Bot 桌面" };
 
 
 export function ComputerDesktop({ embedded = false, onClose, botId }: {
@@ -30,7 +30,6 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
   const botPreview = botId !== undefined && (viewTarget === null || viewTarget === "cloud");
   const [selection, setSelection] = useState<TargetSelection | null>(null);
   const [switching, setSwitching] = useState(false);
-  const [starting, setStarting] = useState(false);
   const [selectionError, setSelectionError] = useState("");
   const [authority, setAuthority] = useState<DesktopControl | null>(null);
   const [controlError, setControlError] = useState("");
@@ -55,12 +54,14 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let retries = 0;
     let wasConnected = false;
+    let slotPrepared = false;
     const controller = new AbortController();
     let polling = false;
     let slotPreview = botId !== undefined && (targetRef.current === null || targetRef.current === "cloud");
     operationVersion.current += 1;
     desktopRef.current = null;
     setAuthority(null);
+    setActionError("");
     applyControl("observe");
     setState("connecting");
     // Full navigations can enter bfcache without React unmounting this tree.
@@ -138,9 +139,12 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
           cache: "no-store", signal: signal(),
         });
         if (disposed) return;
+        let activeTarget: string | null = null;
         if (targets.ok) {
           const value = await targets.json() as TargetSelection;
-          targetRef.current ??= value.active_target;
+          if (disposed) return;
+          activeTarget = value.active_target;
+          targetRef.current ??= activeTarget;
           setViewTarget(targetRef.current);
           setSelection(value);
         } else if (botId !== undefined) {
@@ -151,16 +155,37 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
         if (targetRef.current) url.searchParams.set("target", targetRef.current);
         slotPreview = botId !== undefined && targetRef.current === "cloud";
         if (slotPreview) {
-          const query = botId ? `?bot_id=${encodeURIComponent(botId)}` : "";
-          const preview = await fetch(`/api/studio/assistant/computer/desktops/preview${query}`, {
-            cache: "no-store", signal: signal(),
-          });
+          const query = botId ? `?${new URLSearchParams({ bot_id: botId })}` : "";
+          // Opening a Bot's computer is the explicit start. Retry re-runs the
+          // same idempotent operation in case the guest stopped since the last view.
+          const start = activeTarget === "cloud" && !slotPrepared;
+          if (start) setState("starting");
+          let slot: { desktopId: string; state: string };
+          try {
+            const response = await fetch(
+              `/api/studio/assistant/computer/desktops/${start ? "start" : "preview"}${query}`,
+              start ? { method: "POST", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(150_000)]) }
+                : { cache: "no-store", signal: signal() },
+            );
+            if (disposed) return;
+            if (!start && response.status === 404) { retryConnection(true); return; }
+            if (!response.ok) {
+              if (!start) { retryConnection(); return; }
+              const body = await response.json().catch(() => null);
+              throw new Error(body?.error?.message ?? body?.detail ?? "云桌面启动未确认，请重试");
+            }
+            slot = await response.json();
+          } catch (error) {
+            if (disposed) return;
+            if (!start) throw error;
+            setActionError(error instanceof Error && error.name === "Error" ? error.message : "云桌面启动未确认，请重试");
+            setState("disconnected");
+            return;
+          }
           if (disposed) return;
-          if (preview.status === 404) { retryConnection(true); return; }
-          if (!preview.ok) { retryConnection(); return; }
-          const slot = await preview.json() as { desktopId: string; state: string };
-          if (disposed) return;
+          slotPrepared ||= start;
           if (slot.state !== "busy" && slot.state !== "idle") { retryConnection(true); return; }
+          if (start) setState(wasConnected ? "reconnecting" : "connecting");
           desktopRef.current = slot.desktopId;
           viewerRef.current ??= window.crypto.randomUUID();
           url.searchParams.set("desktop", slot.desktopId);
@@ -186,13 +211,15 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
         connection.qualityLevel = 6;
         connection.compressionLevel = 2;
         let securityFailed = false;
+        let established = false;
         connection.addEventListener("connect", () => {
           if (disposed || rfb !== connection) return;
-          wasConnected = true; retries = 0; setState("connected");
+          established = true; wasConnected = true; retries = 0; setState("connected");
           if (!embedded && controlRef.current === "human") connection.focus();
         });
         connection.addEventListener("disconnect", () => {
           if (disposed || rfb !== connection || securityFailed) return;
+          if (established) slotPrepared = false;
           retryConnection();
         });
         connection.addEventListener("securityfailure", () => {
@@ -213,29 +240,6 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
       window.removeEventListener("pageshow", restorePage);
     };
   }, [revision, embedded, botId]);
-
-  async function startDesktop() {
-    if (actionInFlight.current || targetRef.current !== "cloud") return;
-    actionInFlight.current = true;
-    setStarting(true);
-    setActionError("");
-    const query = botId ? `?${new URLSearchParams({ bot_id: botId })}` : "";
-    try {
-      const response = await fetch(`/api/studio/assistant/computer/desktops/start${query}`, {
-        method: "POST", signal: AbortSignal.timeout(150_000),
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        throw new Error(body?.error?.message ?? body?.detail ?? "云桌面启动未确认，请重试");
-      }
-      if (targetRef.current === "cloud") setRevision(value => value + 1);
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : "云桌面启动未确认，请重试");
-    } finally {
-      actionInFlight.current = false;
-      setStarting(false);
-    }
-  }
 
   function viewComputer(targetId: string) {
     if (targetId === targetRef.current) return;
@@ -331,14 +335,13 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
         }} />
       {state !== "connected" && <div className={styles.overlay} data-state={state} role="status">
         <div className={styles.stateGlyph}><BotGlyph shape="block" color="#858585" /></div>
-        <strong>{starting ? "正在启动 Bot 桌面" : state === "connecting" ? "正在连接电脑" : state === "reconnecting" ? "正在重新连接电脑" : state === "disconnected" ? "电脑暂未连接" : state === "waiting" ? "等待 Bot 启动桌面" : "请重新登录"}</strong>
+        <strong>{state === "starting" ? labels.starting : state === "connecting" ? "正在连接电脑" : state === "reconnecting" ? "正在重新连接电脑" : state === "disconnected" ? "电脑暂未连接" : state === "waiting" ? "等待 Bot 启动桌面" : "请重新登录"}</strong>
         {state === "unauthorized" ? <Link href="/login">登录 KAI</Link>
-          : state === "waiting" && botPreview ? <button disabled={starting} onClick={() => void startDesktop()}>启动桌面</button>
-          : state === "disconnected" ? <button onClick={() => setRevision(value => value + 1)}>重新连接</button> : null}
+          : state === "disconnected" || state === "waiting" ? <button onClick={() => setRevision(value => value + 1)}>重新连接</button> : null}
       </div>}
     </div>
     <footer className={styles.toolbar}>
-      {selection && selection.targets.length > 1 ? <select className={styles.targetSelect} aria-label="查看电脑" disabled={actionBusy || switching || starting}
+      {selection && selection.targets.length > 1 ? <select className={styles.targetSelect} aria-label="查看电脑" disabled={actionBusy || switching || state === "starting"}
         value={viewTarget ?? ""} onChange={event => viewComputer(event.target.value)}>
         {selection.targets.map(target => <option key={target.target_id} value={target.target_id}>{target.label}</option>)}
       </select> : <span className={styles.caption}>{viewedLabel}的屏幕</span>}
@@ -355,7 +358,7 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
       <details className={styles.more}>
         <summary aria-label="更多电脑操作">···</summary>
         <div className={styles.menu}>
-          <button onClick={() => setRevision(value => value + 1)}>重新连接</button>
+          <button disabled={state === "starting"} onClick={() => setRevision(value => value + 1)}>重新连接</button>
           <button onClick={() => void refreshControl.current()}>重试控制状态</button>
         </div>
       </details>

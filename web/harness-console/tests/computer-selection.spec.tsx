@@ -20,13 +20,14 @@ const cloud = { active_target: "cloud", targets: [{ target_id: "cloud", label: "
 let refused = false, current = "cloud";
 let controlState = "human", controlFailure = 0, readFailure = false, sessionStatus = 200;
 let delayedRead: Promise<Response> | null = null;
-let missingBotSlot = false;
+let startFailure = false;
+let delayedStart: Promise<Response> | null = null;
 const botControls = new Map<string, { state: string; owner?: string | null }>();
 let host: HTMLDivElement, root: Root;
 const requests: string[] = [];
 async function flush() { for (let i = 0; i < 10; i++) await act(async () => { await Promise.resolve(); }); }
 beforeEach(() => {
-  requests.length = 0; sockets.length = 0; frames.length = 0; missingBotSlot = false;
+  requests.length = 0; sockets.length = 0; frames.length = 0; startFailure = false; delayedStart = null;
   botControls.clear();
   refused = false; current = "cloud"; controlState = "human"; controlFailure = 0; readFailure = false; sessionStatus = 200; delayedRead = null; disconnected.mockClear();
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
@@ -37,15 +38,12 @@ beforeEach(() => {
     if (url === "/api/auth/session") return Response.json({}, { status: sessionStatus });
     if (url.includes("/desktops/start")) {
       expect(init?.method).toBe("POST");
-      missingBotSlot = false;
-      return Response.json({ state: "idle" });
-    }
-    if (url.includes("/desktops/preview")) {
-      if (missingBotSlot) return Response.json({}, { status: 404 });
-      const botId = new URL(url, "https://kai.test").searchParams.get("bot_id");
-      const hash = botId === "specialist_b" ? "b" : "a";
+      if (delayedStart) return delayedStart;
+      if (startFailure) return Response.json({detail:"云桌面启动未确认"}, { status: 503 });
+      const hash = request.searchParams.get("bot_id") === "specialist_b" ? "b" : "a";
       return Response.json({ desktopId: `desktop_${hash.repeat(24)}`, state: "idle" });
     }
+    if (url.includes("/desktops/preview")) return Response.json({}, { status: 404 });
     if (url.endsWith("/targets/select")) {
       expect(JSON.parse(init?.body as string)).toEqual({ target_id: "local" });
       if (!refused) current = "local";
@@ -262,22 +260,33 @@ describe("Bot desktop preview", () => {
     await flush();
     expect(sockets.at(-1)).toContain("target=local");
     expect(sockets.at(-1)).not.toContain("desktop=");
-    expect(requests.some(url => url.includes("/desktops/preview"))).toBe(false);
+    expect(requests.some(url => /\/desktops\/(?:preview|start)/.test(url))).toBe(false);
   });
 
-  it("waits for an unstarted Bot and opens no other desktop", async () => {
-    missingBotSlot = true;
+  it("starts the selected Bot on open and waits for the guest before connecting", async () => {
+    let complete!: (response: Response) => void;
+    delayedStart = new Promise(resolve => { complete = resolve; });
     await act(async () => root.render(<ComputerDesktop botId="specialist_a" />));
     await flush();
-    expect(host.textContent).toContain("等待 Bot 启动桌面");
+    const endpoint = "/api/studio/assistant/computer/desktops/start?bot_id=specialist_a";
+    expect(requests.filter(url => url === endpoint)).toHaveLength(1);
+    expect(host.textContent).toContain("正在启动 Bot 桌面");
     expect(sockets).toHaveLength(0);
-    expect(requests.some(url => url.includes("/desktops/start"))).toBe(false);
-    const start = [...host.querySelectorAll("button")].find(button => button.textContent === "启动桌面");
-    expect(start).toBeDefined();
-    await act(async () => start!.click());
+    complete(Response.json({ desktopId: `desktop_${"a".repeat(24)}`, state: "idle" }));
     await flush();
-    expect(requests).toContain("/api/studio/assistant/computer/desktops/start?bot_id=specialist_a");
     expect(sockets).toHaveLength(1);
     expect(sockets[0]).toContain(`desktop=desktop_${"a".repeat(24)}`);
+  });
+
+  it("retries the guest start explicitly after a failure", async () => {
+    startFailure = true;
+    await act(async () => root.render(<ComputerDesktop botId="specialist_a" />));
+    await flush();
+    expect(host.textContent).toContain("云桌面启动未确认");
+    expect(sockets).toHaveLength(0);
+    startFailure = false;
+    await click("重新连接");
+    expect(requests.filter(url => url.includes("/desktops/start?bot_id=specialist_a"))).toHaveLength(2);
+    expect(sockets).toHaveLength(1);
   });
 });
