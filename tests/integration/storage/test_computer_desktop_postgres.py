@@ -4,8 +4,10 @@ One locked row per computer; concurrency uses real database locking on the
 isolated integration database. No production computer or lease is touched.
 """
 
+import asyncio
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -20,6 +22,7 @@ from harness.computer.desktop import (
     DesktopState,
 )
 from harness.computer.desktop_registry import DesktopRegistry, bot_desktop_key
+from harness.computer.models import ComputerBusyError
 from harness.computer.registry import ComputerRegistry
 from tests.integration.storage.conftest import DatabaseFixture
 
@@ -180,3 +183,50 @@ async def test_bot_preview_resolves_only_the_callers_slot(database: DatabaseFixt
         other = await client.get(url, headers={"X-Tenant-ID": "tenant-a", "X-User-ID": "user-2"})
     assert owned.json() == {"desktopId": slot.desktop_id, "state": "created"}
     assert other.status_code == 404
+
+@pytest.mark.asyncio
+async def test_idle_reap_and_first_execution_share_the_slot_lock(database: DatabaseFixture):
+    _, sessions = database
+    owner = ("tenant-a", "user-a")
+    computers, desktops = ComputerRegistry(sessions), DesktopRegistry(sessions)
+    computer = await computers.ensure(*owner, provider="vm-computer", image="sha256:" + "a" * 64)
+    start = await computers.claim_start(*owner, owner="worker")
+    await computers.complete_start(start, provider_ref="fixture-guest")
+    slot = await desktops.ensure(*owner, "bot-a", computer_id=computer.computer_id)
+
+    async def claim():
+        return await computers.claim_execution(
+            *owner, owner="worker", run_id="probe-run", session_id="probe-session",
+            desktop_id=slot.desktop_id,
+        )
+
+    snapshot = await desktops.mark_started(*owner, slot.desktop_id)
+    lease = await claim()
+    stop = AsyncMock()
+    assert not await desktops.reap(snapshot, stop)
+    stop.assert_not_awaited()
+    await computers.finish_execution(lease)
+
+    snapshot = await desktops.get_by_id(*owner, slot.desktop_id)
+    began_stopping, finish_stopping = asyncio.Event(), asyncio.Event()
+
+    async def stop_guest(_desktop):
+        began_stopping.set()
+        await finish_stopping.wait()
+
+    stopping = asyncio.create_task(desktops.reap(snapshot, stop_guest))
+    await asyncio.wait_for(began_stopping.wait(), timeout=2)
+    waiting = asyncio.create_task(claim())
+    try:
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(asyncio.shield(waiting), timeout=0.1)
+    finally:
+        finish_stopping.set()
+    assert await stopping
+    with pytest.raises(ComputerBusyError, match="reserve it again"):
+        await waiting
+
+    revived = await desktops.ensure(*owner, "bot-a", computer_id=computer.computer_id)
+    assert revived.desktop_id == slot.desktop_id
+    assert revived.display == slot.display
+    await computers.finish_execution(await claim())

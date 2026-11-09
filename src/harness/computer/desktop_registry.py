@@ -5,6 +5,7 @@ identity, so a rebuilt guest recreates the same desktop instead of reshuffling
 another Bot's profile. Database rows, not guest state, decide who owns a slot.
 """
 
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 
@@ -20,7 +21,10 @@ from harness.storage.database import SessionFactory
 
 FIRST_DISPLAY = 100
 LAST_DISPLAY = 199
-LIVE_STATES = (DesktopState.STARTING.value, DesktopState.IDLE.value, DesktopState.BUSY.value)
+RESERVED_STATES = (
+    DesktopState.CREATED.value, DesktopState.STARTING.value,
+    DesktopState.IDLE.value, DesktopState.BUSY.value,
+)
 
 
 def bot_desktop_key(specialist_id: str | None) -> str:
@@ -43,6 +47,13 @@ def profile_refs(desktop_id: str) -> tuple[str, str]:
     short = sha256(desktop_id.encode()).hexdigest()[:16]
     base = f"/home/kai-bots/{short}"
     return f"{base}/chromium", f"{base}/workspace"
+
+
+async def lock_desktop(session: AsyncSession, desktop_id: str) -> None:
+    """Serialize changes to a desktop while guest stop is in flight."""
+    await session.execute(
+        select(func.pg_advisory_xact_lock(func.hashtextextended(f"kai-desktop:{desktop_id}", 0)))
+    )
 
 
 class DesktopRegistry:
@@ -71,11 +82,20 @@ class DesktopRegistry:
         for _ in range(len(range(FIRST_DISPLAY, LAST_DISPLAY + 1))):
             try:
                 async with self._sessions.begin() as session:
+                    # Serialize display reservations for the owner as well as
+                    # changes to this slot's lifecycle.
+                    await session.execute(select(func.pg_advisory_xact_lock(
+                        func.hashtextextended(f"kai-desktop-displays:{tenant}:{user}", 0)
+                    )))
+                    await lock_desktop(session, desktop_id)
                     existing = await self._get_or_none(session, tenant, user, desktop_id)
                     if existing is not None:
                         if existing.state == DesktopState.STOPPED.value:
                             # A stopped slot revives on its next Run: the
                             # guest unit restarts from the reserved state.
+                            existing.display = await self._free_display(
+                                session, tenant, user, desktop_id, preferred=existing.display
+                            )
                             existing.state = DesktopState.CREATED.value
                             existing.revision += 1
                             existing.updated_at = await _now(session)
@@ -167,35 +187,58 @@ class DesktopRegistry:
             ).all()
         return tuple(ComputerDesktop.model_validate(row) for row in rows)
 
+    async def reap(
+        self, candidate: ComputerDesktop, stop_guest: Callable[[ComputerDesktop], Awaitable[None]]
+    ) -> bool:
+        """Recheck an idle candidate under the same lock used by Run claims."""
+        async with self._sessions.begin() as session:
+            await lock_desktop(session, candidate.desktop_id)
+            row = await self._get_or_none(
+                session, candidate.tenant_id, candidate.user_id, candidate.desktop_id
+            )
+            if (
+                row is None or row.revision != candidate.revision
+                or row.state not in {DesktopState.IDLE.value, DesktopState.STOPPED.value}
+            ):
+                return False
+            await stop_guest(ComputerDesktop.model_validate(row))
+            if row.state != DesktopState.STOPPED.value:
+                await self._stop(session, row)
+            return True
+
     async def stop(self, tenant: str, user: str, desktop_id: str) -> ComputerDesktop:
         """Fence running work and mark the desktop stopped; files stay on disk."""
-
         async with self._sessions.begin() as session:
+            await lock_desktop(session, desktop_id)
             row = await self._get_or_none(session, tenant, user, desktop_id)
             if row is None:
                 raise NotFoundError("bot desktop not found")
-            if row.state == DesktopState.STOPPED.value:
-                return ComputerDesktop.model_validate(row)
-            moment = await _now(session)
-            await session.execute(
-                update(Lease)
-                .where(
-                    Lease.tenant_id == tenant,
-                    Lease.user_id == user,
-                    Lease.desktop_id == desktop_id,
-                    Lease.state == "active",
-                )
-                .values(state="expired", finished_at=moment)
-            )
-            row.epoch += 1
-            row.state = DesktopState.STOPPED.value
-            row.revision += 1
-            row.updated_at = moment
-            await session.flush()
+            if row.state != DesktopState.STOPPED.value:
+                await self._stop(session, row)
             return ComputerDesktop.model_validate(row)
+
+    @staticmethod
+    async def _stop(session: AsyncSession, row: Desktop) -> None:
+        moment = await _now(session)
+        await session.execute(
+            update(Lease)
+            .where(
+                Lease.tenant_id == row.tenant_id,
+                Lease.user_id == row.user_id,
+                Lease.desktop_id == row.desktop_id,
+                Lease.state == "active",
+            )
+            .values(state="expired", finished_at=moment)
+        )
+        row.epoch += 1
+        row.state = DesktopState.STOPPED.value
+        row.revision += 1
+        row.updated_at = moment
+        await session.flush()
 
     async def mark_started(self, tenant: str, user: str, desktop_id: str) -> ComputerDesktop:
         async with self._sessions.begin() as session:
+            await lock_desktop(session, desktop_id)
             row = await self._get_or_none(session, tenant, user, desktop_id)
             if row is None:
                 raise NotFoundError("bot desktop not found")
@@ -208,7 +251,8 @@ class DesktopRegistry:
             return ComputerDesktop.model_validate(row)
 
     async def _free_display(
-        self, session: AsyncSession, tenant: str, user: str, desktop_id: str
+        self, session: AsyncSession, tenant: str, user: str, desktop_id: str,
+        *, preferred: str | None = None,
     ) -> str:
         taken = set(
             (
@@ -216,12 +260,14 @@ class DesktopRegistry:
                     select(Desktop.display).where(
                         Desktop.tenant_id == tenant,
                         Desktop.user_id == user,
-                        Desktop.state.in_(LIVE_STATES),
+                        Desktop.state.in_(RESERVED_STATES),
                         Desktop.display.is_not(None),
                     )
                 )
             ).all()
         )
+        if preferred is not None and preferred not in taken:
+            return preferred
         span = LAST_DISPLAY - FIRST_DISPLAY + 1
         start = FIRST_DISPLAY + int(sha256(desktop_id.encode()).hexdigest()[:4], 16) % span
         for offset in range(span):

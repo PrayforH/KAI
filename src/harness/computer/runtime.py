@@ -12,7 +12,7 @@ from harness.computer.desktop import DesktopControlService
 from harness.computer.desktop_registry import DesktopRegistry
 from harness.computer.docker import DockerComputerDriver
 from harness.computer.gui_tools import computer_gui_overlay
-from harness.computer.models import AssistantComputer, DesktopState
+from harness.computer.models import AssistantComputer, ComputerDesktop
 from harness.computer.registry import ComputerRegistry
 from harness.computer.remote import PROVIDER as REMOTE_PROVIDER
 from harness.computer.remote import RemoteComputerDriver
@@ -185,27 +185,28 @@ class ComputerRuntime:
             return 0
         stopped = 0
         control = HttpComputerControl(self.client)
+
+        async def stop_guest(desktop: ComputerDesktop) -> None:
+            await control.desktop_slot(
+                desktop.tenant_id,
+                desktop.user_id,
+                "stop",
+                {
+                    "desktopId": desktop.desktop_id,
+                    "unixUser": desktop.unix_user,
+                    "display": desktop.display,
+                    "profile": desktop.profile_ref,
+                    "workspace": desktop.workspace_ref,
+                    "vncSocket": desktop.vnc_socket,
+                },
+            )
+
         for desktop in await self.desktops.reapable(idle_seconds=idle_seconds):
-            if desktop.state is DesktopState.BUSY:
-                continue
-            payload = {
-                "desktopId": desktop.desktop_id,
-                "unixUser": desktop.unix_user,
-                "display": desktop.display,
-                "profile": desktop.profile_ref,
-                "workspace": desktop.workspace_ref,
-                "vncSocket": desktop.vnc_socket,
-            }
             try:
-                await control.desktop_slot(
-                    desktop.tenant_id, desktop.user_id, "stop", payload
-                )
-            except (RuntimeError, NotFoundError):
-                # A rebuilt guest simply has nothing to stop; the row is fenced
-                # below either way, so one failure must not block the others.
+                stopped += int(await self.desktops.reap(desktop, stop_guest))
+            except (RuntimeError, NotFoundError, httpx.HTTPError):
+                # Leave an uncertain stop eligible for a later idempotent retry.
                 continue
-            await self.desktops.stop(desktop.tenant_id, desktop.user_id, desktop.desktop_id)
-            stopped += 1
         return stopped
 
     async def gui_overlay(

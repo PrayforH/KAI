@@ -20,6 +20,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from harness.computer.desktop_registry import lock_desktop
 from harness.computer.models import (
     AssistantComputer,
     ComputerBusyError,
@@ -293,6 +294,8 @@ class ComputerRegistry:
         _identity(owner, 160)
         desktop: Desktop | None = None
         async with self._sessions.begin() as session:
+            if purpose is LeasePurpose.EXECUTE and desktop_id is not None:
+                await lock_desktop(session, desktop_id)
             computer = await self._get(session, tenant, user, lock=True)
             if expected_image is not None and computer.image != expected_image:
                 raise ConflictError("computer image changed before migration acquired ownership")
@@ -355,7 +358,9 @@ class ComputerRegistry:
                         "another Bot desktop is executing "
                         f"({other.run_id or other.owner})"
                     )
-                if purpose is LeasePurpose.EXECUTE and desktop.state not in {
+                if desktop.state == DesktopState.STOPPED:
+                    raise ComputerBusyError("desktop was stopped while waiting; reserve it again")
+                if desktop.state not in {
                     DesktopState.CREATED,
                     DesktopState.STARTING,
                     DesktopState.IDLE,

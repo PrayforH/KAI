@@ -195,10 +195,10 @@ class ComputerSandboxProvider:
 
         ready = lease.ready
         assert ready is not None
-        desktop_id = await self.desktop_for_run(run) if self.desktop_for_run else None
         deadline = asyncio.get_running_loop().time() + self.busy_wait_seconds
         delay = self._BUSY_RETRY_INITIAL_SECONDS
         while True:
+            desktop_id = await self.desktop_for_run(run) if self.desktop_for_run else None
             try:
                 async with manager.execution(
                     self.session.tenant_id,
