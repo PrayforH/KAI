@@ -1,8 +1,6 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useId, useState } from "react";
-import { assistantRequest } from "../lib/assistant-client";
 import { requireAuthenticatedResponse } from "../lib/client-auth";
 import type { ArtifactDetails } from "./artifact-list";
 import { AssistantComputerLink } from "./assistant-computer-link";
@@ -11,11 +9,8 @@ import { BotDuties } from "./bot-duties-dialog";
 import { BotRailAvatar } from "./bot-rail";
 import styles from "./bot-side-panel.module.css";
 
-type VaultEntry = { itemId: string; title: string; grants: { specialistId: string; status: string }[] };
-
-function BotLibrary({ botId, threadId }: { botId: string; threadId: string }) {
+function BotLibrary({ threadId }: { threadId: string }) {
   const [files, setFiles] = useState<ArtifactDetails[] | null>(threadId ? null : []);
-  const [vault, setVault] = useState<VaultEntry[]>([]);
   const [error, setError] = useState("");
   useEffect(() => {
     const controller = new AbortController();
@@ -28,29 +23,17 @@ function BotLibrary({ botId, threadId }: { botId: string; threadId: string }) {
         if (!controller.signal.aborted) setFiles(items.filter(item => item.thread_id === threadId));
       })
       .catch(() => { if (!controller.signal.aborted) setError("文件暂时无法读取"); });
-    void assistantRequest<VaultEntry[]>("vault").then(items => {
-      if (!controller.signal.aborted) setVault(items.filter(item => item.grants?.some(
-        grant => grant.specialistId === botId && grant.status === "ok",
-      )));
-    }).catch(() => { if (!controller.signal.aborted) setError("资料库暂时无法读取"); });
     return () => controller.abort();
-  }, [botId, threadId]);
-  return <>
-    <section className={styles.section} aria-label="文件">
-      <h3>文件</h3>
-      {files === null && !error ? <p role="status">正在读取文件…</p> : files?.length === 0 ? <p>暂无文件</p> : null}
-      {files && <AssistantResults artifacts={files} />}
-    </section>
-    <section className={styles.section} aria-label="已授权资料">
-      <div className={styles.heading}><h3>已授权资料</h3><Link href="/settings#vault">管理</Link></div>
-      {vault.length > 0 ? <ul className={styles.vault}>{vault.map(item => <li key={item.itemId}>{item.title}</li>)}</ul>
-        : !error && <p>暂无已授权资料</p>}
-    </section>
+  }, [threadId]);
+  return <section className={styles.section} aria-label="文件">
+    <h3>文件</h3>
+    {files === null && !error ? <p role="status">正在读取文件…</p> : files?.length === 0 ? <p>暂无文件</p> : null}
+    {files && <AssistantResults artifacts={files} />}
     {error && <p role="alert">{error}</p>}
-  </>;
+  </section>;
 }
 
-function BotComputerCard({ botId, ready, onOpen }: { botId: string; ready: boolean; onOpen: () => void }) {
+function BotComputerCard({ botId, ready, onOpen }: { botId?: string; ready: boolean; onOpen: () => void }) {
   const [state, setState] = useState<string | null>(null);
   useEffect(() => {
     if (!ready) return;
@@ -65,7 +48,8 @@ function BotComputerCard({ botId, ready, onOpen }: { botId: string; ready: boole
         setState(selection.targets.find(target => target.target_id === selection.active_target)?.label ?? null);
         return;
       }
-      const preview = await fetch(`/api/studio/assistant/computer/desktops/preview?bot_id=${encodeURIComponent(botId)}`, request);
+      const query = botId ? `?${new URLSearchParams({ bot_id: botId })}` : "";
+      const preview = await fetch(`/api/studio/assistant/computer/desktops/preview${query}`, request);
       if (controller.signal.aborted) return;
       if (preview.status === 404) setState("休眠中");
       else if (preview.ok) {
@@ -81,7 +65,7 @@ function BotComputerCard({ botId, ready, onOpen }: { botId: string; ready: boole
   return <section className={styles.section} aria-label="电脑">
     <h3>电脑</h3>
     <AssistantComputerLink open={false} ready={ready} onToggle={onOpen} className={styles.computer}>
-      <span>Bot 的电脑{state && <small>{state}</small>}</span>
+      <span>{botId ? "Bot 的电脑" : "主助理的电脑"}{state && <small>{state}</small>}</span>
       <span className={styles.screen} aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
           <rect x="3" y="4.5" width="18" height="13" rx="2" /><path d="M8 21h8m-4-3.5V21" />
@@ -91,18 +75,20 @@ function BotComputerCard({ botId, ready, onOpen }: { botId: string; ready: boole
   </section>;
 }
 
-export function BotSidePanel({ botId, name, tone, shape, threadId, ready, onClose, onDetails, onDuties, onComputer }: {
-  botId: string; name: string; tone: string; shape?: string; threadId: string; ready: boolean;
-  onClose: () => void; onDetails: () => void; onDuties: () => void; onComputer: () => void;
+export function BotSidePanel({ botId, primary = false, name, tone, shape, threadId, ready, onClose, onDetails, onComputer }: {
+  botId?: string; primary?: boolean; name: string; tone: string; shape?: string; threadId: string; ready: boolean;
+  onClose: () => void; onDetails?: () => void; onComputer: () => void;
 }) {
   const [tab, setTab] = useState<"activity" | "library">("activity");
   const id = useId();
+  const label = primary ? "助理侧栏" : "Bot 侧栏";
   return <aside className={styles.panel} aria-label={`${name}的侧栏`}>
-    <button type="button" className={styles.close} aria-label="关闭 Bot 侧栏" onClick={onClose}>×</button>
+    <button type="button" className={styles.close} aria-label={primary ? "关闭助理侧栏" : "关闭 Bot 侧栏"} onClick={onClose}>×</button>
     <header className={styles.header}>
       <BotRailAvatar tone={tone} shape={shape} />
-      <button type="button" className={styles.name} aria-label={`${name}详情`} onClick={onDetails}>{name}</button>
-      <div className={styles.tabs} role="tablist" aria-label="Bot 侧栏">
+      {onDetails ? <button type="button" className={styles.name} aria-label={`${name}详情`} onClick={onDetails}>{name}</button>
+        : <h2 className={styles.name}>{name}</h2>}
+      <div className={styles.tabs} role="tablist" aria-label={label}>
         {(["activity", "library"] as const).map(value => <button type="button" key={value} role="tab"
           id={`${id}-${value}`} aria-selected={tab === value} aria-controls={`${id}-panel`}
           tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)}
@@ -117,9 +103,9 @@ export function BotSidePanel({ botId, name, tone, shape, threadId, ready, onClos
     </header>
     <div className={styles.content} role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-${tab}`}>
       {tab === "activity" ? <>
-        <BotDuties specialistId={botId} onManage={onDuties} />
-        <BotComputerCard botId={botId} ready={ready} onOpen={onComputer} />
-      </> : <BotLibrary botId={botId} threadId={threadId} />}
+        {botId && <BotDuties specialistId={botId} compact />}
+        <BotComputerCard botId={primary ? undefined : botId} ready={ready} onOpen={onComputer} />
+      </> : <BotLibrary threadId={threadId} />}
     </div>
   </aside>;
 }

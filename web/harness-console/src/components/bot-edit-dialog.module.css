@@ -275,9 +275,7 @@
 .tabs > button[aria-selected="true"] { background: #333; color: #f0f0f0; }
 .tabPanel { display: grid; gap: 16px; }
 
-.compactHeading { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.compactHeading h3, .compactHeading button { margin: 0; color: var(--codex-muted); font-size: 14px; }
-.compactHeading button, .compactRoutine .routineCopy { padding: 0; border: 0; background: transparent; cursor: pointer; }
+.compactHeading { margin: 0; color: var(--codex-muted); font-size: 14px; }
 .compactRoutine { border-color: var(--codex-line); background: transparent; }
 .compactRoutine .routineCopy { flex: 1; text-align: left; color: var(--codex-ink); }
 .compactRoutine .routineCopy strong { color: inherit; }

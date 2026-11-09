@@ -12,21 +12,17 @@ import styles from "./bot-edit-dialog.module.css";
  * 助理资料：外观（色 + 形）、姓名、标题（可选）、描述。
  *
  * 页头点名称与侧栏「···」里的「编辑资料」打开的是同一个弹窗，字段完全一致。
- * 执行方式（交办、试运行）与权限（本地能力、凭据）不在资料表单里：
- * 它们分别有主会话内联卡与资料库的入口，不混进来。
  */
 export function BotProfileDialog({
   specialistId,
-  initialTab = "details",
   onClose,
   onSaved,
 }: {
   specialistId: string;
-  initialTab?: "details" | "duties";
   onClose: () => void;
   onSaved: (updated: Specialist) => void;
 }) {
-  const [tab, setTab] = useState(initialTab);
+  const [tab, setTab] = useState<"details" | "duties">("details");
   const tabsId = useId();
   const [detail, setDetail] = useState<Specialist | null>(null);
   const [name, setName] = useState("");

@@ -32,7 +32,6 @@ import {
 } from "../components/assistant-bot-context";
 import { botAccent } from "../components/bot-rail";
 import { botAppearanceVars } from "../lib/bot-appearance";
-import { AssistantComputerLink } from "../components/assistant-computer-link";
 import { DesktopOccupancyChip } from "../components/desktop-occupancy-chip";
 import { AssistantComputerPane } from "../components/assistant-computer-pane";
 import { AssistantRuntimeShell } from "../components/assistant-runtime-shell";
@@ -100,13 +99,14 @@ const TASK_SIDEBAR_COMPACT_QUERY = "(max-width: 820px)";
 function SidebarPanelToggle({
   expanded,
   onToggle,
-  botRail = false,
+  surface,
 }: {
   expanded: boolean;
   onToggle: () => void;
-  botRail?: boolean;
+  surface: "primary" | "bot" | "task";
 }) {
-  const label = `${expanded ? "收起" : "打开"}${botRail ? " Bot 侧栏" : "任务上下文"}`;
+  const panel = { primary: "助理侧栏", bot: " Bot 侧栏", task: "任务上下文" }[surface];
+  const label = `${expanded ? "收起" : "打开"}${panel}`;
   return (
     <button
       type="button"
@@ -116,7 +116,7 @@ function SidebarPanelToggle({
       title={label}
       onClick={onToggle}
     >
-      {botRail ? <ComputerIcon /> : <SidebarPanelIcon />}
+      {surface === "task" ? <SidebarPanelIcon /> : <ComputerIcon />}
     </button>
   );
 }
@@ -133,25 +133,6 @@ function SidebarExpandToggle({ onToggle }: { onToggle: () => void }) {
     >
       <SidebarIcon name="panel" />
     </button>
-  );
-}
-
-function HeaderUtilities({
-  computerControl,
-  taskRailOpen,
-  onToggleTaskRail,
-  botRail,
-}: {
-  computerControl?: ReactNode;
-  taskRailOpen: boolean;
-  onToggleTaskRail: () => void;
-  botRail?: boolean;
-}) {
-  return (
-    <div className="header-utilities">
-      {computerControl}
-      <SidebarPanelToggle expanded={taskRailOpen} onToggle={onToggleTaskRail} botRail={botRail} />
-    </div>
   );
 }
 
@@ -271,7 +252,7 @@ function AuthenticatedHome() {
   };
   // 每次进入某个 Bot 会话只上报一次"查看"（botRevision 刷新不重复上报）。
   const botViewedRef = useRef<string | null>(null);
-  const [botSettings, setBotSettings] = useState<{ id: string; tab: "details" | "duties" } | null>(null);
+  const [botSettingsId, setBotSettingsId] = useState<string | null>(null);
   const [botRevision, setBotRevision] = useState(0);
 
 
@@ -443,7 +424,7 @@ function AuthenticatedHome() {
   useEffect(() => {
     setStageView(routeTrace ? "trace" : "conversation");
     setFocusRunId(routeRunId);
-    setBotSettings(null);
+    setBotSettingsId(null);
   }, [routeRunId, routeTrace, botParam]);
   useEffect(() => {
     const openTrace = () => setStageView("trace");
@@ -979,7 +960,7 @@ function AuthenticatedHome() {
                   aria-label="编辑助理资料"
                   title="编辑助理资料"
                   disabled={!bot}
-                  onClick={() => bot && setBotSettings({ id: bot.specialistId, tab: "details" })}
+                  onClick={() => bot && setBotSettingsId(bot.specialistId)}
                 >
                   {bot ? bot.name : "我的助理"}
                 </button>
@@ -1019,29 +1000,26 @@ function AuthenticatedHome() {
                 }}
               />}
             </div>
-            <HeaderUtilities
-              computerControl={assistantEntry ? (
-                <>
-                  {computerOpen && <DesktopOccupancyChip />}
-                  {!botParam && <AssistantComputerLink open={computerOpen} ready={readyConversation === threadId} onToggle={() => showComputer(!computerOpen)} />}
-                </>
-              ) : undefined}
-              taskRailOpen={botParam && assistantEntry ? botSideOpen : taskRailOpen}
-              botRail={Boolean(botParam && assistantEntry)}
-              onToggleTaskRail={() => {
-                showComputer(false);
-                if (botParam && assistantEntry) {
-                  setTaskRailOpen(false);
-                  setBotSideOpen(current => !current);
-                } else {
-                  setBotSideOpen(false);
-                  setTaskRailOpen(current => !current);
-                }
-                setRailExpanded(false);
-              }}
-            />
+            <div className="header-utilities">
+              {assistantView && computerOpen && <DesktopOccupancyChip />}
+              <SidebarPanelToggle
+                expanded={assistantView ? botSideOpen : taskRailOpen}
+                surface={assistantView ? (botParam ? "bot" : "primary") : "task"}
+                onToggle={() => {
+                  showComputer(false);
+                  if (assistantView) {
+                    setTaskRailOpen(false);
+                    setBotSideOpen(current => !current);
+                  } else {
+                    setBotSideOpen(false);
+                    setTaskRailOpen(current => !current);
+                  }
+                  setRailExpanded(false);
+                }}
+              />
+            </div>
           </header>
-          <AssistantComputerPane open={assistantEntry && computerOpen}
+          <AssistantComputerPane open={assistantView && computerOpen}
             botId={botParam ?? null} onClose={() => showComputer(false)}>
           <section
             className="chat-stage"
@@ -1064,14 +1042,13 @@ function AuthenticatedHome() {
             <div className="chat-surface">
               <ConversationSurfaceProvider surface={conversationSurface}>
               <AssistantBotProvider bot={botParam ? bot : null}>
-              {bot && botSettings?.id === bot.specialistId && (
+              {bot && botSettingsId === bot.specialistId && (
                 <BotProfileDialog
-                  key={`${botSettings.id}:${botSettings.tab}`}
+                  key={bot.specialistId}
                   specialistId={bot.specialistId}
-                  initialTab={botSettings.tab}
-                  onClose={() => setBotSettings(null)}
+                  onClose={() => setBotSettingsId(null)}
                   onSaved={() => {
-                    setBotSettings(null);
+                    setBotSettingsId(null);
                     setBotRevision((current) => current + 1);
                     window.dispatchEvent(new CustomEvent("kai:specialists-changed"));
                   }}
@@ -1160,24 +1137,21 @@ function AuthenticatedHome() {
           </section>
           </AssistantComputerPane>
         </div>
-        {assistantEntry && botSideOpen && botParam && bot?.specialistId === botParam && (
+        {assistantView && botSideOpen && (!botParam || bot?.specialistId === botParam) && (
           <BotSidePanel
-            key={botParam}
-            botId={botParam}
-            name={bot.name}
-            tone={bot.appearance?.color ?? botAccent(botParam)}
-            shape={bot.appearance?.avatar}
-            threadId={bot.threadId ?? ""}
+            key={botParam ?? PERSONAL_ASSISTANT_THREAD}
+            primary={!botParam}
+            botId={bot?.specialistId}
+            name={bot?.name ?? "主助理"}
+            tone={bot?.appearance?.color ?? botAccent(bot?.specialistId ?? "")}
+            shape={bot?.appearance?.avatar}
+            threadId={bot?.threadId ?? threadId}
             ready={readyConversation === threadId}
             onClose={() => setBotSideOpen(false)}
-            onDetails={() => {
+            onDetails={bot ? () => {
               setBotSideOpen(false);
-              setBotSettings({ id: botParam, tab: "details" });
-            }}
-            onDuties={() => {
-              setBotSideOpen(false);
-              setBotSettings({ id: botParam, tab: "duties" });
-            }}
+              setBotSettingsId(bot.specialistId);
+            } : undefined}
             onComputer={() => showComputer(true)}
           />
         )}

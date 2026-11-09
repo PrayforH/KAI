@@ -91,9 +91,8 @@ describe("assistant session header", () => {
 
   it("opens the profile dialog from the name", () => {
     expect(pageSource).toContain("BotProfileDialog");
-    expect(pageSource).toContain("botRail ? <ComputerIcon /> : <SidebarPanelIcon />");
-    expect(pageSource).toContain('setBotSettings({ id: bot.specialistId, tab: "details" })');
-    expect(pageSource).toContain('setBotSettings({ id: botParam, tab: "duties" })');
+    expect(pageSource).toContain('surface === "task" ? <SidebarPanelIcon /> : <ComputerIcon />');
+    expect(pageSource).toContain("setBotSettingsId(bot.specialistId)");
   });
 
   it("switches from details to the same Bot's routines", async () => {
@@ -159,39 +158,41 @@ describe("bot profile dialog", () => {
 });
 
 describe("Bot side panel", () => {
-  it("shows scoped activity, computer and library without an empty suggestions section", async () => {
+  it.each([false, true])("shares the sidebar layout and scopes computer and files (primary=%s)", async (primary) => {
     const openComputer = vi.fn();
-    const manageDuties = vi.fn();
     assistantRequest.mockImplementation(async (path: string) => {
       if (path === "specialists/specialist_demo") return detail();
-      if (path === "vault") return [
-        { itemId: "granted", title: "这只 Bot 的资料", grants: [{ specialistId: "specialist_demo", status: "ok" }] },
-        { itemId: "other", title: "另一只 Bot 的资料", grants: [{ specialistId: "specialist_other", status: "ok" }] },
-      ];
       throw new Error(path);
     });
-    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-      expect(url).toContain("thread_id=bot-thread");
+    const threadId = primary ? "kai-personal-assistant-v1" : "bot-thread";
+    const computerLabel = primary ? "主助理的电脑" : "Bot 的电脑";
+    const previewUrl = "/api/studio/assistant/computer/desktops/preview" +
+      (primary ? "" : "?bot_id=specialist_demo");
+    const fetcher = vi.fn(async (url: string) => {
+      if (url.endsWith("/computer/targets")) return Response.json({ active_target: "cloud", targets: [] });
+      if (url === previewUrl) return Response.json({ state: "idle" });
+      expect(url).toContain(`thread_id=${threadId}`);
       return Response.json([
-        { artifact_id: "a", run_id: "r", thread_id: "bot-thread", name: "交付.txt" },
+        { artifact_id: "a", run_id: "r", thread_id: threadId, name: "交付.txt" },
         { artifact_id: "b", run_id: "r", thread_id: "other-thread", name: "其他.txt" },
       ]);
-    }));
-    await act(async () => root!.render(<BotSidePanel botId="specialist_demo" name="演示 Bot" tone="#126fd4"
-      threadId="bot-thread" ready={false} onClose={vi.fn()} onDetails={vi.fn()} onDuties={manageDuties}
+    });
+    vi.stubGlobal("fetch", fetcher);
+    await act(async () => root!.render(<BotSidePanel botId="specialist_demo" primary={primary} name="演示助理" tone="#126fd4"
+      threadId={threadId} ready onClose={vi.fn()} onDetails={vi.fn()}
       onComputer={openComputer} />));
     await flush();
+    expect(fetcher).toHaveBeenCalledWith(previewUrl, expect.anything());
     expect(host.textContent).toContain("即将进行");
-    expect(host.textContent).toContain("Bot 的电脑");
+    expect(host.textContent).toContain(computerLabel);
+    expect(host.textContent).not.toContain("管理例行任务");
     expect(host.textContent).not.toContain("建议");
-    await act(async () => buttonByText("管理例行任务")!.click());
-    expect(manageDuties).toHaveBeenCalledOnce();
     await act(async () => buttonByText("资料库")!.click());
     await flush();
     expect(host.textContent).toContain("交付.txt");
-    expect(host.textContent).toContain("这只 Bot 的资料");
     expect(host.textContent).not.toContain("其他.txt");
-    expect(host.textContent).not.toContain("另一只 Bot 的资料");
-    expect(host.textContent).not.toContain("Bot 的电脑");
+    expect(host.textContent).not.toContain("已授权资料");
+    expect(host.textContent).not.toContain(computerLabel);
+    expect(assistantRequest).toHaveBeenCalledExactlyOnceWith("specialists/specialist_demo");
   });
 });
