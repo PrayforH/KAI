@@ -6,6 +6,7 @@ root helper, user-supplied command, remote asset or external font dependency.
 
 import io
 import os
+import re
 import shutil
 import subprocess
 import tkinter as tk
@@ -429,7 +430,15 @@ class Desktop:
 
 
 def main() -> None:
-    if os.getuid() != 28001:
+    uid = os.getuid()
+    shared = uid == 28001 and RUNTIME == Path("/run/kai-desktop")
+    bot = (
+        28100 <= uid < 28900
+        and HOME.parent == Path("/home/kai-bots")
+        and RUNTIME.parent == Path("/run/kai-bots")
+        and re.fullmatch(r"desktop_[0-9a-f]{24}", RUNTIME.name) is not None
+    )
+    if not (shared or bot):
         raise PermissionError("desktop identity required")
     os.umask(0o077)
     Desktop().root.mainloop()
