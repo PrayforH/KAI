@@ -99,6 +99,7 @@ async def test_run_teardown_releases_desktop_ownership(
     release_provider = cast(Any, ComputerSandboxProvider.__new__(ComputerSandboxProvider))
     release_provider.session = provider.session
     release_provider.desktop = desktop
+    release_provider.bot_desktop = None
     await desktop.acquire_agent("tenant-a", "user-a", owner=handle.sandbox_id)
     state = await desktop.view("tenant-a", "user-a")
     assert state.state.value == "agent"

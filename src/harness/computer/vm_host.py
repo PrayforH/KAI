@@ -512,23 +512,27 @@ class DisplayTransport:
             if process.stderr is not None:
                 try:
                     raw = await asyncio.wait_for(process.stderr.read(2048), timeout=2)
-                    detail = raw.decode(errors="replace").strip().splitlines()[-1][:200]
+                    if raw.strip():
+                        detail = raw.decode(errors="replace").strip().splitlines()[-1][:200]
                 except (TimeoutError, asyncio.IncompleteReadError):
                     detail = ""
             with contextlib.suppress(ProcessLookupError):
                 process.kill()
+            await process.communicate()
             raise RuntimeError(
                 "desktop gate produced no RFB banner" + (f": {detail}" if detail else "")
             ) from None
         if not header.startswith(b"RFB 003."):
             with contextlib.suppress(ProcessLookupError):
                 process.kill()
+            await process.communicate()
             raise RuntimeError("desktop did not confirm the RFB transport")
         self.banner = header
         return process.stdout, process.stdin
 
 
 GUI_OPERATIONS = frozenset({"screenshot", "move", "click", "type", "key", "scroll", "ui", "export"})
+DesktopKey = tuple[str, str | None]
 
 
 class VmDesktopService:
@@ -543,10 +547,10 @@ class VmDesktopService:
 
     def __init__(self, specs: Mapping[str, SshComputerSpec]) -> None:
         self._specs = dict(specs)
-        self._sessions: dict[tuple[str, str | None], RfbClient] = {}
-        self._locks: dict[str, asyncio.Lock] = {}
-        self._stopping: dict[str, asyncio.Event] = {}
-        self._busy: dict[str, asyncio.Event] = {}
+        self._sessions: dict[DesktopKey, RfbClient] = {}
+        self._locks: dict[DesktopKey, asyncio.Lock] = {}
+        self._stopping: dict[DesktopKey, asyncio.Event] = {}
+        self._busy: dict[DesktopKey, asyncio.Event] = {}
 
     @property
     def served(self) -> list[str]:
@@ -558,18 +562,18 @@ class VmDesktopService:
             raise RuntimeError("computer desktop is not declared on this node")
         return spec
 
-    def _lock(self, key: str) -> asyncio.Lock:
+    def _lock(self, key: DesktopKey) -> asyncio.Lock:
         if key not in self._locks:
             self._locks[key] = asyncio.Lock()
         return self._locks[key]
 
-    def _stop_event(self, key: str) -> asyncio.Event:
+    def _stop_event(self, key: DesktopKey) -> asyncio.Event:
         event = self._stopping.get(key)
         if event is None:
             event = self._stopping[key] = asyncio.Event()
         return event
 
-    def _busy_event(self, key: str) -> asyncio.Event:
+    def _busy_event(self, key: DesktopKey) -> asyncio.Event:
         event = self._busy.get(key)
         if event is None:
             event = asyncio.Event()
@@ -577,37 +581,36 @@ class VmDesktopService:
             self._busy[key] = event
         return event
 
-    def cancel(self, volume_ref: str) -> None:
-        """Ask this computer's in-flight input to stop between keystrokes."""
+    def cancel(self, volume_ref: str, *, desktop_id: str | None = None) -> None:
+        """Ask this desktop's in-flight input to stop between keystrokes."""
 
         if volume_ref in self._specs:
-            self._stop_event(volume_ref).set()
+            self._stop_event((volume_ref, desktop_id)).set()
 
     async def wait_drained(
-        self, volume_ref: str, *, timeout: float, expected_epoch: int | None = None
+        self, volume_ref: str, *, timeout: float, expected_epoch: int | None = None,
+        desktop_id: str | None = None,
     ) -> bool:
-        """True once no action of this computer is executing (or it stopped)."""
+        """True once no action of this desktop is executing (or it stopped)."""
 
         if volume_ref not in self._specs:
             raise RuntimeError("computer desktop is not declared on this node")
-        try:
-            await asyncio.wait_for(self._busy_event(volume_ref).wait(), timeout)
-        except TimeoutError:
-            return False
         spec = self._specs[volume_ref]
-        if getattr(spec, "native_desktop", False) and expected_epoch is not None:
-            try:
-                reply = await asyncio.wait_for(
-                    GuestGate(spec).call(
+        try:
+            async with asyncio.timeout(timeout):
+                await self._busy_event((volume_ref, desktop_id)).wait()
+                if getattr(spec, "native_desktop", False) and expected_epoch is not None:
+                    payload: dict[str, object] = {"epoch": expected_epoch}
+                    if desktop_id is not None:
+                        payload["desktop_id"] = desktop_id
+                    reply = await GuestGate(spec).call(
                         "native_barrier",
-                        {"epoch": expected_epoch},
+                        payload,
                         timeout_seconds=timeout,
-                    ),
-                    timeout=timeout,
-                )
-                return reply.exit_code == 0 and json.loads(reply.stdout).get("drained") is True
-            except (TimeoutError, RuntimeError, ValueError, ComputerLeaseLostError):
-                return False
+                    )
+                    return reply.exit_code == 0 and json.loads(reply.stdout).get("drained") is True
+        except (TimeoutError, RuntimeError, ValueError, ComputerLeaseLostError):
+            return False
         return True
 
     async def operate(
@@ -644,22 +647,21 @@ class VmDesktopService:
             ):
                 raise ValueError("desktop export is not enabled on this computer")
             export_arguments(dict(payload))
-        key = computer.volume_ref
-        session_key = (key, desktop_id)
+        key = (computer.volume_ref, desktop_id)
         async with self._lock(key):
-            # The queue wait may have spanned a takeover, a lease handover or
-            # a recovery; a dequeued action is only executed while its
-            # authorization still holds.
-            await revalidate()
-            client = self._sessions.get(session_key)
-            if client is None and operation not in {"ui", "export"}:
-                client = RfbClient(DisplayTransport(spec, desktop_id))
-                self._sessions[session_key] = client
             stop = self._stop_event(key)
             stop.clear()
             busy = self._busy_event(key)
             busy.clear()
+            client = None
             try:
+                # Publish busy before the guard so takeover cannot miss an
+                # action between its authorization and dispatch.
+                await revalidate()
+                client = self._sessions.get(key)
+                if client is None and operation not in {"ui", "export"}:
+                    client = RfbClient(DisplayTransport(spec, desktop_id))
+                    self._sessions[key] = client
                 if operation in {"ui", "export"}:
                     task = asyncio.create_task(
                         GuestGate(spec).call(
@@ -690,7 +692,7 @@ class VmDesktopService:
             except (TimeoutError, RuntimeError, ValueError, OSError, EOFError):
                 if client is not None:
                     await client.close()
-                self._sessions.pop(session_key, None)
+                self._sessions.pop(key, None)
                 raise
             finally:
                 busy.set()
@@ -699,6 +701,16 @@ class VmDesktopService:
         for client in self._sessions.values():
             await client.close()
         self._sessions.clear()
+
+    async def close_slot(self, volume_ref: str, desktop_id: str) -> None:
+        """Discard the reaped slot's RFB connection before its next use."""
+        key = (volume_ref, desktop_id)
+        self.cancel(volume_ref, desktop_id=desktop_id)
+        # The reaper holds the slot's database lock. A queued action can hold
+        # the input lock while it waits for that database lock to revalidate.
+        client = self._sessions.pop(key, None)
+        if client is not None:
+            await client.close()
 
     async def _dispatch(
         self,

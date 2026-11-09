@@ -186,7 +186,7 @@ class ComputerRuntime:
         control = HttpComputerControl(self.client)
 
         async def stop_guest(desktop: ComputerDesktop) -> None:
-            await control.desktop_slot(
+            result = await control.desktop_slot(
                 desktop.tenant_id,
                 desktop.user_id,
                 "stop",
@@ -199,6 +199,8 @@ class ComputerRuntime:
                     "vncSocket": desktop.vnc_socket,
                 },
             )
+            if result != {"op": "stop", "state": "inactive"}:
+                raise RuntimeError("Bot desktop stop was not confirmed")
 
         for desktop in await self.desktops.reapable(idle_seconds=idle_seconds):
             try:

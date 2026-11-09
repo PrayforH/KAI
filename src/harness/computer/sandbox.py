@@ -19,9 +19,14 @@ from uuid import uuid4
 from harness.computer.desktop import DesktopControlService
 from harness.computer.docker import DockerComputerDriver, workspace_for
 from harness.computer.manager import ComputerAllocation, ComputerManager
-from harness.computer.models import ComputerBusyError, ComputerRecoveryRequiredError
+from harness.computer.models import (
+    ComputerBusyError,
+    ComputerLeaseLostError,
+    ComputerRecoveryRequiredError,
+)
 from harness.computer.registry import ComputerRegistry
 from harness.computer.workspace import ComputerWorkspace
+from harness.core.errors import NotFoundError
 from harness.core.models import Run, Session
 from harness.sandbox.base import (
     SandboxCommandResult,
@@ -295,13 +300,26 @@ class ComputerSandboxProvider:
         operation: str,
         payload: Mapping[str, object],
         *,
-        expected_epoch: int,
+        expected_epoch: int | None,
     ) -> dict[str, object]:
         """One visible-desktop action through the node's unified control gate."""
 
         allocation, workspace = await self._remote(handle, prepare_workspace=operation == "export")
-        if operation == "export" and self.bot_desktop:
-            return await workspace.export(payload)
+        if self.bot_desktop is not None:
+            if self.desktop is None:
+                raise RuntimeError("Bot desktop control is not configured")
+            try:
+                state = await self.desktop.acquire_agent(
+                    self.session.tenant_id, self.session.user_id, owner=handle.sandbox_id,
+                    desktop_id=allocation.token.desktop_id,
+                )
+            except NotFoundError as error:
+                raise ComputerLeaseLostError("Bot desktop is no longer available") from error
+            expected_epoch = state.epoch
+            if operation == "export":
+                return await workspace.export(payload)
+        if expected_epoch is None:
+            raise RuntimeError("desktop control was not acquired")
         return await self.driver.host.desktop(
             allocation.token, operation, payload, expected_epoch=expected_epoch
         )
@@ -331,8 +349,11 @@ class ComputerSandboxProvider:
             return
         try:
             await self.desktop.release_agent(
-                self.session.tenant_id, self.session.user_id, owner=handle.sandbox_id
+                self.session.tenant_id, self.session.user_id, owner=handle.sandbox_id,
+                desktop_id=self.bot_desktop.desktop_id if self.bot_desktop else "vm",
             )
+        except NotFoundError:
+            return  # No slot was started, or it was already fenced by a stop.
         except Exception:
             logging.getLogger(__name__).warning(
                 "computer desktop release failed", exc_info=True

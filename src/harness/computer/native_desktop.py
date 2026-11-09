@@ -76,11 +76,13 @@ def enter_vm_desktop_mounts(uid: int, libc: Any, unit: str = "kai-desktop.servic
 
 
 @contextmanager
-def locked():
-    info = ROOT.lstat()
+def locked(*, state_root: Path | None = None):
+    root = state_root or ROOT
+    info = root.lstat()
     if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o077:
         raise PermissionError("computer control directory is not private")
-    fd = os.open(ROOT / "lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    lock = root / ("input-lock" if state_root is not None else "lock")
+    fd = os.open(lock, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
         yield
@@ -97,8 +99,9 @@ def advance_fence(current: dict[str, Any], epoch: int, *, blocked: bool) -> dict
     return {"epoch": epoch, "blocked": blocked}
 
 
-def fence(epoch: int, *, blocked: bool) -> None:
-    path = ROOT / "desktop-epoch.json"
+def fence(epoch: int, *, blocked: bool, state_root: Path | None = None) -> None:
+    root = state_root or ROOT
+    path = root / "desktop-epoch.json"
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
         with os.fdopen(fd) as stream:
@@ -107,11 +110,11 @@ def fence(epoch: int, *, blocked: bool) -> None:
         current = {}
     updated = advance_fence(current, epoch, blocked=blocked)
     fd = os.open(
-        ROOT / "desktop-epoch.next", os.O_CREAT | os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW, 0o600
+        root / "desktop-epoch.next", os.O_CREAT | os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW, 0o600
     )
     with os.fdopen(fd, "w") as stream:
         json.dump(updated, stream)
-    os.replace(ROOT / "desktop-epoch.next", path)
+    os.replace(root / "desktop-epoch.next", path)
 
 
 def command(payload: dict[str, Any]) -> list[str]:
@@ -228,7 +231,10 @@ def run(
         or state.get("expires_at", 0) <= time.time()
     ):
         raise PermissionError("native action lost its execution lease")
-    fence(request["desktop_epoch"], blocked=False)
+    if state_root is None:
+        fence(request["desktop_epoch"], blocked=False)
+    else:
+        fence(request["desktop_epoch"], blocked=False, state_root=state_root)
     binary = Path(config["native_binary"])
     info = binary.lstat()
     if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
@@ -254,8 +260,7 @@ def run(
     base.mkdir(mode=0o700, parents=True, exist_ok=True)
     home = base / hashlib.sha256(scope.encode()).hexdigest()
     home.mkdir(mode=0o700, exist_ok=True)
-    # Exactly one execution lease is live on this computer. Drop only expired
-    # namespaces of this adapter, as the unprivileged desktop user.
+    # Drop expired adapter namespaces in this desktop's private runtime.
     for old in base.iterdir():
         if old != home and re.fullmatch(r"[a-f0-9]{64}", old.name):
             if old.is_symlink():

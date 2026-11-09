@@ -9,7 +9,7 @@ import styles from "./computer-desktop.module.css";
 type TargetSelection = { active_target: string | null; targets: { target_id: string; label: string; binding_key: string }[] };
 type ConnectionState = "connecting" | "reconnecting" | "connected" | "disconnected" | "unauthorized" | "waiting";
 type ControlState = "observe" | "agent" | "human" | "takeover_pending";
-type DesktopControl = { state: ControlState; binding_key: string; epoch?: number; revision?: number };
+type DesktopControl = { state: ControlState; binding_key: string; desktop_id?: string; owner?: string | null; epoch?: number; revision?: number };
 const labels = { connecting: "正在连接", reconnecting: "正在重新连接", connected: "已连接", disconnected: "连接已断开", unauthorized: "请重新登录", waiting: "等待 Bot 桌面" };
 
 
@@ -24,6 +24,8 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
   const [control, setControl] = useState<ControlState>("observe");
   const [revision, setRevision] = useState(0);
   const targetRef = useRef<string | null>(null);
+  const desktopRef = useRef<string | null>(null);
+  const viewerRef = useRef<string | null>(null);
   const [viewTarget, setViewTarget] = useState<string | null>(null);
   const botPreview = botId !== undefined && (viewTarget === null || viewTarget === "cloud");
   const [selection, setSelection] = useState<TargetSelection | null>(null);
@@ -55,6 +57,10 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
     const controller = new AbortController();
     let polling = false;
     let slotPreview = botId !== undefined && (targetRef.current === null || targetRef.current === "cloud");
+    operationVersion.current += 1;
+    desktopRef.current = null;
+    setAuthority(null);
+    applyControl("observe");
     setState("connecting");
     // Full navigations can enter bfcache without React unmounting this tree.
     const leavePage = () => { disposed = true; controller.abort(); rfb?.disconnect(); };
@@ -64,22 +70,32 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
     async function pollControl() {
       // The lease is the authority; the viewer only mirrors it for the UI and
       // stops asking noVNC to send input when the user does not own it.
-      if (slotPreview || disposed || polling || actionInFlight.current) return;
+      const desktopId = desktopRef.current;
+      if ((slotPreview && !desktopId) || disposed || polling || actionInFlight.current) return;
       polling = true;
       const version = operationVersion.current;
+      const query = desktopId ? `?${new URLSearchParams({ desktop_id: desktopId })}` : "";
       try {
         const [response, targets] = await Promise.all([
-          fetch("/api/studio/assistant/computer/desktop", { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]) }),
+          fetch(`/api/studio/assistant/computer/desktop${query}`, { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]) }),
           fetch("/api/studio/assistant/computer/targets", { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]) }),
         ]);
-        if (!response.ok || !targets.ok) throw new Error("控制状态暂时无法确认，请稍后重试；画面已暂停输入");
+        if (!targets.ok) throw new Error("控制状态暂时无法确认，请稍后重试；画面已暂停输入");
         const selected = await targets.json() as TargetSelection;
+        if (disposed || version !== operationVersion.current || desktopId !== desktopRef.current) return;
+        if (desktopId && selected.active_target !== targetRef.current) {
+          setSelection(selected); setAuthority(null); setControlError("");
+          applyControl("observe");
+          return;
+        }
+        if (!response.ok) throw new Error("控制状态暂时无法确认，请稍后重试；画面已暂停输入");
         const value = await response.json() as DesktopControl;
-        if (disposed || version !== operationVersion.current) return;
+        if (disposed || version !== operationVersion.current || desktopId !== desktopRef.current) return;
         const activeBinding = selected.targets.find(target => target.target_id === selected.active_target)?.binding_key;
-        if (!activeBinding || value.binding_key !== activeBinding) throw new Error("电脑已切换，正在重新确认控制状态");
+        if (!activeBinding || value.binding_key !== activeBinding || (desktopId && value.desktop_id !== desktopId)) throw new Error("电脑已切换，正在重新确认控制状态");
         setSelection(selected); setAuthority(value); setControlError("");
-        const next = selected.active_target === targetRef.current ? value.state : "observe";
+        const otherWindow = desktopId && (value.state === "human" || value.state === "takeover_pending") && value.owner !== viewerRef.current;
+        const next = selected.active_target === targetRef.current && !otherWindow ? value.state : "observe";
         if (next !== controlRef.current) applyControl(next);
       } catch (error) {
         if (!disposed && version === operationVersion.current) {
@@ -142,9 +158,15 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
           if (preview.status === 404) { retryConnection(true); return; }
           if (!preview.ok) { retryConnection(); return; }
           const slot = await preview.json() as { desktopId: string; state: string };
+          if (disposed) return;
           if (slot.state !== "busy" && slot.state !== "idle") { retryConnection(true); return; }
+          desktopRef.current = slot.desktopId;
+          viewerRef.current ??= window.crypto.randomUUID();
           url.searchParams.set("desktop", slot.desktopId);
+          url.searchParams.set("viewer_id", viewerRef.current);
+          await pollControl();
         } else {
+          desktopRef.current = null;
           // A Bot on a Remote Computer uses its existing shared display.
           if (botId !== undefined && targetRef.current === null) {
             retryConnection();
@@ -157,7 +179,7 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
         url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
         const connection = new RemoteFramebuffer(screen.current, url.toString());
         rfb = connection; client.current = connection;
-        connection.viewOnly = slotPreview || controlRef.current !== "human";
+        connection.viewOnly = controlRef.current !== "human";
         connection.scaleViewport = true;
         connection.resizeSession = false;
         connection.qualityLevel = 6;
@@ -227,12 +249,18 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
     if (actionInFlight.current || action === "takeover" && !viewingExecution) return;
     const binding = selection?.targets.find(target => target.target_id === selection.active_target)?.binding_key;
     if (!binding) { setActionError("尚未确认助理使用的电脑，请重试控制状态"); return; }
+    const query = new URLSearchParams({ binding_key: binding });
+    if (botPreview) {
+      if (!desktopRef.current || !viewerRef.current) return;
+      query.set("desktop_id", desktopRef.current);
+      query.set("viewer_id", viewerRef.current);
+    }
     const version = ++operationVersion.current;
     actionInFlight.current = true; setActionBusy(true); setActionError("");
     // A failed or superseded request must not leave the canvas accepting input.
     applyControl("observe");
     try {
-      const response = await fetch(`/api/studio/assistant/computer/desktop/${action}?${new URLSearchParams({ binding_key: binding })}`, {
+      const response = await fetch(`/api/studio/assistant/computer/desktop/${action}?${query}`, {
         method: "POST", signal: AbortSignal.timeout(8000),
       });
       if (!response.ok) throw new Error(response.status === 409
@@ -256,11 +284,13 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
   const viewedLabel = botPreview ? "Bot 专属桌面" : selection?.targets.find(target => target.target_id === viewTarget)?.label ?? "我的电脑";
   const executionLabel = selection?.targets.find(target => target.target_id === selection.active_target)?.label;
   const activeBinding = selection?.targets.find(target => target.target_id === selection.active_target)?.binding_key;
-  const returnable = authority?.binding_key === activeBinding && (authority?.state === "human" || authority?.state === "takeover_pending");
+  const otherWindow = botPreview && (authority?.state === "human" || authority?.state === "takeover_pending") && authority.owner !== viewerRef.current;
+  const returnable = !otherWindow && authority?.binding_key === activeBinding && (authority?.state === "human" || authority?.state === "takeover_pending");
   const explanation = controlError ? controlError : !selection ? "正在确认电脑和控制权"
     : !viewingExecution ? `当前仅观看${viewedLabel}；助理使用的是${executionLabel ?? "另一台电脑"}。要让助理操作这里，请点击“供助理使用”`
     : control === "human" ? "由你控制：点击画面后可使用鼠标和键盘；完成后点击“交还助理”"
     : control === "takeover_pending" ? "正在等待助理结束当前动作，交接完成后才能操作"
+    : otherWindow ? "这个 Bot 桌面已由另一个窗口接管，当前仅观看"
     : control === "agent" ? "助理正在操作；需要自行操作时，点击“取得控制权”"
     : "当前仅观看，点击“取得控制权”后才能操作鼠标和键盘";
   return <section aria-label="我的电脑" className={`${styles.shell} ${embedded ? styles.embedded : ""}`} ref={shell}>
@@ -289,11 +319,6 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
           : state === "disconnected" || state === "waiting" ? <button onClick={() => setRevision(value => value + 1)}>重新连接</button> : null}
       </div>}
     </div>
-    {botPreview ? <footer className={styles.toolbar}>
-      <span className={styles.caption}>Bot 专属桌面 · 仅观看</span>
-      <Link href="/assistant/computer">打开我的电脑</Link>
-      <span className={styles.connection} role="status">{labels[state]}</span>
-    </footer> : <>
     <footer className={styles.toolbar}>
       {selection && selection.targets.length > 1 ? <select className={styles.targetSelect} aria-label="查看电脑" disabled={actionBusy || switching}
         value={viewTarget ?? ""} onChange={event => viewComputer(event.target.value)}>
@@ -306,7 +331,7 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
         </span>
         {!selection ? <button className={styles.primaryAction} disabled>正在确认控制权</button> : viewingExecution ? (returnable
           ? <button className={styles.primaryAction} disabled={actionBusy} onClick={() => void changeControl("return")}>{authority?.state === "takeover_pending" ? "取消接管" : "交还助理"}</button>
-          : <button className={styles.primaryAction} disabled={state !== "connected" || actionBusy || !authority || Boolean(controlError)} onClick={() => void changeControl("takeover")}>{actionBusy ? "正在请求" : "取得控制权"}</button>)
+          : <button className={styles.primaryAction} disabled={state !== "connected" || actionBusy || !authority || otherWindow || Boolean(controlError)} onClick={() => void changeControl("takeover")}>{actionBusy ? "正在请求" : "取得控制权"}</button>)
           : <button className={styles.primaryAction} disabled={switching || actionBusy || !selection} onClick={() => viewTarget && void selectComputer(viewTarget)}>{switching ? "正在切换" : "供助理使用"}</button>}
       </div>
       <details className={styles.more}>
@@ -326,6 +351,5 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
     </div>}
     {actionError && <p className={styles.selectionError} role="alert">{actionError}</p>}
     {selectionError && <p className={styles.selectionError} role="alert">{selectionError}</p>}
-    </>}
   </section>;
 }

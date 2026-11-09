@@ -1,7 +1,7 @@
 """Desktop keyboard/pointer ownership between an owner and their assistant.
 
 The execution lease decides who may run commands. This service decides who may
-touch the visible desktop. State lives in one locked row per computer:
+touch the visible desktop. State lives in one locked row per desktop:
 
     observe -> agent | takeover_pending -> human
     human   -> observe (return) | observe (TTL expiry, lazy)
@@ -18,13 +18,17 @@ takeover can never succeed on the strength of a timer alone.
 
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from harness.computer.binding import desktop_binding
+from harness.computer.desktop_registry import lock_desktop
+from harness.computer.storage import AssistantComputerRow as Computer
 from harness.computer.storage import ComputerDesktopLeaseRow as Row
+from harness.computer.storage import ComputerDesktopRow as Slot
 from harness.core.errors import ConflictError, NotFoundError
 from harness.storage.database import SessionFactory
 
@@ -47,6 +51,7 @@ class DesktopControl(BaseModel):
     tenant_id: str
     user_id: str
     computer_id: str
+    desktop_id: str = "vm"
     state: DesktopState
     owner: str | None
     epoch: int
@@ -70,22 +75,24 @@ class DesktopControlService:
     def __init__(self, sessions: SessionFactory) -> None:
         self._sessions = sessions
 
-    async def view(self, tenant_id: str, user_id: str) -> DesktopControl:
+    async def view(self, tenant_id: str, user_id: str, *, desktop_id: str = "vm") -> DesktopControl:
         async with self._sessions.begin() as session:
-            row = await self._row(session, tenant_id, user_id)
+            row = await self._row(session, tenant_id, user_id, desktop_id)
             settled = self._settle(row, datetime.now(UTC))
             if settled:
                 session.add(row)
             binding = await self._binding(session, row)
             return DesktopControl.model_validate(row).model_copy(update={"binding_key": binding})
 
-    async def acquire_agent(self, tenant_id: str, user_id: str, *, owner: str) -> DesktopControl:
+    async def acquire_agent(
+        self, tenant_id: str, user_id: str, *, owner: str, desktop_id: str = "vm"
+    ) -> DesktopControl:
         """First GUI use of a Run claims input ownership from observe."""
 
         _identity(owner)
         async with self._sessions.begin() as session:
+            row = await self._row(session, tenant_id, user_id, desktop_id)
             moment = datetime.now(UTC)
-            row = await self._row(session, tenant_id, user_id)
             self._settle(row, moment)
             if row.state == DesktopState.AGENT.value and row.owner == owner:
                 row.expires_at = moment + timedelta(seconds=AGENT_TTL_SECONDS)
@@ -102,13 +109,15 @@ class DesktopControlService:
             row.updated_at = moment
             return DesktopControl.model_validate(row)
 
-    async def renew_agent(self, tenant_id: str, user_id: str, *, owner: str) -> DesktopControl:
+    async def renew_agent(
+        self, tenant_id: str, user_id: str, *, owner: str, desktop_id: str = "vm"
+    ) -> DesktopControl:
         """Extend an existing agent ownership; never grants from observation."""
 
         _identity(owner)
         async with self._sessions.begin() as session:
+            row = await self._row(session, tenant_id, user_id, desktop_id)
             moment = datetime.now(UTC)
-            row = await self._row(session, tenant_id, user_id)
             self._settle(row, moment)
             if row.state != DesktopState.AGENT.value or row.owner != owner:
                 raise DesktopOccupiedError(self._occupied(row))
@@ -117,11 +126,13 @@ class DesktopControlService:
             row.updated_at = moment
             return DesktopControl.model_validate(row)
 
-    async def release_agent(self, tenant_id: str, user_id: str, *, owner: str) -> DesktopControl:
+    async def release_agent(
+        self, tenant_id: str, user_id: str, *, owner: str, desktop_id: str = "vm"
+    ) -> DesktopControl:
         """Run teardown returns the desktop to observation, best effort."""
 
         async with self._sessions.begin() as session:
-            row = await self._row(session, tenant_id, user_id)
+            row = await self._row(session, tenant_id, user_id, desktop_id)
             if row.state == DesktopState.AGENT.value and row.owner == owner:
                 moment = datetime.now(UTC)
                 row.state = DesktopState.OBSERVE.value
@@ -152,15 +163,17 @@ class DesktopControlService:
         return bool(count)
 
     async def request_human(
-        self, tenant_id: str, user_id: str, *, expected_binding: str | None = None
+        self, tenant_id: str, user_id: str, *, expected_binding: str | None = None,
+        desktop_id: str = "vm", viewer_id: UUID | None = None,
     ) -> DesktopControl:
         """Takeover blocks both sides until the node confirms the drain."""
 
         async with self._sessions.begin() as session:
-            moment = datetime.now(UTC)
-            row = await self._row(session, tenant_id, user_id)
+            row = await self._row(session, tenant_id, user_id, desktop_id)
             await self._check_binding(session, row, expected_binding)
+            moment = datetime.now(UTC)
             self._settle(row, moment)
+            viewer = self._check_viewer(row, viewer_id)
             if row.state == DesktopState.HUMAN.value:
                 row.expires_at = moment + timedelta(seconds=HUMAN_TTL_SECONDS)
                 row.revision += 1
@@ -168,12 +181,12 @@ class DesktopControlService:
                 return DesktopControl.model_validate(row)
             if row.state == DesktopState.TAKEOVER_PENDING:
                 return DesktopControl.model_validate(row)
-            if await self._run_executing(session, row.tenant_id, row.user_id):
+            if desktop_id == "vm" and await self._run_executing(session, tenant_id, user_id):
                 raise DesktopOccupiedError(
                     "助理正在这台电脑上执行任务，等它结束或先中止后再取得控制权。"
                 )
             row.state = DesktopState.TAKEOVER_PENDING.value
-            row.owner = None
+            row.owner = viewer
             row.epoch += 1
             row.revision += 1
             row.expires_at = moment + timedelta(seconds=DRAIN_WINDOW_SECONDS)
@@ -181,7 +194,7 @@ class DesktopControlService:
             return DesktopControl.model_validate(row)
 
     async def confirm_human(
-        self, tenant_id: str, user_id: str, *, expected_epoch: int
+        self, tenant_id: str, user_id: str, *, expected_epoch: int, desktop_id: str = "vm"
     ) -> DesktopControl:
         """Publish human ownership once, guarded by the pending epoch.
 
@@ -192,17 +205,12 @@ class DesktopControlService:
         """
 
         async with self._sessions.begin() as session:
+            row = await self._row(session, tenant_id, user_id, desktop_id)
             moment = datetime.now(UTC)
-            row = await self._row(session, tenant_id, user_id)
-            if row.state == DesktopState.HUMAN.value:
-                row.expires_at = moment + timedelta(seconds=HUMAN_TTL_SECONDS)
-                row.revision += 1
-                row.updated_at = moment
-                return DesktopControl.model_validate(row)
+            self._settle(row, moment)
             if row.state != DesktopState.TAKEOVER_PENDING.value or row.epoch != expected_epoch:
                 return DesktopControl.model_validate(row)
             row.state = DesktopState.HUMAN.value
-            row.owner = None
             row.epoch += 1
             row.revision += 1
             row.expires_at = moment + timedelta(seconds=HUMAN_TTL_SECONDS)
@@ -210,14 +218,18 @@ class DesktopControlService:
             return DesktopControl.model_validate(row)
 
     async def release_human(
-        self, tenant_id: str, user_id: str, *, expected_binding: str | None = None
+        self, tenant_id: str, user_id: str, *, expected_binding: str | None = None,
+        desktop_id: str = "vm", viewer_id: UUID | None = None,
     ) -> DesktopControl:
         async with self._sessions.begin() as session:
-            row = await self._row(session, tenant_id, user_id)
+            row = await self._row(session, tenant_id, user_id, desktop_id)
             await self._check_binding(session, row, expected_binding)
+            moment = datetime.now(UTC)
+            self._settle(row, moment)
+            self._check_viewer(row, viewer_id)
             if row.state in {DesktopState.HUMAN.value, DesktopState.TAKEOVER_PENDING.value}:
-                moment = datetime.now(UTC)
                 row.state = DesktopState.OBSERVE.value
+                row.owner = None
                 row.epoch += 1
                 row.revision += 1
                 row.expires_at = None
@@ -225,17 +237,34 @@ class DesktopControlService:
             return DesktopControl.model_validate(row)
 
     async def refresh_human(
-        self, tenant_id: str, user_id: str, *, expected_binding: str | None = None
+        self, tenant_id: str, user_id: str, *, expected_binding: str | None = None,
+        desktop_id: str = "vm", viewer_id: UUID | None = None,
     ) -> DesktopControl:
         async with self._sessions.begin() as session:
-            row = await self._row(session, tenant_id, user_id)
+            row = await self._row(session, tenant_id, user_id, desktop_id)
             await self._check_binding(session, row, expected_binding)
+            moment = datetime.now(UTC)
+            self._settle(row, moment)
+            self._check_viewer(row, viewer_id)
             if row.state == DesktopState.HUMAN.value:
-                moment = datetime.now(UTC)
                 row.expires_at = moment + timedelta(seconds=HUMAN_TTL_SECONDS)
                 row.revision += 1
                 row.updated_at = moment
             return DesktopControl.model_validate(row)
+
+    @staticmethod
+    def _check_viewer(row: Row, viewer_id: UUID | None) -> str | None:
+        if row.desktop_id == "vm":
+            return None
+        if viewer_id is None:
+            raise DesktopOccupiedError("请从当前 Bot 的电脑面板接管。")
+        viewer = str(viewer_id)
+        if (
+            row.state in {DesktopState.HUMAN.value, DesktopState.TAKEOVER_PENDING.value}
+            and row.owner != viewer
+        ):
+            raise DesktopOccupiedError("这台 Bot 桌面已由另一个窗口接管。")
+        return viewer
 
     @staticmethod
     def _settle(row: Row, moment: datetime) -> bool:
@@ -269,8 +298,6 @@ class DesktopControlService:
 
     @staticmethod
     async def _binding(session: AsyncSession, row: Row) -> str:
-        from harness.computer.storage import AssistantComputerRow as Computer
-
         # The desktop row stays locked throughout this read. A provider switch
         # needs that same lock, so target identity and epoch cannot tear apart.
         computer = await session.scalar(
@@ -287,27 +314,37 @@ class DesktopControlService:
         if expected is not None and await self._binding(session, row) != expected:
             raise DesktopOccupiedError("查看的电脑不是当前助理使用的电脑，请刷新后重试。")
 
-    async def _row(self, session: AsyncSession, tenant_id: str, user_id: str) -> Row:
-        from harness.computer.storage import AssistantComputerRow as Computer
-
-        found = await session.scalar(
-            select(Row).where(Row.tenant_id == tenant_id, Row.user_id == user_id).with_for_update()
-        )
-        row: Row | None = found
-        if row is not None:
-            return row
-        computer: str | None = await session.scalar(
-            select(Computer.computer_id).where(
-                Computer.tenant_id == tenant_id, Computer.user_id == user_id
-            )
-        )
+    async def _row(
+        self, session: AsyncSession, tenant_id: str, user_id: str, desktop_id: str
+    ) -> Row:
+        if desktop_id != "vm":
+            await lock_desktop(session, desktop_id)
+        # Use the same lock order as execution claims and provider switching.
+        computer = await session.get(Computer, (tenant_id, user_id), with_for_update=True)
         if computer is None:
             raise NotFoundError("owner computer not found")
+        if desktop_id != "vm":
+            if computer.provider != "vm-computer" or computer.provider_ref is None:
+                raise NotFoundError("owner Bot desktop not found")
+            slot = await session.scalar(
+                select(Slot.desktop_id).where(
+                    Slot.tenant_id == tenant_id, Slot.user_id == user_id,
+                    Slot.desktop_id == desktop_id, Slot.state.in_(("busy", "idle")),
+                    Slot.computer_id == computer.computer_id,
+                )
+            )
+            if slot is None:
+                raise NotFoundError("owner Bot desktop not found")
+        key = (tenant_id, user_id, desktop_id)
+        row = await session.get(Row, key, with_for_update=True)
+        if row is not None:
+            return row
         moment = datetime.now(UTC)
         row = Row(
             tenant_id=tenant_id,
             user_id=user_id,
-            computer_id=computer,
+            desktop_id=desktop_id,
+            computer_id=computer.computer_id,
             state=DesktopState.OBSERVE.value,
             owner=None,
             epoch=0,

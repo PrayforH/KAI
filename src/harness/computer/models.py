@@ -81,8 +81,8 @@ class AssistantComputer(BaseModel):
 class ComputerDesktop(BaseModel):
     """One Bot desktop inside an owner's VM.
 
-    ``epoch`` fences execution for this desktop alone; a desktop restart or a
-    takeover bumps it without disturbing other desktops of the same VM.
+    ``epoch`` fences execution for this desktop alone. Keyboard and pointer
+    ownership has a separate generation in the desktop control lease.
     """
 
     model_config = ConfigDict(frozen=True, from_attributes=True)

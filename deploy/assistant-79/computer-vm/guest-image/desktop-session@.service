@@ -22,6 +22,9 @@ StandardError=journal+console
 # window manager, RFB socket and browser then run as the slot's own account.
 NoNewPrivileges=true
 ProtectSystem=strict
+RuntimeDirectory=kai-bots
+RuntimeDirectoryMode=0711
+RuntimeDirectoryPreserve=yes
 ReadWritePaths=/home/kai-bots /run/kai-bots
 InaccessiblePaths=/home/kai
 PrivateTmp=true

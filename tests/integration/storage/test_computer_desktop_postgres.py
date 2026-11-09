@@ -8,6 +8,7 @@ import asyncio
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -22,8 +23,9 @@ from harness.computer.desktop import (
     DesktopState,
 )
 from harness.computer.desktop_registry import DesktopRegistry, bot_desktop_key
-from harness.computer.models import ComputerBusyError
+from harness.computer.models import ComputerBusyError, ComputerLeaseLostError
 from harness.computer.registry import ComputerRegistry
+from harness.core.errors import NotFoundError
 from tests.integration.storage.conftest import DatabaseFixture
 
 
@@ -230,3 +232,52 @@ async def test_idle_reap_and_first_execution_share_the_slot_lock(database: Datab
     assert revived.desktop_id == slot.desktop_id
     assert revived.display == slot.display
     await computers.finish_execution(await claim())
+
+
+@pytest.mark.asyncio
+async def test_bot_controls_are_independent_from_each_other_and_legacy(database: DatabaseFixture):
+    service = await seeded(database)
+    _, sessions = database
+    owner = ("tenant-a", "user-a")
+    computers, desktops = ComputerRegistry(sessions), DesktopRegistry(sessions)
+    computer = await computers.get(*owner)
+    start = await computers.claim_start(*owner, owner="node")
+    await computers.complete_start(start, provider_ref="fixture-guest")
+    a, b = [
+        await desktops.ensure(*owner, bot, computer_id=computer.computer_id)
+        for bot in ("bot-a", "bot-b")
+    ]
+
+    async def claim(slot: str, name: str):
+        return await computers.claim_execution(
+            *owner, owner=name, run_id=f"run-{name}", session_id=f"session-{name}",
+            desktop_id=slot,
+        )
+
+    lease_a, lease_b = await asyncio.gather(claim(a.desktop_id, "a"), claim(b.desktop_id, "b"))
+    with pytest.raises(ComputerBusyError):
+        await claim(a.desktop_id, "second-a")
+    with pytest.raises(NotFoundError):
+        await service.view("tenant-a", "other-user", desktop_id=a.desktop_id)
+    legacy = await service.view(*owner)
+    agent_a, agent_b = await asyncio.gather(
+        service.acquire_agent(*owner, owner="a", desktop_id=a.desktop_id),
+        service.acquire_agent(*owner, owner="b", desktop_id=b.desktop_id),
+    )
+    viewer = uuid4()
+    pending = await service.request_human(*owner, desktop_id=a.desktop_id, viewer_id=viewer)
+    with pytest.raises(DesktopOccupiedError):
+        await service.request_human(*owner, desktop_id=a.desktop_id, viewer_id=uuid4())
+    human = await service.confirm_human(
+        *owner, desktop_id=a.desktop_id, expected_epoch=pending.epoch
+    )
+    assert human.epoch > agent_a.epoch and human.owner == str(viewer)
+    with pytest.raises(DesktopOccupiedError):
+        await service.release_human(*owner, desktop_id=a.desktop_id, viewer_id=uuid4())
+    assert (await service.view(*owner, desktop_id=b.desktop_id)).epoch == agent_b.epoch
+    assert (await service.view(*owner)).epoch == legacy.epoch
+    await desktops.stop(*owner, a.desktop_id)
+    with pytest.raises(ComputerLeaseLostError):
+        await computers.holder(lease_a)
+    await computers.holder(lease_b)
+    await computers.finish_execution(lease_b)

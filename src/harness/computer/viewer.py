@@ -344,6 +344,7 @@ def create_viewer_app(
     auth = client or httpx.AsyncClient(base_url=settings.api_url, trust_env=False, timeout=5)
     desktop = DesktopSsh(settings)
     sessions: dict[str | None, int] = {}
+    input_connections: dict[str, WebSocket] = {}
 
     @asynccontextmanager
     async def preview_slot(target: str | None) -> AsyncGenerator[bool]:
@@ -423,16 +424,19 @@ def create_viewer_app(
     app.add_api_route("/computer/status", status, methods=["GET"])
 
     async def desktop_state(
-        token: str | None, *, refresh: bool = True, binding: str | None = None
+        token: str | None, *, refresh: bool = True, binding: str | None = None,
+        slot: str | None = None, viewer_id: str | None = None,
     ) -> dict[str, str | int]:
-        """The shared desktop lease decides who may type or click."""
+        """The current desktop lease decides who may type or click."""
 
         observe: dict[str, str | int] = {"state": "observe", "epoch": 0}
-        if not token:
+        if not token or (slot is not None and viewer_id is None):
             return observe
+        params = {"desktop_id": slot} if slot is not None else {}
         try:
             response = await auth.get(
                 "/v1/studio/assistant/computer/desktop",
+                params=params or None,
                 headers={"Authorization": "Bearer " + token},
                 timeout=3,
             )
@@ -442,13 +446,21 @@ def create_viewer_app(
             if binding is not None and value.get("binding_key") != binding:
                 return observe
             state = str(value.get("state", "observe"))
+            if slot is not None and (
+                value.get("desktop_id") != slot or value.get("owner") != viewer_id
+            ):
+                return observe
             if state == "human" and refresh:
                 # An open viewer is proof the owner is present; refresh the
                 # takeover TTL so an active session never lapses mid-work.
                 with contextlib.suppress(httpx.HTTPError, ValueError):
+                    if binding is not None:
+                        params["binding_key"] = binding
+                    if viewer_id is not None:
+                        params["viewer_id"] = viewer_id
                     await auth.post(
                         "/v1/studio/assistant/computer/desktop/heartbeat",
-                        params={"binding_key": binding} if binding else None,
+                        params=params or None,
                         headers={"Authorization": "Bearer " + token},
                         timeout=3,
                     )
@@ -516,8 +528,14 @@ def create_viewer_app(
             granted_epoch: int | None = None
             process: asyncio.subprocess.Process | None = None
             tasks: list[asyncio.Task[None]] = []
+            slot = websocket.query_params.get("desktop")
+            viewer_id = websocket.query_params.get("viewer_id")
+            if viewer_id is not None and not re.fullmatch(
+                r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", viewer_id
+            ):
+                await websocket.close(code=1008)
+                return
             try:
-                slot = websocket.query_params.get("desktop")
                 if slot is not None:
                     if (endpoint is None or target_id not in settings.desktop_header_targets
                             or not await owns_desktop(token, slot)):
@@ -558,8 +576,7 @@ def create_viewer_app(
                         for kind, chunk in policy.feed(
                             data,
                             input_allowed=(
-                                slot is None
-                                and control["state"] == "human"
+                                control["state"] == "human"
                                 and granted_epoch == control["epoch"]
                             ),
                         ):
@@ -570,7 +587,10 @@ def create_viewer_app(
                                 # prove its current epoch before reaching a PC.
                                 # Returning or switching elsewhere invalidates a
                                 # previously granted socket immediately.
-                                latest = await desktop_state(token, refresh=False, binding=binding)
+                                latest = await desktop_state(
+                                    token, refresh=False, binding=binding, slot=slot,
+                                    viewer_id=viewer_id,
+                                )
                                 if latest["state"] != "human" or latest["epoch"] != granted_epoch:
                                     raise ValueError("desktop input ownership changed")
                             if kind == RFB_KEYBOARD:
@@ -606,9 +626,19 @@ def create_viewer_app(
                         if slot is not None:
                             if not await owns_desktop(token, slot):
                                 return
-                        else:
-                            control.update(await desktop_state(token, binding=binding))
+                        may_refresh = slot is None or input_connections.get(slot) is websocket
+                        control.update(await desktop_state(
+                            token, binding=binding, slot=slot, viewer_id=viewer_id,
+                            refresh=may_refresh,
+                        ))
                         if control["state"] == "human":
+                            if (
+                                slot is not None
+                                and input_connections.setdefault(slot, websocket) is not websocket
+                            ):
+                                granted_epoch = None
+                                valid_until = time.monotonic() + AUTH_GRACE_SECONDS
+                                continue
                             epoch = int(control.get("epoch") or 0)
                             if granted_epoch is None:
                                 granted_epoch = epoch
@@ -618,6 +648,8 @@ def create_viewer_app(
                                 # grant is stale, so reconnect to re-bind.
                                 raise ValueError("desktop input generation changed")
                         else:
+                            if slot is not None and input_connections.get(slot) is websocket:
+                                input_connections.pop(slot)
                             granted_epoch = None
                         valid_until = time.monotonic() + AUTH_GRACE_SECONDS
 
@@ -654,6 +686,8 @@ def create_viewer_app(
                     "desktop connection setup failed: %s", type(error).__name__
                 )
             finally:
+                if slot is not None and input_connections.get(slot) is websocket:
+                    input_connections.pop(slot)
                 # Teardown is bounded and terminates the transport first: a
                 # cancelled pipe reader must never hold a preview slot past
                 # a lost client and eventually exhaust the viewer capacity.

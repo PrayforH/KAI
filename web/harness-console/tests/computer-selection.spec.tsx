@@ -21,15 +21,19 @@ let refused = false, current = "cloud";
 let controlState = "human", controlFailure = 0, readFailure = false, sessionStatus = 200;
 let delayedRead: Promise<Response> | null = null;
 let missingBotSlot = false;
+const botControls = new Map<string, { state: string; owner?: string | null }>();
 let host: HTMLDivElement, root: Root;
 const requests: string[] = [];
 async function flush() { for (let i = 0; i < 10; i++) await act(async () => { await Promise.resolve(); }); }
 beforeEach(() => {
   requests.length = 0; sockets.length = 0; frames.length = 0; missingBotSlot = false;
+  botControls.clear();
   refused = false; current = "cloud"; controlState = "human"; controlFailure = 0; readFailure = false; sessionStatus = 200; delayedRead = null; disconnected.mockClear();
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     requests.push(url);
+    const request = new URL(url, "https://kai.test");
+    const desktopId = request.searchParams.get("desktop_id");
     if (url === "/api/auth/session") return Response.json({}, { status: sessionStatus });
     if (url.includes("/desktops/preview")) {
       if (missingBotSlot) return Response.json({}, { status: 404 });
@@ -43,12 +47,22 @@ beforeEach(() => {
       return Response.json(refused ? { detail: "busy" } : { ...cloud, active_target: current }, { status: refused ? 409 : 200 });
     }
     if (url.endsWith("/targets")) return Response.json({ ...cloud, active_target: current });
-    if (url.endsWith("/desktop")) {
+    if (request.pathname.endsWith("/desktop")) {
+      if (desktopId) return Response.json({
+        ...botControls.get(desktopId) ?? { state: "observe" },
+        desktop_id: desktopId, binding_key: "c".repeat(64),
+      });
       if (delayedRead) { const pending = delayedRead; delayedRead = null; return pending; }
       return Response.json({ state: controlState, binding_key: (current === "cloud" ? "c" : "a").repeat(64) }, { status: readFailure ? 503 : 200 });
     }
     if (url.includes("/desktop/")) {
       if (controlFailure) return Response.json({}, { status: controlFailure });
+      if (desktopId) {
+        const state = url.includes("/return?") ? "observe" : "takeover_pending";
+        const owner = state === "observe" ? null : request.searchParams.get("viewer_id");
+        botControls.set(desktopId, { state, owner });
+        return Response.json({ state, owner, desktop_id: desktopId, binding_key: null });
+      }
       controlState = url.includes("/return?") ? "observe" : "takeover_pending";
       return Response.json({ state: controlState, binding_key: null });
     }
@@ -208,17 +222,29 @@ describe("desktop session renewal", () => {
 
 
 describe("Bot desktop preview", () => {
-  it("uses the selected Bot slot and never takes over the shared desktop", async () => {
+  it("takes over the selected Bot slot and returns to view-only when switching Bots", async () => {
+    vi.useFakeTimers();
     await act(async () => root.render(<ComputerDesktop botId="specialist_a" />));
     await flush();
-    expect(sockets.at(-1)).toContain(`target=cloud&desktop=desktop_${"a".repeat(24)}`);
+    const slot = `desktop_${"a".repeat(24)}`;
+    const socket = new URL(sockets.at(-1)!);
+    const viewer = socket.searchParams.get("viewer_id");
+    expect(socket.searchParams.get("desktop")).toBe(slot);
+    expect(viewer).toBeTruthy();
     expect(frames.at(-1)?.viewOnly).toBe(true);
-    expect(host.textContent).not.toContain("取得控制权");
+    await act(async () => frames.at(-1)!.emit("connect"));
+    await click("取得控制权");
+    expect(requests.some(url => url.includes("/desktop/takeover?") && url.includes(`desktop_id=${slot}&viewer_id=${viewer}`))).toBe(true);
+    expect(frames.at(-1)?.viewOnly).toBe(true);
+    botControls.set(slot, { state: "human", owner: viewer });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(frames.at(-1)?.viewOnly).toBe(false);
 
     await act(async () => root.render(<ComputerDesktop botId="specialist_b" />));
     await flush();
     expect(disconnected).toHaveBeenCalled();
     expect(sockets.at(-1)).toContain(`target=cloud&desktop=desktop_${"b".repeat(24)}`);
+    expect(frames.at(-1)?.viewOnly).toBe(true);
     expect(requests).not.toContain("/api/studio/assistant/computer/desktop");
   });
 

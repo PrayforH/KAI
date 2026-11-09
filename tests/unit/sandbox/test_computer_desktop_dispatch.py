@@ -24,6 +24,10 @@ class FakeClient:
     def __init__(self) -> None:
         self.keys: list[tuple[int, bool]] = []
         self.pointers: list[tuple[int, int, int]] = []
+        self.closed = False
+
+    async def close(self) -> None:
+        self.closed = True
 
     async def key(self, keysym: int, *, down: bool) -> None:
         self.keys.append((keysym, down))
@@ -242,7 +246,10 @@ def test_drain_and_stop_events_survive_repeated_calls():
     assert asyncio.run(service_.wait_drained("v", timeout=0.1)) is True
     service_.cancel("v")
     service_.cancel("v")
-    assert service_._stop_event("v").is_set()
+    assert service_._stop_event(("v", None)).is_set()
+    service_.cancel("v", desktop_id="desktop_" + "a" * 24)
+    assert service_._stop_event(("v", "desktop_" + "a" * 24)).is_set()
+    assert not service_._stop_event(("v", "desktop_" + "b" * 24)).is_set()
     assert asyncio.run(service_.wait_drained("v", timeout=0.1)) is True
 
 @pytest.mark.asyncio
@@ -262,3 +269,7 @@ async def test_bot_pixels_use_the_slot_connection_instead_of_the_machine_screen(
     )
     assert bot.pointers == [(7, 8, 1), (7, 8, 0)]
     assert shared.pointers == []
+    async with screen._lock(("v", slot)):
+        await asyncio.wait_for(screen.close_slot("v", slot), timeout=0.5)
+    assert bot.closed and not shared.closed
+    assert ("v", slot) not in screen._sessions

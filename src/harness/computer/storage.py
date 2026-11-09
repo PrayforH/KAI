@@ -165,7 +165,7 @@ class ComputerLeaseRow(Base):
 
 
 class ComputerDesktopLeaseRow(Base):
-    """One desktop control state per owner computer, separate from execution.
+    """One control state per desktop, separate from execution.
 
     Ownership of keyboard/pointer is a product decision between the owner and
     their assistant; it fences neither the work disk nor the execution lease.
@@ -190,6 +190,7 @@ class ComputerDesktopLeaseRow(Base):
 
     tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     user_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    desktop_id: Mapped[str] = mapped_column(String(64), primary_key=True, server_default="vm")
     computer_id: Mapped[str] = mapped_column(String(64))
     state: Mapped[str] = mapped_column(String(32))
     owner: Mapped[str | None] = mapped_column(String(160))

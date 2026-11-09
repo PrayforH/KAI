@@ -296,7 +296,11 @@ class Guard:
             "pid_inode": os.stat("/proc/self/ns/pid").st_ino,
             "mnt_inode": os.stat("/proc/self/ns/mnt").st_ino,
         }
-        _mount_proc()
+        _mount(b"proc", b"/proc", b"proc")
+        if self.root != ROOT:
+            # Shell and desktop share the workspace, but only the input gate
+            # may reach the slot's X credentials, D-Bus or VNC socket.
+            _mount(b"tmpfs", b"/run/kai-bots", b"tmpfs", b"mode=000,size=4096")
         ready = self.root / ("namespace-" + token.lease_id + ".json")
         temporary = ready.with_suffix(".next")
         temporary.write_text(json.dumps(detail))
@@ -500,7 +504,7 @@ def _setns(fd: int, kind: int) -> None:
         raise OSError(ctypes.get_errno(), "execution namespace could not be joined")
 
 
-def _mount_proc() -> None:
+def _mount(source: bytes, target: bytes, filesystem: bytes, options: bytes | None = None) -> None:
     function = ctypes.CDLL(None, use_errno=True).mount
     function.argtypes = [
         ctypes.c_char_p,
@@ -510,8 +514,8 @@ def _mount_proc() -> None:
         ctypes.c_void_p,
     ]
     function.restype = ctypes.c_int
-    if function(b"proc", b"/proc", b"proc", 2 | 4 | 8, None) != 0:
-        raise OSError(ctypes.get_errno(), "execution procfs could not be mounted")
+    if function(source, target, filesystem, 2 | 4 | 8, options) != 0:
+        raise OSError(ctypes.get_errno(), "execution namespace mount failed")
 
 
 def _feed(process: subprocess.Popen[bytes], content: bytes) -> None:

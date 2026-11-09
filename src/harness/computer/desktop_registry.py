@@ -13,7 +13,9 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from harness.computer.models import ComputerDesktop, DesktopState
+from harness.computer.models import ComputerDesktop, ComputerState, DesktopState
+from harness.computer.storage import AssistantComputerRow as Computer
+from harness.computer.storage import ComputerDesktopLeaseRow as Control
 from harness.computer.storage import ComputerDesktopRow as Desktop
 from harness.computer.storage import ComputerLeaseRow as Lease
 from harness.core.errors import ConflictError, NotFoundError
@@ -21,10 +23,6 @@ from harness.storage.database import SessionFactory
 
 FIRST_DISPLAY = 100
 LAST_DISPLAY = 199
-RESERVED_STATES = (
-    DesktopState.CREATED.value, DesktopState.STARTING.value,
-    DesktopState.IDLE.value, DesktopState.BUSY.value,
-)
 
 
 def bot_desktop_key(specialist_id: str | None) -> str:
@@ -90,11 +88,13 @@ class DesktopRegistry:
                     await lock_desktop(session, desktop_id)
                     existing = await self._get_or_none(session, tenant, user, desktop_id)
                     if existing is not None:
-                        if existing.state == DesktopState.STOPPED.value:
-                            # A stopped slot revives on its next Run: the
-                            # guest unit restarts from the reserved state.
+                        if (
+                            existing.state == DesktopState.STOPPED.value
+                            and existing.display is None
+                        ):
+                            # Reuse only after the guest confirmed the previous stop.
                             existing.display = await self._free_display(
-                                session, tenant, user, desktop_id, preferred=existing.display
+                                session, tenant, user, desktop_id
                             )
                             existing.state = DesktopState.CREATED.value
                             existing.revision += 1
@@ -177,6 +177,7 @@ class DesktopRegistry:
                 await session.scalars(
                     select(Desktop)
                     .where(
+                        Desktop.display.is_not(None),
                         Desktop.state.in_((DesktopState.STOPPED.value, DesktopState.IDLE.value)),
                         (Desktop.state == DesktopState.STOPPED.value)
                         | (Desktop.last_active_at.is_(None))
@@ -197,13 +198,22 @@ class DesktopRegistry:
                 session, candidate.tenant_id, candidate.user_id, candidate.desktop_id
             )
             if (
-                row is None or row.revision != candidate.revision
+                row is None or row.display is None or row.revision != candidate.revision
                 or row.state not in {DesktopState.IDLE.value, DesktopState.STOPPED.value}
+            ):
+                return False
+            control = await session.get(Control, (row.tenant_id, row.user_id, row.desktop_id))
+            if (
+                control is not None and control.state in {"human", "takeover_pending"}
+                and control.expires_at is not None and control.expires_at > await _now(session)
             ):
                 return False
             await stop_guest(ComputerDesktop.model_validate(row))
             if row.state != DesktopState.STOPPED.value:
                 await self._stop(session, row)
+            row.display = None
+            row.revision += 1
+            row.updated_at = await _now(session)
             return True
 
     async def stop(self, tenant: str, user: str, desktop_id: str) -> ComputerDesktop:
@@ -219,7 +229,20 @@ class DesktopRegistry:
 
     @staticmethod
     async def _stop(session: AsyncSession, row: Desktop) -> None:
+        computer = await session.get(Computer, (row.tenant_id, row.user_id), with_for_update=True)
         moment = await _now(session)
+        await session.execute(
+            update(Control)
+            .where(
+                Control.tenant_id == row.tenant_id,
+                Control.user_id == row.user_id,
+                Control.desktop_id == row.desktop_id,
+            )
+            .values(
+                state="observe", owner=None, expires_at=None, epoch=Control.epoch + 1,
+                revision=Control.revision + 1, updated_at=moment,
+            )
+        )
         await session.execute(
             update(Lease)
             .where(
@@ -234,6 +257,19 @@ class DesktopRegistry:
         row.state = DesktopState.STOPPED.value
         row.revision += 1
         row.updated_at = moment
+        if computer is not None and computer.state == ComputerState.RUNNING.value:
+            running = await session.scalar(
+                select(Lease.lease_id).where(
+                    Lease.tenant_id == row.tenant_id,
+                    Lease.user_id == row.user_id,
+                    Lease.state == "active",
+                    Lease.purpose == "execute",
+                ).limit(1)
+            )
+            if running is None:
+                computer.state = ComputerState.IDLE.value
+                computer.revision += 1
+                computer.updated_at = moment
         await session.flush()
 
     async def mark_started(self, tenant: str, user: str, desktop_id: str) -> ComputerDesktop:
@@ -252,7 +288,6 @@ class DesktopRegistry:
 
     async def _free_display(
         self, session: AsyncSession, tenant: str, user: str, desktop_id: str,
-        *, preferred: str | None = None,
     ) -> str:
         taken = set(
             (
@@ -260,14 +295,12 @@ class DesktopRegistry:
                     select(Desktop.display).where(
                         Desktop.tenant_id == tenant,
                         Desktop.user_id == user,
-                        Desktop.state.in_(RESERVED_STATES),
+                        Desktop.desktop_id != desktop_id,
                         Desktop.display.is_not(None),
                     )
                 )
             ).all()
         )
-        if preferred is not None and preferred not in taken:
-            return preferred
         span = LAST_DISPLAY - FIRST_DISPLAY + 1
         start = FIRST_DISPLAY + int(sha256(desktop_id.encode()).hexdigest()[:4], 16) % span
         for offset in range(span):

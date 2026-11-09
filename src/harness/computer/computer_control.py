@@ -6,6 +6,7 @@ every field, because a compromised gate must not become a user-provisioning or
 arbitrary-unit primitive.
 """
 
+import fcntl
 import hashlib
 import os
 import pwd
@@ -168,7 +169,13 @@ def _unit(session: SessionPlan) -> str:
 def _prepare(session: SessionPlan) -> None:
     BOTS.mkdir(mode=0o755, parents=True, exist_ok=True)
     RUNTIME.mkdir(mode=0o711, parents=True, exist_ok=True)
-    _ensure_account(session)
+    SESSIONS.mkdir(mode=0o700, parents=True, exist_ok=True)
+    lock = os.open(SESSIONS / ".accounts-lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        _ensure_account(session)
+    finally:
+        os.close(lock)
     account = pwd.getpwnam(session.unix_user)
     owner = (account.pw_uid, account.pw_gid)
     home = _open_directory(Path(session.home), owner)
@@ -177,7 +184,6 @@ def _prepare(session: SessionPlan) -> None:
             os.close(_open_directory(Path(name), owner, parent=home))
     finally:
         os.close(home)
-    SESSIONS.mkdir(mode=0o700, parents=True, exist_ok=True)
     _write_environment(session)
     _systemctl("enable", _unit(session))
     if status(session) != "active":

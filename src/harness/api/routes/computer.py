@@ -7,6 +7,7 @@ it again before every agent action.
 
 from datetime import datetime
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -30,6 +31,7 @@ def desktop_service(request: Request) -> DesktopControlService:
 
 
 Service = Annotated[DesktopControlService, Depends(desktop_service)]
+DesktopId = Annotated[str | None, Query(pattern=r"^desktop_[0-9a-f]{24}$")]
 
 
 def _not_found(error: Exception) -> HTTPException:
@@ -40,10 +42,13 @@ def _not_found(error: Exception) -> HTTPException:
 async def state(
     identity: Annotated[Identity, Depends(require_identity)],
     service: Service,
+    desktop_id: DesktopId = None,
 ) -> DesktopControl:
     ensure_permission(identity, "tasks:read")
     try:
-        return await service.view(identity.tenant_id, identity.user_id)
+        return await service.view(
+            identity.tenant_id, identity.user_id, desktop_id=desktop_id or "vm"
+        )
     except NotFoundError as error:
         raise _not_found(error) from None
 
@@ -53,11 +58,14 @@ async def takeover(
     identity: Annotated[Identity, Depends(require_identity)],
     service: Service,
     binding_key: Annotated[str | None, Query(min_length=64, max_length=64)] = None,
+    desktop_id: DesktopId = None,
+    viewer_id: UUID | None = None,
 ) -> DesktopControl:
     ensure_permission(identity, "tasks:write")
     try:
         return await service.request_human(
-            identity.tenant_id, identity.user_id, expected_binding=binding_key
+            identity.tenant_id, identity.user_id, expected_binding=binding_key,
+            desktop_id=desktop_id or "vm", viewer_id=viewer_id,
         )
     except NotFoundError as error:
         raise _not_found(error) from None
@@ -70,6 +78,8 @@ async def heartbeat(
     identity: Annotated[Identity, Depends(require_identity)],
     service: Service,
     binding_key: Annotated[str | None, Query(min_length=64, max_length=64)] = None,
+    desktop_id: DesktopId = None,
+    viewer_id: UUID | None = None,
 ) -> DesktopControl:
     """Keep an active human takeover alive while the owner is using it.
 
@@ -80,10 +90,13 @@ async def heartbeat(
     ensure_permission(identity, "tasks:write")
     try:
         return await service.refresh_human(
-            identity.tenant_id, identity.user_id, expected_binding=binding_key
+            identity.tenant_id, identity.user_id, expected_binding=binding_key,
+            desktop_id=desktop_id or "vm", viewer_id=viewer_id,
         )
     except NotFoundError as error:
         raise _not_found(error) from None
+    except ConflictError as error:
+        raise HTTPException(409, str(error)) from None
 
 
 @router.post("/desktop/return")
@@ -91,14 +104,19 @@ async def return_control(
     identity: Annotated[Identity, Depends(require_identity)],
     service: Service,
     binding_key: Annotated[str | None, Query(min_length=64, max_length=64)] = None,
+    desktop_id: DesktopId = None,
+    viewer_id: UUID | None = None,
 ) -> DesktopControl:
     ensure_permission(identity, "tasks:write")
     try:
         return await service.release_human(
-            identity.tenant_id, identity.user_id, expected_binding=binding_key
+            identity.tenant_id, identity.user_id, expected_binding=binding_key,
+            desktop_id=desktop_id or "vm", viewer_id=viewer_id,
         )
     except NotFoundError as error:
         raise _not_found(error) from None
+    except ConflictError as error:
+        raise HTTPException(409, str(error)) from None
 
 
 def target_service(request: Request) -> ComputerTargetService:
@@ -210,7 +228,7 @@ async def stop_desktop(
     identity: Annotated[Identity, Depends(require_identity)],
     registry: Registry,
 ) -> BotDesktop:
-    """Fence one Bot's slot; the guest unit stops on the next ensure."""
+    """Fence one Bot's slot and leave its guest unit for the reaper."""
 
     ensure_permission(identity, "tasks:write")
     try:

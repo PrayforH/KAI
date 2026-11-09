@@ -249,13 +249,15 @@ def native_request(action: str, request: dict[str, Any]) -> None:
     state_root = None
     slot: dict[str, object] = {}
     if "desktop_id" in request:
-        if action != "native_desktop":
-            raise ValueError("desktop slot is only accepted for native UI")
+        if action not in {"native_desktop", "native_barrier"}:
+            raise ValueError("desktop slot is only accepted for native input")
         desktop_id = request["desktop_id"]
         if not isinstance(desktop_id, str) or SLOT.fullmatch(desktop_id) is None:
             raise ValueError("guest scope is invalid")
-        slot = _native_slot(desktop_id)
+        if action == "native_desktop":
+            slot = _native_slot(desktop_id)
         state_root = SUPERVISOR_ROOT / "scopes" / desktop_id
+        _trusted(state_root.parent, directory=True)
         request = {key: item for key, item in request.items() if key != "desktop_id"}
     path = Path("/etc/kai-computer/native-desktop.json")
     module_path = Path("/opt/kai-computer/native_desktop.py")
@@ -285,11 +287,12 @@ def native_request(action: str, request: dict[str, Any]) -> None:
         raise RuntimeError("native desktop adapter is missing")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    with module.locked():
+    root = {"state_root": state_root} if state_root is not None else {}
+    with module.locked(**root):
         if action == "native_barrier":
             if request.keys() != {"epoch"}:
                 raise ValueError("native desktop barrier is invalid")
-            module.fence(request["epoch"], blocked=True)
+            module.fence(request["epoch"], blocked=True, **root)
             print('{"drained":true}')
         elif action == "desktop_export":
             export_path = Path("/opt/kai-computer/desktop_export.py")

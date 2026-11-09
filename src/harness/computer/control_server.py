@@ -9,7 +9,7 @@ import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 import httpx
 import uvicorn
@@ -163,42 +163,46 @@ async def drain_pending_takeovers(
             )
             .where(
                 ComputerDesktopLeaseRow.state == DesktopState.TAKEOVER_PENDING.value,
+                ComputerDesktopLeaseRow.expires_at > func.clock_timestamp(),
                 AssistantComputerRow.provider.in_((VM_PROVIDER, REMOTE_PROVIDER)),
             )
+            .order_by(ComputerDesktopLeaseRow.expires_at)
             .limit(limit)
         )
         if served:
             statement = statement.where(AssistantComputerRow.volume_ref.in_(served))
         rows = (await db.execute(statement)).all()
-    confirmed = 0
-    for lease, computer in rows:
+
+    async def drain(lease: ComputerDesktopLeaseRow, computer: AssistantComputerRow) -> bool:
         remaining = (
             (lease.expires_at - datetime.now(UTC)).total_seconds()
             if lease.expires_at is not None
             else 0
         )
         if remaining <= 0:
-            continue
+            return False
+        slot = {"desktop_id": lease.desktop_id} if lease.desktop_id != "vm" else {}
         if computer.volume_ref in served:
-            screen.cancel(computer.volume_ref)
-            # The stop request lands between keystrokes; the busy flag clearing
-            # is the drain acknowledgement for this computer's queue.
+            screen.cancel(computer.volume_ref, **slot)
             if not await screen.wait_drained(
-                computer.volume_ref, timeout=remaining, expected_epoch=lease.epoch
+                computer.volume_ref, timeout=remaining, expected_epoch=lease.epoch, **slot
             ):
-                continue
+                return False
         else:
-            # No viewer session is served by this node: the desktop viewer talks
-            # to the guest directly, so the only writer left is a Run holding an
-            # execution lease. Wait for that instead of a screen queue nobody
-            # fills, which used to leave every takeover pending forever.
-            if await _active_execution(db, computer):
-                continue
-        state = await desktop_leases.confirm_human(
-            lease.tenant_id, lease.user_id, expected_epoch=lease.epoch
-        )
-        confirmed += state.state == DesktopState.HUMAN.value
-    return confirmed
+            if slot:
+                return False
+            async with sessions() as db:
+                if await _active_execution(db, computer):
+                    return False
+        try:
+            state = await desktop_leases.confirm_human(
+                lease.tenant_id, lease.user_id, expected_epoch=lease.epoch, **slot
+            )
+        except NotFoundError:
+            return False
+        return state.state == DesktopState.HUMAN.value and state.epoch == lease.epoch + 1
+
+    return sum(await asyncio.gather(*(drain(lease, computer) for lease, computer in rows)))
 
 
 def create_app(settings: ControllerSettings) -> FastAPI:
@@ -282,7 +286,8 @@ def create_app(settings: ControllerSettings) -> FastAPI:
             # Renew-only: the worker acquires explicitly; the gate never
             # grants input ownership from observation by itself.
             state = await desktop_service.renew_agent(
-                computer.tenant_id, computer.user_id, owner=current.owner
+                computer.tenant_id, computer.user_id, owner=current.owner,
+                desktop_id=current.desktop_id,
             )
             # The acquired epoch is authoritative: a takeover bumped it, so a
             # caller still quoting its old epoch is fenced here.
@@ -446,11 +451,19 @@ def create_app(settings: ControllerSettings) -> FastAPI:
                 {**command.payload, "op": command.operation},
                 timeout_seconds=120,
             )
-            answer: object = json.loads(result.stdout or "{}")
-            return {"op": command.operation, "state": cast(dict[str, Any], answer).get("state")}
+            if result.exit_code:
+                raise RuntimeError("guest did not confirm desktop maintenance")
+            answer = json.loads(result.stdout)
+            if not isinstance(answer, dict) or answer.get("op") != command.operation:
+                raise RuntimeError("guest desktop maintenance acknowledgement is invalid")
+            desktop_id = command.payload.get("desktopId")
+            if command.operation == "stop" and isinstance(desktop_id, str):
+                await desktop_screen.close_slot(computer.volume_ref, desktop_id)
+            return {"op": command.operation, "state": answer.get("state")}
         except NotFoundError:
             raise HTTPException(404, "Computer is not registered") from None
-        except (httpx.HTTPError, RuntimeError, ValueError, OSError, EOFError) as error:
+        except (httpx.HTTPError, RuntimeError, ValueError, OSError, EOFError,
+                ComputerLeaseLostError) as error:
             logging.getLogger(__name__).warning(
                 "computer desktop slot failed: %s: %s", type(error).__name__, str(error)[:300]
             )

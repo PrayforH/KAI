@@ -90,7 +90,7 @@ class DesktopActionSource(Protocol):
         operation: str,
         payload: dict[str, Any],
         *,
-        expected_epoch: int,
+        expected_epoch: int | None,
     ) -> dict[str, Any]: ...
 
 
@@ -127,11 +127,15 @@ def computer_gui_overlay(
         return state.epoch, None
 
     async def act(operation: str, payload: dict[str, Any]) -> dict[str, Any]:
-        epoch, refusal = await acquire()
-        if epoch is None:
-            return _text(refusal or "桌面控制权暂不可用，请稍后重试。")
+        epoch = None
+        if not shared_bot_workspace:
+            epoch, refusal = await acquire()
+            if epoch is None:
+                return _text(refusal or "桌面控制权暂不可用，请稍后重试。")
         try:
             return await sandbox.desktop_action(handle, operation, payload, expected_epoch=epoch)
+        except DesktopOccupiedError as error:
+            return _text(str(error))
         except ComputerLeaseLostError as error:
             return _text(f"桌面控制权已变更：{error}")
         except (RuntimeError, ValueError) as error:

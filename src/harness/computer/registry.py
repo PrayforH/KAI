@@ -205,10 +205,15 @@ class ComputerRegistry:
                 return AssistantComputer.model_validate(computer)
             from harness.computer.storage import ComputerDesktopLeaseRow
 
-            desktop = await session.get(
-                ComputerDesktopLeaseRow, (tenant, user), with_for_update=True
+            controls = await session.scalars(
+                select(ComputerDesktopLeaseRow)
+                .where(
+                    ComputerDesktopLeaseRow.tenant_id == tenant,
+                    ComputerDesktopLeaseRow.user_id == user,
+                )
+                .with_for_update()
             )
-            if desktop is not None:
+            for desktop in controls:
                 if (
                     desktop.state != "observe"
                     and desktop.expires_at is not None
@@ -342,22 +347,6 @@ class ComputerRegistry:
                         "desktop already has a live holder "
                         f"({live.run_id or live.owner})"
                     )
-                # Keep the 79 rollout serialized until GUI control is scoped
-                # per desktop as well as execution leases.
-                other = await session.scalar(
-                    select(Lease).where(
-                        Lease.tenant_id == tenant,
-                        Lease.user_id == user,
-                        Lease.desktop_id.not_in(("vm", desktop.desktop_id)),
-                        Lease.state == LeaseState.ACTIVE.value,
-                        Lease.purpose == LeasePurpose.EXECUTE.value,
-                    )
-                )
-                if other is not None:
-                    raise ComputerBusyError(
-                        "another Bot desktop is executing "
-                        f"({other.run_id or other.owner})"
-                    )
                 if desktop.state == DesktopState.STOPPED:
                     raise ComputerBusyError("desktop was stopped while waiting; reserve it again")
                 if desktop.state not in {
@@ -431,10 +420,8 @@ class ComputerRegistry:
                 computer.epoch += 1
                 epoch = computer.epoch
             else:
-                # The guest fences execution with one monotonic epoch, so a
-                # desktop lease continues the machine sequence instead of
-                # restarting at its own slot epoch. Until the guest keeps one
-                # namespace per slot, desktop executions stay serialized.
+                # Keep the machine generation monotonic across existing
+                # releases. A Bot holder is checked against its own slot.
                 epoch = max(computer.epoch, desktop.epoch) + 1
                 computer.epoch = epoch
                 desktop.epoch = epoch
