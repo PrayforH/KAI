@@ -1700,7 +1700,8 @@ export function HarnessAssistantMessage() {
   );
   const responseCandidate = responseTextForTurn(messageId, nativeText, directStream, live, capturedResponse, pendingLive);
   const feedbackRun = feedbackRunId(messageId, isLast, runView?.runId);
-  const isNotice = messageId.startsWith("notice-") || noticeSource(content) !== null;
+  const sourceNotice = noticeSource(content);
+  const isNotice = messageId.startsWith("notice-") || sourceNotice !== null;
   // Select the immutable source, then derive outside the external-store selector.
   // A new grouping object per getSnapshot causes an update loop on notice turns.
   const noticeMessages = useAuiState(state => state.thread.messages);
@@ -1804,7 +1805,8 @@ export function HarnessAssistantMessage() {
   }, [actionHistory, threadRuntime]);
   const actionBusy = ["running", "queued", "waiting_approval"].includes(runView?.phase ?? "");
   // 历史/重试偶尔把同一条回答写成相邻两条 assistant；只保留第一条。
-  if (noticeSource(content)?.direction === "sent") {
+  if (sourceNotice?.direction === "sent") {
+    if (!assistantSurface) return null;
     return <AssistantMessage.Root className="harness-assistant-message assistant-message-event" data-turn-id={messageId}>
       <AssistantChatTime />
       <AssistantNoticeSource parts={content} />
@@ -1840,7 +1842,7 @@ export function HarnessAssistantMessage() {
       data-direct-stream={directStream ? "true" : "false"}
     >
       {assistantSurface && <AssistantChatTime activity={chatActivity} />}
-      {isNotice && <AssistantNoticeSource parts={content} exchange={noticeExchange} />}
+      {assistantSurface && isNotice && <AssistantNoticeSource parts={content} exchange={noticeExchange} />}
       {!hasVideoGeneration && !assistantSurface ? <TurnActivity
         hasDurableProjection={hasRunActivityToolCall(content)} messageId={messageId}
       /> : null}
