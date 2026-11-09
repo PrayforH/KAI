@@ -140,7 +140,6 @@ class ComputerRuntime:
             session,
             run_reader=read_run,
             desktop_for_run=self._desktop_resolver(session, driver),
-            desktops=self.desktops if self.per_bot_desktop else None,
             desktop=self.desktop,
             max_bytes=self.settings.workspace_archive_max_bytes,
             max_members=self.settings.workspace_archive_max_members,
@@ -156,7 +155,8 @@ class ComputerRuntime:
         so rollout is switched per environment instead of per Bot.
         """
 
-        if not self.per_bot_desktop or self.specialist_for_session is None:
+        if (not self.per_bot_desktop or driver.provider != VM_PROVIDER
+                or self.specialist_for_session is None):
             return None
         resolver = self.specialist_for_session
         image = driver.image

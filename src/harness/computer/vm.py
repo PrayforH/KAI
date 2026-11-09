@@ -6,6 +6,8 @@ through the guest's forced SSH control gate. This process never holds guest
 keys or speaks to the guest directly.
 """
 
+import json
+
 from harness.computer.docker import ComputerHost, DockerComputerDriver
 from harness.computer.models import AssistantComputer, ComputerLease, LeasePurpose
 
@@ -21,6 +23,18 @@ class VmComputerDriver(DockerComputerDriver):
     ) -> None:
         super().__init__(host, image=image)
         self.native_desktop = native_desktop
+
+    async def connect(self, computer: AssistantComputer, token: ComputerLease) -> None:
+        self._validate(computer, token, LeasePurpose.EXECUTE)
+        if token.desktop_id != "vm":
+            # BUSY describes the execution lease. Only the guest can confirm
+            # whether the desktop survived a reboot or needs to be started.
+            result = await self.host.call(token, "desktop_session", {"timeout_seconds": 120})
+            if result.exit_code != 0 or json.loads(result.stdout) != {
+                "op": "ensure", "state": "active",
+            }:
+                raise RuntimeError("Bot desktop did not become ready")
+        await super().connect(computer, token)
 
     async def recover(self, computer: AssistantComputer, token: ComputerLease) -> str | None:
         self._validate(computer, token, LeasePurpose.RECOVER)

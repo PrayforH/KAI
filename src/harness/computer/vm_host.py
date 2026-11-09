@@ -37,6 +37,7 @@ from harness.computer.desktop_client import (
     type_text as desktop_type,
 )
 from harness.computer.desktop_export import arguments as export_arguments
+from harness.computer.desktop_registry import DesktopRegistry
 from harness.computer.gate_ack import GateAckError
 from harness.computer.gate_ack import validate as validate_gate_ack
 from harness.computer.models import (
@@ -49,6 +50,7 @@ from harness.computer.models import (
 from harness.computer.native_desktop import command as native_command
 from harness.computer.registry import ComputerRegistry
 from harness.computer.ssh_transport import SshComputerSpec, SshEndpoint
+from harness.computer.vm import PROVIDER
 from harness.computer.vm_keys import ComputerVmSeed, VmSeedStore
 from harness.sandbox.base import SandboxCommandResult
 
@@ -246,8 +248,10 @@ class SshComputerControl:
         specs: Mapping[str, SshComputerSpec],
         *,
         authorizer: ComputerAuthorizer | None = None,
+        desktops: DesktopRegistry | None = None,
     ) -> None:
         self.registry, self.specs, self.authorizer = registry, dict(specs), authorizer
+        self.desktops = desktops
 
     def _spec(self, computer: AssistantComputer) -> SshComputerSpec:
         spec = self.specs.get(computer.volume_ref)
@@ -272,13 +276,25 @@ class SshComputerControl:
             await self.authorizer.authorize(computer, current, action)
         spec = self._spec(computer)
         if action == "desktop_session":
-            # Slot provisioning carries only slot descriptors. The gate rejects
-            # any extra field, so a lease identity can never leak into it.
-            duration = payload.get("timeout_seconds", 120)
-            if not isinstance(duration, (int, float)) or not 0 < duration <= 3600:
-                raise ValueError("computer desktop duration is invalid")
+            if self.provider != PROVIDER or current.desktop_id == "vm" or self.desktops is None:
+                raise ComputerLeaseLostError("Bot desktop requires a VM desktop lease")
+            desktop = await self.desktops.get_by_id(
+                current.tenant_id, current.user_id, current.desktop_id
+            )
+            if desktop.computer_id != current.computer_id or desktop.epoch != current.epoch:
+                raise ComputerLeaseLostError("Bot desktop lease no longer owns the slot")
             return await GuestGate(spec).call(
-                action, dict(payload), timeout_seconds=float(duration)
+                action,
+                {
+                    "op": "ensure",
+                    "desktopId": desktop.desktop_id,
+                    "unixUser": desktop.unix_user,
+                    "display": desktop.display,
+                    "profile": desktop.profile_ref,
+                    "workspace": desktop.workspace_ref,
+                    "vncSocket": desktop.vnc_socket,
+                },
+                timeout_seconds=120,
             )
         request = {
             **payload,

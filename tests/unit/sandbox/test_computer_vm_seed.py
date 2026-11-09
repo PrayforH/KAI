@@ -66,7 +66,7 @@ def test_guest_seed_grants_only_the_fixed_root_owned_forced_command() -> None:
     }
     assert viewer["owner"] == "root:root"
     assert viewer["content"] == (
-        'restrict,command="sudo -n -u kai-desktop /usr/bin/python3 -I '
+        'restrict,command="sudo -n --preserve-env=SSH_ORIGINAL_COMMAND /usr/bin/python3 -I '
         '/opt/kai-computer/display_gate.py" ' + seed.viewer_public_key + "\n"
     )
     assert body["runcmd"] == [["systemctl", "restart", "ssh.service"]]

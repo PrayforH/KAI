@@ -33,6 +33,7 @@ from harness.computer.desktop import (
     DesktopOccupiedError,
     DesktopState,
 )
+from harness.computer.desktop_registry import DesktopRegistry
 from harness.computer.host import ComputerLimits, DockerComputerLifecycle
 from harness.computer.models import (
     AssistantComputer,
@@ -234,7 +235,9 @@ def create_app(settings: ControllerSettings) -> FastAPI:
             "docker-computer": DockerComputerControl(registry, docker, authorizer=access),
             REMOTE_PROVIDER: RemoteComputerControl(registry, remote_specs, authorizer=access),
             **(
-                {VM_PROVIDER: VmComputerControl(registry, vm_specs, authorizer=access)}
+                {VM_PROVIDER: VmComputerControl(
+                    registry, vm_specs, authorizer=access, desktops=DesktopRegistry(sessions)
+                )}
                 if vm_specs
                 else {}
             ),
@@ -441,7 +444,7 @@ def create_app(settings: ControllerSettings) -> FastAPI:
             )
             answer: object = json.loads(result.stdout or "{}")
             return {"op": command.operation, "state": cast(dict[str, Any], answer).get("state")}
-        except (NotFoundError,):
+        except NotFoundError:
             raise HTTPException(404, "Computer is not registered") from None
         except (httpx.HTTPError, RuntimeError, ValueError, OSError, EOFError) as error:
             logging.getLogger(__name__).warning(

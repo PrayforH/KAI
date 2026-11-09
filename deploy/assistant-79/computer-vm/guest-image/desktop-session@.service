@@ -1,0 +1,31 @@
+[Unit]
+Description=KAI Bot desktop %i
+Documentation=file:/usr/local/share/kai-computer/README
+ConditionPathExists=/etc/kai-desktop/sessions/%i.env
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/lib/kai-desktop/session-start %i
+UMask=0077
+Restart=on-failure
+RestartSec=3
+RestartPreventExitStatus=64
+KillMode=control-group
+TimeoutStopSec=25
+StandardOutput=journal+console
+StandardError=journal+console
+# Root only to create the private runtime directory and X cookie; the X server,
+# window manager, RFB socket and browser then run as the slot's own account.
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/kai-bots /run/kai-bots
+InaccessiblePaths=/home/kai
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target

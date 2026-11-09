@@ -27,7 +27,7 @@ from harness.computer.models import (
 from harness.computer.registry import ComputerRegistry
 from harness.sandbox.base import SandboxCommandResult
 
-ControlAction = Literal["init", "activate", "renew", "deactivate", "exec", "acp"]
+ControlAction = Literal["init", "activate", "renew", "deactivate", "exec", "acp", "desktop_session"]
 MAX_BYTES = 40 * 1024 * 1024
 SUPERVISOR = "/opt/kai-computer/supervisor.py"
 SPOOL = "/var/lib/kai-computer/spool"
@@ -250,7 +250,8 @@ class DockerComputerControl:
             if action == "init"
             else {LeasePurpose.EXECUTE}
         )
-        if current.purpose not in purposes or computer.provider != "docker-computer":
+        if (current.purpose not in purposes or computer.provider != "docker-computer"
+                or action == "desktop_session"):
             raise ComputerLeaseLostError("computer control purpose does not match its lease")
         if self.authorizer is not None:
             await self.authorizer.authorize(computer, current, action)

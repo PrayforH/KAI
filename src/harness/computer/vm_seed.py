@@ -14,7 +14,10 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 _CONTROL_COMMAND = "sudo -n /usr/bin/python3 -I /opt/kai-computer/ssh_gate.py"
-_VIEW_COMMAND = "sudo -n -u kai-desktop /usr/bin/python3 -I /opt/kai-computer/display_gate.py"
+_VIEW_COMMAND = (
+    "sudo -n --preserve-env=SSH_ORIGINAL_COMMAND "
+    "/usr/bin/python3 -I /opt/kai-computer/display_gate.py"
+)
 
 
 def _private(key: Ed25519PrivateKey) -> bytes:

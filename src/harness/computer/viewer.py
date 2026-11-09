@@ -279,10 +279,13 @@ class DesktopSsh:
     def __init__(self, settings: ViewerSettings) -> None:
         self.settings = settings
 
-    async def connect(self, endpoint: SshEndpoint | None = None) -> asyncio.subprocess.Process:
+    async def connect(
+        self, endpoint: SshEndpoint | None = None, *, slot: str | None = None
+    ) -> asyncio.subprocess.Process:
         if endpoint is not None:
             return await asyncio.create_subprocess_exec(
                 *endpoint.argv(),
+                *([slot] if slot is not None else []),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
@@ -385,36 +388,21 @@ def create_viewer_app(
             return False
 
 
-    async def default_desktop(token: str | None) -> str | None:
-        """The owner's most recently active Bot desktop, if any."""
-
-        if not token:
-            return None
+    async def owns_desktop(token: str | None, slot: str) -> bool:
+        if not token or re.fullmatch(r"desktop_[a-f0-9]{24}", slot) is None:
+            return False
         try:
             response = await auth.get(
                 "/v1/studio/assistant/computer/desktops",
                 headers={"Authorization": "Bearer " + token},
                 timeout=3,
             )
-            if response.status_code != 200:
-                return None
-            rows = response.json()
+            rows = response.json() if response.status_code == 200 else None
         except (httpx.HTTPError, ValueError):
-            return None
-        if not isinstance(rows, list):
-            return None
-        live = [
-            row
-            for row in rows
-            if isinstance(row, dict)
-            and isinstance(row.get("desktopId"), str)
-            and row.get("state") == "busy"
-        ]
-        if not live:
-            return None
-        live.sort(key=lambda row: str(row.get("lastActiveAt") or ""), reverse=True)
-        chosen = live[0]["desktopId"]
-        return chosen if re.fullmatch(r"desktop_[a-f0-9]{24}", chosen) else None
+            return False
+        return isinstance(rows, list) and any(
+            isinstance(row, dict) and row.get("desktopId") == slot for row in rows
+        )
 
     async def status(request: Request) -> dict[str, object]:
         token = request.cookies.get(settings.cookie_name)
@@ -529,44 +517,22 @@ def create_viewer_app(
             process: asyncio.subprocess.Process | None = None
             tasks: list[asyncio.Task[None]] = []
             try:
-                process = (
-                    await desktop.connect(endpoint)
-                    if endpoint is not None
-                    else await desktop.connect()
-                )
-                assert process.stdout is not None and process.stdin is not None
-                output, input_stream = process.stdout, process.stdin
                 slot = websocket.query_params.get("desktop")
-                if slot is None and target_id in settings.desktop_header_targets:
-                    # No manual picker: the panel shows the Bot that was active
-                    # most recently, which is the one the owner is talking to.
-                    slot = await default_desktop(token)
                 if slot is not None:
-                    if (
-                        target_id not in settings.desktop_header_targets
-                        or re.fullmatch(r"desktop_[a-f0-9]{24}", slot) is None
-                    ):
+                    if (endpoint is None or target_id not in settings.desktop_header_targets
+                            or not await owns_desktop(token, slot)):
                         await websocket.close(code=1008)
                         return
-                    input_stream.write((slot + "\n").encode("ascii"))
-                    await input_stream.drain()
-                try:
-                    header = await asyncio.wait_for(output.readexactly(12), timeout=15)
-                except (TimeoutError, asyncio.IncompleteReadError, ConnectionError):
-                    if slot is None:
-                        raise
-                    # The Bot slot has no live session right now: drop it and
-                    # show the machine desktop rather than a reconnect loop.
-                    process.kill()
-                    await process.wait()
+                    process = await desktop.connect(endpoint, slot=slot)
+                else:
                     process = (
                         await desktop.connect(endpoint)
                         if endpoint is not None
                         else await desktop.connect()
                     )
-                    assert process.stdout is not None and process.stdin is not None
-                    output, input_stream = process.stdout, process.stdin
-                    header = await asyncio.wait_for(output.readexactly(12), timeout=15)
+                assert process.stdout is not None and process.stdin is not None
+                output, input_stream = process.stdout, process.stdin
+                header = await asyncio.wait_for(output.readexactly(12), timeout=15)
                 if not header.startswith(b"RFB 003."):
                     raise RuntimeError("desktop did not confirm RFB transport")
                 await websocket.accept()
@@ -592,7 +558,9 @@ def create_viewer_app(
                         for kind, chunk in policy.feed(
                             data,
                             input_allowed=(
-                                control["state"] == "human" and granted_epoch == control["epoch"]
+                                slot is None
+                                and control["state"] == "human"
+                                and granted_epoch == control["epoch"]
                             ),
                         ):
                             if kind == RFB_DISCARD:
@@ -635,7 +603,11 @@ def create_viewer_app(
                             binding,
                         ):
                             return
-                        control.update(await desktop_state(token, binding=binding))
+                        if slot is not None:
+                            if not await owns_desktop(token, slot):
+                                return
+                        else:
+                            control.update(await desktop_state(token, binding=binding))
                         if control["state"] == "human":
                             epoch = int(control.get("epoch") or 0)
                             if granted_epoch is None:

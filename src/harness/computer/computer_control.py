@@ -11,8 +11,10 @@ import os
 import pwd
 import re
 import shutil
+import socket
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -106,7 +108,25 @@ def apply(op: str, session: SessionPlan) -> str:
             shutil.rmtree(runtime, ignore_errors=True)
     elif op != "status":
         raise ValueError("desktop operation is invalid")
+    if op in {"ensure", "start"}:
+        return _wait_for_display(session)
     return status(session)
+
+
+def _wait_for_display(session: SessionPlan) -> str:
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        if status(session) == "active":
+            try:
+                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as channel:
+                    channel.settimeout(1)
+                    channel.connect(session.vnc_socket)
+                    if channel.recv(4, socket.MSG_WAITALL) == b"RFB ":
+                        return "active"
+            except OSError:
+                pass
+        time.sleep(0.2)
+    raise RuntimeError("desktop did not expose an RFB display")
 
 
 def status(session: SessionPlan) -> str:

@@ -21,8 +21,6 @@ from harness.computer.models import (
     ComputerStartRejectedError,
     ComputerState,
 )
-from harness.computer.desktop_registry import DesktopRegistry
-from harness.computer.models import DesktopState
 from harness.computer.registry import ComputerRegistry
 from harness.core.errors import ConflictError
 
@@ -74,7 +72,6 @@ class ComputerManager:
         *,
         owner: str,
         heartbeat_seconds: float | None = None,
-        desktops: DesktopRegistry | None = None,
     ) -> None:
         interval = (
             heartbeat_seconds if heartbeat_seconds is not None else registry.lease_ttl_seconds / 3
@@ -82,7 +79,6 @@ class ComputerManager:
         if not owner.strip() or not 0 < interval < registry.lease_ttl_seconds:
             raise ValueError("computer manager requires an owner and a heartbeat within its lease")
         self.registry, self.driver, self.owner = registry, driver, owner
-        self.desktops = desktops
         self._interval = interval
 
     async def ready(
@@ -182,7 +178,6 @@ class ComputerManager:
             run_fencing_token=run_fencing_token,
             desktop_id=desktop_id,
         )
-        await self._start_desktop(tenant, user, desktop_id, token)
         computer = await self.registry.get(tenant, user)
         # Activation is outside the user-work try/finally: a failed/uncertain
         # connection retains ownership for recovery, rather than assuming that
@@ -208,38 +203,6 @@ class ComputerManager:
                 await self.registry.finish_execution(token)
                 return
             await self.registry.finish_execution(token)
-
-    async def _start_desktop(
-        self, tenant: str, user: str, desktop_id: str | None, token: ComputerLease
-    ) -> None:
-        """Bring a freshly reserved Bot slot up under the lease that owns it.
-
-        The slot row is the single source of truth: a desktop already running
-        is left alone, a reserved one is started through the node's gate and
-        only then marked idle, so a failed start never advertises a usable slot.
-        """
-
-        if desktop_id is None or self.desktops is None:
-            return
-        desktop = await self.desktops.get_by_id(tenant, user, desktop_id)
-        if desktop.state in {DesktopState.STARTING, DesktopState.IDLE, DesktopState.BUSY}:
-            return
-        # ``ensure`` prepares the slot and starts its unit, so a rebuilt guest
-        # can bring the same Bot desktop back without a separate first step.
-        await self.driver.host.call(
-            token,
-            "desktop_session",
-            {
-                "op": "ensure",
-                "desktopId": desktop.desktop_id,
-                "unixUser": desktop.unix_user,
-                "display": desktop.display,
-                "profile": desktop.profile_ref,
-                "workspace": desktop.workspace_ref,
-                "vncSocket": desktop.vnc_socket,
-            },
-        )
-        await self.desktops.mark_started(tenant, user, desktop_id)
 
     @asynccontextmanager
     async def _heartbeat(

@@ -14,6 +14,9 @@ ASSETS = (
     "desktop-prepare.py",
     "desktop-stop.py",
     "desktop-start",
+    "desktop-session@.service",
+    "session-start",
+    "session-body",
     "desktop-shell.py",
     "appearance.py",
     "kai-desktop.service",
@@ -36,7 +39,7 @@ def main() -> None:
         (Path(args.runtime_dir), ASSETS),
         (Path(args.control_dir), (
             "supervisor.py", "ssh_gate.py", "display_gate.py", "native_desktop.py",
-            "desktop_export.py",
+            "desktop_export.py", "computer_control.py",
         )),
     ):
         for name in names:

@@ -17,7 +17,6 @@ from pathlib import Path
 from uuid import uuid4
 
 from harness.computer.desktop import DesktopControlService
-from harness.computer.desktop_registry import DesktopRegistry
 from harness.computer.docker import WORKSPACE, DockerComputerDriver
 from harness.computer.manager import ComputerAllocation, ComputerManager
 from harness.computer.models import ComputerBusyError, ComputerRecoveryRequiredError
@@ -69,7 +68,6 @@ class ComputerSandboxProvider:
         max_members: int = 10_000,
         busy_wait_seconds: float = 120.0,
         desktop_for_run: Callable[[Run], Awaitable[str | None]] | None = None,
-        desktops: DesktopRegistry | None = None,
     ) -> None:
         if busy_wait_seconds < 0:
             raise ValueError("computer busy wait cannot be negative")
@@ -82,8 +80,6 @@ class ComputerSandboxProvider:
         # None keeps the historical whole-VM lease; a resolver maps each Run to
         # its Bot desktop so parallel Bots of one VM never block each other.
         self.desktop_for_run = desktop_for_run
-        # Slot registry, present only while per-Bot desktops are enabled.
-        self.desktops = desktops
         self._scopes: dict[str, _Scope] = {}
         self._leases: dict[str, _Lease] = {}
 
@@ -174,7 +170,6 @@ class ComputerSandboxProvider:
             self.registry,
             self.driver,
             owner=lease.handle.sandbox_id,
-            desktops=self.desktops,
         )
         try:
             current_run = (
