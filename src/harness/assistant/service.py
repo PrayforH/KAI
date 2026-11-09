@@ -151,6 +151,10 @@ class AssistantService:
         if brief.ends_at and brief.ends_at <= now:
             raise ConflictError("The execution period must end in the future")
         validate_new_schedule(brief.schedule, now=now, ends_at=brief.ends_at)
+        if specialist_id is not None:
+            specialist = await self.repository.get_specialist(tenant_id, user_id, specialist_id)
+            if specialist.status is SpecialistStatus.ARCHIVED:
+                raise ConflictError("已归档的 Bot 无法承接职责")
         if managed_thread_id is not None:
             # 接管原会话：线程必须存在、属于该用户，且底层智能体一致，
             # 否则执行会脱离原会话的上下文与授权。
@@ -1409,6 +1413,7 @@ class AssistantService:
                     agent_version=execution.brief.agent_version,
                     project_id=execution.brief.project_id,
                     assistant_dispatch=specialist_dispatch,
+                    background_duty=execution.thread_id == f"assistant_{objective.objective_id}",
                     bot_specialist_id=(
                         objective.specialist_id if not objective.managed_thread_id else None
                     ),

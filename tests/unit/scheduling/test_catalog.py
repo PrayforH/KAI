@@ -19,6 +19,7 @@ def _objective(**overrides):
         "objective_id": "obj_1",
         "title": "每日简报",
         "status": SimpleNamespace(value="active"),
+        "revision": 1,
         "schedule": ObjectiveSchedule(intervalMinutes=60),
         "specialist_id": "lead-agent",
         "agent_name": "lead-agent",
@@ -35,6 +36,7 @@ def _automation(**overrides):
         "task_id": "task_1",
         "name": "周报汇总",
         "status": SimpleNamespace(value="active"),
+        "revision": 1,
         "schedule": SimpleNamespace(
             type=SimpleNamespace(value="cron"),
             at=None,

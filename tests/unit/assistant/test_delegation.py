@@ -356,6 +356,30 @@ async def test_create_task_supports_periodic_schedule():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("rule", "expected"),
+    [
+        ({"kind": "cron", "expression": "0 17 * * 5", "timezone": "Asia/Shanghai"},
+         "2026-11-13T09:00:00+00:00"),
+        ({"kind": "once", "meetingStartsAt": "2026-11-12T09:00:00+08:00", "minutesBefore": 30},
+         "2026-11-12T00:30:00+00:00"),
+    ],
+)
+async def test_future_duty_is_saved_once_without_immediate_execution(rule, expected):
+    gateway = FakeGateway()
+    create = next(tool.handler for tool in overlay(gateway).tools if tool.name == "assistant_create_task")
+    request = {"task": "按计划检查", "schedule": rule}
+    assert "已保存" in text_of(await create(request))
+    assert "已保存" in text_of(await create(request))
+    assert len(gateway.created) == 1 and not gateway.records
+    schedule = gateway.created[0].schedule
+    assert schedule is not None
+    after = datetime.fromisoformat("2026-11-09T00:00:00+00:00")
+    next_run = schedule.timing().next_occurrence(after=after)
+    assert next_run == datetime.fromisoformat(expected)
+
+
+@pytest.mark.asyncio
 async def test_create_task_rejects_bad_interval():
     gateway = FakeGateway()
     tools = {tool.name: tool.handler for tool in overlay(gateway).tools}

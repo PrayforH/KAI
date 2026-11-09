@@ -7,7 +7,7 @@ of an ongoing responsibility.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 
 from pydantic import AwareDatetime, Field, field_validator, model_validator
@@ -91,6 +91,8 @@ class ObjectiveSchedule(StudioModel):
     at: AwareDatetime | None = None
     expression: str | None = Field(default=None, max_length=256)
     timezone: str = Field(default="Asia/Shanghai", min_length=1, max_length=80)
+    meeting_starts_at: AwareDatetime | None = Field(default=None, alias="meetingStartsAt")
+    minutes_before: int | None = Field(default=None, alias="minutesBefore", strict=True, ge=1, le=10_080)
 
     def timing(self) -> Timing:
         return Timing(
@@ -103,6 +105,13 @@ class ObjectiveSchedule(StudioModel):
 
     @model_validator(mode="after")
     def valid_rule(self) -> ObjectiveSchedule:
+        if self.meeting_starts_at is not None or self.minutes_before is not None:
+            if self.kind is not TimingKind.ONCE or self.meeting_starts_at is None or self.minutes_before is None:
+                raise ValueError("会议提醒需要会议开始时间和提前分钟数，按一次性规则执行")
+            reminder = self.meeting_starts_at.astimezone(UTC) - timedelta(minutes=self.minutes_before)
+            if self.at is not None and self.at != reminder:
+                raise ValueError("提醒时间与会议开始时间及提前量不一致")
+            object.__setattr__(self, "at", reminder)
         try:
             self.timing()
         except ConflictError as error:

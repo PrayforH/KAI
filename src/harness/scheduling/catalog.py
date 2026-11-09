@@ -38,6 +38,8 @@ class ScheduleTiming(StudioModel):
     seconds: int | None = None
     expression: str | None = None
     timezone: str = "Asia/Shanghai"
+    meeting_starts_at: AwareDatetime | None = Field(default=None, alias="meetingStartsAt")
+    minutes_before: int | None = Field(default=None, alias="minutesBefore")
 
     @classmethod
     def from_timing(cls, timing: Timing) -> ScheduleTiming:
@@ -58,6 +60,7 @@ class ScheduleTask(StudioModel):
     source_id: str = Field(alias="sourceId")
     title: str
     status: str
+    revision: int
     timing: ScheduleTiming
     specialist_id: str | None = Field(default=None, alias="specialistId")
     agent_name: str | None = Field(default=None, alias="agentName")
@@ -106,7 +109,11 @@ def from_objective(objective: Objective) -> ScheduleTask | None:
         sourceId=objective.objective_id,
         title=objective.title,
         status=objective.status.value,
-        timing=ScheduleTiming.from_timing(objective.schedule.timing()),
+        revision=objective.revision,
+        timing=ScheduleTiming.from_timing(objective.schedule.timing()).model_copy(update={
+            "meeting_starts_at": objective.schedule.meeting_starts_at,
+            "minutes_before": objective.schedule.minutes_before,
+        }),
         specialistId=objective.specialist_id,
         agentName=objective.agent_name,
         nextRunAt=objective.next_check_at,
@@ -122,6 +129,7 @@ def from_automation(task: AutomationTask) -> ScheduleTask:
         sourceId=task.task_id,
         title=task.name,
         status=task.status.value,
+        revision=task.revision,
         timing=_automation_timing(task),
         nextRunAt=task.next_run_at,
         lastRunAt=task.last_run_at,

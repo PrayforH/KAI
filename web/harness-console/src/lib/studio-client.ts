@@ -2774,7 +2774,37 @@ export interface AutomationTaskInput {
   sourceTemplateId?: string | null;
 }
 
+export type ApiSchedule = {
+  source: "objective" | "automation";
+  sourceId: string;
+  title: string;
+  status: string;
+  revision: number;
+  specialistId?: string | null;
+  nextRunAt?: string | null;
+  timing: {
+    kind: "once" | "every" | "cron";
+    at?: string | null;
+    seconds?: number | null;
+    expression?: string | null;
+    timezone: string;
+    meetingStartsAt?: string | null;
+    minutesBefore?: number | null;
+  };
+};
+
 export const automationClient = {
+  async dutySchedules(): Promise<ApiSchedule[]> {
+    const schedules: ApiSchedule[] = [];
+    const limit = 500;
+    while (true) {
+      const page = await request<ApiSchedule[]>(
+        `schedules?source=objective&limit=${limit}&offset=${schedules.length}`,
+      );
+      schedules.push(...page);
+      if (page.length < limit) return schedules;
+    }
+  },
   list(): Promise<ApiAutomationTask[]> {
     return request<ApiAutomationTask[]>("automations");
   },

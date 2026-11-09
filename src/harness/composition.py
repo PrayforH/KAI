@@ -717,7 +717,7 @@ def build_production_container(
             return None
         if binding.thread_id == PERSONAL_ASSISTANT_THREAD:
             return bot_desktop_key(None)
-        if binding.kind == "bot" and binding.specialist_id is not None:
+        if binding.kind in {"bot", "duty"} and binding.specialist_id is not None:
             return bot_desktop_key(binding.specialist_id)
         return None
 
@@ -1651,14 +1651,26 @@ def build_production_container(
         coordinator = False
         if container.assistant is not None and session.agent_name:
             coordinator = await coordinator_session(container.agui, session)
+            direct_bot_id = None
+            if (not coordinator and run.input.get("conversation_surface") == "assistant"
+                    and not run.input.get("assistant_dispatch")):
+                try:
+                    binding = await binding_repository.get_by_session(
+                        session.tenant_id, session.user_id, session.session_id,
+                    )
+                except NotFoundError:
+                    pass
+                else:
+                    if binding.kind == "bot":
+                        direct_bot_id = binding.specialist_id
             observer = (
                 False
-                if coordinator
+                if coordinator or direct_bot_id
                 else await objective_observer_session(
                     container.assistant, container.agui, session
                 )
             )
-            if coordinator or observer:
+            if coordinator or observer or direct_bot_id:
                 run_tenant, run_id = run.tenant_id, run.run_id
 
                 async def emit_handover(payload: dict[str, object]) -> None:
@@ -1682,6 +1694,7 @@ def build_production_container(
                     session,
                     coordinator_thread=True,
                     read_only=observer,
+                    specialist_id=direct_bot_id,
                     parent_objective_id=(
                         await observer_create_scope(
                             container.assistant, container.agui, session

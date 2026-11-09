@@ -36,13 +36,14 @@ from harness.runtime.platform_tools import PlatformTool, PlatformToolOverlay
 
 TASK_ROUTING = (
     "耗时超过一分钟的执行类任务，先调用 assistant_create_task 放到后台"
-    "（它会获得独立线程并进入后台执行队列），然后立即回复用户任务已安排。\n"
+    "（执行记录归入助理职责），然后立即回复用户任务已安排。\n"
     "用户要求持久专职子助理时，用 assistant_delegate_to_specialist 创建或复用并转交；"
     "一次性或临时长任务可用 assistant_create_task。\n"
 )
 CHAT_CONTROL_GUIDE = (
     "Bot联系人、消息与持续任务是独立对象。创建联系人不执行工作；发送消息产生实际投递回执。"
     "持续任务工具用于用户要求的后台职责与周期配置，使用查询返回的版本做并发更新。"
+    "固定星期或时刻使用 schedule 的 cron，不能换算成分钟间隔；会议提醒必须有实际会议开始时间。"
     "按当前请求与已知能力自主决定处理、协同或提问；送达、执行中和完成按实际状态区分。"
 )
 COMMON_INSTRUCTIONS = (
@@ -92,6 +93,7 @@ class DelegationGateway(Protocol):
         idempotency_key: str | None,
         managed_thread_id: str | None = None,
         mode: str | None = None,
+        specialist_id: str | None = None,
         parent_objective_id: str | None = None,
     ) -> Objective: ...
 
@@ -124,6 +126,11 @@ class DelegationGateway(Protocol):
     async def reschedule(
         self, tenant_id: str, user_id: str, objective_id: str, *,
         expected_revision: int, interval_minutes: int | None, timezone: str | None = None,
+    ) -> Objective: ...
+
+    async def set_schedule(
+        self, tenant_id: str, user_id: str, objective_id: str, *,
+        expected_revision: int, schedule: ObjectiveSchedule | None,
     ) -> Objective: ...
 
     async def resolve_targets(
@@ -215,6 +222,7 @@ def assistant_delegation_overlay(
     coordinator_thread: bool,
     read_only: bool = False,
     parent_objective_id: str | None = None,
+    specialist_id: str | None = None,
     emit: "Callable[[dict[str, Any]], Awaitable[None]] | None" = None,
     emit_receipt: "Callable[[dict[str, Any]], Awaitable[None]] | None" = None,
 ) -> PlatformToolOverlay:
@@ -223,6 +231,20 @@ def assistant_delegation_overlay(
         # only the personal assistant coordination thread carries these tools.
         return PlatformToolOverlay()
     tenant_id, user_id = session.tenant_id, session.user_id
+    schedule_schema = {
+        "type": "object",
+        "description": "未来排程，保存后按时间执行。星期日为 0，周五 17:00 用 0 17 * * 5。",
+        "properties": {
+            "kind": {"type": "string", "enum": ["cron", "once", "every"]},
+            "expression": {"type": "string", "description": "cron 的五段表达式"},
+            "timezone": {"type": "string", "description": "IANA 时区，例如 Asia/Shanghai"},
+            "at": {"type": "string", "description": "一次性执行时间，带时区偏移的 ISO 8601"},
+            "meetingStartsAt": {"type": "string", "description": "实际会议开始时间，带时区偏移"},
+            "minutesBefore": {"type": "integer", "minimum": 1, "maximum": 10080},
+            "intervalMinutes": {"type": "integer", "minimum": 15, "maximum": 525600},
+        },
+        "required": ["kind"],
+    }
 
     async def create_task(arguments: dict[str, Any]) -> dict[str, Any]:
         task = str(arguments.get("task", "")).strip()
@@ -230,7 +252,15 @@ def assistant_delegation_overlay(
             return _text("任务说明需在 1–20000 字之间。")
         interval = arguments.get("interval_minutes")
         schedule = None
-        if interval is not None:
+        explicit_schedule = "schedule" in arguments
+        if explicit_schedule:
+            if interval is not None or not isinstance(arguments["schedule"], dict):
+                return _text("请选择一种有效排程；不能同时填写 schedule 和 interval_minutes。")
+            try:
+                schedule = ObjectiveSchedule.model_validate(arguments["schedule"])
+            except ValueError as error:
+                return _text(f"排程无效：{error}")
+        elif interval is not None:
             if (isinstance(interval, bool) or not isinstance(interval, int)
                     or not 15 <= interval <= 525_600):
                 return _text("interval_minutes 必须是 15–525600 之间的整数（分钟）。")
@@ -250,7 +280,8 @@ def assistant_delegation_overlay(
         )
         # Retried tool calls inside one run reuse the same durable objective
         # instead of piling up duplicates; the repository enforces the key.
-        key_material = "\0".join((run.run_id, title, task, str(interval), completion_criteria))
+        cadence = schedule.model_dump_json() if explicit_schedule and schedule else str(interval)
+        key_material = "\0".join((run.run_id, title, task, cadence, completion_criteria))
         idempotency_key = (
             f"delegate:{run.run_id}:{hashlib.sha256(key_material.encode()).hexdigest()[:32]}"
         )
@@ -261,7 +292,10 @@ def assistant_delegation_overlay(
                 brief,
                 idempotency_key=idempotency_key,
                 parent_objective_id=parent_objective_id,
+                **({"specialist_id": specialist_id} if specialist_id is not None else {}),
             )
+            if explicit_schedule:
+                return _text(f"职责已保存，将按规则执行。下次执行：{objective.next_check_at}。")
             execution = await gateway.enqueue(
                 tenant_id,
                 user_id,
@@ -653,6 +687,18 @@ def assistant_delegation_overlay(
         if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
             return _text("expected_revision 必须是正整数（先查询当前任务状态）。")
         if arguments.get("action") == "reschedule":
+            if "schedule" in arguments:
+                if "interval_minutes" in arguments or "timezone" in arguments:
+                    return _text("请只提交一套排程规则。")
+                try:
+                    rule = arguments["schedule"]
+                    schedule = ObjectiveSchedule.model_validate(rule) if rule is not None else None
+                    updated = await gateway.set_schedule(
+                        tenant_id, user_id, objective_id, expected_revision=revision, schedule=schedule,
+                    )
+                except (ConflictError, NotFoundError, PermissionDeniedError, ValueError) as error:
+                    return _text(f"排程未能修改：{error}")
+                return _text(f"「{updated.title}」的规则已原地更新。下次执行：{updated.next_check_at}。")
             if "interval_minutes" not in arguments:
                 return _text("修改周期必须填写interval_minutes；整数为分钟数，null仅关闭自动周期。")
             interval = arguments["interval_minutes"]
@@ -685,7 +731,7 @@ def assistant_delegation_overlay(
                 f"「{updated.title}」已改为{cadence}{when}。"
                 "原任务、历史和当前执行均保留，原有暂停状态不改变。"
             )
-        if "interval_minutes" in arguments or "timezone" in arguments:
+        if any(key in arguments for key in ("interval_minutes", "timezone", "schedule")):
             return _text("修改周期请使用action=reschedule；不能同时修改生命周期。")
         try:
             action = ObjectiveAction(str(arguments.get("action", "")))
@@ -776,6 +822,7 @@ def assistant_delegation_overlay(
                             "minimum": 15,
                             "description": "可选：周期性重跑间隔（分钟）；缺省只执行一次",
                         },
+                        "schedule": schedule_schema,
                         "completion_criteria": {
                             "type": "string",
                             "maxLength": 2000,
@@ -916,6 +963,7 @@ def assistant_delegation_overlay(
                             "description": "reschedule时必填；分钟数；null仅关闭自动周期。",
                         },
                         "timezone": {"type": "string", "description": "省略则保留任务原时区。"},
+                        "schedule": {"anyOf": [schedule_schema, {"type": "null"}]},
                         "expected_revision": {"type": "integer", "minimum": 1},
                     },
                     "required": ["objective_id", "action", "expected_revision"],
@@ -925,6 +973,11 @@ def assistant_delegation_overlay(
         ),
         instructions=INSTRUCTIONS,
     )
+    if specialist_id is not None:
+        return PlatformToolOverlay(
+            tools=tuple(tool for tool in overlay.tools if tool.name == "assistant_create_task"),
+            instructions=CHAT_CONTROL_GUIDE,
+        )
     if run.input.get("conversation_surface") == "assistant":
         # Explicit background creation and management remain available in chat;
         # normal domain questions use the existing specialist-message route.
@@ -954,6 +1007,7 @@ class AssistantDelegationGateway:
         idempotency_key: str | None,
         managed_thread_id: str | None = None,
         mode: str | None = None,
+        specialist_id: str | None = None,
         parent_objective_id: str | None = None,
     ) -> Objective:
         return await self._assistant.create(
@@ -963,6 +1017,7 @@ class AssistantDelegationGateway:
             idempotency_key=idempotency_key,
             managed_thread_id=managed_thread_id,
             mode=DelegationMode(mode) if mode is not None else None,
+            specialist_id=specialist_id,
             parent_objective_id=parent_objective_id,
         )
 
@@ -1006,6 +1061,14 @@ class AssistantDelegationGateway:
         return await self._assistant.reschedule(
             tenant_id, user_id, objective_id, expected_revision=expected_revision,
             interval_minutes=interval_minutes, timezone=timezone,
+        )
+
+    async def set_schedule(
+        self, tenant_id: str, user_id: str, objective_id: str, *,
+        expected_revision: int, schedule: ObjectiveSchedule | None,
+    ) -> Objective:
+        return await self._assistant.set_schedule(
+            tenant_id, user_id, objective_id, expected_revision=expected_revision, schedule=schedule,
         )
 
     async def add_note(

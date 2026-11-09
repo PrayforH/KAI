@@ -1,5 +1,8 @@
 "use client";
 import { FeedbackToast } from "../feedback-toast";
+import { DutyHistory } from "../bot-duties-dialog";
+import { DutyScheduleControl, type BotDuty } from "../duty-schedule-control";
+import { assistantRequest } from "../../lib/assistant-client";
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -8,6 +11,7 @@ import {
   automationClient,
   type ApiAutomationRunRecord,
   type ApiAutomationTask,
+  type ApiSchedule,
   type AutomationPermissionKind,
   type AutomationTaskInput,
 } from "../../lib/studio-client";
@@ -210,6 +214,8 @@ export function AutomationManager() {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("tasks");
   const [tasks, setTasks] = useState<ApiAutomationTask[]>([]);
+  const [dutySchedules, setDutySchedules] = useState<ApiSchedule[]>([]);
+  const [changingDuty, setChangingDuty] = useState<string | null>(null);
   const [records, setRecords] = useState<ApiAutomationRunRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -233,12 +239,29 @@ export function AutomationManager() {
 
   const loadTasks = useCallback(async () => {
     try {
-      setTasks(await automationClient.list());
+      const [automation, duties] = await Promise.all([automationClient.list(), automationClient.dutySchedules()]);
+      setTasks(automation);
+      setDutySchedules(duties);
       setError(null);
     } catch {
       setError("自动化任务加载失败，请稍后刷新重试");
     }
   }, []);
+
+  async function toggleDuty(duty: ApiSchedule) {
+    setChangingDuty(duty.sourceId);
+    try {
+      await assistantRequest(`objectives/${encodeURIComponent(duty.sourceId)}/actions`, "POST", {
+        action: duty.status === "active" ? "pause" : "resume",
+        expectedRevision: duty.revision,
+      });
+      await loadTasks();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "职责状态未更新");
+    } finally {
+      setChangingDuty(null);
+    }
+  }
 
   const loadRecords = useCallback(async () => {
     try {
@@ -442,7 +465,7 @@ export function AutomationManager() {
             </button>
           </div>
         )}
-        {tab === "tasks" && tasks.length > 0 && (
+        {tab === "tasks" && (tasks.length > 0 || dutySchedules.length > 0) && (
           <button type="button" className={styles.headerAdd} onClick={() => openCreate()}>
             + 添加自动化
           </button>
@@ -455,7 +478,7 @@ export function AutomationManager() {
         <section className={styles.section}>
           {loading ? (
             <p className={styles.loading}>正在加载自动化任务…</p>
-          ) : tasks.length === 0 ? (
+          ) : tasks.length === 0 && dutySchedules.length === 0 ? (
             <div className={styles.emptyTasks}>
               <span className={styles.emptyAlarm}><AlarmIcon /></span>
               <p>开启你的第一个自动化任务吧</p>
@@ -465,6 +488,39 @@ export function AutomationManager() {
             </div>
           ) : (
             <ul className={styles.taskList}>
+              {dutySchedules.map(duty => {
+                const { seconds, ...timing } = duty.timing;
+                const editable: BotDuty = {
+                  objectiveId: duty.sourceId, title: duty.title, status: duty.status,
+                  revision: duty.revision, nextCheckAt: duty.nextRunAt,
+                  schedule: { ...timing, intervalMinutes: seconds == null ? null : seconds / 60 },
+                };
+                return <li key={duty.sourceId} className={styles.taskCard} data-status={duty.status}>
+                  <div className={styles.taskMain}>
+                    <div className={styles.taskTitleRow}>
+                      <strong>{duty.title}</strong>
+                      <span className={styles.statusBadge}>{duty.specialistId ? "Bot 职责" : "主助理职责"}</span>
+                      <span className={styles.statusBadge} data-kind={duty.status}>
+                        {duty.status === "active" ? "已启用" : duty.status === "paused" ? "已暂停" : "已结束"}
+                      </span>
+                    </div>
+                    <p className={styles.taskMeta}>
+                      <span>下次执行 {formatScheduleTime(duty.nextRunAt)}</span>
+                    </p>
+                    <DutyHistory objectiveId={duty.sourceId} />
+                    <details>
+                      <summary>编辑排程</summary>
+                      <DutyScheduleControl key={duty.revision} duty={editable} onSaved={() => void loadTasks()} />
+                    </details>
+                  </div>
+                  {(duty.status === "active" || duty.status === "paused") &&
+                    <div className={styles.taskActions}>
+                      <button type="button" disabled={changingDuty !== null} onClick={() => void toggleDuty(duty)}>
+                        {duty.status === "paused" ? "恢复" : "暂停"}
+                      </button>
+                    </div>}
+                </li>;
+              })}
               {tasks.map((task) => (
                 <li
                   key={task.taskId}

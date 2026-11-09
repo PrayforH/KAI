@@ -276,7 +276,7 @@ class ProcessedInput(FrozenModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-ThreadKind = Literal["task", "bot"]
+ThreadKind = Literal["task", "bot", "duty"]
 
 
 class AguiThreadBinding(FrozenModel):

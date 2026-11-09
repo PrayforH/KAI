@@ -103,7 +103,7 @@ export function BotSidePanel({ botId, primary = false, name, tone, shape, thread
     </header>
     <div className={styles.content} role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-${tab}`}>
       {tab === "activity" ? <>
-        {botId && <BotDuties specialistId={botId} compact />}
+        {(primary || botId) && <BotDuties specialistId={primary ? undefined : botId} compact />}
         <BotComputerCard botId={primary ? undefined : botId} ready={ready} onOpen={onComputer} />
       </> : <BotLibrary threadId={threadId} />}
     </div>

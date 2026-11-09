@@ -19,6 +19,7 @@ def _objective():
         objective_id="obj_1",
         title="简报",
         status=SimpleNamespace(value="active"),
+        revision=1,
         schedule=ObjectiveSchedule(intervalMinutes=60, timezone="UTC"),
         specialist_id="lead-agent",
         agent_name="lead-agent",
@@ -33,6 +34,7 @@ def _automation():
         task_id="task_1",
         name="周报",
         status=SimpleNamespace(value="active"),
+        revision=1,
         schedule=SimpleNamespace(
             type=SimpleNamespace(value="cron"),
             at=None,

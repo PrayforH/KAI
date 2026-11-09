@@ -4,6 +4,8 @@ export type ObjectiveSchedule = {
   at?: string | null;
   expression?: string | null;
   timezone: string;
+  meetingStartsAt?: string | null;
+  minutesBefore?: number | null;
 };
 
 export type Objective = {

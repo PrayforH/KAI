@@ -397,6 +397,7 @@ class AguiRunService:
         append_to_history: bool = False,
         assistant_dispatch: bool = False,
         bot_specialist_id: str | None = None,
+        background_duty: bool = False,
     ) -> AguiRunCreation:
         prompt, input_artifact_ids = _latest_user_input(request)
         conversation_prompts = _user_prompts(request)
@@ -419,6 +420,7 @@ class AguiRunService:
                 connection_mode=connection_mode,
                 project_id=project_id,
                 bot_specialist_id=bot_specialist_id,
+                background_duty=background_duty,
             )
             project_context = (
                 await self._project_context(tenant_id, user_id, binding.project_id)
@@ -1150,6 +1152,7 @@ class AguiRunService:
         connection_mode: Literal["caller_owned", "service_owned"] = "caller_owned",
         project_id: str | None = None,
         bot_specialist_id: str | None = None,
+        background_duty: bool = False,
     ) -> AguiThreadBinding:
         async with self._lock:
             try:
@@ -1249,6 +1252,9 @@ class AguiRunService:
                 project_id=project_id,
             )
             timestamp = datetime.now(UTC)
+            kind: ThreadKind = "duty" if background_duty else (
+                "bot" if bot_specialist_id is not None else "task"
+            )
             await self._bindings.add(
                 StoredAguiThreadBinding(
                     tenant_id=tenant_id,
@@ -1256,7 +1262,7 @@ class AguiRunService:
                     thread_id=thread_id,
                     project_id=project_id,
                     session_id=session.session_id,
-                    kind="bot" if bot_specialist_id is not None else "task",
+                    kind=kind,
                     specialist_id=bot_specialist_id,
                     created_at=timestamp,
                     updated_at=timestamp,

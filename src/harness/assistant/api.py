@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import Field
 
 from harness.api.dependencies import Identity, ensure_permission, require_identity
+from harness.assistant.constants import primary_specialist_id
 from harness.assistant.models import (
     AssistantInboxItem,
     HandoverStatus,
@@ -238,6 +239,38 @@ async def initialize_primary_profile(identity: Writer, assistant: Service) -> Sp
     return await assistant.primary_profile(identity.tenant_id, identity.user_id, initialize=True)
 
 
+@router.get("/primary/duties")
+async def primary_duties(identity: Reader, assistant: Service):
+    duties = await assistant.repository.list(identity.tenant_id, identity.user_id, limit=None)
+    primary_id = primary_specialist_id(identity.tenant_id, identity.user_id)
+    return {"duties": await _duty_summaries(
+        assistant, identity, [duty for duty in duties if duty.specialist_id in (None, primary_id)]
+    )}
+
+
+async def _duty_summaries(assistant: AssistantService, identity: Identity, duties: list[Objective]):
+    plans = []
+    for item in duties:
+        recent = await assistant.repository.executions(
+            identity.tenant_id, identity.user_id, item.objective_id, limit=1
+        )
+        latest = recent[0] if recent else None
+        plans.append({
+            "objectiveId": item.objective_id,
+            "title": item.title,
+            "status": item.status.value,
+            "revision": item.revision,
+            "hasExecutions": latest is not None,
+            "latestExecution": latest.model_dump(
+                mode="json", by_alias=True,
+                include={"status", "summary", "run_id", "thread_id", "finished_at"},
+            ) if latest else None,
+            "schedule": item.schedule.model_dump(by_alias=True) if item.schedule else None,
+            "nextCheckAt": item.next_check_at,
+        })
+    return plans
+
+
 @router.get("/specialists")
 async def list_specialists(identity: Reader, assistant: Service) -> list[SpecialistDirectoryItem]:
     return await assistant.specialist_directory(identity.tenant_id, identity.user_id)
@@ -317,29 +350,7 @@ async def get_specialist(
     conversation = await assistant.specialist_conversation(
         identity.tenant_id, identity.user_id, specialist, duties=duties
     )
-    plans = []
-    if include_duties:
-        for item in duties:
-            recent = await assistant.repository.executions(
-                identity.tenant_id, identity.user_id, item.objective_id, limit=1
-            )
-            latest = recent[0] if recent else None
-            plans.append({
-                "objectiveId": item.objective_id,
-                "title": item.title,
-                "status": item.status.value,
-                "revision": item.revision,
-                "hasExecutions": latest is not None,
-                "latestExecution": (
-                    latest.model_dump(
-                        mode="json", by_alias=True,
-                        include={"status", "summary", "run_id", "thread_id", "finished_at"},
-                    )
-                    if latest else None
-                ),
-                "schedule": item.schedule.model_dump(by_alias=True) if item.schedule else None,
-                "nextCheckAt": item.next_check_at,
-            })
+    plans = await _duty_summaries(assistant, identity, duties) if include_duties else []
     return {
         "specialist": specialist,
         **conversation.model_dump(by_alias=True),

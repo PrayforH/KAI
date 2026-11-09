@@ -1,8 +1,8 @@
 import { PERSONAL_ASSISTANT_THREAD } from "../components/personal-assistant-context";
 
 /** Task coordinates never inherit a specialist or the assistant page's identity. */
-export function taskThreadHref(threadId: string): string {
-  return `/?${new URLSearchParams({ thread: threadId })}`;
+export function taskThreadHref(threadId: string, runId?: string): string {
+  return `/?${new URLSearchParams({ thread: threadId, ...(runId ? { run: runId } : {}) })}`;
 }
 
 const TASK_LAUNCH_PARAMS = [
