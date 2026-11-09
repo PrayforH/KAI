@@ -480,7 +480,8 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     composerText, caret, mentionableAssistants, agentSelection.selected?.skills,
   );
   const activeSuggestion = Math.max(0, Math.min(suggestionIndex, options.length - 1));
-  const filesOnly = Boolean(botScope || conversationScope?.compactComposer);
+  const showKnowledgeSelection = !botScope && !conversationScope?.compactComposer;
+  const filesOnly = assistantSurface || !showKnowledgeSelection;
   const busy = threadRunning || showStop || runLocked || videoGenerating;
   useEffect(() => {
     if (!queueKey) return;
@@ -561,19 +562,6 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       if (input?.value === next) input.setSelectionRange(position, position);
     });
     return next;
-  }
-  function openAssistantMentions() {
-    const start = inputRef.current?.selectionStart ?? composerText.length;
-    const end = inputRef.current?.selectionEnd ?? start;
-    if (composerTrigger(composerText, start)?.symbol === "@") {
-      inputRef.current?.focus({ preventScroll: true });
-      setCaret(start);
-    } else {
-      const separator = start > 0 && !/\s/u.test(composerText[start - 1]) ? " " : "";
-      replaceSuggestionText(start, end, separator + "@");
-    }
-    setSuggestionIndex(0);
-    setDismissedText(null);
   }
   function chooseSuggestion(index: number) {
     const option = options[index];
@@ -1045,7 +1033,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       </AssistantConversationTail>
       {steeringNotice && !assistantSurface && <p className="composer-status-announcement" role="status">{steeringNotice}</p>}
       {inputError && <p className="composer-input-error" role="alert">{inputError}</p>}
-      {!filesOnly && <TaskKnowledgeSelection disabled={busy || Boolean(conversationScope)} />}
+      {showKnowledgeSelection && <TaskKnowledgeSelection disabled={busy || Boolean(conversationScope)} />}
       <ReplyComposerBar />
       <Composer.Root onSubmitCapture={(event: FormEvent) => { event.preventDefault(); event.stopPropagation(); if (!composingRef.current) submitComposer(); }}>
         <ComposerAssist options={options} index={activeSuggestion} onChoose={chooseSuggestion} />
@@ -1124,9 +1112,6 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
         <div className="composer-toolbar">
           <ComposerAddControl filesOnly={filesOnly} knowledgeDisabled={runLocked || showStop || videoGenerating}
             configureKnowledge={conversationScope?.onConfigureKnowledge} />
-          {assistantSurface && !botScope && <button type="button" className="aui-composer-attach composer-mention-trigger"
-            aria-label="提及助理" title="提及助理" disabled={busy}
-            aria-controls={options[0] && "bot" in options[0] ? "composer-suggestions" : undefined} onClick={openAssistantMentions}>@</button>}
 
           {!conversationScope?.compactComposer && !assistantSurface && <>
           <TaskAgentSwitcher
