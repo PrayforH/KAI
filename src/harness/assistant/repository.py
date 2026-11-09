@@ -16,7 +16,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from harness.assistant.lifecycle import next_check, transition
+from harness.assistant.lifecycle import next_check, transition, validate_new_schedule
 from harness.assistant.models import (
     AssistantInboxItem,
     AssistantInboxMetrics,
@@ -52,6 +52,7 @@ from harness.assistant.storage import (
 from harness.core.errors import ConflictError, NotFoundError
 from harness.core.events import RunEvent
 from harness.core.models import Run, RunStatus
+from harness.scheduling import TimingKind
 from harness.storage.database import SessionFactory
 from harness.storage.models import AguiThreadBindingRow, EventRow, RunRow, SessionRow
 
@@ -196,13 +197,18 @@ class PostgresAssistantRepository:
             return _objective(await self._owned(session, tenant_id, user_id, objective_id))
 
     async def list(
-        self, tenant_id: str, user_id: str, *, limit: int | None = 100
+        self, tenant_id: str, user_id: str, *,
+        limit: int | None = 100, specialist_id: str | None = None,
     ) -> list[Objective]:
         statement = (
             select(ObjectiveRow)
             .where(ObjectiveRow.tenant_id == tenant_id, ObjectiveRow.user_id == user_id)
             .order_by(ObjectiveRow.updated_at.desc(), ObjectiveRow.objective_id)
         )
+        if specialist_id is not None:
+            statement = statement.where(
+                ObjectiveRow.payload["specialistId"].as_string() == specialist_id
+            )
         if limit is not None:
             statement = statement.limit(limit)
         async with self._context() as session:
@@ -243,18 +249,28 @@ class PostgresAssistantRepository:
                             "Create a new objective to change its agent or project after execution"
                         )
                 changes.update(brief.model_dump())
-                changes["next_check_at"] = (
-                    next_check(brief.schedule, after=now, ends_at=brief.ends_at)
-                    if current.status is ObjectiveStatus.ACTIVE
-                    else None
-                )
+                if (brief.schedule, brief.ends_at) != (current.schedule, current.ends_at):
+                    if brief.schedule != current.schedule:
+                        validate_new_schedule(brief.schedule, now=now, ends_at=brief.ends_at)
+                    changes["schedule_version"] = current.schedule_version + 1
+                    changes["next_check_at"] = (
+                        next_check(
+                            brief.schedule, after=now, ends_at=brief.ends_at,
+                            resume=brief.schedule == current.schedule,
+                        )
+                        if current.status is ObjectiveStatus.ACTIVE
+                        else None
+                    )
                 kind, content = "updated", brief.instructions
             elif action is not None:
                 status = transition(current.status, action)
                 changes.update(
                     status=status,
+                    schedule_version=current.schedule_version + 1,
                     next_check_at=(
-                        next_check(current.schedule, after=now, ends_at=current.ends_at)
+                        next_check(
+                            current.schedule, after=now, ends_at=current.ends_at, resume=True
+                        )
                         if status is ObjectiveStatus.ACTIVE
                         else None
                     ),
@@ -315,6 +331,7 @@ class PostgresAssistantRepository:
         *,
         trigger_key: str,
         now: datetime,
+        scheduled_for: datetime | None = None,
     ) -> ObjectiveExecution:
         existing = await session.scalar(
             select(ObjectiveExecutionRow).where(
@@ -355,8 +372,9 @@ class PostgresAssistantRepository:
         ):
             raise ConflictError("This objective already has an active execution")
         budget = objective.budget
-        if budget is not None:
-            # 派发前的预算闸门：在同一个入队事务内计数，达到上限即拒绝。
+        if budget is not None and objective.specialist_id is None:
+            # Legacy objectives retain their explicit budgets. Bot duties do
+            # not require a run, token or cost allocation before dispatch.
             if budget.max_total_runs is not None:
                 total = await session.scalar(
                     select(func.count())
@@ -425,6 +443,8 @@ class PostgresAssistantRepository:
             userId=objective.user_id,
             triggerKey=trigger_key,
             objectiveRevision=objective.revision,
+            scheduleVersion=objective.schedule_version if scheduled_for is not None else None,
+            scheduledFor=scheduled_for,
             brief=brief,
             context="\n\n".join(reversed(notes))[-32_000:],
             threadId=objective.managed_thread_id or f"assistant_{objective.objective_id}",
@@ -446,7 +466,7 @@ class PostgresAssistantRepository:
         return execution
 
     async def executions(
-        self, tenant_id: str, user_id: str, objective_id: str
+        self, tenant_id: str, user_id: str, objective_id: str, *, limit: int = 100
     ) -> list[ObjectiveExecution]:
         async with self._context() as session:
             await self._owned(session, tenant_id, user_id, objective_id)
@@ -458,7 +478,7 @@ class PostgresAssistantRepository:
                     ObjectiveExecutionRow.user_id == user_id,
                 )
                 .order_by(ObjectiveExecutionRow.created_at.desc())
-                .limit(100)
+                .limit(limit)
             )
             return [ObjectiveExecution.model_validate(row.payload) for row in rows]
 
@@ -467,15 +487,23 @@ class PostgresAssistantRepository:
         now: datetime,
         *,
         limit: int = 20,
-        unviewed_pause_hours: int | None = None,
     ) -> None:
         desktop_pairs: set[tuple[str, str]] = set()
         async with self._context(write=True) as session:
+            open_execution = select(ObjectiveExecutionRow.execution_id).where(
+                ObjectiveExecutionRow.objective_id == ObjectiveRow.objective_id,
+                ObjectiveExecutionRow.status.in_(_OPEN_EXECUTIONS),
+            ).exists()
             rows = await session.scalars(
                 select(ObjectiveRow)
                 .where(
                     ObjectiveRow.status == ObjectiveStatus.ACTIVE.value,
                     ObjectiveRow.next_check_at <= now,
+                    or_(
+                        ObjectiveRow.payload["schedule"]["kind"].as_string()
+                        .is_distinct_from(TimingKind.ONCE.value),
+                        ~open_execution,
+                    ),
                 )
                 .order_by(ObjectiveRow.next_check_at)
                 .limit(limit)
@@ -483,93 +511,44 @@ class PostgresAssistantRepository:
             )
             for row in rows:
                 current = _objective(row)
-                gate = await self._routine_gate(
-                    session, current, now=now, pause_hours=unviewed_pause_hours
-                )
-                if gate is not None:
-                    # 无人查看：跳过本次执行，但照常推进下一次检查点，
-                    # 让"打开会话"后的下一个周期自然恢复。
-                    _store(row, gate)
+                due = current.next_check_at
+                if due is None:
                     continue
+                once = current.schedule is not None and current.schedule.kind is TimingKind.ONCE
+                changes: dict[str, object] = {
+                    "next_check_at": next_check(
+                        current.schedule, after=now, ends_at=current.ends_at
+                    )
+                }
                 try:
                     await self._enqueue(
                         session,
                         row,
-                        trigger_key=f"schedule:{current.next_check_at}",
+                        trigger_key=(
+                            f"schedule:objective:{current.objective_id}:"
+                            f"{current.schedule_version}:{due.astimezone(UTC).isoformat()}"
+                        ),
                         now=now,
+                        scheduled_for=due,
                     )
                     if current.budget is not None and current.budget.requires_desktop:
                         # 高优入队即触发软抢占评估；clamp 幂等且不拉长。
                         desktop_pairs.add((row.tenant_id, row.user_id))
-                except ConflictError:
-                    # A busy objective skips this interval, without a catch-up burst.
-                    pass
-                updated = current.model_copy(
-                    update={
-                        "next_check_at": next_check(
-                            current.schedule, after=now, ends_at=current.ends_at
+                except ConflictError as error:
+                    if once:
+                        changes.update(
+                            status=ObjectiveStatus.CANCELLED,
+                            revision=current.revision + 1,
+                            updated_at=now,
                         )
-                    }
-                )
-                _store(row, updated)
+                        _event(session, current, "schedule_skipped", str(error), now)
+                _store(row, current.model_copy(update=changes))
         # 入队事务之外再评估一次软抢占（clamp 开自己的短事务，避免与上面的
         # FOR UPDATE 行竞争）；无桌面排队时它是一次空查询。
         for tenant_id, user_id in sorted(desktop_pairs):
             await self.clamp_desktop_turn_for_priority(
                 tenant_id=tenant_id, user_id=user_id, now=now
             )
-
-    async def _routine_gate(
-        self,
-        session: AsyncSession,
-        objective: Objective,
-        *,
-        now: datetime,
-        pause_hours: int | None,
-    ) -> Objective | None:
-        """无人查看则跳过本次例行执行；返回推进后的 Objective，None 表示放行。
-
-        只作用于绑定了专职 Bot 的职责：以该 Bot 的 last_viewed_at 为准，
-        超过阈值（None 视为从未查看）则跳过并在 Bot 上写入可观察的
-        routine_paused_reason；查看（touch）会清掉该标记。
-        """
-        if objective.specialist_id is None or not pause_hours or pause_hours <= 0:
-            return None
-        specialist_row = await session.scalar(
-            select(SpecialistRow).where(
-                SpecialistRow.tenant_id == objective.tenant_id,
-                SpecialistRow.user_id == objective.user_id,
-                SpecialistRow.specialist_id == objective.specialist_id,
-            )
-        )
-        if specialist_row is None:
-            return None
-        specialist = Specialist.model_validate(specialist_row.payload)
-        viewed_at = specialist.last_viewed_at
-        stale_seconds = (now - viewed_at).total_seconds() if viewed_at is not None else None
-        if stale_seconds is not None and stale_seconds < pause_hours * 3600:
-            if specialist.routine_paused_reason is not None:
-                # 查看过就放行：顺手清掉历史暂停标记（自愈）。
-                specialist_row.payload = specialist.model_copy(
-                    update={"routine_paused_reason": None, "updated_at": now}
-                ).model_dump(mode="json", by_alias=True)
-            return None
-        hours = round(stale_seconds / 3600, 1) if stale_seconds is not None else None
-        reason = {
-            "reason": "unviewed",
-            "hours_since_view": hours,
-            "at": now.isoformat(),
-        }
-        specialist_row.payload = specialist.model_copy(
-            update={"routine_paused_reason": reason, "updated_at": now}
-        ).model_dump(mode="json", by_alias=True)
-        return objective.model_copy(
-            update={
-                "next_check_at": next_check(
-                    objective.schedule, after=now, ends_at=objective.ends_at
-                )
-            }
-        )
 
     async def touch_specialist_viewed(
         self, tenant_id: str, user_id: str, specialist_id: str, *, now: datetime
@@ -637,6 +616,14 @@ class PostgresAssistantRepository:
         usage_cost: float | None = None,
     ) -> bool:
         async with self._context(write=True) as session:
+            objective_row = (
+                await self._owned(
+                    session, execution.tenant_id, execution.user_id, execution.objective_id,
+                    lock=True,
+                )
+                if execution.finished_at is not None
+                else None
+            )
             row = await session.scalar(
                 select(ObjectiveExecutionRow)
                 .where(
@@ -653,12 +640,28 @@ class PostgresAssistantRepository:
             row.payload = execution.model_dump(mode="json", by_alias=True)
             # Poll running executions fairly; a crashed owner is retried after the lease.
             row.lease_until = now + timedelta(seconds=5)
-            if execution.finished_at is not None:
-                objective = _objective(
-                    await self._owned(
-                        session, execution.tenant_id, execution.user_id, execution.objective_id
+            if execution.finished_at is not None and objective_row is not None:
+                objective = _objective(objective_row)
+                if (
+                    execution.scheduled_for is not None
+                    and not objective.status.terminal
+                    and objective.schedule is not None
+                    and objective.schedule.kind is TimingKind.ONCE
+                    and execution.scheduled_for == objective.schedule.at
+                    and (
+                        execution.matches_schedule(objective)
+                        or execution.run_id is not None
                     )
-                )
+                ):
+                    objective = objective.model_copy(
+                        update={
+                            "status": ObjectiveStatus.COMPLETED,
+                            "revision": objective.revision + 1,
+                            "updated_at": now,
+                            "next_check_at": None,
+                        }
+                    )
+                    _store(objective_row, objective)
                 _event(session, objective, "execution_finished", execution.execution_id, now)
                 summary = execution.summary or "本次执行已结束，请查看任务记录。"
                 session.add(

@@ -4,18 +4,22 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, cast
+from uuid import uuid4
 
-from sqlalchemy import CursorResult, delete, select, update
+from sqlalchemy import CursorResult, delete, or_, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 
 from harness.automations.models import (
+    AutomationDispatch,
     AutomationRunRecord,
     AutomationStatus,
     AutomationTask,
 )
+from harness.automations.repositories import DISPATCH_LEASE
 from harness.core.errors import ConflictError, NotFoundError
 from harness.storage.database import SessionFactory
-from harness.storage.models import AutomationRecordRow, AutomationTaskRow
+from harness.storage.models import AutomationDispatchRow, AutomationRecordRow, AutomationTaskRow
 
 
 def _task_payload(task: AutomationTask) -> dict[str, Any]:
@@ -152,6 +156,9 @@ class PostgresAutomationTaskRepository:
                 AutomationTaskRow.status == AutomationStatus.ACTIVE.value,
                 AutomationTaskRow.next_run_at.is_not(None),
                 AutomationTaskRow.next_run_at <= now,
+                ~select(AutomationDispatchRow.dispatch_id).where(
+                    AutomationDispatchRow.task_id == AutomationTaskRow.task_id
+                ).exists(),
             )
             .order_by(AutomationTaskRow.next_run_at, AutomationTaskRow.task_id)
             .limit(limit)
@@ -162,26 +169,33 @@ class PostgresAutomationTaskRepository:
 
     async def claim_due(
         self,
-        task_id: str,
+        dispatch: AutomationDispatch,
         *,
-        expected_next_run_at: datetime,
         next_run_at: datetime | None,
         status: str,
         last_run_at: datetime,
     ) -> bool:
-        async with self._sessions() as session:
+        task = dispatch.task
+        async with self._sessions.begin() as session:
             row = await session.scalar(
                 select(AutomationTaskRow)
-                .where(AutomationTaskRow.task_id == task_id)
+                .where(
+                    AutomationTaskRow.task_id == task.task_id,
+                    AutomationTaskRow.tenant_id == task.tenant_id,
+                    AutomationTaskRow.user_id == task.user_id,
+                    AutomationTaskRow.revision == task.revision,
+                    AutomationTaskRow.status == AutomationStatus.ACTIVE.value,
+                    AutomationTaskRow.next_run_at == dispatch.scheduled_at,
+                )
                 .with_for_update()
             )
             if row is None:
                 return False
-            current = _task(row)
-            if current.next_run_at != expected_next_run_at:
-                await session.rollback()
+            if await session.scalar(select(AutomationDispatchRow.dispatch_id).where(
+                AutomationDispatchRow.task_id == task.task_id
+            )):
                 return False
-            updated = current.model_copy(
+            updated = _task(row).model_copy(
                 update={
                     "next_run_at": next_run_at,
                     "status": AutomationStatus(status),
@@ -193,29 +207,62 @@ class PostgresAutomationTaskRepository:
             row.next_run_at = updated.next_run_at
             row.updated_at = updated.updated_at
             row.payload = _task_payload(updated)
-            await session.commit()
+            session.add(AutomationDispatchRow(
+                dispatch_id=dispatch.dispatch_id, task_id=task.task_id,
+                scheduled_at=dispatch.scheduled_at, payload=dispatch.model_dump(mode="json"),
+            ))
             return True
+
+    async def claim_dispatch(self, now: datetime) -> tuple[AutomationDispatch, str] | None:
+        async with self._sessions.begin() as session:
+            row = await session.scalar(
+                select(AutomationDispatchRow)
+                .where(or_(
+                    AutomationDispatchRow.lease_until.is_(None),
+                    AutomationDispatchRow.lease_until <= now,
+                ))
+                .order_by(AutomationDispatchRow.scheduled_at, AutomationDispatchRow.dispatch_id)
+                .limit(1)
+                .with_for_update(skip_locked=True)
+            )
+            if row is None:
+                return None
+            token = uuid4().hex
+            row.lease_token, row.lease_until = token, now + DISPATCH_LEASE
+            return AutomationDispatch.model_validate(row.payload), token
+
+    async def finish_dispatch(self, dispatch_id: str, token: str) -> None:
+        async with self._sessions.begin() as session:
+            await session.execute(delete(AutomationDispatchRow).where(
+                AutomationDispatchRow.dispatch_id == dispatch_id,
+                AutomationDispatchRow.lease_token == token,
+            ))
 
 
 class PostgresAutomationRecordRepository:
     def __init__(self, sessions: SessionFactory) -> None:
         self._sessions = sessions
 
-    async def add(self, record: AutomationRunRecord) -> None:
+    async def add(self, record: AutomationRunRecord, *, if_missing: bool = False) -> None:
         async with self._sessions() as session:
-            session.add(
-                AutomationRecordRow(
-                    record_id=record.record_id,
-                    tenant_id=record.tenant_id,
-                    task_id=record.task_id,
-                    user_id=record.user_id,
-                    status=record.status.value,
-                    session_id=record.session_id,
-                    run_id=record.run_id,
-                    started_at=record.started_at,
-                    payload=_record_payload(record),
-                )
+            values = dict(
+                record_id=record.record_id,
+                tenant_id=record.tenant_id,
+                task_id=record.task_id,
+                user_id=record.user_id,
+                status=record.status.value,
+                session_id=record.session_id,
+                run_id=record.run_id,
+                started_at=record.started_at,
+                payload=_record_payload(record),
             )
+            if if_missing:
+                await session.execute(
+                    insert(AutomationRecordRow).values(**values)
+                    .on_conflict_do_nothing(index_elements=[AutomationRecordRow.record_id])
+                )
+            else:
+                session.add(AutomationRecordRow(**values))
             try:
                 await session.commit()
             except IntegrityError as error:

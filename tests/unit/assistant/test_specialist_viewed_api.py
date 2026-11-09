@@ -10,7 +10,14 @@ import pytest
 
 from harness.api.dependencies import Identity
 from harness.assistant import api as assistant_api
-from harness.assistant.models import Objective, Specialist, SpecialistConversation, SpecialistStatus
+from harness.assistant.models import (
+    Objective,
+    ObjectiveBrief,
+    ObjectiveExecution,
+    Specialist,
+    SpecialistConversation,
+    SpecialistStatus,
+)
 from harness.core.errors import NotFoundError
 
 NOW = datetime(2026, 10, 31, 12, 0, tzinfo=UTC)
@@ -51,7 +58,7 @@ class _Repo:
     async def get_specialist(self, tenant_id: str, user_id: str, specialist_id: str) -> Specialist:
         return self.specialist
 
-    async def list(self, tenant_id: str, user_id: str) -> list[Any]:
+    async def list(self, tenant_id: str, user_id: str, **_filters: object) -> list[Any]:
         return []
 
     async def managed_bindings(
@@ -121,7 +128,12 @@ async def test_chat_entry_keeps_binding_but_never_loads_duty_execution_history()
         agentName="audit-agent", agentVersion="1.0.0", createdAt=NOW, updatedAt=NOW,
     )
     service.repository.list = AsyncMock(return_value=[duty])
-    service.repository.executions.return_value = [object()]
+    service.repository.executions.return_value = [ObjectiveExecution(
+        executionId="execution-fixture", objectiveId=duty.objective_id,
+        tenantId=duty.tenant_id, userId=duty.user_id, triggerKey="manual", objectiveRevision=1,
+        brief=ObjectiveBrief.model_validate(duty.model_dump(include=set(ObjectiveBrief.model_fields))),
+        threadId="assistant_specialist_pause", createdAt=NOW,
+    )]
     detail = await assistant_api.get_specialist(
         "specialist_pause", IDENTITY, service, include_duties=False,  # type: ignore[arg-type]
     )
@@ -136,6 +148,7 @@ async def test_chat_entry_keeps_binding_but_never_loads_duty_execution_history()
     assert isinstance(duties, list)
     assert isinstance(duties[0], dict)
     assert duties[0]["hasExecutions"] is True
+    assert duties[0]["latestExecution"]["threadId"] == "assistant_specialist_pause"
     service.repository.executions.assert_awaited_once()
 
 

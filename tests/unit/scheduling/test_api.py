@@ -7,6 +7,7 @@ import pytest
 from fastapi import HTTPException, Response
 
 from harness.api.dependencies import Identity
+from harness.assistant.models import ObjectiveSchedule
 from harness.scheduling.api import list_schedules
 from harness.scheduling.catalog import ScheduleCatalog, ScheduleSource
 
@@ -18,7 +19,7 @@ def _objective():
         objective_id="obj_1",
         title="简报",
         status=SimpleNamespace(value="active"),
-        schedule=SimpleNamespace(interval_minutes=60, timezone="UTC"),
+        schedule=ObjectiveSchedule(intervalMinutes=60, timezone="UTC"),
         specialist_id="lead-agent",
         agent_name="lead-agent",
         next_check_at=NOW,

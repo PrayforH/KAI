@@ -19,6 +19,7 @@ import {
 import { AgentThread } from "../components/agent-thread";
 import { usePrimaryBot } from "../components/use-primary-bot";
 import { BotProfileDialog } from "../components/bot-profile-dialog";
+import { BotDutiesDialog } from "../components/bot-duties-dialog";
 import { AuthProvider, useAuth } from "../components/auth-provider";
 import { AssistantChannelStatus } from "../components/assistant-channel-status";
 import { assistantRequest } from "../lib/assistant-client";
@@ -266,6 +267,7 @@ function AuthenticatedHome() {
   // 每次进入某个 Bot 会话只上报一次"查看"（botRevision 刷新不重复上报）。
   const botViewedRef = useRef<string | null>(null);
   const [botProfileOpen, setBotProfileOpen] = useState(false);
+  const [botDutiesOpen, setBotDutiesOpen] = useState(false);
   const [botRevision, setBotRevision] = useState(0);
 
 
@@ -436,6 +438,7 @@ function AuthenticatedHome() {
     setStageView(routeTrace ? "trace" : "conversation");
     setFocusRunId(routeRunId);
     setBotProfileOpen(false);
+    setBotDutiesOpen(false);
   }, [routeRunId, routeTrace, botParam]);
   useEffect(() => {
     const openTrace = () => setStageView("trace");
@@ -1015,6 +1018,13 @@ function AuthenticatedHome() {
             <HeaderUtilities
               computerControl={assistantEntry ? (
                 <>
+                  {botParam && bot?.specialistId === botParam && <button type="button"
+                    className="header-icon-button" aria-label="职责与计划" title="职责与计划"
+                    aria-expanded={botDutiesOpen} onClick={() => setBotDutiesOpen(true)}>
+                    <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <rect x="3" y="4.5" width="14" height="12" rx="2" /><path d="M3 8h14M7 3v3m6-3v3M7 11.5h6" />
+                    </svg>
+                  </button>}
                   {computerOpen && <DesktopOccupancyChip />}
                   <AssistantComputerLink open={computerOpen} ready={readyConversation === threadId} onToggle={() => showComputer(!computerOpen)} />
                 </>
@@ -1050,6 +1060,8 @@ function AuthenticatedHome() {
             <div className="chat-surface">
               <ConversationSurfaceProvider surface={conversationSurface}>
               <AssistantBotProvider bot={botParam ? bot : null}>
+              {botDutiesOpen && botParam && bot?.specialistId === botParam &&
+                <BotDutiesDialog key={botParam} specialistId={botParam} onClose={() => setBotDutiesOpen(false)} />}
               {bot && botProfileOpen && (
                 <BotProfileDialog
                   specialistId={bot.specialistId}

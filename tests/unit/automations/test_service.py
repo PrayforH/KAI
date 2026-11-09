@@ -129,6 +129,7 @@ class FakeRuns:
     def __init__(self) -> None:
         self.runs: dict[str, FakeRun] = {}
         self.inputs: list[dict[str, object]] = []
+        self.run_sessions: dict[str, str] = {}
 
     async def create(
         self,
@@ -140,6 +141,7 @@ class FakeRuns:
     ) -> FakeRun:
         run = FakeRun(run_id=f"run-{len(self.runs) + 1}", input=input or {})
         self.runs[idempotency_key] = run
+        self.run_sessions[idempotency_key] = _session_id
         self.inputs.append(input or {})
         return run
 
@@ -148,6 +150,13 @@ class FakeRuns:
             if run.run_id == run_id:
                 return run
         raise KeyError(run_id)
+
+    async def find_by_idempotency_key(
+        self, _tenant_id: str, _session_id: str, idempotency_key: str
+    ) -> FakeRun | None:
+        if self.run_sessions.get(idempotency_key) == _session_id:
+            return self.runs[idempotency_key]
+        return None
 
 
 def build_service(clock=None) -> tuple[AutomationService, FakeSessions, FakeRuns]:
@@ -485,6 +494,40 @@ async def test_deterministic_dispatch_failure_records_failure_without_retry_spin
     now = datetime(2026, 9, 19, 8, 10, tzinfo=UTC)
     service._clock = lambda: now
     assert await service.dispatch_due() == 0
+
+
+@pytest.mark.asyncio
+async def test_restart_recovers_a_run_created_before_its_automation_record() -> None:
+    now = datetime(2026, 9, 19, 8, 6, tzinfo=UTC)
+    service, sessions, runs = build_service(lambda: now)
+
+    class InterruptedRecords(InMemoryAutomationRecordRepository):
+        def __init__(self) -> None:
+            super().__init__()
+            self.interrupted = False
+
+        async def add(self, record: Any, *, if_missing: bool = False) -> None:
+            if not self.interrupted:
+                self.interrupted = True
+                raise RuntimeError("connection dropped before recording the run")
+            await super().add(record, if_missing=if_missing)
+
+    records = InterruptedRecords()
+    service._records = records
+    await service.create(
+        tenant_id="tenant-1", user_id="user-1", request=once_request(now - timedelta(minutes=1))
+    )
+    assert await service.dispatch_due() == 0 and len(runs.inputs) == 1
+    assert await service.records(tenant_id="tenant-1", user_id="user-1") == []
+    now += timedelta(seconds=61)
+    restarted = AutomationService(
+        service._tasks, records, sessions=sessions, runs=runs,  # type: ignore[arg-type]
+        agent_name="lead-agent", agent_version="2.0.0", clock=lambda: now,
+    )
+    assert await restarted.dispatch_due() == 1
+    saved = await restarted.records(tenant_id="tenant-1", user_id="user-1")
+    assert len(saved) == 1 and saved[0].run_id == next(iter(runs.runs.values())).run_id
+    assert len(runs.inputs) == 1 and await restarted.dispatch_due() == 0
 
 
 @pytest.mark.asyncio

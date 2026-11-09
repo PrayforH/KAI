@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 const request = vi.fn();
 vi.mock("../src/lib/assistant-client", () => ({ assistantRequest: (...args: unknown[]) => request(...args) }));
 import { DutyScheduleControl, type BotDuty } from "../src/components/duty-schedule-control";
+import { BotDutiesDialog } from "../src/components/bot-duties-dialog";
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 const host = document.createElement("div");
 let root = createRoot(host);
@@ -35,4 +36,21 @@ it("clears only this duty's existing rule while retaining errors for a stale rev
   expect(onSaved).not.toHaveBeenCalled();
   expect(host.querySelector('[role="alert"]')?.textContent).toContain("请刷新");
   expect((host.querySelector("button") as HTMLButtonElement).disabled).toBe(false);
+});
+
+it("opens the current Bot's plans and sends pause to its Objective", async () => {
+  const plan = { ...duty, schedule: { kind: "cron", expression: "0 9 * * 1-5", timezone: "UTC" } };
+  request.mockResolvedValueOnce({
+    duties: [{ ...plan, latestExecution: { status: "succeeded", summary: "已生成报告" } }],
+  }).mockResolvedValueOnce({ ...plan, status: "paused", revision: 4 });
+  await act(async () => root.render(<BotDutiesDialog specialistId="specialist_a" onClose={vi.fn()} />));
+  expect(request).toHaveBeenNthCalledWith(1, "specialists/specialist_a");
+  expect(host.querySelector("select")?.value).toBe("cron");
+  expect(host.textContent).toContain("已生成报告");
+  const pause = [...host.querySelectorAll("button")].find(item => item.textContent === "暂停职责");
+  await act(async () => pause?.click());
+  expect(request).toHaveBeenNthCalledWith(2, "objectives/coding/actions", "POST", {
+    action: "pause", expectedRevision: 3,
+  });
+  expect(host.textContent).toContain("恢复职责");
 });

@@ -95,6 +95,16 @@ class AutomationTask(StudioModel):
     updated_at: AwareDatetime = Field(alias="updatedAt")
 
 
+class AutomationDispatch(StudioModel):
+    """A claimed occurrence with the input needed to resume after restart."""
+
+    dispatch_id: str
+    task: AutomationTask
+    scheduled_at: AwareDatetime
+    agent_version: str | None = None
+    failure: str | None = None
+
+
 class CreateAutomationTaskRequest(StudioModel):
     name: str = Field(min_length=1, max_length=120)
     prompt: str = Field(min_length=1, max_length=200_000)

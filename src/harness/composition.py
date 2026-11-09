@@ -1999,7 +1999,6 @@ def build_production_container(
         event_service=events,
         quotas=enforced_quotas,
         team_spaces=team_spaces,
-        unviewed_pause_hours=settings.assistant_unviewed_pause_hours,
     )
     assistant.set_cipher(mcp_credential_service.cipher)
     events.add_persisted_listener(assistant.observe_run_event)

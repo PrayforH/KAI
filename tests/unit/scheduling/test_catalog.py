@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from harness.assistant.models import ObjectiveSchedule
 from harness.scheduling.catalog import (
     ScheduleCatalog,
     ScheduleSource,
@@ -18,7 +19,7 @@ def _objective(**overrides):
         "objective_id": "obj_1",
         "title": "每日简报",
         "status": SimpleNamespace(value="active"),
-        "schedule": SimpleNamespace(interval_minutes=60, timezone="Asia/Shanghai"),
+        "schedule": ObjectiveSchedule(intervalMinutes=60),
         "specialist_id": "lead-agent",
         "agent_name": "lead-agent",
         "next_check_at": datetime(2026, 11, 7, 1, 0, tzinfo=UTC),
@@ -98,7 +99,8 @@ async def test_specialist_filter_excludes_automations() -> None:
 async def test_source_filter_returns_one_store() -> None:
     catalog = ScheduleCatalog(_Objectives([_objective()]), _Automations([_automation()]))
     tasks = await catalog.list("t", "u", source=ScheduleSource.AUTOMATION)
-    assert [task.schedule_id for task in tasks] == ["task_1"]
+    assert [task.schedule_id for task in tasks] == ["automation:task_1"]
+    assert [task.source_id for task in tasks] == ["task_1"]
 
 
 @pytest.mark.asyncio
@@ -113,4 +115,6 @@ async def test_catalog_orders_by_next_run_with_unscheduled_last() -> None:
         _Objectives([never]), _Automations([_automation(), later])
     )
     tasks = await catalog.list("t", "u")
-    assert [task.schedule_id for task in tasks] == ["task_1", "task_later", "obj_never"]
+    assert [task.schedule_id for task in tasks] == [
+        "automation:task_1", "automation:task_later", "objective:obj_never",
+    ]

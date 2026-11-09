@@ -1,9 +1,17 @@
+export type ObjectiveSchedule = {
+  kind?: "once" | "every" | "cron";
+  intervalMinutes?: number | null;
+  at?: string | null;
+  expression?: string | null;
+  timezone: string;
+};
+
 export type Objective = {
   objectiveId: string; title: string; instructions: string;
   agentName: string; agentVersion: string; projectId: string | null;
   status: "active" | "paused" | "completed" | "cancelled";
   notificationMode: "important" | "all_results" | "none";
-  revision: number; schedule: { intervalMinutes: number; timezone: string } | null;
+  revision: number; schedule: ObjectiveSchedule | null;
   nextCheckAt: string | null; completionCriteria: string; endsAt: string | null;
   specialistId?: string | null; managedThreadId?: string | null; mode?: "autonomous" | "follow_only";
   budget?: Record<string, unknown> | null; parentObjectiveId?: string | null;

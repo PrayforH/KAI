@@ -13,6 +13,7 @@ from harness.agui.response import final_response_text
 from harness.application.runs import RunService
 from harness.application.sessions import SessionService
 from harness.automations.models import (
+    AutomationDispatch,
     AutomationRecordStatus,
     AutomationRecordTrigger,
     AutomationRunRecord,
@@ -25,13 +26,17 @@ from harness.automations.models import (
     CreateAutomationTaskRequest,
     UpdateAutomationTaskRequest,
 )
-from harness.core.errors import ConflictError, NotFoundError
+from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
 from harness.core.events import RunEvent
 from harness.core.models import AguiThreadBinding, RunStatus
 from harness.core.ports import AgentRegistry
 from harness.scheduling import Timing
 
 logger = logging.getLogger(__name__)
+
+
+class AutomationPlanChangedError(ConflictError):
+    """A pending occurrence no longer belongs to the current plan."""
 
 
 def thread_id_for_task(task_id: str) -> str:
@@ -260,47 +265,68 @@ class AutomationService:
         )
 
     async def dispatch_due(self, *, limit: int = 50) -> int:
-        """Fire every due automation task exactly once.
-
-        The claim step advances ``next_run_at`` before the Agent Run is created,
-        so a fleet of workers cannot double-fire the same slot; if invocation
-        fails the slot is handed back for a later retry.
-        """
-
+        """Claim due slots and resume any durable dispatch left by a worker."""
         now = self._clock()
-        dispatched = 0
         for task in await self._tasks.list_due(now, limit=limit):
             scheduled_at = task.next_run_at
             if scheduled_at is None:
                 continue
-            next_run_at, status = self._advance(task, from_time=scheduled_at)
-            claimed = await self._tasks.claim_due(
-                task.task_id,
-                expected_next_run_at=scheduled_at,
+            digest = hashlib.sha256(
+                f"automation:{task.task_id}:{task.revision}:"
+                f"{scheduled_at.astimezone(UTC).isoformat()}".encode()
+            ).hexdigest()
+            version, failure = None, None
+            try:
+                version = await self._resolve_agent_version(task)
+            except (ConflictError, NotFoundError, PermissionDeniedError) as error:
+                failure = str(error) or type(error).__name__
+            next_run_at, status = self._advance(task, from_time=now)
+            await self._tasks.claim_due(
+                AutomationDispatch(
+                    dispatch_id=f"automationrun_{digest[:32]}", task=task,
+                    scheduled_at=scheduled_at, agent_version=version, failure=failure,
+                ),
                 next_run_at=next_run_at,
                 status=status.value,
                 last_run_at=now,
             )
-            if not claimed:
-                continue
+        dispatched = 0
+        for _ in range(limit):
+            claimed = await self._tasks.claim_dispatch(self._clock())
+            if claimed is None:
+                break
+            dispatch, token = claimed
+            task = dispatch.task
             try:
-                await self._execute(
-                    task,
-                    trigger=AutomationRecordTrigger.SCHEDULED,
-                    scheduled_at=scheduled_at,
-                )
-            except Exception as error:
-                # The slot stays claimed: once tasks expire, cron tasks wait
-                # for their next occurrence. Rolling the slot back would spin
-                # forever on deterministic failures such as a missing Agent
-                # version, so the failure is recorded instead.
+                async with asyncio.timeout(45):
+                    if dispatch.failure is not None:
+                        await self._require_current_plan(task)
+                        raise ConflictError(dispatch.failure)
+                    await self._execute(
+                        task,
+                        trigger=AutomationRecordTrigger.SCHEDULED,
+                        scheduled_at=dispatch.scheduled_at,
+                        record_id=dispatch.dispatch_id,
+                        agent_version=dispatch.agent_version,
+                    )
+            except (ConflictError, NotFoundError, PermissionDeniedError) as error:
                 await self._record_failure(
                     task,
                     trigger=AutomationRecordTrigger.SCHEDULED,
-                    scheduled_at=scheduled_at,
-                    started_at=scheduled_at or now,
+                    scheduled_at=dispatch.scheduled_at,
+                    started_at=dispatch.scheduled_at,
                     error=str(error) or error.__class__.__name__,
+                    record_id=dispatch.dispatch_id,
+                    status=(
+                        AutomationRecordStatus.CANCELLED
+                        if isinstance(error, AutomationPlanChangedError)
+                        else AutomationRecordStatus.FAILED
+                    ),
                 )
+            except Exception:
+                logger.exception("automation dispatch will retry: %s", dispatch.dispatch_id)
+                continue
+            await self._tasks.finish_dispatch(dispatch.dispatch_id, token)
             dispatched += 1
         return dispatched
 
@@ -312,16 +338,18 @@ class AutomationService:
         scheduled_at: datetime | None,
         started_at: datetime,
         error: str,
+        record_id: str,
+        status: AutomationRecordStatus,
     ) -> None:
         await self._records.add(
             AutomationRunRecord(
                 tenantId=task.tenant_id,
-                recordId=self._ids("automationrun"),
+                recordId=record_id,
                 taskId=task.task_id,
                 taskName=task.name,
                 userId=task.user_id,
                 trigger=trigger,
-                status=AutomationRecordStatus.FAILED,
+                status=status,
                 threadId=thread_id_for_task(task.task_id),
                 sessionId="",
                 runId="",
@@ -330,7 +358,8 @@ class AutomationService:
                 finishedAt=self._clock(),
                 durationMs=0,
                 error=error[:500],
-            )
+            ),
+            if_missing=True,
         )
 
     async def _resolve_agent_version(self, task: AutomationTask) -> str:
@@ -523,11 +552,13 @@ class AutomationService:
         *,
         trigger: AutomationRecordTrigger,
         scheduled_at: datetime | None,
+        record_id: str | None = None,
+        agent_version: str | None = None,
     ) -> AutomationRunRecord:
         now = self._clock()
         record = AutomationRunRecord(
             tenantId=task.tenant_id,
-            recordId=self._ids("automationrun"),
+            recordId=record_id or self._ids("automationrun"),
             taskId=task.task_id,
             taskName=task.name,
             userId=task.user_id,
@@ -541,11 +572,21 @@ class AutomationService:
         )
         workload_id = f"automation:{task.task_id}"
         prompt = task.prompt
-        agent_version = await self._resolve_agent_version(task)
+        agent_version = agent_version or await self._resolve_agent_version(task)
         # One session per (task, agent version): every execution appends its
         # messages to the same conversation the owner sees in the task list.
         version_key = hashlib.sha256(agent_version.encode()).hexdigest()[:12]
         session_id = f"automation_session_{task.task_id}_{version_key}"
+        key = f"automation:{record.record_id}"
+        if record_id is not None:
+            recovered = await self._runs.find_by_idempotency_key(task.tenant_id, session_id, key)
+            if recovered is not None:
+                record = record.model_copy(
+                    update={"session_id": session_id, "run_id": recovered.run_id}
+                )
+                await self._records.add(record, if_missing=True)
+                return record
+            await self._require_current_plan(task)
         try:
             session = await self._sessions.get(task.tenant_id, session_id)
         except NotFoundError:
@@ -578,18 +619,28 @@ class AutomationService:
                     else {}
                 ),
             }
+        if record_id is not None:
+            await self._require_current_plan(task)
         run = await self._runs.create(
             task.tenant_id,
             session.session_id,
-            f"automation:{record.record_id}",
+            key,
             input=run_input,
         )
         record = record.model_copy(
             update={"session_id": session.session_id, "run_id": run.run_id}
         )
-        await self._records.add(record)
+        await self._records.add(record, if_missing=record_id is not None)
         if self._executor is not None:
             asyncio.create_task(
                 self._executor(task.tenant_id, run.run_id)
             )
         return record
+
+    async def _require_current_plan(self, task: AutomationTask) -> None:
+        try:
+            current = await self.get(task.tenant_id, task.user_id, task.task_id)
+        except NotFoundError as error:
+            raise AutomationPlanChangedError("自动化已删除，本次排队执行未启动。") from error
+        if current.revision != task.revision or current.status is AutomationStatus.PAUSED:
+            raise AutomationPlanChangedError("自动化计划已变更，本次排队执行未启动。")

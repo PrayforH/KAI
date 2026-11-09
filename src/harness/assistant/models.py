@@ -9,10 +9,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import AwareDatetime, Field, field_validator
+from pydantic import AwareDatetime, Field, field_validator, model_validator
 
+from harness.core.errors import ConflictError
+from harness.scheduling import Timing, TimingKind
 from harness.studio.models import StudioModel
 
 
@@ -83,19 +84,30 @@ class ObjectiveBudget(StudioModel):
 
 
 class ObjectiveSchedule(StudioModel):
-    """A bounded periodic check; None on the objective means manual only."""
+    """One saved rule. Historic intervalMinutes payloads default to every."""
 
-    interval_minutes: int = Field(alias="intervalMinutes", ge=15, le=525_600)
+    kind: TimingKind = TimingKind.EVERY
+    interval_minutes: int | None = Field(default=None, alias="intervalMinutes", ge=15, le=525_600)
+    at: AwareDatetime | None = None
+    expression: str | None = Field(default=None, max_length=256)
     timezone: str = Field(default="Asia/Shanghai", min_length=1, max_length=80)
 
-    @field_validator("timezone")
-    @classmethod
-    def valid_timezone(cls, value: str) -> str:
+    def timing(self) -> Timing:
+        return Timing(
+            self.kind,
+            at=self.at,
+            seconds=self.interval_minutes * 60 if self.interval_minutes is not None else None,
+            expression=self.expression,
+            timezone=self.timezone,
+        )
+
+    @model_validator(mode="after")
+    def valid_rule(self) -> ObjectiveSchedule:
         try:
-            ZoneInfo(value)
-        except (ZoneInfoNotFoundError, ValueError) as error:
-            raise ValueError("unknown time zone") from error
-        return value
+            self.timing()
+        except ConflictError as error:
+            raise ValueError(str(error)) from error
+        return self
 
 
 class ObjectiveBrief(StudioModel):
@@ -127,6 +139,7 @@ class Objective(ObjectiveBrief):
     user_id: str = Field(alias="userId")
     status: ObjectiveStatus = ObjectiveStatus.ACTIVE
     revision: int = Field(default=1, ge=1)
+    schedule_version: int = Field(default=1, alias="scheduleVersion", ge=1)
     # 接管既有会话时绑定原 thread：执行在该线程续跑，而不是替身线程。
     managed_thread_id: str | None = Field(default=None, alias="managedThreadId", max_length=128)
     # 由专职子助理承接的职责：定时能力属于职责，不属于头像或名称。
@@ -163,6 +176,8 @@ class ObjectiveExecution(StudioModel):
     user_id: str = Field(alias="userId")
     trigger_key: str = Field(alias="triggerKey")
     objective_revision: int = Field(alias="objectiveRevision", ge=1)
+    schedule_version: int | None = Field(default=None, alias="scheduleVersion", ge=1)
+    scheduled_for: AwareDatetime | None = Field(default=None, alias="scheduledFor")
     brief: ObjectiveBrief
     context: str = ""
     status: ObjectiveExecutionStatus = ObjectiveExecutionStatus.PENDING
@@ -174,6 +189,11 @@ class ObjectiveExecution(StudioModel):
     skipped_no_model: bool = Field(default=False, alias="skippedNoModel")
     created_at: AwareDatetime = Field(alias="createdAt")
     finished_at: AwareDatetime | None = Field(default=None, alias="finishedAt")
+
+    def matches_schedule(self, objective: Objective) -> bool:
+        if not self.trigger_key.startswith("schedule:"):
+            return True
+        return (self.schedule_version or 1) == objective.schedule_version
 
 
 class ObjectiveNoteRequest(StudioModel):

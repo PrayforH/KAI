@@ -12,7 +12,7 @@ import logging
 from collections.abc import Callable
 from datetime import datetime
 from enum import StrEnum
-from typing import Protocol, TypeVar
+from typing import Protocol
 
 from pydantic import AwareDatetime, Field
 
@@ -23,7 +23,6 @@ from harness.scheduling.timing import Timing, TimingKind
 from harness.studio.models import StudioModel
 
 logger = logging.getLogger(__name__)
-_Item = TypeVar("_Item")
 
 
 class ScheduleSource(StrEnum):
@@ -56,6 +55,7 @@ class ScheduleTask(StudioModel):
 
     schedule_id: str = Field(alias="scheduleId")
     source: ScheduleSource
+    source_id: str = Field(alias="sourceId")
     title: str
     status: str
     timing: ScheduleTiming
@@ -101,15 +101,12 @@ def from_objective(objective: Objective) -> ScheduleTask | None:
     if objective.schedule is None:
         return None
     return ScheduleTask(
-        scheduleId=objective.objective_id,
+        scheduleId=f"objective:{objective.objective_id}",
         source=ScheduleSource.OBJECTIVE,
+        sourceId=objective.objective_id,
         title=objective.title,
         status=objective.status.value,
-        timing=ScheduleTiming(
-            kind=TimingKind.EVERY,
-            seconds=objective.schedule.interval_minutes * 60,
-            timezone=objective.schedule.timezone,
-        ),
+        timing=ScheduleTiming.from_timing(objective.schedule.timing()),
         specialistId=objective.specialist_id,
         agentName=objective.agent_name,
         nextRunAt=objective.next_check_at,
@@ -120,8 +117,9 @@ def from_objective(objective: Objective) -> ScheduleTask | None:
 
 def from_automation(task: AutomationTask) -> ScheduleTask:
     return ScheduleTask(
-        scheduleId=task.task_id,
+        scheduleId=f"automation:{task.task_id}",
         source=ScheduleSource.AUTOMATION,
+        sourceId=task.task_id,
         title=task.name,
         status=task.status.value,
         timing=_automation_timing(task),
@@ -132,8 +130,8 @@ def from_automation(task: AutomationTask) -> ScheduleTask:
     )
 
 
-def _project_safely(
-    project: Callable[[_Item], ScheduleTask | None], item: _Item, kind: str
+def _project_safely[Item](
+    project: Callable[[Item], ScheduleTask | None], item: Item, kind: str
 ) -> ScheduleTask | None:
     """Keep one corrupt row from taking down the whole schedule page."""
 

@@ -30,6 +30,7 @@ def upgrade() -> None:
             "computer_execution_leases",
             "computer_desktop_leases",
             "computer_desktops",
+            "automation_dispatches",
         }
     ]
     Base.metadata.create_all(bind=op.get_bind(), tables=tables)

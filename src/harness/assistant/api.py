@@ -123,11 +123,10 @@ class ObjectiveScheduleRequest(StudioModel):
 async def update_objective_schedule(
     objective_id: str, body: ObjectiveScheduleRequest, identity: Writer, assistant: Service
 ) -> Objective:
-    return await assistant.reschedule(
+    return await assistant.set_schedule(
         identity.tenant_id, identity.user_id, objective_id,
         expected_revision=body.expected_revision,
-        interval_minutes=body.schedule.interval_minutes if body.schedule else None,
-        timezone=body.schedule.timezone if body.schedule else None,
+        schedule=body.schedule,
     )
 
 
@@ -312,35 +311,40 @@ async def get_specialist(
     specialist = await assistant.repository.get_specialist(
         identity.tenant_id, identity.user_id, specialist_id
     )
-    duties = [
-        item
-        for item in await assistant.repository.list(identity.tenant_id, identity.user_id)
-        if item.specialist_id == specialist_id
-    ]
+    duties = await assistant.repository.list(
+        identity.tenant_id, identity.user_id, limit=None, specialist_id=specialist_id
+    )
     conversation = await assistant.specialist_conversation(
         identity.tenant_id, identity.user_id, specialist, duties=duties
     )
-    # 纯读：详情/编辑弹窗不算"查看"，不能在这里清掉 routinePausedReason。
-    # 真正的查看走 POST /specialists/{id}/viewed（进入该 Bot 会话时调用一次）。
-    return {
-        "specialist": specialist,
-        **conversation.model_dump(by_alias=True),
-        "primaryObjectiveId": duties[0].objective_id if duties else None,
-        "duties": [
-            {
+    plans = []
+    if include_duties:
+        for item in duties:
+            recent = await assistant.repository.executions(
+                identity.tenant_id, identity.user_id, item.objective_id, limit=1
+            )
+            latest = recent[0] if recent else None
+            plans.append({
                 "objectiveId": item.objective_id,
                 "title": item.title,
                 "status": item.status.value,
                 "revision": item.revision,
-                "hasExecutions": bool(
-                    await assistant.repository.executions(
-                        identity.tenant_id, identity.user_id, item.objective_id
+                "hasExecutions": latest is not None,
+                "latestExecution": (
+                    latest.model_dump(
+                        mode="json", by_alias=True,
+                        include={"status", "summary", "run_id", "thread_id", "finished_at"},
                     )
+                    if latest else None
                 ),
                 "schedule": item.schedule.model_dump(by_alias=True) if item.schedule else None,
-            }
-            for item in duties if include_duties
-        ],
+                "nextCheckAt": item.next_check_at,
+            })
+    return {
+        "specialist": specialist,
+        **conversation.model_dump(by_alias=True),
+        "primaryObjectiveId": duties[0].objective_id if duties else None,
+        "duties": plans,
     }
 
 

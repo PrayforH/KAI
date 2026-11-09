@@ -582,11 +582,15 @@ def assistant_delegation_overlay(
             )
             if objective.managed_thread_id:
                 label += f" 托管线程：{objective.managed_thread_id}"
-            label += (
-                f" 周期：每{objective.schedule.interval_minutes}分钟"
-                f"（{objective.schedule.timezone}）"
-                if objective.schedule else " 周期：仅手动"
-            )
+            schedule = objective.schedule
+            if schedule is None:
+                label += " 周期：仅手动"
+            elif schedule.at is not None:
+                label += f" 执行时间：{schedule.at.isoformat()}"
+            elif schedule.expression is not None:
+                label += f" 周期：{schedule.expression}（{schedule.timezone}）"
+            else:
+                label += f" 周期：每{schedule.interval_minutes}分钟（{schedule.timezone}）"
             if objective.next_check_at:
                 label += f" 下次检查：{objective.next_check_at.isoformat()}"
             if latest:

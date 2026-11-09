@@ -34,7 +34,7 @@ from harness.assistant.appearance import (
     choose_appearance,
 )
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD, primary_specialist_id
-from harness.assistant.lifecycle import next_check
+from harness.assistant.lifecycle import next_check, validate_new_schedule
 from harness.assistant.models import (
     AssistantInboxItem,
     DelegationMode,
@@ -71,6 +71,16 @@ from harness.sharing.service import TeamSpaceService
 logger = logging.getLogger(__name__)
 
 
+def _superseded_schedule(execution: ObjectiveExecution, now: datetime) -> ObjectiveExecution:
+    return execution.model_copy(
+        update={
+            "status": ObjectiveExecutionStatus.CANCELLED,
+            "finished_at": now,
+            "summary": "计划已变更，本次排队执行未启动。",
+        }
+    )
+
+
 class AssistantService:
     def __init__(
         self,
@@ -85,7 +95,6 @@ class AssistantService:
         event_service: EventService | None = None,
         quotas: Any = None,
         team_spaces: TeamSpaceService | None = None,
-        unviewed_pause_hours: int = 24,
     ) -> None:
         self.repository = repository
         self._agents, self._auth, self._projects = agents, auth, projects
@@ -94,8 +103,6 @@ class AssistantService:
         # 计量：只有配置了配额服务才可能拿到真实用量；None 时如实标记未知。
         self._quotas = quotas
         self._team_spaces = team_spaces
-        # 例行程序闸门：距上次打开 Bot 会话超过该小时数则跳过调度（可观察暂停）。
-        self._unviewed_pause_hours = unviewed_pause_hours
 
     def with_repository(self, repository: PostgresAssistantRepository) -> AssistantService:
         return AssistantService(
@@ -109,7 +116,6 @@ class AssistantService:
             event_service=self._event_service,
             quotas=self._quotas,
             team_spaces=self._team_spaces,
-            unviewed_pause_hours=self._unviewed_pause_hours,
         )
 
     async def validate(self, tenant_id: str, user_id: str, brief: ObjectiveBrief) -> None:
@@ -144,6 +150,7 @@ class AssistantService:
         now = datetime.now(UTC)
         if brief.ends_at and brief.ends_at <= now:
             raise ConflictError("The execution period must end in the future")
+        validate_new_schedule(brief.schedule, now=now, ends_at=brief.ends_at)
         if managed_thread_id is not None:
             # 接管原会话：线程必须存在、属于该用户，且底层智能体一致，
             # 否则执行会脱离原会话的上下文与授权。
@@ -232,12 +239,25 @@ class AssistantService:
             })
             if interval_minutes is not None else None
         )
+        return await self._replace_schedule(current, schedule, expected_revision)
+
+    async def set_schedule(
+        self, tenant_id: str, user_id: str, objective_id: str, *,
+        expected_revision: int, schedule: ObjectiveSchedule | None,
+    ) -> Objective:
+        current = await self.repository.get(tenant_id, user_id, objective_id)
+        return await self._replace_schedule(current, schedule, expected_revision)
+
+    async def _replace_schedule(
+        self, current: Objective, schedule: ObjectiveSchedule | None, expected_revision: int
+    ) -> Objective:
         brief = ObjectiveBrief.model_validate(
             current.model_dump(include=set(ObjectiveBrief.model_fields)) | {"schedule": schedule}
         )
-        await self.validate(tenant_id, user_id, brief)
+        await self.validate(current.tenant_id, current.user_id, brief)
         return await self.repository.update(
-            tenant_id, user_id, objective_id, expected_revision=expected_revision,
+            current.tenant_id, current.user_id, current.objective_id,
+            expected_revision=expected_revision,
             now=datetime.now(UTC), brief=brief,
         )
 
@@ -1156,9 +1176,7 @@ class AssistantService:
             logger.warning(
                 "managed progress reconciliation deferred; execution maintenance continues"
             )
-        await self.repository.schedule_due(
-            datetime.now(UTC), unviewed_pause_hours=self._unviewed_pause_hours
-        )
+        await self.repository.schedule_due(datetime.now(UTC))
         for _ in range(10):
             claimed = await self.repository.claim(datetime.now(UTC))
             if claimed is None:
@@ -1253,6 +1271,8 @@ class AssistantService:
         )
         run = await self._recover(execution)
         now = datetime.now(UTC)
+        if run is None and not execution.matches_schedule(objective):
+            return _superseded_schedule(execution, now)
         inactive = objective.status is not ObjectiveStatus.ACTIVE or (
             objective.ends_at is not None and objective.ends_at <= now
         )
@@ -1375,6 +1395,15 @@ class AssistantService:
                         "一次执行结束不代表持续事项结束。"
                     )
                 )
+                if execution.trigger_key.startswith("schedule:"):
+                    current = await self.repository.get(
+                        execution.tenant_id, execution.user_id, execution.objective_id
+                    )
+                    if (
+                        current.status is not ObjectiveStatus.ACTIVE
+                        or not execution.matches_schedule(current)
+                    ):
+                        return _superseded_schedule(execution, datetime.now(UTC))
                 creation = await self._agui.create_run_with_result(
                     tenant_id=execution.tenant_id,
                     user_id=execution.user_id,

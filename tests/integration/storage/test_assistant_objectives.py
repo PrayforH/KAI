@@ -8,6 +8,7 @@ from harness.assistant.models import (
     Objective,
     ObjectiveAction,
     ObjectiveBrief,
+    ObjectiveBudget,
     ObjectiveExecutionStatus,
     ObjectiveSchedule,
     ObjectiveStatus,
@@ -16,6 +17,7 @@ from harness.assistant.models import (
 )
 from harness.assistant.repository import PostgresAssistantRepository
 from harness.core.errors import ConflictError, NotFoundError
+from harness.scheduling.catalog import ScheduleCatalog
 from tests.integration.storage.conftest import DatabaseFixture
 
 NOW = datetime(2026, 10, 22, 12, tzinfo=UTC)
@@ -197,6 +199,84 @@ async def test_scheduler_workers_enqueue_once_and_skip_missed_intervals(database
     )
     await repo.schedule_due(later + timedelta(hours=1))
     assert len(await repo.executions("tenant-a", "user-a", "objective-a")) == 1
+
+
+@pytest.mark.asyncio
+async def test_missed_one_time_duty_finishes_once_after_worker_recovery(database: DatabaseFixture):
+    repo = PostgresAssistantRepository(database[1])
+    due = NOW + timedelta(minutes=1)
+    bot = await repo.create_specialist(Specialist(
+        specialistId="bot-once", tenantId="tenant-a", userId="user-a", slug="once", name="Bot",
+        agentName="audit-agent", agentVersion="1.0.0", status=SpecialistStatus.READY,
+        createdAt=NOW, updatedAt=NOW,
+    ))
+    original = objective().model_copy(update={
+        "specialist_id": bot.specialist_id,
+        "budget": ObjectiveBudget(maxTotalRuns=1),
+        "schedule": ObjectiveSchedule(kind="once", at=due), "next_check_at": due,
+    })
+    await repo.create(original)
+    owner = (original.tenant_id, original.user_id)
+    await repo.enqueue(*owner, original.objective_id, trigger_key="manual", now=NOW)
+    after_due = due + timedelta(minutes=2)
+    await repo.schedule_due(after_due)
+    assert (await repo.get(*owner, original.objective_id)).next_check_at == due
+    manual = await repo.claim(after_due)
+    assert manual is not None
+    assert await repo.save_execution(
+        manual[0].model_copy(update={
+            "status": ObjectiveExecutionStatus.SUCCEEDED, "finished_at": after_due,
+        }),
+        manual[1], after_due,
+    )
+    await asyncio.gather(*(repo.schedule_due(after_due) for _ in range(5)))
+    first = await repo.claim(after_due)
+    assert first is not None and first[0].scheduled_for == due
+    assert first[0].schedule_version == original.schedule_version
+    recovered_at = after_due + timedelta(seconds=61)
+    second = await PostgresAssistantRepository(database[1]).claim(recovered_at)
+    assert second is not None and second[0].execution_id == first[0].execution_id
+    finished = second[0].model_copy(update={
+        "status": ObjectiveExecutionStatus.SUCCEEDED, "finished_at": recovered_at,
+    })
+    assert not await repo.save_execution(finished, first[1], recovered_at)
+    assert await repo.save_execution(finished, second[1], recovered_at)
+    final = await repo.get(*owner, original.objective_id)
+    assert final.status is ObjectiveStatus.COMPLETED and final.next_check_at is None
+    await repo.schedule_due(recovered_at + timedelta(days=1))
+    assert len(await repo.executions(*owner, original.objective_id)) == 2
+
+
+@pytest.mark.asyncio
+async def test_four_bot_plans_have_owner_and_bot_scoped_catalog(database: DatabaseFixture):
+    repo = PostgresAssistantRepository(database[1])
+
+    class NoAutomations:
+        async def list(self, tenant_id: str, user_id: str) -> list:
+            return []
+
+    for user in ("user-a", "user-b"):
+        for label in ("one", "two"):
+            bot = f"{user}-{label}"
+            await repo.create_specialist(Specialist(
+                specialistId=bot, tenantId="tenant-a", userId=user, slug=label, name=label,
+                agentName="audit-agent", agentVersion="1.0.0", status=SpecialistStatus.READY,
+                createdAt=NOW, updatedAt=NOW,
+            ))
+            await repo.create(objective().model_copy(update={
+                "objective_id": f"objective-{bot}", "user_id": user, "specialist_id": bot,
+            }))
+    catalog = ScheduleCatalog(repo, NoAutomations())
+    for user, other in (("user-a", "user-b"), ("user-b", "user-a")):
+        assert len(await catalog.list("tenant-a", user)) == 2
+        assert await catalog.list("tenant-a", user, specialist_id=f"{other}-one") == []
+        tasks = await catalog.list("tenant-a", user, specialist_id=f"{user}-one")
+        assert [task.schedule_id for task in tasks] == [f"objective:objective-{user}-one"]
+        with pytest.raises(NotFoundError):
+            await repo.update(
+                "tenant-a", user, f"objective-{other}-one",
+                expected_revision=1, now=NOW, action=ObjectiveAction.PAUSE,
+            )
 
 
 @pytest.mark.asyncio

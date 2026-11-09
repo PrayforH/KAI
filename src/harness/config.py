@@ -31,8 +31,6 @@ class Settings(BaseSettings):
         default=frozenset(INSTALLED_AGENT_RUNTIMES), min_length=1
     )
     # Explicit tenant/account rollout; ordinary tasks keep their existing backend.
-    # 例行程序闸门：距上次打开 Bot 会话超过该小时数，调度跳过并标记（可观察）。
-    assistant_unviewed_pause_hours: int = Field(default=24, ge=1)
     assistant_computer_owners: dict[str, frozenset[str]] = Field(default_factory=dict)
     assistant_computer_control_url: str = ""
     assistant_computer_control_secret: SecretStr = SecretStr("")
