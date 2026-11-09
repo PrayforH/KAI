@@ -260,7 +260,8 @@ def native_request(action: str, request: dict[str, Any]) -> None:
         if action == "native_barrier":
             # An explicitly opened desktop can have no prior Run scope.
             _trusted(SUPERVISOR_ROOT, directory=True)
-            _private_directory(state_root.parent)
+            state_root.parent.mkdir(mode=0o700, exist_ok=True)
+            _trusted(state_root.parent, directory=True)
             _private_directory(state_root)
         else:
             _trusted(state_root.parent, directory=True)
