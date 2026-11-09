@@ -12,7 +12,12 @@ from harness.computer.models import ComputerLease, LeasePurpose, LeaseState
 from harness.computer.runtime import ComputerRuntime
 from harness.computer.vm import PROVIDER as VM_PROVIDER
 from harness.computer.vm import VmComputerDriver
-from harness.computer.vm_host import VmComputerLifecycle, VmComputerSpec, verify_vm_instance
+from harness.computer.vm_host import (
+    BOT_WORK_VIRTFS,
+    VmComputerLifecycle,
+    VmComputerSpec,
+    verify_vm_instance,
+)
 from harness.config import Settings
 from harness.sandbox.base import SandboxCommandResult
 from harness.storage.database import create_database
@@ -122,6 +127,7 @@ def test_vm_instance_verification_accepts_adopted_and_rejects_foreign():
             {
                 "Type": "volume",
                 "Name": spec_.volume_ref,
+                "Source": "/var/lib/docker/volumes/fixture/_data",
                 "Destination": spec_.work_target,
                 "RW": True,
             },
@@ -153,6 +159,22 @@ def test_vm_instance_verification_accepts_adopted_and_rejects_foreign():
     }
     with pytest.raises(RuntimeError, match="disks"):
         verify_vm_instance(wrong_disk, spec_)
+
+    persistent = spec(adopt=True, bot_work_source="/data/disks/fixture/bots")
+    with pytest.raises(RuntimeError, match="disks"):
+        verify_vm_instance(base, persistent)
+    base["Mounts"].append({
+        "Type": "bind", "Source": persistent.bot_work_source,
+        "Destination": "/shared/bots", "RW": True,
+    })
+    with pytest.raises(RuntimeError, match="export"):
+        verify_vm_instance(base, persistent)
+    base["Config"]["Cmd"] = ["-virtfs", BOT_WORK_VIRTFS + ",multidevs=forbid"]
+    assert verify_vm_instance(base, persistent) == "a" * 64
+    nested = persistent.model_copy(update={"bot_work_source": "/var/lib/docker/volumes"})
+    base["Mounts"][-1]["Source"] = nested.bot_work_source
+    with pytest.raises(RuntimeError, match="disks"):
+        verify_vm_instance(base, nested)
 
 
 def test_control_server_builds_vm_routes_from_declaration():

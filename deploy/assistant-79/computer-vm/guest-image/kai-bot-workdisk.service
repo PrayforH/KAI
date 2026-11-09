@@ -1,0 +1,8 @@
+[Unit]
+Description=Mount the persistent KAI Bot workdisk
+ConditionPathExists=/etc/kai-computer/bot-workdisk
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I /opt/kai-computer/bot_workdisk.py mount
+RemainAfterExit=yes

@@ -212,6 +212,9 @@ def create_app(settings: ControllerSettings) -> FastAPI:
         raise ValueError("probe authorization requires the isolated Computer probe database")
     if len({spec.volume_ref for spec in settings.vm_computers}) != len(settings.vm_computers):
         raise ValueError("computer VM declarations must use distinct work disks")
+    bot_disks = [spec.bot_work_source for spec in settings.vm_computers if spec.bot_work_source]
+    if len(set(bot_disks)) != len(bot_disks):
+        raise ValueError("computer VM declarations must use distinct Bot workdisks")
     engine, sessions = create_database(settings.database_url)
     access = (
         CanonicalComputerAccess(sessions, settings.owners)

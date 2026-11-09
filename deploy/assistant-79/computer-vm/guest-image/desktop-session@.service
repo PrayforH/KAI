@@ -2,11 +2,13 @@
 Description=KAI Bot desktop %i
 Documentation=file:/usr/local/share/kai-computer/README
 ConditionPathExists=/etc/kai-desktop/sessions/%i.env
-After=network-online.target
+After=network-online.target kai-bot-workdisk.service
 Wants=network-online.target
+Requires=kai-bot-workdisk.service
 
 [Service]
 Type=simple
+ExecStartPre=/usr/bin/python3 -I /opt/kai-computer/bot_workdisk.py check
 ExecStart=/usr/local/lib/kai-desktop/session-start %i
 UMask=0077
 Restart=on-failure

@@ -60,6 +60,10 @@ MAX_SPEC_BYTES = 40 * 1024 * 1024
 IDENTITY_PATTERN = re.compile(r"(computer_[a-f0-9]{32})-([a-f0-9]{32})")
 
 
+BOT_WORK_TARGET = "/shared/bots"
+BOT_WORK_VIRTFS = f"local,path={BOT_WORK_TARGET},mount_tag=kai_bots,security_model=mapped-xattr"
+
+
 class VmComputerSpec(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -72,6 +76,7 @@ class VmComputerSpec(BaseModel):
     root_disk_source: str = Field(min_length=1, max_length=512)
     root_disk_target: str = "/vm/root.qcow2"
     work_target: str = "/data/kai-home"
+    bot_work_source: str | None = Field(default=None, max_length=512)
     identity_dir: str = Field(min_length=1, max_length=512)
     kvm_device: str = Field(min_length=1, max_length=512)
     network: str = Field(min_length=1, max_length=128)
@@ -84,6 +89,15 @@ class VmComputerSpec(BaseModel):
     def _digest(cls, value: str) -> str:
         if DIGEST.fullmatch(value) is None:
             raise ValueError("VM computer image must be an immutable sha256 digest")
+        return value
+
+    @field_validator("bot_work_source")
+    @classmethod
+    def _bot_work_path(cls, value: str | None) -> str | None:
+        if value is not None:
+            path = Path(value)
+            if not path.is_absolute() or not path.name or ".." in path.parts:
+                raise ValueError("Bot workdisk requires an absolute host path")
         return value
 
     def ssh_endpoint(self, kind: Literal["control", "viewer"]) -> SshEndpoint:
@@ -120,7 +134,14 @@ class GuestGate:
     async def call(
         self, action: str, spec: Mapping[str, object], *, timeout_seconds: float
     ) -> SandboxCommandResult:
-        body = json.dumps({"version": GATE_VERSION, "action": action, "spec": dict(spec)}).encode()
+        payload = dict(spec)
+        if isinstance(self.spec, VmComputerSpec) and self.spec.bot_work_source and (
+            action == "desktop_session"
+            or action == "native_desktop" and payload.get("desktop_id")
+            or action in {"exec", "activate", "renew", "deactivate"} and payload.get("scope")
+        ):
+            payload["bot_workdisk"] = self.spec.volume_ref
+        body = json.dumps({"version": GATE_VERSION, "action": action, "spec": payload}).encode()
         if len(body) > MAX_SPEC_BYTES:
             raise ValueError("computer guest request exceeds size limit")
         process = await asyncio.create_subprocess_exec(
@@ -195,14 +216,33 @@ def _mount_matches(mounts: list[dict[str, Any]], spec: VmComputerSpec) -> bool:
         and entry.get("RW") is True
         for entry in mounts
     )
-    volume = any(
-        entry.get("Type") == "volume"
+    volume = next((
+        entry for entry in mounts
+        if entry.get("Type") == "volume"
         and entry.get("Name") == spec.volume_ref
         and entry.get("Destination") == spec.work_target
         and entry.get("RW") is True
+    ), None)
+    if not disk or volume is None:
+        return False
+    if spec.bot_work_source is None:
+        return True
+    legacy = volume.get("Source")
+    if not isinstance(legacy, str) or not legacy.startswith("/"):
+        return False
+    source = Path(spec.bot_work_source)
+    if any(
+        source.is_relative_to(other) or other.is_relative_to(source)
+        for other in (Path(legacy), Path(spec.root_disk_source))
+    ):
+        return False
+    return any(
+        entry.get("Type") == "bind"
+        and entry.get("Source") == spec.bot_work_source
+        and entry.get("Destination") == BOT_WORK_TARGET
+        and entry.get("RW") is True
         for entry in mounts
     )
-    return disk and volume
 
 
 def verify_vm_instance(info: dict[str, Any], spec: VmComputerSpec) -> str:
@@ -227,6 +267,13 @@ def verify_vm_instance(info: dict[str, Any], spec: VmComputerSpec) -> str:
     mounts: list[dict[str, Any]] = info.get("Mounts") or []
     if not _mount_matches(mounts, spec):
         raise RuntimeError("computer VM disks do not match the node declaration")
+    if spec.bot_work_source is not None:
+        command: list[object] = config.get("Cmd") or []
+        if not any(
+            flag == "-virtfs" and value == f"{BOT_WORK_VIRTFS},multidevs=forbid"
+            for flag, value in zip(command[:-1], command[1:], strict=True)
+        ):
+            raise RuntimeError("computer VM has no declared Bot workdisk export")
     host_config: dict[str, Any] = info.get("HostConfig") or {}
     devices: list[dict[str, Any]] = host_config.get("Devices") or []
     if not any(

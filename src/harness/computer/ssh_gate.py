@@ -28,6 +28,7 @@ ACTIONS = frozenset({"init", "activate", "renew", "deactivate", "exec"})
 NATIVE_ACTIONS = frozenset({"native_desktop", "native_barrier", "desktop_export"})
 DESKTOP_ACTION = "desktop_session"
 CONTROL = Path("/opt/kai-computer/computer_control.py")
+BOT_WORKDISK = Path("/opt/kai-computer/bot_workdisk.py")
 DESKTOP_KEYS = frozenset(
     {"op", "desktopId", "unixUser", "display", "profile", "workspace", "vncSocket"}
 )
@@ -110,16 +111,23 @@ def run(*, require_workdisk: Callable[[], None] = _require_workdisk) -> None:
     if sys.platform != "linux" or os.geteuid() != 0:
         raise PermissionError("guest control requires its privileged entrypoint")
     action, spec = decode_request(sys.stdin.buffer.read(MAX_BYTES + 1))
+    expected_disk = spec.pop("bot_workdisk", None)
+    if expected_disk is not None and not isinstance(expected_disk, str):
+        raise ValueError("Bot workdisk identity is invalid")
     if action in NATIVE_ACTIONS:
         # Native UI is not an arbitrary supervisor command. It uses the same
         # bounded adapter/fence as remote PCs, configured only by the operator.
-        if "desktop_id" not in spec:
+        if "desktop_id" in spec:
+            _load_module(BOT_WORKDISK).require(expected=expected_disk)
+        else:
             require_workdisk()
         native_request(action, spec)
         return
     if action == DESKTOP_ACTION:
         # A Bot desktop slot is provisioned by a fixed root module; the request
         # carries only slot descriptors, never a path, unit or command.
+        if spec.get("op") in ("ensure", "start"):
+            _load_module(BOT_WORKDISK).require(expected=expected_disk)
         desktop_request(spec)
         return
     _trusted(SUPERVISOR.parent, directory=True)
@@ -130,7 +138,9 @@ def run(*, require_workdisk: Callable[[], None] = _require_workdisk) -> None:
     scope = spec.get("scope") or ""
     if not isinstance(scope, str) or (scope and SLOT.fullmatch(scope) is None):
         raise ValueError("guest scope is invalid")
-    if action != "deactivate" and not scope:
+    if action != "deactivate" and scope:
+        _load_module(BOT_WORKDISK).require(expected=expected_disk)
+    elif action != "deactivate":
         # A failed shared mount must never fall back to the guest OS's old or
         # empty HOME. Cleanup stays available even if the data disk is lost.
         require_workdisk()
@@ -148,7 +158,7 @@ def run(*, require_workdisk: Callable[[], None] = _require_workdisk) -> None:
         )
     identity: list[str] = []
     if scope and action == "exec":
-        account = _load_control().slot_account(scope)
+        account = _load_module(CONTROL).slot_account(scope)
         identity = [str(account.pw_uid), str(account.pw_gid), account.pw_dir]
     root = SUPERVISOR_ROOT if not scope else SUPERVISOR_ROOT / "scopes" / scope
     _private_directory(root)
@@ -198,19 +208,19 @@ def desktop_request(request: dict[str, Any]) -> None:
     print(json.dumps({"op": request["op"], "state": result.stdout.strip()}))
 
 
-def _load_control():
-    _trusted(CONTROL.parent, directory=True)
-    _trusted(CONTROL, directory=False)
-    spec = importlib.util.spec_from_file_location("kai_computer_control", CONTROL)
+def _load_module(path: Path):
+    _trusted(path.parent, directory=True)
+    _trusted(path, directory=False)
+    spec = importlib.util.spec_from_file_location(f"kai_{path.stem}", path)
     if spec is None or spec.loader is None:
-        raise RuntimeError("desktop slot module is missing")
+        raise RuntimeError("guest control module is missing")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
 def _native_slot(desktop_id: str) -> dict[str, object]:
-    control = _load_control()
+    control = _load_module(CONTROL)
     account = control.slot_account(desktop_id)
     settings = control.SESSIONS / f"{desktop_id}.env"
     _trusted(settings.parent, directory=True)

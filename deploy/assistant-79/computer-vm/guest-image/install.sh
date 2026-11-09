@@ -62,18 +62,19 @@ install -d -m 0700 -o root -g root /var/lib/kai-computer /var/lib/kai-computer/s
 install -d -m 0700 -o kai-desktop -g kai-desktop /var/lib/kai-desktop
 # The unmounted path is deliberately not writable by the task user.
 install -d -m 0755 -o root -g root /home/kai /etc/kai-computer
-# Bot desktops live outside the task user's home and outside the work disk.
+# Bot desktops have a separate mountpoint from the legacy work disk.
 install -d -m 0755 -o root -g root /home/kai-bots /etc/kai-desktop
 install -d -m 0700 -o root -g root /etc/kai-desktop/sessions
 install -m 0644 supervisor.py ssh_gate.py display_gate.py native_desktop.py desktop_export.py \
-  computer_control.py /opt/kai-computer/
+  computer_control.py bot_workdisk.py /opt/kai-computer/
 install -d -m 0755 /usr/local/lib/kai-desktop
 install -m 0644 desktop-prepare.py /usr/local/lib/kai-desktop/prepare.py
 install -m 0644 desktop-stop.py /usr/local/lib/kai-desktop/stop-browser.py
 install -m 0644 appearance.py desktop-shell.py /usr/local/lib/kai-desktop/
 install -m 0755 desktop-start /usr/local/lib/kai-desktop/start
 install -m 0755 session-start session-body /usr/local/lib/kai-desktop/
-install -m 0644 kai-desktop.service desktop-session@.service /etc/systemd/system/
+install -m 0644 kai-desktop.service desktop-session@.service kai-bot-workdisk.service \
+  /etc/systemd/system/
 printf 'kai-control ALL=(root) NOPASSWD: /usr/bin/python3 -I /opt/kai-computer/ssh_gate.py\n' \
   > /etc/sudoers.d/kai-computer-control
 chmod 0440 /etc/sudoers.d/kai-computer-control

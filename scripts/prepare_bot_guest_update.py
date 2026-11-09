@@ -19,13 +19,11 @@ DESKTOP_DIR = "deploy/assistant-79/computer-vm/guest-image"
 FILES = (
     *((f"{CONTROL_DIR}/{name}", f"/opt/kai-computer/{name}", "0644") for name in (
         "computer_control.py", "display_gate.py", "ssh_gate.py", "supervisor.py",
-        "acp_bridge.py", "desktop_export.py", "native_desktop.py",
+        "acp_bridge.py", "desktop_export.py", "native_desktop.py", "bot_workdisk.py",
     )),
-    (
-        f"{DESKTOP_DIR}/desktop-session@.service",
-        "/etc/systemd/system/desktop-session@.service",
-        "0644",
-    ),
+    *((f"{DESKTOP_DIR}/{name}", f"/etc/systemd/system/{name}", "0644") for name in (
+        "desktop-session@.service", "kai-bot-workdisk.service",
+    )),
     (f"{DESKTOP_DIR}/desktop-shell.py", "/usr/local/lib/kai-desktop/desktop-shell.py", "0644"),
     *((f"{DESKTOP_DIR}/{name}", f"/usr/local/lib/kai-desktop/{name}", "0755") for name in (
         "session-start", "session-body",
@@ -53,9 +51,16 @@ os.replace(temp, target)
 """
 
 
-def build(source: Path, output: Path, *, instance_id: str) -> None:
+def build(
+    source: Path, output: Path, *, instance_id: str,
+    bot_workdisk: str | None = None, initialize_bot_workdisk: bool = False,
+) -> None:
     if not re.fullmatch(r"kai-bot-maint-[a-z0-9-]{1,80}", instance_id):
         raise ValueError("maintenance instance ID is invalid")
+    if bot_workdisk is not None and not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", bot_workdisk):
+        raise ValueError("Bot workdisk identity is invalid")
+    if initialize_bot_workdisk and bot_workdisk is None:
+        raise ValueError("Bot workdisk initialization requires an identity")
     output.mkdir(mode=0o700)
     files = [
         {
@@ -76,6 +81,17 @@ def build(source: Path, output: Path, *, instance_id: str) -> None:
             "/usr/bin/python3 -I /opt/kai-computer/display_gate.py\n"
         ),
     })
+    mount_commands = ""
+    if bot_workdisk is not None:
+        files.append({
+            "path": "/etc/kai-computer/bot-workdisk",
+            "owner": "root:root",
+            "permissions": "0600",
+            "content": bot_workdisk + "\n",
+        })
+        if initialize_bot_workdisk:
+            mount_commands += "/usr/bin/python3 -I /opt/kai-computer/bot_workdisk.py initialize\n"
+        mount_commands += "systemctl start kai-bot-workdisk.service\n"
     config = {
         "users": [],
         "ssh_pwauth": False,
@@ -89,6 +105,7 @@ def build(source: Path, output: Path, *, instance_id: str) -> None:
             "/bin/sh", "-ec",
             "/usr/sbin/visudo -cf /etc/sudoers.d/kai-computer-view >/dev/null\n"
             "systemctl daemon-reload\n"
+            f"{mount_commands}"
             '/usr/bin/python3 -I - <<\'PY\'\n'
             f"COMMAND = {_VIEW_COMMAND!r}\n{UPDATE_VIEWER_KEY}\n"
             "PY\n"
@@ -105,5 +122,10 @@ if __name__ == "__main__":
     parser.add_argument("--source", type=Path, default=Path.cwd())
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--instance-id", required=True)
+    parser.add_argument("--bot-workdisk")
+    parser.add_argument("--initialize-bot-workdisk", action="store_true")
     args = parser.parse_args()
-    build(args.source, args.output, instance_id=args.instance_id)
+    build(
+        args.source, args.output, instance_id=args.instance_id,
+        bot_workdisk=args.bot_workdisk, initialize_bot_workdisk=args.initialize_bot_workdisk,
+    )
