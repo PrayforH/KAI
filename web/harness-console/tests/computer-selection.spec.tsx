@@ -222,6 +222,15 @@ describe("Bot desktop preview", () => {
     expect(requests).not.toContain("/api/studio/assistant/computer/desktop");
   });
 
+  it("keeps the existing Remote Computer target when it is selected", async () => {
+    current = "local";
+    await act(async () => root.render(<ComputerDesktop botId="specialist_a" />));
+    await flush();
+    expect(sockets.at(-1)).toContain("target=local");
+    expect(sockets.at(-1)).not.toContain("desktop=");
+    expect(requests.some(url => url.includes("/desktops/preview"))).toBe(false);
+  });
+
   it("waits for an unstarted Bot and opens no other desktop", async () => {
     missingBotSlot = true;
     await act(async () => root.render(<ComputerDesktop botId="specialist_a" />));

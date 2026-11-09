@@ -16,7 +16,6 @@ const labels = { connecting: "正在连接", reconnecting: "正在重新连接",
 export function ComputerDesktop({ embedded = false, onClose, botId }: {
   embedded?: boolean; onClose?: () => void; botId?: string | null;
 }) {
-  const botPreview = botId !== undefined;
   const screen = useRef<HTMLDivElement>(null);
   const shell = useRef<HTMLElement>(null);
   const client = useRef<RFB | null>(null);
@@ -26,6 +25,7 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
   const [revision, setRevision] = useState(0);
   const targetRef = useRef<string | null>(null);
   const [viewTarget, setViewTarget] = useState<string | null>(null);
+  const botPreview = botId !== undefined && (viewTarget === null || viewTarget === "cloud");
   const [selection, setSelection] = useState<TargetSelection | null>(null);
   const [switching, setSwitching] = useState(false);
   const [selectionError, setSelectionError] = useState("");
@@ -54,6 +54,7 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
     let wasConnected = false;
     const controller = new AbortController();
     let polling = false;
+    let slotPreview = botId !== undefined && (targetRef.current === null || targetRef.current === "cloud");
     setState("connecting");
     // Full navigations can enter bfcache without React unmounting this tree.
     const leavePage = () => { disposed = true; controller.abort(); rfb?.disconnect(); };
@@ -63,7 +64,7 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
     async function pollControl() {
       // The lease is the authority; the viewer only mirrors it for the UI and
       // stops asking noVNC to send input when the user does not own it.
-      if (botPreview || disposed || polling || actionInFlight.current) return;
+      if (slotPreview || disposed || polling || actionInFlight.current) return;
       polling = true;
       const version = operationVersion.current;
       try {
@@ -116,8 +117,23 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
           else retryConnection();
           return;
         }
+        const targets = await fetch("/api/studio/assistant/computer/targets", {
+          cache: "no-store", signal: signal(),
+        });
+        if (disposed) return;
+        if (targets.ok) {
+          const value = await targets.json() as TargetSelection;
+          targetRef.current ??= value.active_target;
+          setViewTarget(targetRef.current);
+          setSelection(value);
+        } else if (botId !== undefined) {
+          retryConnection();
+          return;
+        }
         const url = new URL("/computer/desktop", window.location.href);
-        if (botPreview) {
+        if (targetRef.current) url.searchParams.set("target", targetRef.current);
+        slotPreview = botId !== undefined && targetRef.current === "cloud";
+        if (slotPreview) {
           const query = botId ? `?bot_id=${encodeURIComponent(botId)}` : "";
           const preview = await fetch(`/api/studio/assistant/computer/desktops/preview${query}`, {
             cache: "no-store", signal: signal(),
@@ -127,25 +143,21 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
           if (!preview.ok) { retryConnection(); return; }
           const slot = await preview.json() as { desktopId: string; state: string };
           if (slot.state !== "busy" && slot.state !== "idle") { retryConnection(true); return; }
-          url.searchParams.set("target", "cloud");
           url.searchParams.set("desktop", slot.desktopId);
         } else {
-          const targets = await fetch("/api/studio/assistant/computer/targets", { cache: "no-store", signal: signal() });
-          if (targets.ok && !disposed) {
-            const value = await targets.json() as TargetSelection;
-            targetRef.current ??= value.active_target;
-            setViewTarget(targetRef.current);
-            setSelection(value);
+          // A Bot on a Remote Computer uses its existing shared display.
+          if (botId !== undefined && targetRef.current === null) {
+            retryConnection();
+            return;
           }
           await pollControl();
-          if (targetRef.current) url.searchParams.set("target", targetRef.current);
         }
         const { default: RemoteFramebuffer } = await import("@novnc/novnc");
         if (disposed || !screen.current) return;
         url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
         const connection = new RemoteFramebuffer(screen.current, url.toString());
         rfb = connection; client.current = connection;
-        connection.viewOnly = botPreview || controlRef.current !== "human";
+        connection.viewOnly = slotPreview || controlRef.current !== "human";
         connection.scaleViewport = true;
         connection.resizeSession = false;
         connection.qualityLevel = 6;
@@ -170,14 +182,14 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
       }
     }
     void connect();
-    const poll = botPreview ? undefined : setInterval(() => { void pollControl(); }, 2000);
+    const poll = setInterval(() => { void pollControl(); }, 2000);
     return () => {
       leavePage(); client.current = null; clearInterval(poll); clearTimeout(retryTimer);
       refreshControl.current = async () => {};
       window.removeEventListener("pagehide", leavePage);
       window.removeEventListener("pageshow", restorePage);
     };
-  }, [revision, embedded, botId, botPreview]);
+  }, [revision, embedded, botId]);
 
   function viewComputer(targetId: string) {
     if (targetId === targetRef.current) return;
