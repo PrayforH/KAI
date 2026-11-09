@@ -175,7 +175,10 @@ async def test_embedding_response_validation_and_indexes():
 
 @pytest.mark.asyncio
 async def test_extraction_requires_evidence_and_known_replacement():
-    async def handler(_request):
+    async def handler(request):
+        payload = json.loads(request.content)
+        assert payload["model"] == "deepseek-v4-flash"
+        assert payload["response_format"] == {"type": "json_object"}
         candidates = [
             {"content": "用户偏好中文", "evidence": "我习惯使用中文", "memory_type": "preference"},
             {"content": "编造", "evidence": "不存在的原文"},
@@ -195,7 +198,7 @@ async def test_extraction_requires_evidence_and_known_replacement():
         )
 
     extractor = MemoryExtractor(
-        "http://test/v1", SecretStr("test"), "chat", transport=httpx.MockTransport(handler)
+        "http://test/v1", SecretStr("test"), "deepseek-v4-flash", transport=httpx.MockTransport(handler)
     )
     candidates = await extractor.extract("我习惯使用中文", [])
     assert len(candidates) == 1 and candidates[0].memory_type is MemoryType.PREFERENCE
