@@ -17,6 +17,7 @@ from appearance import THEMES, WALLPAPERS, Appearance
 from PIL import Image, ImageDraw, ImageOps, ImageTk
 
 HOME = Path.home()
+RUNTIME = Path(os.environ.get("KAI_DESKTOP_RUNTIME", "/run/kai-desktop"))
 APPS = {
     "browser": (
         "浏览器",
@@ -194,7 +195,7 @@ class Desktop:
             },
         )
         if name == "browser":
-            Path("/run/kai-desktop/browser.pid").write_text(str(process.pid) + "\n")
+            (RUNTIME / "browser.pid").write_text(str(process.pid) + "\n")
 
     def tile(self, canvas: tk.Canvas, x: int, y: int, name: str, *, dock: bool = False) -> None:
         colors = THEMES[self.settings["theme"]]

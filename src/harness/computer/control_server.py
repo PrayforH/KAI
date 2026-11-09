@@ -407,6 +407,7 @@ def create_app(settings: ControllerSettings) -> FastAPI:
                 revalidate=guard,
                 scope=command.token.lease_id,
                 expected_epoch=command.expected_epoch,
+                desktop_id=None if command.token.desktop_id == "vm" else command.token.desktop_id,
             )
         except (ComputerLeaseLostError, DesktopOccupiedError, NotFoundError):
             raise HTTPException(409, "Computer desktop ownership was lost") from None

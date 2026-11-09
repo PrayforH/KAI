@@ -545,6 +545,7 @@ class ComputerRegistry:
         computer, lease = pair
         if (
             lease.owner != token.owner
+            or lease.desktop_id != token.desktop_id
             or lease.purpose != token.purpose
             or lease.run_id != token.run_id
             or lease.session_id != token.session_id

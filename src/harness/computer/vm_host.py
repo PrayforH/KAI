@@ -436,9 +436,13 @@ class DisplayTransport:
     uses; no VNC, X11 or CDP port is ever published.
     """
 
-    def __init__(self, spec: SshComputerSpec) -> None:
+    def __init__(self, spec: SshComputerSpec, desktop_id: str | None = None) -> None:
         self.banner: bytes | None = None
         self._argv = spec.ssh_endpoint("viewer").argv()
+        if desktop_id is not None:
+            if not re.fullmatch(r"desktop_[a-f0-9]{24}", desktop_id):
+                raise ValueError("Bot desktop id is invalid")
+            self._argv.append(desktop_id)
 
     async def open(self) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
         process = await asyncio.create_subprocess_exec(
@@ -492,7 +496,7 @@ class VmDesktopService:
 
     def __init__(self, specs: Mapping[str, SshComputerSpec]) -> None:
         self._specs = dict(specs)
-        self._sessions: dict[str, RfbClient] = {}
+        self._sessions: dict[tuple[str, str | None], RfbClient] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._stopping: dict[str, asyncio.Event] = {}
         self._busy: dict[str, asyncio.Event] = {}
@@ -568,10 +572,14 @@ class VmDesktopService:
         revalidate: Callable[[], Awaitable[object]],
         scope: str | None = None,
         expected_epoch: int | None = None,
+        desktop_id: str | None = None,
     ) -> dict[str, object]:
         if operation not in GUI_OPERATIONS:
             raise ValueError("desktop operation is not supported")
         spec = self._spec(computer)
+        if desktop_id is not None:
+            if computer.provider != PROVIDER or operation in {"ui", "export"}:
+                raise ValueError("this operation is not available on a Bot desktop")
         if operation == "ui":
             if (
                 not getattr(spec, "native_desktop", False)
@@ -590,15 +598,16 @@ class VmDesktopService:
                 raise ValueError("desktop export is not enabled on this computer")
             export_arguments(dict(payload))
         key = computer.volume_ref
+        session_key = (key, desktop_id)
         async with self._lock(key):
             # The queue wait may have spanned a takeover, a lease handover or
             # a recovery; a dequeued action is only executed while its
             # authorization still holds.
             await revalidate()
-            client = self._sessions.get(key)
+            client = self._sessions.get(session_key)
             if client is None and operation not in {"ui", "export"}:
-                client = RfbClient(DisplayTransport(spec))
-                self._sessions[key] = client
+                client = RfbClient(DisplayTransport(spec, desktop_id))
+                self._sessions[session_key] = client
             stop = self._stop_event(key)
             stop.clear()
             busy = self._busy_event(key)
@@ -633,7 +642,7 @@ class VmDesktopService:
             except (TimeoutError, RuntimeError, ValueError, OSError, EOFError):
                 if client is not None:
                     await client.close()
-                self._sessions.pop(key, None)
+                self._sessions.pop(session_key, None)
                 raise
             finally:
                 busy.set()

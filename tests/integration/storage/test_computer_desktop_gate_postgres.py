@@ -14,7 +14,7 @@ from pydantic import SecretStr
 
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
 from harness.computer.control_server import ControllerSettings, create_app, drain_pending_takeovers
-from harness.computer.desktop import DesktopControlService, DesktopState
+from harness.computer.desktop import DesktopControlService, DesktopOccupiedError, DesktopState
 from harness.computer.models import ComputerLease
 from harness.computer.registry import ComputerRegistry
 from harness.core.models import AguiThreadBinding, Run, RunStatus, Session
@@ -151,6 +151,7 @@ class StubScreen:
         revalidate: Any = None,
         scope: str | None = None,
         expected_epoch: int | None = None,
+        desktop_id: str | None = None,
     ) -> dict[str, object]:
         if revalidate is not None:
             await revalidate()  # the real screen re-checks inside its lock
@@ -260,6 +261,9 @@ async def test_takeover_drain_confirms_human_only_after_the_screen_stops(
     lease = await prepare(sessions)
     desktop = DesktopControlService(sessions)
     await desktop.acquire_agent(lease.tenant_id, lease.user_id, owner=lease.owner)
+    with pytest.raises(DesktopOccupiedError):
+        await desktop.request_human(lease.tenant_id, lease.user_id)
+    await ComputerRegistry(sessions).finish_execution(lease)
     await desktop.request_human(lease.tenant_id, lease.user_id)
     stub = StubScreen()
     # A confirmed drain publishes human ownership once and cancels the screen.

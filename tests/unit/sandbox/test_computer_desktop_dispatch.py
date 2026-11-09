@@ -130,7 +130,7 @@ async def noop() -> None:
 @pytest.mark.asyncio
 async def test_dequeued_action_revalidates_before_it_executes():
     service_ = service()
-    service_._sessions["v"] = cast(RfbClient, FakeClient())  # already connected
+    service_._sessions[("v", None)] = cast(RfbClient, FakeClient())  # already connected
     checked: list[bool] = []
 
     async def guard() -> None:
@@ -149,7 +149,7 @@ async def test_dequeued_action_revalidates_before_it_executes():
 async def test_a_queued_action_is_refused_when_its_lease_was_fenced():
     service_ = service()
     client = FakeClient()
-    service_._sessions["v"] = cast(RfbClient, client)  # already connected
+    service_._sessions[("v", None)] = cast(RfbClient, client)  # already connected
 
     async def fenced() -> None:
         raise ComputerLeaseLostError("desktop control epoch is stale")
@@ -244,3 +244,21 @@ def test_drain_and_stop_events_survive_repeated_calls():
     service_.cancel("v")
     assert service_._stop_event("v").is_set()
     assert asyncio.run(service_.wait_drained("v", timeout=0.1)) is True
+
+@pytest.mark.asyncio
+async def test_bot_pixels_use_the_slot_connection_instead_of_the_machine_screen():
+    screen = service()
+    shared, bot = FakeClient(), FakeClient()
+    slot = "desktop_" + "a" * 24
+    screen._sessions[("v", None)] = cast(RfbClient, shared)
+    screen._sessions[("v", slot)] = cast(RfbClient, bot)
+
+    async def guard() -> None:
+        pass
+
+    computer = cast(Any, type("C", (), {"volume_ref": "v", "provider": "vm-computer"})())
+    await screen.operate(
+        computer, "click", {"x": 7, "y": 8}, revalidate=guard, desktop_id=slot
+    )
+    assert bot.pointers == [(7, 8, 1), (7, 8, 0)]
+    assert shared.pointers == []

@@ -139,14 +139,14 @@ class ComputerRuntime:
             driver,
             session,
             run_reader=read_run,
-            desktop_for_run=self._desktop_resolver(session, driver),
+            desktop_for_run=await self._desktop_resolver(session, driver),
             desktop=self.desktop,
             max_bytes=self.settings.workspace_archive_max_bytes,
             max_members=self.settings.workspace_archive_max_members,
             busy_wait_seconds=self.settings.assistant_computer_busy_wait_seconds,
         )
 
-    def _desktop_resolver(
+    async def _desktop_resolver(
         self, session: Session, driver: DockerComputerDriver
     ) -> Callable[[Run], Awaitable[str | None]] | None:
         """Map an assistant Run to its Bot's desktop slot, when enabled.
@@ -158,13 +158,14 @@ class ComputerRuntime:
         if (not self.per_bot_desktop or driver.provider != VM_PROVIDER
                 or self.specialist_for_session is None):
             return None
-        resolver = self.specialist_for_session
+        specialist_id = await self.specialist_for_session(
+            session.tenant_id, session.user_id, session.session_id
+        )
+        if specialist_id is None:
+            return None
         image = driver.image
 
-        async def desktop_for_run(run: Run) -> str | None:
-            specialist_id = await resolver(session.tenant_id, session.user_id, run.session_id)
-            if specialist_id is None:
-                return None
+        async def desktop_for_run(_run: Run) -> str | None:
             computer = await self.registry.get(session.tenant_id, session.user_id)
             desktop = await self.desktops.ensure(
                 session.tenant_id,
@@ -220,7 +221,12 @@ class ComputerRuntime:
             self.desktop,
             sandbox,
             handle,
-            native_desktop=bool(getattr(sandbox.driver, "native_desktop", False)),
+            # Bot slot accessibility and export need their own scoped adapters.
+            # Until then the Bot uses pixel tools bound to its own RFB socket.
+            native_desktop=(
+                sandbox.desktop_for_run is None
+                and bool(getattr(sandbox.driver, "native_desktop", False))
+            ),
         )
         if not getattr(sandbox.driver, "acp", False):
             return gui
