@@ -310,13 +310,6 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
   const activeBinding = selection?.targets.find(target => target.target_id === selection.active_target)?.binding_key;
   const otherWindow = botPreview && (authority?.state === "human" || authority?.state === "takeover_pending") && authority.owner !== viewerRef.current;
   const returnable = !otherWindow && authority?.binding_key === activeBinding && (authority?.state === "human" || authority?.state === "takeover_pending");
-  const explanation = controlError ? controlError : !selection ? "正在确认电脑和控制权"
-    : !viewingExecution ? `当前仅观看${viewedLabel}；助理使用的是${executionLabel ?? "另一台电脑"}。要让助理操作这里，请点击“供助理使用”`
-    : control === "human" ? "由你控制：点击画面后可使用鼠标和键盘；完成后点击“交还助理”"
-    : control === "takeover_pending" ? "正在等待助理结束当前动作，交接完成后才能操作"
-    : otherWindow ? "这个 Bot 桌面已由另一个窗口接管，当前仅观看"
-    : control === "agent" ? "助理正在操作；需要自行操作时，点击“取得控制权”"
-    : "当前仅观看，点击“取得控制权”后才能操作鼠标和键盘";
   return <section aria-label="我的电脑" className={`${styles.shell} ${embedded ? styles.embedded : ""}`} ref={shell}>
     <header className={styles.windowHeader}>
       {!embedded && <Link href="/assistant" className={styles.back} aria-label="返回我的助理">←</Link>}
@@ -350,9 +343,9 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
         {selection.targets.map(target => <option key={target.target_id} value={target.target_id}>{target.label}</option>)}
       </select> : <span className={styles.caption}>{viewedLabel}的屏幕</span>}
       <div className={styles.controlPill} data-pending={control === "takeover_pending"}>
-        <span className={styles.viewState} role="status">
+        <span className={styles.viewState} role="status" title={controlError || undefined}>
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 10s3-5 8-5 8 5 8 5-3 5-8 5-8-5-8-5Z"/><circle cx="10" cy="10" r="2"/></svg>
-          {controlError ? "控制状态待确认" : control === "human" ? "由你控制" : control === "takeover_pending" ? "正在交接" : control === "agent" ? "助理操作中" : "仅观看"}
+          {controlError ? "控制状态待确认" : otherWindow ? "另一个窗口已接管" : control === "human" ? "由你控制" : control === "takeover_pending" ? "正在交接" : control === "agent" ? "助理操作中" : "仅观看"}
         </span>
         {!selection ? <button className={styles.primaryAction} disabled>正在确认控制权</button> : viewingExecution ? (returnable
           ? <button className={styles.primaryAction} disabled={actionBusy} onClick={() => void changeControl("return")}>{authority?.state === "takeover_pending" ? "取消接管" : "交还助理"}</button>
@@ -368,8 +361,6 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
       </details>
       <span className={styles.connection} role="status">{state === "connected" && control === "agent" ? "助理操作中" : labels[state]}</span>
     </footer>
-    <p className={styles.notice} role="status">{explanation}</p>
-    {selection && selection.targets.length > 1 && <p className={styles.notice}>默认使用云电脑；仅在明确需要时，将本地电脑设为“供助理使用”</p>}
     {!viewingExecution && returnable && <div className={styles.ownershipNotice}>
       <span>{executionLabel ?? "助理使用的电脑"}{authority?.state === "human" ? "由你控制" : "正在交接控制权"}</span>
       <button disabled={actionBusy} onClick={() => void changeControl("return")}>{authority?.state === "takeover_pending" ? "取消接管" : `交还${executionLabel ?? "控制权"}`}</button>

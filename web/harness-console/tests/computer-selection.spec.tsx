@@ -126,7 +126,9 @@ async function click(label: string) {
 describe("desktop ownership feedback", () => {
   it("can return the actual execution computer while viewing another target", async () => {
     await mountAndSelect();
-    expect(host.textContent).toContain("当前仅观看本地电脑；助理使用的是云电脑");
+    expect(host.textContent).toContain("供助理使用");
+    expect(host.textContent).not.toContain("默认使用云电脑");
+    expect(host.textContent).not.toContain("当前仅观看本地电脑");
     await click("交还云电脑");
     expect(requests).toContain(`/api/studio/assistant/computer/desktop/return?binding_key=${"c".repeat(64)}`);
     expect(current).toBe("cloud");
@@ -160,7 +162,8 @@ describe("desktop ownership feedback", () => {
     await mount(); expect(frames.at(-1)!.viewOnly).toBe(false);
     readFailure = true;
     await act(async () => { await vi.advanceTimersByTimeAsync(2000); }); await flush();
-    expect(host.textContent).toContain("控制状态暂时无法确认");
+    expect(host.textContent).toContain("控制状态待确认");
+    expect(host.querySelector('[title^="控制状态暂时无法确认"]')).not.toBeNull();
     expect(frames.at(-1)!.viewOnly).toBe(true);
     readFailure = false; await click("重试控制状态");
     expect(host.textContent).toContain("由你控制");

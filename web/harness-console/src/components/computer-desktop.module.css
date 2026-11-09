@@ -38,7 +38,7 @@
 .menu button { text-align: left; padding: 8px 10px; border: 0; border-radius: 5px; background: transparent; color: inherit; font: inherit; white-space: nowrap; cursor: pointer; }
 .menu button:hover, .windowActions button:hover, .more summary:hover { background: var(--codex-surface-subtle, #2c2c2c); }
 .shell button:focus-visible, .targetSelect:focus-visible, .more summary:focus-visible { outline: 2px solid var(--codex-muted, #999); outline-offset: 2px; }
-.notice, .selectionError { margin: 0; padding: 0 14px 10px; text-align: center; color: var(--codex-muted, #999); font-size: 12px; line-height: 1.5; }
+.selectionError { margin: 0; padding: 0 14px 10px; text-align: center; color: var(--codex-muted, #999); font-size: 12px; line-height: 1.5; }
 .selectionError { color: var(--codex-ink, #ededed); }
 .ownershipNotice { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px; padding: 0 14px 10px; color: var(--codex-muted, #999); font-size: 12px; }
 .ownershipNotice button { border: 1px solid var(--codex-line, #303030); border-radius: 999px; padding: 5px 10px; color: var(--codex-ink, #ededed); background: transparent; font: inherit; cursor: pointer; }
