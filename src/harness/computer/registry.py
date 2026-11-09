@@ -339,9 +339,22 @@ class ComputerRegistry:
                         "desktop already has a live holder "
                         f"({live.run_id or live.owner})"
                     )
-                # Each Bot slot owns a separate guest state machine, so a
-                # second desktop may execute at the same time; they only share
-                # the machine's files and login state (the documented model).
+                # Keep the 79 rollout serialized until GUI control is scoped
+                # per desktop as well as execution leases.
+                other = await session.scalar(
+                    select(Lease).where(
+                        Lease.tenant_id == tenant,
+                        Lease.user_id == user,
+                        Lease.desktop_id.not_in(("vm", desktop.desktop_id)),
+                        Lease.state == LeaseState.ACTIVE.value,
+                        Lease.purpose == LeasePurpose.EXECUTE.value,
+                    )
+                )
+                if other is not None:
+                    raise ComputerBusyError(
+                        "another Bot desktop is executing "
+                        f"({other.run_id or other.owner})"
+                    )
                 if purpose is LeasePurpose.EXECUTE and desktop.state not in {
                     DesktopState.CREATED,
                     DesktopState.STARTING,

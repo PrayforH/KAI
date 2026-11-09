@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 
 from harness.api.dependencies import Identity
 from harness.scheduling.api import list_schedules
@@ -68,7 +68,8 @@ def _tasks_only() -> Identity:
 async def test_tasks_only_credential_never_sees_automations() -> None:
     catalog = ScheduleCatalog(_Objectives(), _Automations())
     tasks = await list_schedules(
-        identity=_tasks_only(), catalog=catalog, specialist_id=None, source=None
+        identity=_tasks_only(), catalog=catalog, response=Response(),
+        specialist_id=None, source=None,
     )
     assert [task.source for task in tasks] == [ScheduleSource.OBJECTIVE]
 
@@ -80,6 +81,7 @@ async def test_explicit_automation_source_requires_studio_read() -> None:
         await list_schedules(
             identity=_tasks_only(),
             catalog=catalog,
+            response=Response(),
             specialist_id=None,
             source=ScheduleSource.AUTOMATION,
         )
@@ -91,7 +93,7 @@ async def test_owner_sees_both_stores() -> None:
     catalog = ScheduleCatalog(_Objectives(), _Automations())
     identity = Identity(tenant_id="t", user_id="u", roles=frozenset({"owner"}))
     tasks = await list_schedules(
-        identity=identity, catalog=catalog, specialist_id=None, source=None
+        identity=identity, catalog=catalog, response=Response(), specialist_id=None, source=None
     )
     assert {task.source for task in tasks} == {
         ScheduleSource.OBJECTIVE,
