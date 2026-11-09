@@ -257,7 +257,13 @@ def native_request(action: str, request: dict[str, Any]) -> None:
         if action == "native_desktop":
             slot = _native_slot(desktop_id)
         state_root = SUPERVISOR_ROOT / "scopes" / desktop_id
-        _trusted(state_root.parent, directory=True)
+        if action == "native_barrier":
+            # An explicitly opened desktop can have no prior Run scope.
+            _trusted(SUPERVISOR_ROOT, directory=True)
+            _private_directory(state_root.parent)
+            _private_directory(state_root)
+        else:
+            _trusted(state_root.parent, directory=True)
         request = {key: item for key, item in request.items() if key != "desktop_id"}
     path = Path("/etc/kai-computer/native-desktop.json")
     module_path = Path("/opt/kai-computer/native_desktop.py")
