@@ -22,3 +22,12 @@ export function SidebarLeftIcon() {
     </svg>
   );
 }
+
+export function ComputerIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <rect x="2.5" y="3" width="15" height="10" rx="1.5" />
+      <path d="M7 17h6m-3-4v4" />
+    </svg>
+  );
+}

@@ -52,7 +52,7 @@ import { createProjectTask } from "../lib/project-task";
 import { ApiProject } from "../lib/studio-client";
 import { useSidebarProjects } from "../lib/sidebar-state";
 import { ProductBrandMark, ProductLoading, PRODUCT_NAME } from "../components/product-brand";
-import { SidebarPanelIcon } from "../components/panel-icons";
+import { ComputerIcon, SidebarPanelIcon } from "../components/panel-icons";
 import { WorkbenchRail } from "../components/workbench-rail";
 import type { PreviewTarget } from "../components/rail-file-preview";
 import { useRunActivity, useRunViewModel } from "../lib/activity-store";
@@ -100,22 +100,23 @@ const TASK_SIDEBAR_COMPACT_QUERY = "(max-width: 820px)";
 function SidebarPanelToggle({
   expanded,
   onToggle,
-  label = "任务上下文",
+  botRail = false,
 }: {
   expanded: boolean;
   onToggle: () => void;
-  label?: string;
+  botRail?: boolean;
 }) {
+  const label = `${expanded ? "收起" : "打开"}${botRail ? " Bot 侧栏" : "任务上下文"}`;
   return (
     <button
       type="button"
       className="header-icon-button"
-      aria-label={`${expanded ? "收起" : "打开"}${label}`}
+      aria-label={label}
       aria-expanded={expanded}
-      title={`${expanded ? "收起" : "打开"}${label}`}
+      title={label}
       onClick={onToggle}
     >
-      <SidebarPanelIcon />
+      {botRail ? <ComputerIcon /> : <SidebarPanelIcon />}
     </button>
   );
 }
@@ -139,17 +140,17 @@ function HeaderUtilities({
   computerControl,
   taskRailOpen,
   onToggleTaskRail,
-  railLabel,
+  botRail,
 }: {
   computerControl?: ReactNode;
   taskRailOpen: boolean;
   onToggleTaskRail: () => void;
-  railLabel?: string;
+  botRail?: boolean;
 }) {
   return (
     <div className="header-utilities">
       {computerControl}
-      <SidebarPanelToggle expanded={taskRailOpen} onToggle={onToggleTaskRail} label={railLabel} />
+      <SidebarPanelToggle expanded={taskRailOpen} onToggle={onToggleTaskRail} botRail={botRail} />
     </div>
   );
 }
@@ -1026,7 +1027,7 @@ function AuthenticatedHome() {
                 </>
               ) : undefined}
               taskRailOpen={botParam && assistantEntry ? botSideOpen : taskRailOpen}
-              railLabel={botParam && assistantEntry ? " Bot 侧栏" : undefined}
+              botRail={Boolean(botParam && assistantEntry)}
               onToggleTaskRail={() => {
                 showComputer(false);
                 if (botParam && assistantEntry) {

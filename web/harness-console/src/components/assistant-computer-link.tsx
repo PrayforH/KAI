@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
+import { ComputerIcon } from "./panel-icons";
 
 export function AssistantComputerLink({ open, onToggle, ready = false, className, children }: {
   open: boolean; onToggle: () => void; ready?: boolean; className?: string; children?: ReactNode;
@@ -38,6 +39,6 @@ export function AssistantComputerLink({ open, onToggle, ready = false, className
     } catch { /* The conversation remains usable if the viewer is unavailable. */ }
   }
   return <button type="button" className={className ?? "header-icon-button"} aria-label={open ? "收起电脑" : "打开电脑"} title={open ? "收起电脑" : "打开电脑"} aria-expanded={open} aria-controls="assistant-computer-pane" onClick={() => void toggle()}>
-    {children ?? <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3" width="15" height="10" rx="1.5" /><path d="M7 17h6m-3-4v4" /></svg>}
+    {children ?? <ComputerIcon />}
   </button>;
 }

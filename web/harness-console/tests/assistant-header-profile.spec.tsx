@@ -91,6 +91,7 @@ describe("assistant session header", () => {
 
   it("opens the profile dialog from the name", () => {
     expect(pageSource).toContain("BotProfileDialog");
+    expect(pageSource).toContain("botRail ? <ComputerIcon /> : <SidebarPanelIcon />");
     expect(pageSource).toContain('setBotSettings({ id: bot.specialistId, tab: "details" })');
     expect(pageSource).toContain('setBotSettings({ id: botParam, tab: "duties" })');
   });
