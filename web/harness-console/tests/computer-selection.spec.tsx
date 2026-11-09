@@ -152,7 +152,7 @@ describe("desktop ownership feedback", () => {
   it("waits for confirmed handoff and lets the user cancel a pending takeover", async () => {
     controlState = "observe";
     await mount(); await click("取得控制权");
-    expect(host.textContent).toContain("交接完成后才能操作");
+    expect(host.textContent).toContain("正在交接");
     expect(frames.at(-1)!.viewOnly).toBe(true);
     await click("取消接管");
     expect(controlState).toBe("observe");
