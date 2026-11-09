@@ -1079,6 +1079,17 @@ body.codex-theme-v1:has(.console-shell) .console-header {
   cursor: pointer;
 }
 
+.task-context-bot-action {
+  border: 0;
+  background: transparent;
+  color: var(--codex-muted);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.task-context-bot-action:hover { color: var(--codex-ink); }
+
 .task-context-bot-name:disabled { cursor: default; }
 
 .task-context-bot-name:focus-visible {

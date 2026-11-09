@@ -19,7 +19,6 @@ import {
 import { AgentThread } from "../components/agent-thread";
 import { usePrimaryBot } from "../components/use-primary-bot";
 import { BotProfileDialog } from "../components/bot-profile-dialog";
-import { BotDutiesDialog } from "../components/bot-duties-dialog";
 import { AuthProvider, useAuth } from "../components/auth-provider";
 import { AssistantChannelStatus } from "../components/assistant-channel-status";
 import { assistantRequest } from "../lib/assistant-client";
@@ -266,8 +265,7 @@ function AuthenticatedHome() {
   };
   // 每次进入某个 Bot 会话只上报一次"查看"（botRevision 刷新不重复上报）。
   const botViewedRef = useRef<string | null>(null);
-  const [botProfileOpen, setBotProfileOpen] = useState(false);
-  const [botDutiesOpen, setBotDutiesOpen] = useState(false);
+  const [botSettings, setBotSettings] = useState<{ id: string; tab: "details" | "duties" } | null>(null);
   const [botRevision, setBotRevision] = useState(0);
 
 
@@ -437,8 +435,7 @@ function AuthenticatedHome() {
   useEffect(() => {
     setStageView(routeTrace ? "trace" : "conversation");
     setFocusRunId(routeRunId);
-    setBotProfileOpen(false);
-    setBotDutiesOpen(false);
+    setBotSettings(null);
   }, [routeRunId, routeTrace, botParam]);
   useEffect(() => {
     const openTrace = () => setStageView("trace");
@@ -968,17 +965,22 @@ function AuthenticatedHome() {
                 <span className="task-project-separator" aria-hidden="true">/</span>
               </Link>}
               {assistantView ? <div className="task-context-bar">
-                {/* 页头只留名称：无头像、无角色副标题、无更多按钮；点名称直接改资料。 */}
                 <button
                   type="button"
                   className="task-context-title task-context-bot-name"
                   aria-label="编辑助理资料"
                   title="编辑助理资料"
                   disabled={!bot}
-                  onClick={() => setBotProfileOpen(true)}
+                  onClick={() => bot && setBotSettings({ id: bot.specialistId, tab: "details" })}
                 >
                   {bot ? bot.name : "我的助理"}
                 </button>
+                {botParam && bot?.specialistId === botParam && <>
+                  <button type="button" className="task-context-bot-action"
+                    onClick={() => setBotSettings({ id: botParam, tab: "details" })}>详情</button>
+                  <button type="button" className="task-context-bot-action"
+                    onClick={() => setBotSettings({ id: botParam, tab: "duties" })}>例行任务</button>
+                </>}
                 {/* 主助理页头保留 IM 通道状态（飞书/微信）：它属于主助理的跨渠道会话，
                     与资料记录在不在无关；只有进到某个子 Bot 会话（?bot=）才不显示。 */}
                 {!botParam && readyConversation === threadId && <AssistantChannelStatus />}
@@ -1018,13 +1020,6 @@ function AuthenticatedHome() {
             <HeaderUtilities
               computerControl={assistantEntry ? (
                 <>
-                  {botParam && bot?.specialistId === botParam && <button type="button"
-                    className="header-icon-button" aria-label="职责与计划" title="职责与计划"
-                    aria-expanded={botDutiesOpen} onClick={() => setBotDutiesOpen(true)}>
-                    <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5">
-                      <rect x="3" y="4.5" width="14" height="12" rx="2" /><path d="M3 8h14M7 3v3m6-3v3M7 11.5h6" />
-                    </svg>
-                  </button>}
                   {computerOpen && <DesktopOccupancyChip />}
                   <AssistantComputerLink open={computerOpen} ready={readyConversation === threadId} onToggle={() => showComputer(!computerOpen)} />
                 </>
@@ -1060,14 +1055,14 @@ function AuthenticatedHome() {
             <div className="chat-surface">
               <ConversationSurfaceProvider surface={conversationSurface}>
               <AssistantBotProvider bot={botParam ? bot : null}>
-              {botDutiesOpen && botParam && bot?.specialistId === botParam &&
-                <BotDutiesDialog key={botParam} specialistId={botParam} onClose={() => setBotDutiesOpen(false)} />}
-              {bot && botProfileOpen && (
+              {bot && botSettings?.id === bot.specialistId && (
                 <BotProfileDialog
+                  key={`${botSettings.id}:${botSettings.tab}`}
                   specialistId={bot.specialistId}
-                  onClose={() => setBotProfileOpen(false)}
+                  initialTab={botSettings.tab}
+                  onClose={() => setBotSettings(null)}
                   onSaved={() => {
-                    setBotProfileOpen(false);
+                    setBotSettings(null);
                     setBotRevision((current) => current + 1);
                     window.dispatchEvent(new CustomEvent("kai:specialists-changed"));
                   }}

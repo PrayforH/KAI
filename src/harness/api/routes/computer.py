@@ -9,10 +9,12 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from harness.api.dependencies import Identity, ensure_permission, require_identity
+from harness.assistant.models import SpecialistStatus
 from harness.computer.desktop import (
     DesktopControl,
     DesktopControlService,
@@ -219,6 +221,35 @@ async def bot_desktop_preview(
         row = await registry.get(identity.tenant_id, identity.user_id, bot_desktop_key(bot_id))
     except NotFoundError:
         raise HTTPException(404, "Bot desktop has not started") from None
+    return BotDesktopPreview(desktop_id=row.desktop_id, state=row.state.value)
+
+
+@router.post("/desktops/start")
+async def start_bot_desktop(
+    request: Request,
+    identity: Annotated[Identity, Depends(require_identity)],
+    bot_id: Annotated[str | None, Query(pattern=r"^specialist_[a-z0-9_]+$", max_length=128)] = None,
+) -> BotDesktopPreview:
+    ensure_permission(identity, "tasks:write")
+    container = request.app.state.container
+    if container.computer_runtime is None or container.assistant is None:
+        raise HTTPException(503, "桌面启动暂不可用")
+    try:
+        if bot_id is not None:
+            bot = await container.assistant.repository.get_specialist(
+                identity.tenant_id, identity.user_id, bot_id,
+            )
+            if bot.status is SpecialistStatus.ARCHIVED:
+                raise NotFoundError("Bot is archived")
+        row = await container.computer_runtime.start_desktop_preview(
+            identity.tenant_id, identity.user_id, bot_desktop_key(bot_id),
+        )
+    except NotFoundError:
+        raise HTTPException(404, "没有可启动的 Bot 云桌面") from None
+    except ConflictError:
+        raise HTTPException(409, "电脑或桌面状态已变化，请重新连接后重试") from None
+    except (httpx.HTTPError, RuntimeError):
+        raise HTTPException(503, "云桌面启动未确认，请重试") from None
     return BotDesktopPreview(desktop_id=row.desktop_id, state=row.state.value)
 
 

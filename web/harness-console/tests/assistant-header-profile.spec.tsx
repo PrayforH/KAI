@@ -80,7 +80,7 @@ async function mount() {
 }
 
 describe("assistant session header", () => {
-  it("shows the name only: no avatar, no role subtitle, no more button", () => {
+  it("keeps the name and restores the Bot settings entries without a more menu", () => {
     expect(pageSource).toContain("task-context-bot-name");
     expect(pageSource).not.toContain("AssistantHeaderAvatar");
     expect(pageSource).not.toContain("task-context-bot-hint");
@@ -89,7 +89,20 @@ describe("assistant session header", () => {
 
   it("opens the profile dialog from the name", () => {
     expect(pageSource).toContain("BotProfileDialog");
-    expect(pageSource).toContain("onClick={() => setBotProfileOpen(true)}");
+    expect(pageSource).toContain('setBotSettings({ id: bot.specialistId, tab: "details" })');
+    expect(pageSource).toContain('setBotSettings({ id: botParam, tab: "duties" })');
+  });
+
+  it("switches from details to the same Bot's routines", async () => {
+    await mount();
+    const tabs = host.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+    expect([...tabs].map(tab => tab.textContent)).toEqual(["详情", "例行任务"]);
+    expect(tabs[0].getAttribute("aria-selected")).toBe("true");
+    await act(async () => tabs[1].click());
+    await flush();
+    expect(tabs[1].getAttribute("aria-selected")).toBe("true");
+    expect(host.querySelector('[role="tabpanel"]')?.textContent).toContain("这个 Bot 还没有职责。");
+    expect(host.querySelector('input[aria-label="姓名"]')).toBeNull();
   });
 
   it("keeps the IM channel status on the main assistant header", () => {

@@ -260,3 +260,17 @@
 .dutyTrigger p { margin: 0; font-size: .8rem; }
 .dutyTrigger [role="alert"] { color: #ff7a7a; }
 .dutyTrigger :is(select, input, button):focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
+
+.tabs { display: flex; gap: 6px; padding-right: 34px; }
+.tabs > button {
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #b0b0b0;
+  font: inherit;
+  cursor: pointer;
+}
+.tabs > button[aria-selected="true"] { background: #333; color: #f0f0f0; }
+.tabPanel { display: grid; gap: 16px; }

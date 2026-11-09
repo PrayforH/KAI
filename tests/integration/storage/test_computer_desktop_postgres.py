@@ -281,3 +281,26 @@ async def test_bot_controls_are_independent_from_each_other_and_legacy(database:
         await computers.holder(lease_a)
     await computers.holder(lease_b)
     await computers.finish_execution(lease_b)
+
+
+@pytest.mark.asyncio
+async def test_preview_attaches_only_after_guest_confirmation(database: DatabaseFixture):
+    _, sessions = database
+    owner = ("tenant-a", "user-a")
+    registry = ComputerRegistry(sessions)
+    computer = await registry.ensure(*owner, provider="vm-computer", image="sha256:" + "a" * 64)
+    desktops = DesktopRegistry(sessions)
+    slot = await desktops.ensure(*owner, "bot-a", computer_id=computer.computer_id)
+    guest = AsyncMock(side_effect=RuntimeError("guest not ready"))
+    with pytest.raises(RuntimeError, match="guest not ready"):
+        await desktops.start(computer, slot.desktop_id, guest)
+    assert (await desktops.get_by_id(*owner, slot.desktop_id)).state == "created"
+    assert (await registry.get(*owner)).provider_ref is None
+
+    guest = AsyncMock(return_value="b" * 64)
+    ready = await desktops.start(computer, slot.desktop_id, guest)
+    guest.assert_awaited_once_with(slot)
+    assert ready.state == "idle"
+    assert (await registry.get(*owner)).provider_ref == "b" * 64
+    control = await DesktopControlService(sessions).view(*owner, desktop_id=slot.desktop_id)
+    assert control.state is DesktopState.OBSERVE

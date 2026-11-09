@@ -35,6 +35,11 @@ beforeEach(() => {
     const request = new URL(url, "https://kai.test");
     const desktopId = request.searchParams.get("desktop_id");
     if (url === "/api/auth/session") return Response.json({}, { status: sessionStatus });
+    if (url.includes("/desktops/start")) {
+      expect(init?.method).toBe("POST");
+      missingBotSlot = false;
+      return Response.json({ state: "idle" });
+    }
     if (url.includes("/desktops/preview")) {
       if (missingBotSlot) return Response.json({}, { status: 404 });
       const botId = new URL(url, "https://kai.test").searchParams.get("bot_id");
@@ -263,5 +268,13 @@ describe("Bot desktop preview", () => {
     await flush();
     expect(host.textContent).toContain("等待 Bot 启动桌面");
     expect(sockets).toHaveLength(0);
+    expect(requests.some(url => url.includes("/desktops/start"))).toBe(false);
+    const start = [...host.querySelectorAll("button")].find(button => button.textContent === "启动桌面");
+    expect(start).toBeDefined();
+    await act(async () => start!.click());
+    await flush();
+    expect(requests).toContain("/api/studio/assistant/computer/desktops/start?bot_id=specialist_a");
+    expect(sockets).toHaveLength(1);
+    expect(sockets[0]).toContain(`desktop=desktop_${"a".repeat(24)}`);
   });
 });

@@ -5,7 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 const request = vi.fn();
 vi.mock("../src/lib/assistant-client", () => ({ assistantRequest: (...args: unknown[]) => request(...args) }));
 import { DutyScheduleControl, type BotDuty } from "../src/components/duty-schedule-control";
-import { BotDutiesDialog } from "../src/components/bot-duties-dialog";
+import { BotDuties } from "../src/components/bot-duties-dialog";
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 const host = document.createElement("div");
 let root = createRoot(host);
@@ -43,7 +43,7 @@ it("opens the current Bot's plans and sends pause to its Objective", async () =>
   request.mockResolvedValueOnce({
     duties: [{ ...plan, latestExecution: { status: "succeeded", summary: "已生成报告" } }],
   }).mockResolvedValueOnce({ ...plan, status: "paused", revision: 4 });
-  await act(async () => root.render(<BotDutiesDialog specialistId="specialist_a" onClose={vi.fn()} />));
+  await act(async () => root.render(<BotDuties specialistId="specialist_a" />));
   expect(request).toHaveBeenNthCalledWith(1, "specialists/specialist_a");
   expect(host.querySelector("select")?.value).toBe("cron");
   expect(host.textContent).toContain("已生成报告");

@@ -9,7 +9,7 @@ from harness.computer.access import CanonicalComputerAccess
 from harness.computer.acp_tools import computer_acp_overlay
 from harness.computer.control import HttpComputerControl
 from harness.computer.desktop import DesktopControlService
-from harness.computer.desktop_registry import DesktopRegistry, desktop_id_for
+from harness.computer.desktop_registry import DesktopRegistry, desktop_id_for, desktop_slot_payload
 from harness.computer.docker import DockerComputerDriver
 from harness.computer.gui_tools import computer_gui_overlay
 from harness.computer.models import AssistantComputer, ComputerDesktop
@@ -20,7 +20,7 @@ from harness.computer.sandbox import BotDesktopTarget, ComputerSandboxProvider
 from harness.computer.vm import PROVIDER as VM_PROVIDER
 from harness.computer.vm import VmComputerDriver
 from harness.config import Settings
-from harness.core.errors import NotFoundError
+from harness.core.errors import ConflictError, NotFoundError
 from harness.core.models import Run, Session
 from harness.runtime.platform_tools import PlatformToolOverlay
 from harness.sandbox.base import SandboxHandle
@@ -177,6 +177,39 @@ class ComputerRuntime:
             desktop_id_for(session.tenant_id, session.user_id, specialist_id), reserve
         )
 
+    async def start_desktop_preview(
+        self, tenant_id: str, user_id: str, specialist_id: str
+    ) -> ComputerDesktop:
+        if user_id not in self.settings.assistant_computer_owners.get(tenant_id, frozenset()):
+            raise NotFoundError("Computer is not available to this owner")
+        computer = await self.registry.get(tenant_id, user_id)
+        if computer.provider != VM_PROVIDER:
+            raise ConflictError("the selected target is not a cloud computer")
+        address = self.settings.assistant_computer_control_url
+        secret = self.settings.assistant_computer_control_secret.get_secret_value()
+        if not address or len(secret) < 32:
+            raise RuntimeError("desktop startup is not configured")
+
+        row = await self.desktops.ensure(
+            tenant_id, user_id, specialist_id,
+            computer_id=computer.computer_id, image=computer.image,
+        )
+
+        async def ensure_guest(desktop: ComputerDesktop) -> str:
+            async with httpx.AsyncClient(
+                base_url=address, trust_env=False, headers={"Authorization": "Bearer " + secret},
+            ) as client:
+                answer = await HttpComputerControl(client).desktop_slot(
+                    tenant_id, user_id, "ensure", desktop_slot_payload(desktop)
+                )
+            provider_ref = answer.get("provider_ref")
+            if (answer.get("op") != "ensure" or answer.get("state") != "active"
+                    or not isinstance(provider_ref, str)):
+                raise RuntimeError("guest did not confirm the desktop is ready")
+            return provider_ref
+
+        return await self.desktops.start(computer, row.desktop_id, ensure_guest)
+
     async def reclaim_desktops(self, *, idle_seconds: float) -> int:
         """Stop guest sessions for stopped or idle slots; never touches active work."""
 
@@ -190,14 +223,7 @@ class ComputerRuntime:
                 desktop.tenant_id,
                 desktop.user_id,
                 "stop",
-                {
-                    "desktopId": desktop.desktop_id,
-                    "unixUser": desktop.unix_user,
-                    "display": desktop.display,
-                    "profile": desktop.profile_ref,
-                    "workspace": desktop.workspace_ref,
-                    "vncSocket": desktop.vnc_socket,
-                },
+                desktop_slot_payload(desktop),
             )
             if result != {"op": "stop", "state": "inactive"}:
                 raise RuntimeError("Bot desktop stop was not confirmed")

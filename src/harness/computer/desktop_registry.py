@@ -13,7 +13,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from harness.computer.models import ComputerDesktop, ComputerState, DesktopState
+from harness.computer.models import AssistantComputer, ComputerDesktop, ComputerState, DesktopState
 from harness.computer.storage import AssistantComputerRow as Computer
 from harness.computer.storage import ComputerDesktopLeaseRow as Control
 from harness.computer.storage import ComputerDesktopRow as Desktop
@@ -45,6 +45,17 @@ def profile_refs(desktop_id: str) -> tuple[str, str]:
     short = sha256(desktop_id.encode()).hexdigest()[:16]
     base = f"/home/kai-bots/{short}"
     return f"{base}/chromium", f"{base}/workspace"
+
+
+def desktop_slot_payload(desktop: ComputerDesktop) -> dict[str, object]:
+    return {
+        "desktopId": desktop.desktop_id,
+        "unixUser": desktop.unix_user,
+        "display": desktop.display,
+        "profile": desktop.profile_ref,
+        "workspace": desktop.workspace_ref,
+        "vncSocket": desktop.vnc_socket,
+    }
 
 
 async def lock_desktop(session: AsyncSession, desktop_id: str) -> None:
@@ -271,6 +282,39 @@ class DesktopRegistry:
                 computer.revision += 1
                 computer.updated_at = moment
         await session.flush()
+
+    async def start(
+        self,
+        computer: AssistantComputer,
+        desktop_id: str,
+        ensure_guest: Callable[[ComputerDesktop], Awaitable[str]],
+    ) -> ComputerDesktop:
+        """Confirm a preview is ready without taking a Run or input lease."""
+        async with self._sessions.begin() as session:
+            await lock_desktop(session, desktop_id)
+            target = await session.get(
+                Computer, (computer.tenant_id, computer.user_id), with_for_update=True
+            )
+            if target is None or (target.computer_id, target.provider, target.volume_ref) != (
+                computer.computer_id, computer.provider, computer.volume_ref
+            ) or target.image != computer.image:
+                raise ConflictError("computer target changed during desktop startup")
+            row = await self._get_or_none(session, computer.tenant_id, computer.user_id, desktop_id)
+            if row is None or row.display is None or row.computer_id != target.computer_id:
+                raise ConflictError("desktop slot changed during startup")
+            if row.state in {DesktopState.BUSY.value, DesktopState.STARTING.value}:
+                return ComputerDesktop.model_validate(row)
+            provider_ref = await ensure_guest(ComputerDesktop.model_validate(row))
+            moment = await _now(session)
+            if target.provider_ref is None:
+                target.provider_ref = provider_ref
+                target.revision += 1
+                target.updated_at = moment
+            row.state = DesktopState.IDLE.value
+            row.last_active_at = row.updated_at = moment
+            row.revision += 1
+            await session.flush()
+            return ComputerDesktop.model_validate(row)
 
     async def mark_started(self, tenant: str, user: str, desktop_id: str) -> ComputerDesktop:
         async with self._sessions.begin() as session:

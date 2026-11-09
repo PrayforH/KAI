@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { assistantRequest, type Specialist } from "../lib/assistant-client";
 import { BOT_SHAPES, botAppearanceTokens, botAppearanceVars } from "../lib/bot-appearance";
 import { useAppearancePalette } from "../lib/bot-appearance-palette";
 import { BotGlyph } from "./bot-glyph";
+import { BotDuties } from "./bot-duties-dialog";
 import styles from "./bot-edit-dialog.module.css";
 
 /**
@@ -16,13 +17,17 @@ import styles from "./bot-edit-dialog.module.css";
  */
 export function BotProfileDialog({
   specialistId,
+  initialTab = "details",
   onClose,
   onSaved,
 }: {
   specialistId: string;
+  initialTab?: "details" | "duties";
   onClose: () => void;
   onSaved: (updated: Specialist) => void;
 }) {
+  const [tab, setTab] = useState(initialTab);
+  const tabsId = useId();
   const [detail, setDetail] = useState<Specialist | null>(null);
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
@@ -88,6 +93,23 @@ export function BotProfileDialog({
         <button type="button" className={styles.close} aria-label="关闭" onClick={onClose}>
           ×
         </button>
+        <div className={styles.tabs} role="tablist" aria-label="Bot 设置">
+          {(["details", "duties"] as const).map(value => <button key={value} type="button" role="tab"
+            id={`${tabsId}-${value}`} aria-selected={tab === value} aria-controls={`${tabsId}-panel`}
+            tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)}
+            onKeyDown={event => {
+              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              event.preventDefault();
+              const next = event.key === "Home" ? "details" : event.key === "End" ? "duties"
+                : value === "details" ? "duties" : "details";
+              setTab(next);
+              document.getElementById(`${tabsId}-${next}`)?.focus();
+            }}>
+            {value === "details" ? "详情" : "例行任务"}
+          </button>)}
+        </div>
+        <div className={styles.tabPanel} role="tabpanel" id={`${tabsId}-panel`} aria-labelledby={`${tabsId}-${tab}`}>
+        {tab === "duties" ? <BotDuties specialistId={specialistId} /> : <>
         <div className={styles.appearance}>
           <div
             className={styles.avatarPreview}
@@ -159,6 +181,8 @@ export function BotProfileDialog({
         <button type="button" className={styles.primary} disabled={busy || !detail} onClick={() => void save()}>
           {busy ? "保存中…" : "保存"}
         </button>
+        </>}
+        </div>
       </div>
     </div>
   );

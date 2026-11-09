@@ -13,10 +13,7 @@ const executionStatus: Record<Execution["status"], string> = {
   pending: "排队中", running: "执行中", succeeded: "已完成", failed: "执行失败", cancelled: "已取消",
 };
 
-export function BotDutiesDialog({ specialistId, onClose }: {
-  specialistId: string;
-  onClose: () => void;
-}) {
+export function BotDuties({ specialistId }: { specialistId: string }) {
   const [duties, setDuties] = useState<Duty[] | null>(null);
   const [error, setError] = useState("");
   const [changing, setChanging] = useState<string | null>(null);
@@ -49,10 +46,7 @@ export function BotDutiesDialog({ specialistId, onClose }: {
     }
   }
 
-  return <div className={styles.backdrop} role="dialog" aria-modal="true" aria-label="职责与计划">
-    <div className={styles.panel}>
-      <button type="button" className={styles.close} aria-label="关闭" onClick={onClose}>×</button>
-      <h2 className={styles.routinesTitle}>职责与计划</h2>
+  return <div className={styles.routines}>
       {error && <p role="alert">{error}</p>}
       {!duties && !error && <p role="status">正在加载职责…</p>}
       {duties?.length === 0 && <p>这个 Bot 还没有职责。</p>}
@@ -72,6 +66,5 @@ export function BotDutiesDialog({ specialistId, onClose }: {
             {duty.status === "active" ? "暂停职责" : "恢复职责"}
           </button>}
       </section>)}
-    </div>
   </div>;
 }

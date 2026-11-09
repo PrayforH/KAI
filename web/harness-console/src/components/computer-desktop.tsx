@@ -30,6 +30,7 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
   const botPreview = botId !== undefined && (viewTarget === null || viewTarget === "cloud");
   const [selection, setSelection] = useState<TargetSelection | null>(null);
   const [switching, setSwitching] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [selectionError, setSelectionError] = useState("");
   const [authority, setAuthority] = useState<DesktopControl | null>(null);
   const [controlError, setControlError] = useState("");
@@ -213,6 +214,29 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
     };
   }, [revision, embedded, botId]);
 
+  async function startDesktop() {
+    if (actionInFlight.current || targetRef.current !== "cloud") return;
+    actionInFlight.current = true;
+    setStarting(true);
+    setActionError("");
+    const query = botId ? `?${new URLSearchParams({ bot_id: botId })}` : "";
+    try {
+      const response = await fetch(`/api/studio/assistant/computer/desktops/start${query}`, {
+        method: "POST", signal: AbortSignal.timeout(150_000),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error?.message ?? body?.detail ?? "云桌面启动未确认，请重试");
+      }
+      if (targetRef.current === "cloud") setRevision(value => value + 1);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "云桌面启动未确认，请重试");
+    } finally {
+      actionInFlight.current = false;
+      setStarting(false);
+    }
+  }
+
   function viewComputer(targetId: string) {
     if (targetId === targetRef.current) return;
     operationVersion.current += 1;
@@ -314,13 +338,14 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
         }} />
       {state !== "connected" && <div className={styles.overlay} data-state={state} role="status">
         <div className={styles.stateGlyph}><BotGlyph shape="block" color="#858585" /></div>
-        <strong>{state === "connecting" ? "正在连接电脑" : state === "reconnecting" ? "正在重新连接电脑" : state === "disconnected" ? "电脑暂未连接" : state === "waiting" ? "等待 Bot 启动桌面" : "请重新登录"}</strong>
+        <strong>{starting ? "正在启动 Bot 桌面" : state === "connecting" ? "正在连接电脑" : state === "reconnecting" ? "正在重新连接电脑" : state === "disconnected" ? "电脑暂未连接" : state === "waiting" ? "等待 Bot 启动桌面" : "请重新登录"}</strong>
         {state === "unauthorized" ? <Link href="/login">登录 KAI</Link>
-          : state === "disconnected" || state === "waiting" ? <button onClick={() => setRevision(value => value + 1)}>重新连接</button> : null}
+          : state === "waiting" && botPreview ? <button disabled={starting} onClick={() => void startDesktop()}>启动桌面</button>
+          : state === "disconnected" ? <button onClick={() => setRevision(value => value + 1)}>重新连接</button> : null}
       </div>}
     </div>
     <footer className={styles.toolbar}>
-      {selection && selection.targets.length > 1 ? <select className={styles.targetSelect} aria-label="查看电脑" disabled={actionBusy || switching}
+      {selection && selection.targets.length > 1 ? <select className={styles.targetSelect} aria-label="查看电脑" disabled={actionBusy || switching || starting}
         value={viewTarget ?? ""} onChange={event => viewComputer(event.target.value)}>
         {selection.targets.map(target => <option key={target.target_id} value={target.target_id}>{target.label}</option>)}
       </select> : <span className={styles.caption}>{viewedLabel}的屏幕</span>}
