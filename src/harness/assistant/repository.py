@@ -1071,6 +1071,18 @@ class PostgresAssistantRepository:
         async with self._context(write=True) as session:
             row = await self._owned(session, tenant_id, user_id, objective_id, lock=True)
             current = _objective(row)
+            if current.specialist_id not in (None, specialist_id):
+                raise ConflictError("该职责已由其他子助理承接")
+            if current.managed_thread_id is None:
+                binding = await session.get(
+                    AguiThreadBindingRow,
+                    (tenant_id, user_id, f"assistant_{objective_id}"),
+                    with_for_update=True,
+                )
+                if binding is not None and binding.payload.get("kind") == "duty":
+                    binding.payload = {**binding.payload, "specialist_id": specialist_id}
+            if current.specialist_id == specialist_id:
+                return current
             updated = Objective.model_validate(
                 current.model_dump()
                 | {

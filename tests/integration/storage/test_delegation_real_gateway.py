@@ -26,7 +26,8 @@ from harness.assistant.models import (
 from harness.assistant.repository import PostgresAssistantRepository
 from harness.assistant.service import AssistantService
 from harness.core.errors import ConflictError
-from harness.core.models import Run, RunStatus, Session
+from harness.core.models import AguiThreadBinding, Run, RunStatus, Session
+from harness.storage.platform_repositories import PostgresAguiThreadBindingRepository
 from tests.integration.storage.conftest import DatabaseFixture
 
 NOW = datetime(2026, 10, 29, 12, tzinfo=UTC)
@@ -1498,6 +1499,40 @@ async def test_specialist_conversation_is_the_duty_thread(database: DatabaseFixt
     assert bindings and bindings[0].thread_id == "thread-duty"
     bound = await service.repository.get("tenant-a", "user-a", duty.objective_id)
     assert bound.specialist_id == specialist.specialist_id
+
+
+@pytest.mark.asyncio
+async def test_attach_existing_duty_preserves_its_schedule_and_history(database: DatabaseFixture):
+    service = make_service(database)
+    duty = await service.create("tenant-a", "user-a", brief())
+    bot, _ = await service.create_specialist(
+        "tenant-a", "user-a", name="owner-bot", description="承接现有职责",
+        agent_name=duty.agent_name, agent_version=duty.agent_version,
+    )
+    execution = await service.repository.enqueue(
+        "tenant-a", "user-a", duty.objective_id, trigger_key="test:existing", now=NOW,
+    )
+    bindings = PostgresAguiThreadBindingRepository(database[1])
+    await bindings.add(AguiThreadBinding(
+        tenant_id="tenant-a", user_id="user-a", thread_id=execution.thread_id,
+        session_id="session-history", kind="duty", created_at=NOW, updated_at=NOW,
+    ))
+
+    for _ in range(2):
+        await service.attach_duty(
+            "tenant-a", "user-a", bot.specialist_id, objective_id=duty.objective_id,
+            expected_revision=bot.revision,
+        )
+
+    saved = await service.repository.get("tenant-a", "user-a", duty.objective_id)
+    binding = await bindings.get_by_thread("tenant-a", "user-a", execution.thread_id)
+    assert saved.specialist_id == binding.specialist_id == bot.specialist_id
+    assert saved.revision == duty.revision + 1
+    assert (saved.schedule, saved.schedule_version, saved.next_check_at) == (
+        duty.schedule, duty.schedule_version, duty.next_check_at,
+    )
+    assert (binding.kind, binding.session_id) == ("duty", "session-history")
+    assert await service.repository.executions("tenant-a", "user-a", duty.objective_id) == [execution]
 
 
 @pytest.mark.asyncio

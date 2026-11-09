@@ -1997,9 +1997,8 @@ class AssistantService:
         specialist = await self.repository.get_specialist(tenant_id, user_id, specialist_id)
         if specialist.revision != expected_revision:
             raise ConflictError("子助理已更新，请刷新后重试")
-        objective = await self.repository.get(tenant_id, user_id, objective_id)
-        if objective.specialist_id and objective.specialist_id != specialist_id:
-            raise ConflictError("该职责已由其他子助理承接")
+        if specialist.status is SpecialistStatus.ARCHIVED:
+            raise ConflictError("已归档的 Bot 无法承接职责")
         await self.repository.set_duty_specialist(
             tenant_id, user_id, objective_id, specialist_id, now=datetime.now(UTC)
         )
