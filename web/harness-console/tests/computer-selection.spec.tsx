@@ -20,16 +20,23 @@ const cloud = { active_target: "cloud", targets: [{ target_id: "cloud", label: "
 let refused = false, current = "cloud";
 let controlState = "human", controlFailure = 0, readFailure = false, sessionStatus = 200;
 let delayedRead: Promise<Response> | null = null;
+let missingBotSlot = false;
 let host: HTMLDivElement, root: Root;
 const requests: string[] = [];
 async function flush() { for (let i = 0; i < 10; i++) await act(async () => { await Promise.resolve(); }); }
 beforeEach(() => {
-  requests.length = 0; sockets.length = 0; frames.length = 0;
+  requests.length = 0; sockets.length = 0; frames.length = 0; missingBotSlot = false;
   refused = false; current = "cloud"; controlState = "human"; controlFailure = 0; readFailure = false; sessionStatus = 200; delayedRead = null; disconnected.mockClear();
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     requests.push(url);
     if (url === "/api/auth/session") return Response.json({}, { status: sessionStatus });
+    if (url.includes("/desktops/preview")) {
+      if (missingBotSlot) return Response.json({}, { status: 404 });
+      const botId = new URL(url, "https://kai.test").searchParams.get("bot_id");
+      const hash = botId === "specialist_b" ? "b" : "a";
+      return Response.json({ desktopId: `desktop_${hash.repeat(24)}`, state: "idle" });
+    }
     if (url.endsWith("/targets/select")) {
       expect(JSON.parse(init?.body as string)).toEqual({ target_id: "local" });
       if (!refused) current = "local";
@@ -196,5 +203,30 @@ describe("desktop session renewal", () => {
     await act(async () => root.render(null));
     await act(async () => { await vi.advanceTimersByTimeAsync(20000); });
     expect(requests).toEqual([]);
+  });
+});
+
+
+describe("Bot desktop preview", () => {
+  it("uses the selected Bot slot and never takes over the shared desktop", async () => {
+    await act(async () => root.render(<ComputerDesktop botId="specialist_a" />));
+    await flush();
+    expect(sockets.at(-1)).toContain(`target=cloud&desktop=desktop_${"a".repeat(24)}`);
+    expect(frames.at(-1)?.viewOnly).toBe(true);
+    expect(host.textContent).not.toContain("取得控制权");
+
+    await act(async () => root.render(<ComputerDesktop botId="specialist_b" />));
+    await flush();
+    expect(disconnected).toHaveBeenCalled();
+    expect(sockets.at(-1)).toContain(`target=cloud&desktop=desktop_${"b".repeat(24)}`);
+    expect(requests).not.toContain("/api/studio/assistant/computer/desktop");
+  });
+
+  it("waits for an unstarted Bot and opens no other desktop", async () => {
+    missingBotSlot = true;
+    await act(async () => root.render(<ComputerDesktop botId="specialist_a" />));
+    await flush();
+    expect(host.textContent).toContain("等待 Bot 启动桌面");
+    expect(sockets).toHaveLength(0);
   });
 });

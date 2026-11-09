@@ -1027,9 +1027,8 @@ function AuthenticatedHome() {
               }}
             />
           </header>
-          {/* 一台电脑属于这个人：主助理和每个子助理会话都能打开同一台，
-              控制权仍由 desktop 租约独占（同一时刻只有一个持有者）。 */}
-          <AssistantComputerPane open={assistantEntry && computerOpen} onClose={() => showComputer(false)}>
+          <AssistantComputerPane open={assistantEntry && computerOpen}
+            botId={botParam ?? null} onClose={() => showComputer(false)}>
           <section
             className="chat-stage"
             data-surface={conversationSurface}

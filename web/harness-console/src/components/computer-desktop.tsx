@@ -7,13 +7,16 @@ import type RFB from "@novnc/novnc";
 import styles from "./computer-desktop.module.css";
 
 type TargetSelection = { active_target: string | null; targets: { target_id: string; label: string; binding_key: string }[] };
-type ConnectionState = "connecting" | "reconnecting" | "connected" | "disconnected" | "unauthorized";
+type ConnectionState = "connecting" | "reconnecting" | "connected" | "disconnected" | "unauthorized" | "waiting";
 type ControlState = "observe" | "agent" | "human" | "takeover_pending";
 type DesktopControl = { state: ControlState; binding_key: string; epoch?: number; revision?: number };
-const labels = { connecting: "正在连接", reconnecting: "正在重新连接", connected: "已连接", disconnected: "连接已断开", unauthorized: "请重新登录" };
+const labels = { connecting: "正在连接", reconnecting: "正在重新连接", connected: "已连接", disconnected: "连接已断开", unauthorized: "请重新登录", waiting: "等待 Bot 桌面" };
 
 
-export function ComputerDesktop({ embedded = false, onClose }: { embedded?: boolean; onClose?: () => void }) {
+export function ComputerDesktop({ embedded = false, onClose, botId }: {
+  embedded?: boolean; onClose?: () => void; botId?: string | null;
+}) {
+  const botPreview = botId !== undefined;
   const screen = useRef<HTMLDivElement>(null);
   const shell = useRef<HTMLElement>(null);
   const client = useRef<RFB | null>(null);
@@ -60,7 +63,7 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
     async function pollControl() {
       // The lease is the authority; the viewer only mirrors it for the UI and
       // stops asking noVNC to send input when the user does not own it.
-      if (disposed || polling || actionInFlight.current) return;
+      if (botPreview || disposed || polling || actionInFlight.current) return;
       polling = true;
       const version = operationVersion.current;
       try {
@@ -85,12 +88,12 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
       } finally { polling = false; }
     }
     refreshControl.current = pollControl;
-    function retryConnection() {
+    function retryConnection(waiting = false) {
       if (disposed || retryTimer !== undefined) return;
       if (rfb) rfb.viewOnly = true;
       client.current = null;
-      if (retries >= 5) { setState("disconnected"); return; }
-      setState(wasConnected ? "reconnecting" : "connecting");
+      if (retries >= 5) { setState(waiting ? "waiting" : "disconnected"); return; }
+      setState(waiting ? "waiting" : wasConnected ? "reconnecting" : "connecting");
       const delay = Math.min(1500 * 2 ** retries++, 10000);
       retryTimer = setTimeout(() => { retryTimer = undefined; void connect(); }, delay);
     }
@@ -113,22 +116,36 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
           else retryConnection();
           return;
         }
-        const targets = await fetch("/api/studio/assistant/computer/targets", { cache: "no-store", signal: signal() });
-        if (targets.ok && !disposed) {
-          const value = await targets.json() as TargetSelection;
-          targetRef.current ??= value.active_target;
-          setViewTarget(targetRef.current);
-          setSelection(value);
+        const url = new URL("/computer/desktop", window.location.href);
+        if (botPreview) {
+          const query = botId ? `?bot_id=${encodeURIComponent(botId)}` : "";
+          const preview = await fetch(`/api/studio/assistant/computer/desktops/preview${query}`, {
+            cache: "no-store", signal: signal(),
+          });
+          if (disposed) return;
+          if (preview.status === 404) { retryConnection(true); return; }
+          if (!preview.ok) { retryConnection(); return; }
+          const slot = await preview.json() as { desktopId: string; state: string };
+          if (slot.state !== "busy" && slot.state !== "idle") { retryConnection(true); return; }
+          url.searchParams.set("target", "cloud");
+          url.searchParams.set("desktop", slot.desktopId);
+        } else {
+          const targets = await fetch("/api/studio/assistant/computer/targets", { cache: "no-store", signal: signal() });
+          if (targets.ok && !disposed) {
+            const value = await targets.json() as TargetSelection;
+            targetRef.current ??= value.active_target;
+            setViewTarget(targetRef.current);
+            setSelection(value);
+          }
+          await pollControl();
+          if (targetRef.current) url.searchParams.set("target", targetRef.current);
         }
-        await pollControl();
         const { default: RemoteFramebuffer } = await import("@novnc/novnc");
         if (disposed || !screen.current) return;
-        const url = new URL("/computer/desktop", window.location.href);
-        if (targetRef.current) url.searchParams.set("target", targetRef.current);
         url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
         const connection = new RemoteFramebuffer(screen.current, url.toString());
         rfb = connection; client.current = connection;
-        connection.viewOnly = controlRef.current !== "human";
+        connection.viewOnly = botPreview || controlRef.current !== "human";
         connection.scaleViewport = true;
         connection.resizeSession = false;
         connection.qualityLevel = 6;
@@ -153,14 +170,14 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
       }
     }
     void connect();
-    const poll = setInterval(() => { void pollControl(); }, 2000);
+    const poll = botPreview ? undefined : setInterval(() => { void pollControl(); }, 2000);
     return () => {
       leavePage(); client.current = null; clearInterval(poll); clearTimeout(retryTimer);
       refreshControl.current = async () => {};
       window.removeEventListener("pagehide", leavePage);
       window.removeEventListener("pageshow", restorePage);
     };
-  }, [revision, embedded]);
+  }, [revision, embedded, botId, botPreview]);
 
   function viewComputer(targetId: string) {
     if (targetId === targetRef.current) return;
@@ -224,7 +241,7 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
     }
   }
 
-  const viewedLabel = selection?.targets.find(target => target.target_id === viewTarget)?.label ?? "我的电脑";
+  const viewedLabel = botPreview ? "Bot 专属桌面" : selection?.targets.find(target => target.target_id === viewTarget)?.label ?? "我的电脑";
   const executionLabel = selection?.targets.find(target => target.target_id === selection.active_target)?.label;
   const activeBinding = selection?.targets.find(target => target.target_id === selection.active_target)?.binding_key;
   const returnable = authority?.binding_key === activeBinding && (authority?.state === "human" || authority?.state === "takeover_pending");
@@ -255,11 +272,16 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
         }} />
       {state !== "connected" && <div className={styles.overlay} data-state={state} role="status">
         <div className={styles.stateGlyph}><BotGlyph shape="block" color="#858585" /></div>
-        <strong>{state === "connecting" ? "正在连接电脑" : state === "reconnecting" ? "正在重新连接电脑" : state === "disconnected" ? "电脑暂未连接" : "请重新登录"}</strong>
+        <strong>{state === "connecting" ? "正在连接电脑" : state === "reconnecting" ? "正在重新连接电脑" : state === "disconnected" ? "电脑暂未连接" : state === "waiting" ? "等待 Bot 启动桌面" : "请重新登录"}</strong>
         {state === "unauthorized" ? <Link href="/login">登录 KAI</Link>
-          : state === "disconnected" ? <button onClick={() => setRevision(value => value + 1)}>重新连接</button> : null}
+          : state === "disconnected" || state === "waiting" ? <button onClick={() => setRevision(value => value + 1)}>重新连接</button> : null}
       </div>}
     </div>
+    {botPreview ? <footer className={styles.toolbar}>
+      <span className={styles.caption}>Bot 专属桌面 · 仅观看</span>
+      <Link href="/assistant/computer">打开我的电脑</Link>
+      <span className={styles.connection} role="status">{labels[state]}</span>
+    </footer> : <>
     <footer className={styles.toolbar}>
       {selection && selection.targets.length > 1 ? <select className={styles.targetSelect} aria-label="查看电脑" disabled={actionBusy || switching}
         value={viewTarget ?? ""} onChange={event => viewComputer(event.target.value)}>
@@ -292,5 +314,6 @@ export function ComputerDesktop({ embedded = false, onClose }: { embedded?: bool
     </div>}
     {actionError && <p className={styles.selectionError} role="alert">{actionError}</p>}
     {selectionError && <p className={styles.selectionError} role="alert">{selectionError}</p>}
+    </>}
   </section>;
 }

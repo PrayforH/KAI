@@ -28,6 +28,7 @@ from harness.application.memory import UserMemoryService
 from harness.application.runs import RunQuotaPlan, RunService
 from harness.application.sessions import SessionService
 from harness.application.workspaces import WorkspacePolicy, WorkspaceService
+from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
 from harness.assistant.conversation import PersonalConversation
 from harness.assistant.delegation import (
     AssistantDelegationGateway,
@@ -58,9 +59,10 @@ from harness.computer.conventions import (
     office_conventions_overlay,
 )
 from harness.computer.desktop import DesktopControlService
+from harness.computer.desktop_registry import bot_desktop_key
 from harness.computer.runtime import ComputerRuntime
-from harness.computer.vm import PROVIDER as VM_PROVIDER
 from harness.computer.targets import ComputerTarget, ComputerTargetService
+from harness.computer.vm import PROVIDER as VM_PROVIDER
 from harness.config import Settings
 from harness.context.checkpoint import ContextCheckpointService
 from harness.context.service import ContextService
@@ -711,13 +713,11 @@ def build_production_container(
             binding = await binding_repository.get_by_session(tenant_id, user_id, session_id)
         except NotFoundError:
             return None
-        thread = binding.thread_id
-        if thread == "kai-personal-assistant-v1":
-            # The owner's main assistant is a Bot too: give it a stable slot
-            # instead of falling back to the shared whole-machine lease.
-            return "_personal"
-        prefix = "assistant_specialist_"
-        return thread[len(prefix):] if thread.startswith(prefix) else None
+        if binding.thread_id == PERSONAL_ASSISTANT_THREAD:
+            return bot_desktop_key(None)
+        if binding.kind == "bot" and binding.specialist_id is not None:
+            return bot_desktop_key(binding.specialist_id)
+        return None
 
     computer_runtime = ComputerRuntime(
         settings,

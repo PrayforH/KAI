@@ -31,7 +31,9 @@ export function AssistantComputerLink({ open, onToggle, ready = false }: {
       }
       const url = new URL(href ?? "/assistant/computer", window.location.href);
       if (url.hostname !== window.location.hostname || url.protocol !== "https:") return;
-      url.pathname = "/assistant"; url.search = "?computer=open";
+      url.pathname = "/assistant";
+      const bot = new URLSearchParams(window.location.search).get("bot");
+      url.search = new URLSearchParams({ computer: "open", ...(bot ? { bot } : {}) }).toString();
       window.location.assign(url.href);
     } catch { /* The conversation remains usable if the viewer is unavailable. */ }
   }

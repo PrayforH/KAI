@@ -6,7 +6,7 @@ it again before every agent action.
 """
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -16,14 +16,11 @@ from harness.computer.desktop import (
     DesktopControl,
     DesktopControlService,
 )
+from harness.computer.desktop_registry import DesktopRegistry, bot_desktop_key
 from harness.computer.targets import ComputerTargetService
 from harness.core.errors import ConflictError, NotFoundError
 
 router = APIRouter(prefix="/v1/studio/assistant/computer", tags=["assistant-computer"])
-
-if TYPE_CHECKING:
-    from harness.computer.desktop_registry import DesktopRegistry
-
 
 def desktop_service(request: Request) -> DesktopControlService:
     value = getattr(request.app.state.container, "computer_desktop", None)
@@ -145,13 +142,13 @@ async def select_target(
 class BotDesktop(BaseModel):
     """One Bot's desktop slot inside the owner's Computer."""
 
-    desktopId: str
-    specialistId: str
+    desktop_id: str = Field(serialization_alias="desktopId")
+    specialist_id: str = Field(serialization_alias="specialistId")
     state: str
     display: str | None = None
-    unixUser: str
-    vncSocket: str | None = None
-    lastActiveAt: datetime | None = None
+    unix_user: str = Field(serialization_alias="unixUser")
+    vnc_socket: str | None = Field(default=None, serialization_alias="vncSocket")
+    last_active_at: datetime | None = Field(default=None, serialization_alias="lastActiveAt")
 
 
 def desktop_registry(request: Request) -> "DesktopRegistry":
@@ -161,7 +158,7 @@ def desktop_registry(request: Request) -> "DesktopRegistry":
     return value
 
 
-Registry = Annotated["DesktopRegistry", Depends(desktop_registry)]
+Registry = Annotated[DesktopRegistry, Depends(desktop_registry)]
 
 
 @router.get("/desktops")
@@ -175,16 +172,36 @@ async def desktops(
     rows = await registry.list(identity.tenant_id, identity.user_id)
     return [
         BotDesktop(
-            desktopId=row.desktop_id,
-            specialistId=row.specialist_id,
+            desktop_id=row.desktop_id,
+            specialist_id=row.specialist_id,
             state=row.state.value if hasattr(row.state, "value") else str(row.state),
             display=row.display,
-            unixUser=row.unix_user,
-            vncSocket=row.vnc_socket,
-            lastActiveAt=row.last_active_at,
+            unix_user=row.unix_user,
+            vnc_socket=row.vnc_socket,
+            last_active_at=row.last_active_at,
         )
         for row in rows
     ]
+
+
+class BotDesktopPreview(BaseModel):
+    desktop_id: str = Field(serialization_alias="desktopId")
+    state: str
+
+
+@router.get("/desktops/preview")
+async def bot_desktop_preview(
+    identity: Annotated[Identity, Depends(require_identity)],
+    registry: Registry,
+    bot_id: Annotated[str | None, Query(pattern=r"^specialist_[a-z0-9_]+$", max_length=128)] = None,
+) -> BotDesktopPreview:
+    """Resolve a desktop only within the signed-in account's Bot slots."""
+    ensure_permission(identity, "tasks:read")
+    try:
+        row = await registry.get(identity.tenant_id, identity.user_id, bot_desktop_key(bot_id))
+    except NotFoundError:
+        raise HTTPException(404, "Bot desktop has not started") from None
+    return BotDesktopPreview(desktop_id=row.desktop_id, state=row.state.value)
 
 
 @router.post("/desktops/{desktop_id}/stop")
@@ -198,14 +215,14 @@ async def stop_desktop(
     ensure_permission(identity, "tasks:write")
     try:
         row = await registry.stop(identity.tenant_id, identity.user_id, desktop_id)
-    except NotFoundError as error:
+    except NotFoundError:
         raise HTTPException(404, "Bot desktop not found") from None
     return BotDesktop(
-        desktopId=row.desktop_id,
-        specialistId=row.specialist_id,
+        desktop_id=row.desktop_id,
+        specialist_id=row.specialist_id,
         state=row.state.value if hasattr(row.state, "value") else str(row.state),
         display=row.display,
-        unixUser=row.unix_user,
-        vncSocket=row.vnc_socket,
-        lastActiveAt=row.last_active_at,
+        unix_user=row.unix_user,
+        vnc_socket=row.vnc_socket,
+        last_active_at=row.last_active_at,
     )

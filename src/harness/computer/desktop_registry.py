@@ -23,6 +23,11 @@ LAST_DISPLAY = 199
 LIVE_STATES = (DesktopState.STARTING.value, DesktopState.IDLE.value, DesktopState.BUSY.value)
 
 
+def bot_desktop_key(specialist_id: str | None) -> str:
+    """Keep the deployed slot keys stable across conversation binding upgrades."""
+    return "_personal" if specialist_id is None else specialist_id.removeprefix("specialist_")
+
+
 def desktop_id_for(tenant: str, user: str, specialist_id: str) -> str:
     """Stable identity: retrying ensure never creates a second desktop."""
 
