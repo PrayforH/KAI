@@ -385,6 +385,7 @@ function AuthenticatedHome() {
   const [taskSidebarOpen, setTaskSidebarOpen] = useState(true);
   const [taskRailOpen, setTaskRailOpen] = useState(false);
   const [botSideOpen, setBotSideOpen] = useState(false);
+  const assistantRailOpen = assistantView && botSideOpen && (!botParam || bot?.specialistId === botParam);
   const [railExpanded, setRailExpanded] = useState(false);
   const [railPreview, setRailPreview] = useState<(PreviewTarget & { nonce: number }) | null>(null);
   const previewNonce = useRef(0);
@@ -939,6 +940,7 @@ function AuthenticatedHome() {
         />
         <div
           className="task-content-shell"
+          data-assistant-rail-open={assistantRailOpen || undefined}
           aria-hidden={compactTaskSidebar && taskSidebarOpen ? true : undefined}
         >
           <header className="console-header">
@@ -1136,25 +1138,25 @@ function AuthenticatedHome() {
             )}
           </section>
           </AssistantComputerPane>
+          {assistantRailOpen && (
+            <BotSidePanel
+              key={botParam ?? PERSONAL_ASSISTANT_THREAD}
+              primary={!botParam}
+              botId={bot?.specialistId}
+              name={bot?.name ?? "主助理"}
+              tone={bot?.appearance?.color ?? botAccent(bot?.specialistId ?? "")}
+              shape={bot?.appearance?.avatar}
+              threadId={bot?.threadId ?? threadId}
+              ready={readyConversation === threadId}
+              onClose={() => setBotSideOpen(false)}
+              onDetails={bot ? () => {
+                setBotSideOpen(false);
+                setBotSettingsId(bot.specialistId);
+              } : undefined}
+              onComputer={() => showComputer(true)}
+            />
+          )}
         </div>
-        {assistantView && botSideOpen && (!botParam || bot?.specialistId === botParam) && (
-          <BotSidePanel
-            key={`assistant-rail:${botParam ?? PERSONAL_ASSISTANT_THREAD}`}
-            primary={!botParam}
-            botId={bot?.specialistId}
-            name={bot?.name ?? "主助理"}
-            tone={bot?.appearance?.color ?? botAccent(bot?.specialistId ?? "")}
-            shape={bot?.appearance?.avatar}
-            threadId={bot?.threadId ?? threadId}
-            ready={readyConversation === threadId}
-            onClose={() => setBotSideOpen(false)}
-            onDetails={bot ? () => {
-              setBotSideOpen(false);
-              setBotSettingsId(bot.specialistId);
-            } : undefined}
-            onComputer={() => showComputer(true)}
-          />
-        )}
         <WorkbenchRail
           key={threadId}
           open={taskRailOpen}

@@ -97,6 +97,7 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-input { resize: none; 
   body.codex-theme-v1:has(.console-shell) .workspace-stage { --rail-panel-width: clamp(280px, var(--preferred-rail-width, 300px), var(--rail-width-cap)); }
 }
 body.codex-theme-v1:has(.console-shell) .task-content-shell { isolation: isolate; grid-template-columns: minmax(0, 1fr); }
+body.codex-theme-v1:has(.console-shell) .task-content-shell[data-assistant-rail-open] { grid-template-columns: minmax(0, 1fr) min(420px, 44%); }
 body.codex-theme-v1:has(.console-shell) .task-content-shell > .chat-stage { min-width: 0; }
 body.codex-theme-v1 .task-content-shell .aui-thread-viewport-footer,
 body.codex-theme-v1 .task-content-shell .harness-composer-shell,
