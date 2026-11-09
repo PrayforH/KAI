@@ -462,7 +462,7 @@ def assistant_delegation_overlay(
         schedule = ObjectiveSchedule(intervalMinutes=interval) if interval is not None else None
         try:
             # 执行智能体不归模型挑：复用已有 Bot 用它自己的绑定；
-            # 新建走服务端默认解析（已有 Bot 的智能体 → 本人第一份已发布）。
+            # 新建时由服务端为当前账号解析平台通用助手。
             outcome = await gateway.delegate_to_specialist(
                 tenant_id,
                 user_id,

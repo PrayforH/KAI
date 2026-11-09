@@ -274,7 +274,7 @@ class SpecialistCreateRequest(StudioModel):
 
     name: str = Field(min_length=1, max_length=80)
     description: str = Field(default="", max_length=2_000)
-    # 新建不强制绑定智能体：缺省时沿用已有 Bot 的智能体或本人第一份已发布版本。
+    # 省略智能体坐标时，使用当前账号的平台通用助手。
     agent_name: str | None = Field(
         default=None, alias="agentName", pattern=r"^[a-z][a-z0-9-]{0,127}$"
     )
