@@ -271,11 +271,23 @@ class SshComputerControl:
         if self.authorizer is not None:
             await self.authorizer.authorize(computer, current, action)
         spec = self._spec(computer)
+        if action == "desktop_session":
+            # Slot provisioning carries only slot descriptors. The gate rejects
+            # any extra field, so a lease identity can never leak into it.
+            duration = payload.get("timeout_seconds", 120)
+            if not isinstance(duration, (int, float)) or not 0 < duration <= 3600:
+                raise ValueError("computer desktop duration is invalid")
+            return await GuestGate(spec).call(
+                action, dict(payload), timeout_seconds=float(duration)
+            )
         request = {
             **payload,
             "epoch": current.epoch,
             "lease_id": current.lease_id,
             "expires_at": current.expires_at.timestamp(),
+            # A desktop-scoped lease runs in its own guest state machine, so
+            # two Bots never drain each other's namespace.
+            "scope": "" if current.desktop_id == "vm" else current.desktop_id,
         }
         duration = payload.get("timeout_seconds", 30)
         if not isinstance(duration, (int, float)) or not 0 < duration <= 3600:

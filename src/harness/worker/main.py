@@ -350,6 +350,14 @@ async def serve(settings: Settings) -> None:
             if container.assistant is not None:
                 await container.assistant.process_once()
 
+        async def desktop_maintenance() -> None:
+            # Stops guest sessions for slots that are stopped or idle; a slot
+            # with a live Run is never touched because its state is busy.
+            if container.computer_runtime is not None:
+                await container.computer_runtime.reclaim_desktops(
+                    idle_seconds=settings.assistant_computer_desktop_idle_seconds
+                )
+
         control_tasks = [
             asyncio.create_task(
                 maintenance_loop(assistant_maintenance, stop=stop,
@@ -401,6 +409,14 @@ async def serve(settings: Settings) -> None:
                     stop=stop,
                     poll_interval=1.0,
                     label="automations",
+                )
+            ),
+            asyncio.create_task(
+                maintenance_loop(
+                    desktop_maintenance,
+                    stop=stop,
+                    poll_interval=60.0,
+                    label="computer-desktops",
                 )
             ),
         ]

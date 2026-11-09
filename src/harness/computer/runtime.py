@@ -9,9 +9,10 @@ from harness.computer.access import CanonicalComputerAccess
 from harness.computer.acp_tools import computer_acp_overlay
 from harness.computer.control import HttpComputerControl
 from harness.computer.desktop import DesktopControlService
+from harness.computer.desktop_registry import DesktopRegistry
 from harness.computer.docker import DockerComputerDriver
 from harness.computer.gui_tools import computer_gui_overlay
-from harness.computer.models import AssistantComputer
+from harness.computer.models import AssistantComputer, DesktopState
 from harness.computer.registry import ComputerRegistry
 from harness.computer.remote import PROVIDER as REMOTE_PROVIDER
 from harness.computer.remote import RemoteComputerDriver
@@ -30,7 +31,16 @@ _IMAGE = r"(?:[A-Za-z0-9_./:-]+@)?sha256:[a-f0-9]{64}"
 
 
 class ComputerRuntime:
-    def __init__(self, settings: Settings, sessions: SessionFactory, *, execution_enabled: bool):
+    def __init__(
+        self,
+        settings: Settings,
+        sessions: SessionFactory,
+        *,
+        execution_enabled: bool,
+        specialist_for_session: (
+            Callable[[str, str, str], Awaitable[str | None]] | None
+        ) = None,
+    ):
         self.enabled = bool(settings.assistant_computer_owners)
         self.access = CanonicalComputerAccess(sessions, settings.assistant_computer_owners)
         self.registry = ComputerRegistry(sessions)
@@ -38,6 +48,9 @@ class ComputerRuntime:
         self.client: httpx.AsyncClient | None = None
         self.drivers: dict[str, DockerComputerDriver] = {}
         self.desktop = DesktopControlService(sessions)
+        self.desktops = DesktopRegistry(sessions)
+        self.specialist_for_session = specialist_for_session
+        self.per_bot_desktop = bool(settings.assistant_computer_per_bot_desktop)
         self.default_provider = DOCKER_PROVIDER
         if not execution_enabled or not self.enabled:
             return
@@ -126,10 +139,73 @@ class ComputerRuntime:
             driver,
             session,
             run_reader=read_run,
+            desktop_for_run=self._desktop_resolver(session, driver),
+            desktops=self.desktops if self.per_bot_desktop else None,
             desktop=self.desktop,
             max_bytes=self.settings.workspace_archive_max_bytes,
             max_members=self.settings.workspace_archive_max_members,
+            busy_wait_seconds=self.settings.assistant_computer_busy_wait_seconds,
         )
+
+    def _desktop_resolver(
+        self, session: Session, driver: DockerComputerDriver
+    ) -> Callable[[Run], Awaitable[str | None]] | None:
+        """Map an assistant Run to its Bot's desktop slot, when enabled.
+
+        Legacy sessions (no specialist binding) keep the whole-machine lease,
+        so rollout is switched per environment instead of per Bot.
+        """
+
+        if not self.per_bot_desktop or self.specialist_for_session is None:
+            return None
+        resolver = self.specialist_for_session
+        image = driver.image
+
+        async def desktop_for_run(run: Run) -> str | None:
+            specialist_id = await resolver(session.tenant_id, session.user_id, run.session_id)
+            if specialist_id is None:
+                return None
+            computer = await self.registry.get(session.tenant_id, session.user_id)
+            desktop = await self.desktops.ensure(
+                session.tenant_id,
+                session.user_id,
+                specialist_id,
+                computer_id=computer.computer_id,
+                image=image,
+            )
+            return desktop.desktop_id
+
+        return desktop_for_run
+
+    async def reclaim_desktops(self, *, idle_seconds: float) -> int:
+        """Stop guest sessions for stopped or idle slots; never touches active work."""
+
+        if not self.per_bot_desktop or self.client is None:
+            return 0
+        stopped = 0
+        control = HttpComputerControl(self.client)
+        for desktop in await self.desktops.reapable(idle_seconds=idle_seconds):
+            if desktop.state is DesktopState.BUSY:
+                continue
+            payload = {
+                "desktopId": desktop.desktop_id,
+                "unixUser": desktop.unix_user,
+                "display": desktop.display,
+                "profile": desktop.profile_ref,
+                "workspace": desktop.workspace_ref,
+                "vncSocket": desktop.vnc_socket,
+            }
+            try:
+                await control.desktop_slot(
+                    desktop.tenant_id, desktop.user_id, "stop", payload
+                )
+            except (RuntimeError, NotFoundError):
+                # A rebuilt guest simply has nothing to stop; the row is fenced
+                # below either way, so one failure must not block the others.
+                continue
+            await self.desktops.stop(desktop.tenant_id, desktop.user_id, desktop.desktop_id)
+            stopped += 1
+        return stopped
 
     async def gui_overlay(
         self, session: Session, sandbox: object, handle: object

@@ -52,6 +52,50 @@ class AssistantComputerRow(Base):
     last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class ComputerDesktopRow(Base):
+    """One Bot desktop inside an owner's VM: its own display, profile and socket."""
+
+    __tablename__ = "computer_desktops"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "user_id"],
+            ["assistant_computers.tenant_id", "assistant_computers.user_id"],
+        ),
+        Index("uq_computer_desktops_id", "desktop_id", unique=True),
+        Index(
+            "uq_computer_desktops_display",
+            "tenant_id",
+            "user_id",
+            "display",
+            unique=True,
+            postgresql_where=text("state IN ('starting','idle','busy')"),
+        ),
+        CheckConstraint(
+            "state IN ('created','starting','idle','busy','stopped','failed')",
+            name="ck_computer_desktops_state",
+        ),
+        CheckConstraint("epoch >= 0 AND revision >= 1", name="ck_computer_desktops_version"),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    specialist_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    desktop_id: Mapped[str] = mapped_column(String(64))
+    computer_id: Mapped[str] = mapped_column(String(64))
+    state: Mapped[str] = mapped_column(String(24))
+    display: Mapped[str | None] = mapped_column(String(16))
+    unix_user: Mapped[str | None] = mapped_column(String(32))
+    vnc_socket: Mapped[str | None] = mapped_column(String(200))
+    profile_ref: Mapped[str | None] = mapped_column(String(200))
+    workspace_ref: Mapped[str | None] = mapped_column(String(200))
+    image: Mapped[str | None] = mapped_column(String(512))
+    epoch: Mapped[int] = mapped_column(Integer)
+    revision: Mapped[int] = mapped_column(Integer)
+    last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class ComputerLeaseRow(Base):
     __tablename__ = "computer_execution_leases"
     __table_args__ = (
@@ -59,13 +103,27 @@ class ComputerLeaseRow(Base):
             ["tenant_id", "user_id"],
             ["assistant_computers.tenant_id", "assistant_computers.user_id"],
         ),
-        Index("uq_computer_lease_epoch", "tenant_id", "user_id", "epoch", unique=True),
+        Index(
+            "uq_computer_lease_epoch",
+            "tenant_id",
+            "user_id",
+            "desktop_id",
+            "epoch",
+            unique=True,
+        ),
         Index(
             "uq_computer_active_holder",
             "tenant_id",
             "user_id",
+            "desktop_id",
             unique=True,
             postgresql_where=text("state = 'active'"),
+        ),
+        Index(
+            "fk_computer_lease_desktop",
+            "tenant_id",
+            "user_id",
+            "desktop_id",
         ),
         Index("ix_computer_lease_expiry", "state", "expires_at"),
         CheckConstraint("epoch >= 1", name="ck_computer_lease_epoch"),
@@ -89,6 +147,10 @@ class ComputerLeaseRow(Base):
     tenant_id: Mapped[str] = mapped_column(String(128))
     user_id: Mapped[str] = mapped_column(String(128))
     computer_id: Mapped[str] = mapped_column(String(64))
+    # "vm" carries start/recover leases; a desktop id carries execute leases.
+    desktop_id: Mapped[str] = mapped_column(
+        String(64), default="vm", server_default=text("'vm'")
+    )
     owner: Mapped[str] = mapped_column(String(160))
     purpose: Mapped[str] = mapped_column(String(16))
     epoch: Mapped[int] = mapped_column(Integer)

@@ -297,6 +297,8 @@ class ApiContainer:
     presentations: PresentationService
     assistant: AssistantService | None = None
     computer_desktop: "DesktopControlService | None" = None
+    computer_desktops: "DesktopRegistry | None" = None
+    computer_runtime: "ComputerRuntime | None" = None
     computer_targets: ComputerTargetService | None = None
     weixin: WeixinService | None = None
     feishu: FeishuService | None = None

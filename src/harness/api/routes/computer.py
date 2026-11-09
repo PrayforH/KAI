@@ -5,7 +5,8 @@ web panel and the viewer poll the same state; the node's control gate enforces
 it again before every agent action.
 """
 
-from typing import Annotated
+from datetime import datetime
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -19,6 +20,9 @@ from harness.computer.targets import ComputerTargetService
 from harness.core.errors import ConflictError, NotFoundError
 
 router = APIRouter(prefix="/v1/studio/assistant/computer", tags=["assistant-computer"])
+
+if TYPE_CHECKING:
+    from harness.computer.desktop_registry import DesktopRegistry
 
 
 def desktop_service(request: Request) -> DesktopControlService:
@@ -60,6 +64,8 @@ async def takeover(
         )
     except NotFoundError as error:
         raise _not_found(error) from None
+    except ConflictError as error:
+        raise HTTPException(409, str(error)) from None
 
 
 @router.post("/desktop/heartbeat")
@@ -134,3 +140,72 @@ async def select_target(
         raise HTTPException(404, "没有这台电脑的使用权限") from None
     except ConflictError:
         raise HTTPException(409, "电脑正在使用中，请等待当前操作结束并交还控制后再切换") from None
+
+
+class BotDesktop(BaseModel):
+    """One Bot's desktop slot inside the owner's Computer."""
+
+    desktopId: str
+    specialistId: str
+    state: str
+    display: str | None = None
+    unixUser: str
+    vncSocket: str | None = None
+    lastActiveAt: datetime | None = None
+
+
+def desktop_registry(request: Request) -> "DesktopRegistry":
+    value = getattr(request.app.state.container, "computer_desktops", None)
+    if value is None:
+        raise HTTPException(503, "Per-Bot desktops are not configured")
+    return value
+
+
+Registry = Annotated["DesktopRegistry", Depends(desktop_registry)]
+
+
+@router.get("/desktops")
+async def desktops(
+    identity: Annotated[Identity, Depends(require_identity)],
+    registry: Registry,
+) -> list[BotDesktop]:
+    """Every Bot slot this owner has, including stopped ones."""
+
+    ensure_permission(identity, "tasks:read")
+    rows = await registry.list(identity.tenant_id, identity.user_id)
+    return [
+        BotDesktop(
+            desktopId=row.desktop_id,
+            specialistId=row.specialist_id,
+            state=row.state.value if hasattr(row.state, "value") else str(row.state),
+            display=row.display,
+            unixUser=row.unix_user,
+            vncSocket=row.vnc_socket,
+            lastActiveAt=row.last_active_at,
+        )
+        for row in rows
+    ]
+
+
+@router.post("/desktops/{desktop_id}/stop")
+async def stop_desktop(
+    desktop_id: str,
+    identity: Annotated[Identity, Depends(require_identity)],
+    registry: Registry,
+) -> BotDesktop:
+    """Fence one Bot's slot; the guest unit stops on the next ensure."""
+
+    ensure_permission(identity, "tasks:write")
+    try:
+        row = await registry.stop(identity.tenant_id, identity.user_id, desktop_id)
+    except NotFoundError as error:
+        raise HTTPException(404, "Bot desktop not found") from None
+    return BotDesktop(
+        desktopId=row.desktop_id,
+        specialistId=row.specialist_id,
+        state=row.state.value if hasattr(row.state, "value") else str(row.state),
+        display=row.display,
+        unixUser=row.unix_user,
+        vncSocket=row.vnc_socket,
+        lastActiveAt=row.last_active_at,
+    )

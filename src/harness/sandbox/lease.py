@@ -74,6 +74,18 @@ class SandboxLeaseRepository(Protocol):
     async def list_expired(self, moment: datetime) -> Sequence[SandboxLease]: ...
 
 
+def _fence_of(owner: str) -> int | None:
+    """Fencing token carried by a lease owner (``run-fence:<n>``)."""
+
+    prefix = "run-fence:"
+    if not owner.startswith(prefix):
+        return None
+    try:
+        return int(owner[len(prefix):])
+    except ValueError:
+        return None
+
+
 class SandboxLeaseError(RuntimeError):
     """A lease could not be acquired, renewed or released as asked."""
 
@@ -131,10 +143,32 @@ class SandboxLeaseService:
             now = self._clock()
             previous = await self._repository.latest_for_session(tenant_id, session_id)
             if previous is not None and previous.is_live(now):
-                raise SandboxLeaseError(
-                    "session already holds a live sandbox lease "
-                    f"(owner={previous.owner}, run={previous.run_id})"
+                old_fence, new_fence = _fence_of(previous.owner), _fence_of(owner)
+                takeover = (
+                    previous.run_id == run_id
+                    and old_fence is not None
+                    and new_fence is not None
+                    and new_fence > old_fence
                 )
+                if not takeover:
+                    raise SandboxLeaseError(
+                        "session already holds a live sandbox lease "
+                        f"(owner={previous.owner}, run={previous.run_id})"
+                    )
+                # A deploy restart killed an earlier attempt of this same Run.
+                # The higher fence is authoritative, so retire the dead lease
+                # instead of blocking every retry until its TTL expires.
+                retired = previous.model_copy(
+                    update={
+                        "state": SandboxLeaseState.RELEASED,
+                        "released_at": now,
+                    }
+                )
+                if not await self._repository.replace(
+                    retired, expected_epoch=previous.epoch
+                ):
+                    raise SandboxLeaseError("sandbox lease takeover lost the race")
+                previous = retired
             lease = SandboxLease(
                 lease_id=self._ids("sandbox_lease"),
                 tenant_id=tenant_id,

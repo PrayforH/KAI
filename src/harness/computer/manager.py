@@ -6,6 +6,7 @@ on. Database ownership is released only after physical cleanup is confirmed.
 """
 
 import asyncio
+import logging
 import re
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -16,11 +17,16 @@ from typing import Protocol, runtime_checkable
 from harness.computer.models import (
     AssistantComputer,
     ComputerLease,
+    ComputerLeaseLostError,
     ComputerStartRejectedError,
     ComputerState,
 )
+from harness.computer.desktop_registry import DesktopRegistry
+from harness.computer.models import DesktopState
 from harness.computer.registry import ComputerRegistry
 from harness.core.errors import ConflictError
+
+logger = logging.getLogger(__name__)
 
 
 class ComputerDriver(Protocol):
@@ -68,6 +74,7 @@ class ComputerManager:
         *,
         owner: str,
         heartbeat_seconds: float | None = None,
+        desktops: DesktopRegistry | None = None,
     ) -> None:
         interval = (
             heartbeat_seconds if heartbeat_seconds is not None else registry.lease_ttl_seconds / 3
@@ -75,14 +82,23 @@ class ComputerManager:
         if not owner.strip() or not 0 < interval < registry.lease_ttl_seconds:
             raise ValueError("computer manager requires an owner and a heartbeat within its lease")
         self.registry, self.driver, self.owner = registry, driver, owner
+        self.desktops = desktops
         self._interval = interval
 
-    async def ready(self, tenant: str, user: str) -> AssistantComputer:
+    async def ready(
+        self, tenant: str, user: str, *, allow_running: bool = False
+    ) -> AssistantComputer:
         computer = await self.registry.ensure(
             tenant, user, provider=self.driver.provider, image=self.driver.image
         )
         for _ in range(3):
-            if computer.state is ComputerState.IDLE:
+            # A desktop-scoped caller must not treat another Bot's running
+            # desktop as an unfinished VM; legacy whole-VM callers still do.
+            if computer.state is ComputerState.IDLE or (
+                allow_running
+                and computer.state is ComputerState.RUNNING
+                and computer.provider_ref is not None
+            ):
                 return computer
             if computer.state in {ComputerState.REGISTERED, ComputerState.FAILED}:
                 token = await self.registry.claim_start(tenant, user, owner=self.owner)
@@ -151,8 +167,12 @@ class ComputerManager:
         run_id: str,
         session_id: str,
         run_fencing_token: int | None = None,
+        desktop_id: str | None = None,
     ) -> AsyncGenerator[ComputerAllocation]:
-        computer = await self.ready(tenant, user)
+        computer = await self.ready(tenant, user, allow_running=desktop_id is not None)
+        # A guest reboot or a restart leaves rows that outlived their TTL still
+        # marked active; retire them first so the claim is not read as a holder.
+        await self.registry.reap_expired(tenant, user)
         token = await self.registry.claim_execution(
             tenant,
             user,
@@ -160,7 +180,9 @@ class ComputerManager:
             run_id=run_id,
             session_id=session_id,
             run_fencing_token=run_fencing_token,
+            desktop_id=desktop_id,
         )
+        await self._start_desktop(tenant, user, desktop_id, token)
         computer = await self.registry.get(tenant, user)
         # Activation is outside the user-work try/finally: a failed/uncertain
         # connection retains ownership for recovery, rather than assuming that
@@ -173,8 +195,51 @@ class ComputerManager:
         finally:
             # These calls are deliberately ordered. If draining or its reply is
             # uncertain, keep the database lease; never unlock the next Run.
-            await self.driver.finish(computer, token)
+            # A control plane that already dropped this holder is the one case
+            # where keeping the row helps nobody: the Run is being reported and
+            # the stale lease would only block the owner's next Run until TTL.
+            try:
+                await self.driver.finish(computer, token)
+            except ComputerLeaseLostError:
+                logger.warning(
+                    "computer finish refused for a stale holder; releasing lease run_id=%s",
+                    getattr(token, "run_id", None),
+                )
+                await self.registry.finish_execution(token)
+                return
             await self.registry.finish_execution(token)
+
+    async def _start_desktop(
+        self, tenant: str, user: str, desktop_id: str | None, token: ComputerLease
+    ) -> None:
+        """Bring a freshly reserved Bot slot up under the lease that owns it.
+
+        The slot row is the single source of truth: a desktop already running
+        is left alone, a reserved one is started through the node's gate and
+        only then marked idle, so a failed start never advertises a usable slot.
+        """
+
+        if desktop_id is None or self.desktops is None:
+            return
+        desktop = await self.desktops.get_by_id(tenant, user, desktop_id)
+        if desktop.state in {DesktopState.STARTING, DesktopState.IDLE, DesktopState.BUSY}:
+            return
+        # ``ensure`` prepares the slot and starts its unit, so a rebuilt guest
+        # can bring the same Bot desktop back without a separate first step.
+        await self.driver.host.call(
+            token,
+            "desktop_session",
+            {
+                "op": "ensure",
+                "desktopId": desktop.desktop_id,
+                "unixUser": desktop.unix_user,
+                "display": desktop.display,
+                "profile": desktop.profile_ref,
+                "workspace": desktop.workspace_ref,
+                "vncSocket": desktop.vnc_socket,
+            },
+        )
+        await self.desktops.mark_started(tenant, user, desktop_id)
 
     @asynccontextmanager
     async def _heartbeat(

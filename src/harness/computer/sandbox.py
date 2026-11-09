@@ -17,8 +17,10 @@ from pathlib import Path
 from uuid import uuid4
 
 from harness.computer.desktop import DesktopControlService
+from harness.computer.desktop_registry import DesktopRegistry
 from harness.computer.docker import WORKSPACE, DockerComputerDriver
 from harness.computer.manager import ComputerAllocation, ComputerManager
+from harness.computer.models import ComputerBusyError, ComputerRecoveryRequiredError
 from harness.computer.registry import ComputerRegistry
 from harness.computer.workspace import ComputerWorkspace
 from harness.core.models import Run, Session
@@ -51,6 +53,9 @@ class _Lease:
 
 
 class ComputerSandboxProvider:
+    _BUSY_RETRY_INITIAL_SECONDS = 0.5
+    _BUSY_RETRY_MAX_SECONDS = 5.0
+
     def __init__(
         self,
         registry: ComputerRegistry,
@@ -62,12 +67,23 @@ class ComputerSandboxProvider:
         local_root: Path | None = None,
         max_bytes: int = 512 * 1024**2,
         max_members: int = 10_000,
+        busy_wait_seconds: float = 120.0,
+        desktop_for_run: Callable[[Run], Awaitable[str | None]] | None = None,
+        desktops: DesktopRegistry | None = None,
     ) -> None:
+        if busy_wait_seconds < 0:
+            raise ValueError("computer busy wait cannot be negative")
         self.registry, self.driver, self.session = registry, driver, session
         self.run_reader = run_reader
         self.desktop = desktop
         self.local_root = local_root
         self.max_bytes, self.max_members = max_bytes, max_members
+        self.busy_wait_seconds = busy_wait_seconds
+        # None keeps the historical whole-VM lease; a resolver maps each Run to
+        # its Bot desktop so parallel Bots of one VM never block each other.
+        self.desktop_for_run = desktop_for_run
+        # Slot registry, present only while per-Bot desktops are enabled.
+        self.desktops = desktops
         self._scopes: dict[str, _Scope] = {}
         self._leases: dict[str, _Lease] = {}
 
@@ -154,7 +170,12 @@ class ComputerSandboxProvider:
 
     async def _hold(self, lease: _Lease) -> None:
         assert lease.ready is not None
-        manager = ComputerManager(self.registry, self.driver, owner=lease.handle.sandbox_id)
+        manager = ComputerManager(
+            self.registry,
+            self.driver,
+            owner=lease.handle.sandbox_id,
+            desktops=self.desktops,
+        )
         try:
             current_run = (
                 await self.run_reader(lease.run.tenant_id, lease.run.run_id)
@@ -163,23 +184,71 @@ class ComputerSandboxProvider:
             )
             if current_run.session_id != lease.run.session_id:
                 raise ValueError("Computer Run identity changed before acquisition")
-            async with manager.execution(
-                self.session.tenant_id,
-                self.session.user_id,
-                run_id=lease.run.run_id,
-                session_id=lease.run.session_id,
-                run_fencing_token=current_run.fencing_token,
-            ) as allocation:
-                workspace = ComputerWorkspace(
-                    self.driver, allocation, max_bytes=self.max_bytes, max_members=self.max_members
-                )
-                lease.ready.set_result((allocation, workspace))
-                await lease.stop.wait()
+            await self._hold_until_released(manager, lease, current_run)
+        except (ComputerBusyError, ComputerRecoveryRequiredError) as error:
+            # A busy or unrecoverable computer is the caller's problem, not a
+            # scope failure: the Run keeps going and the tool call reports it.
+            self._fail_ready(lease, error)
         except BaseException as error:
-            if not lease.ready.done():
-                lease.ready.set_exception(error)
-                lease.ready.exception()  # Scope can fail before the waiter resumes.
+            self._fail_ready(lease, error)
             raise
+
+    async def _hold_until_released(
+        self, manager: ComputerManager, lease: _Lease, run: Run
+    ) -> None:
+        """Acquire the computer, waiting out a short-lived holder."""
+
+        ready = lease.ready
+        assert ready is not None
+        desktop_id = await self.desktop_for_run(run) if self.desktop_for_run else None
+        deadline = asyncio.get_running_loop().time() + self.busy_wait_seconds
+        delay = self._BUSY_RETRY_INITIAL_SECONDS
+        while True:
+            try:
+                async with manager.execution(
+                    self.session.tenant_id,
+                    self.session.user_id,
+                    run_id=lease.run.run_id,
+                    session_id=lease.run.session_id,
+                    run_fencing_token=run.fencing_token,
+                    desktop_id=desktop_id,
+                ) as allocation:
+                    if not ready.done():
+                        ready.set_result(
+                            (
+                                allocation,
+                                ComputerWorkspace(
+                                    self.driver,
+                                    allocation,
+                                    max_bytes=self.max_bytes,
+                                    max_members=self.max_members,
+                                ),
+                            )
+                        )
+                    await lease.stop.wait()
+                    return
+            except ComputerBusyError:
+                if not await self._retry_when_released(lease, deadline, delay):
+                    raise
+                delay = min(delay * 2, self._BUSY_RETRY_MAX_SECONDS)
+
+    async def _retry_when_released(self, lease: _Lease, deadline: float, delay: float) -> bool:
+        """Sleep before retrying a busy computer; False once waiting is over."""
+
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            return False
+        try:
+            await asyncio.wait_for(lease.stop.wait(), timeout=min(delay, remaining))
+        except TimeoutError:
+            return True
+        return False
+
+    @staticmethod
+    def _fail_ready(lease: _Lease, error: BaseException) -> None:
+        if lease.ready is not None and not lease.ready.done():
+            lease.ready.set_exception(error)
+            lease.ready.exception()  # Scope can fail before the waiter resumes.
 
     async def execute(
         self,

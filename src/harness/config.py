@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     assistant_computer_default_provider: Literal["docker-computer", "vm-computer"] = (
         "docker-computer"
     )
+    # A Run whose computer is briefly held waits instead of failing; 0 disables.
+    assistant_computer_busy_wait_seconds: float = Field(default=120, ge=0, le=3600)
+    # Per-Bot desktops: an assistant Run executes on its own desktop slot
+    # inside the owner's VM instead of holding the whole-machine lease.
+    assistant_computer_per_bot_desktop: bool = False
+    assistant_computer_desktop_idle_seconds: float = Field(default=900, ge=60, le=86400)
     sandbox_provider: Literal[
         "local", "daytona", "e2b", "kubernetes", "cubesandbox", "opensandbox"
     ] = "local"

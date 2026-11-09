@@ -44,7 +44,8 @@ def computer_acp_overlay(sandbox: AcpSource, handle: SandboxHandle) -> PlatformT
                     "agent": {"type": "string", "enum": ["claude", "codex"]},
                     "prompt": {"type": "string", "minLength": 1, "maxLength": 6000},
                     "cwd": {"type": "string", "description": "本地电脑已授权项目的绝对路径"},
-                    "timeout_seconds": {"type": "integer", "minimum": 10, "maximum": 180},
+                    "timeout_seconds": {"type": "integer", "minimum": 10, "maximum": 600,
+                                       "description": "本次等待上限，默认 300 秒；长任务可显式放大到 600"},
                 }, "required": ["agent", "prompt"]},
         handler=invoke,
     ),), instructions=(

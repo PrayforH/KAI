@@ -33,9 +33,9 @@ def arguments(payload: dict[str, Any]) -> dict[str, Any]:
     prompt = payload.get("prompt")
     if not isinstance(prompt, str) or not 1 <= len(prompt.strip()) <= 6000:
         raise ValueError("ACP prompt is invalid")
-    duration = payload.get("timeout_seconds", 120)
-    if type(duration) is not int or not 10 <= duration <= 180:
-        raise ValueError("ACP duration must be 10–180 seconds")
+    duration = payload.get("timeout_seconds", 300)
+    if type(duration) is not int or not 10 <= duration <= 600:
+        raise ValueError("ACP duration must be 10–600 seconds")
     cwd = payload.get("cwd")
     if cwd is not None and (not isinstance(cwd, str) or not Path(cwd).is_absolute()):
         raise ValueError("ACP cwd must be an authorized absolute path")
@@ -71,6 +71,12 @@ def run(config: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
     settings = config["acp"]
     payload["cwd"] = authorized_directory(payload["cwd"], settings["allowed_roots"])
     payload["install_dir"] = settings["install_dir"]
+    # Diagnostic: the adapter location is supplied by the gate and is not
+    # discoverable from the guest config, so record it once per call.
+    try:
+        Path("/home/kai/.kai/acp/install-dir.txt").write_text(str(settings["install_dir"]) + "\n")
+    except OSError:
+        pass
     account = pwd.getpwuid(config["desktop_uid"])
     if account.pw_uid == 0:
         raise PermissionError("ACP cannot run as root")

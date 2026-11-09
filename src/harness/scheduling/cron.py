@@ -13,7 +13,7 @@ storage type appears here. Callers give an expression, an instant, and a zone.
 from __future__ import annotations
 
 import calendar
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from harness.core.errors import ConflictError
@@ -36,6 +36,20 @@ _WEEKDAY_NAMES = {
 
 
 def _parse_atom(atom: str, field: int) -> set[int]:
+    """Parse a comma-separated field and union every listed item."""
+
+    values: set[int] = set()
+    for part in atom.split(","):
+        part = part.strip()
+        if not part:
+            raise ConflictError(f"cron field has an empty list item: {atom}")
+        values.update(_parse_part(part, field))
+    if not values:
+        raise ConflictError(f"cron field has no valid values: {atom}")
+    return values
+
+
+def _parse_part(atom: str, field: int) -> set[int]:
     low, high = _FIELD_RANGES[field]
     step = 1
     if "/" in atom:
@@ -51,11 +65,14 @@ def _parse_atom(atom: str, field: int) -> set[int]:
         if start > end:
             raise ConflictError(f"cron range is inverted: {atom}")
     else:
-        start = end = _parse_value(atom, field)
+        start = _parse_value(atom, field)
+        # Vixie cron treats ``a/n`` as ``a-high/n``; without this a stepped
+        # single value would silently collapse to one occurrence.
+        end = high if step > 1 else start
     values = {value for value in range(start, end + 1, step) if low <= value <= high}
     if field == 4:
         # 7 is an alias for Sunday; map it back onto 0.
-        if high == 7 and (7 in values or end == 7):
+        if high == 7 and 7 in values:
             values.add(0)
         values.discard(7)
     if not values:
@@ -82,7 +99,7 @@ def parse_cron(expression: str) -> tuple[set[int], ...]:
 
 def _day_matches(days: set[int], weekdays: set[int], day: int, weekday: int) -> bool:
     dom_restricted = days != set(range(1, 32))
-    dow_restricted = weekdays != set(range(8))
+    dow_restricted = weekdays != set(range(7))
     if dom_restricted and dow_restricted:
         return day in days or weekday in weekdays
     if dom_restricted:
@@ -101,6 +118,8 @@ def next_fire_after(
     carries one so host-local clock ambiguity never leaks into the schedule.
     """
 
+    if after.tzinfo is None or after.utcoffset() is None:
+        raise ValueError("cron instants must include a timezone")
     try:
         zone = ZoneInfo(timezone)
     except Exception as error:
@@ -115,7 +134,10 @@ def next_fire_after(
         # cron numbers Sunday=0..Saturday=6; Python numbers Monday=0..Sunday=6.
         return (day.weekday() + 1) % 7
 
-    for _month_scan in range(4 * 12):  # search at most four years ahead
+    # A pass advances by a month, a day, an hour, or a minute. 8*366 passes
+    # cover the longest gap between valid calendar dates (29 February across a
+    # skipped century leap year) without unbounded scanning.
+    for _scan in range(8 * 366):
         if local.month not in month_values:
             # Jump to the first day of the next candidate month.
             year, month = local.year, local.month + 1
@@ -143,6 +165,13 @@ def next_fire_after(
                 local = (local + timedelta(hours=1)).replace(minute=0)
             else:
                 local = local.replace(minute=minute)
+            continue
+        # A spring-forward transition can remove this wall-clock time. Move to
+        # the first instant that exists after the gap and keep matching, rather
+        # than returning a local time that never occurs.
+        roundtrip = local.astimezone(UTC).astimezone(zone)
+        if roundtrip.replace(tzinfo=None) != local.replace(tzinfo=None):
+            local = roundtrip
             continue
         return local
     raise ConflictError("cron expression never fires: " + expression)

@@ -59,6 +59,7 @@ from harness.computer.conventions import (
 )
 from harness.computer.desktop import DesktopControlService
 from harness.computer.runtime import ComputerRuntime
+from harness.computer.vm import PROVIDER as VM_PROVIDER
 from harness.computer.targets import ComputerTarget, ComputerTargetService
 from harness.config import Settings
 from harness.context.checkpoint import ContextCheckpointService
@@ -699,7 +700,31 @@ def build_production_container(
     registry = PostgresAgentRegistry(sessions, skill_blobs)
     team_space_repository = PostgresTeamSpaceRepository(sessions)
     session_repository = PostgresSessionRepository(sessions)
-    computer_runtime = ComputerRuntime(settings, sessions, execution_enabled=execution_enabled)
+    binding_repository = PostgresAguiThreadBindingRepository(sessions)
+
+    async def specialist_for_session(
+        tenant_id: str, user_id: str, session_id: str
+    ) -> str | None:
+        """Resolve the Bot behind an assistant thread, if this is one."""
+
+        try:
+            binding = await binding_repository.get_by_session(tenant_id, user_id, session_id)
+        except NotFoundError:
+            return None
+        thread = binding.thread_id
+        if thread == "kai-personal-assistant-v1":
+            # The owner's main assistant is a Bot too: give it a stable slot
+            # instead of falling back to the shared whole-machine lease.
+            return "_personal"
+        prefix = "assistant_specialist_"
+        return thread[len(prefix):] if thread.startswith(prefix) else None
+
+    computer_runtime = ComputerRuntime(
+        settings,
+        sessions,
+        execution_enabled=execution_enabled,
+        specialist_for_session=specialist_for_session,
+    )
     runs = PostgresRunRepository(sessions, fence_computers=computer_runtime.enabled)
     approvals = PostgresApprovalRepository(sessions)
     artifact_repository = PostgresArtifactRepository(sessions)
@@ -710,7 +735,6 @@ def build_production_container(
     governance_repository = PostgresGovernanceRepository(sessions)
     file_repository = PostgresThreadFileRepository(sessions)
     snapshot_repository = PostgresWorkspaceSnapshotRepository(sessions)
-    binding_repository = PostgresAguiThreadBindingRepository(sessions)
     raw_event_repository = PostgresEventRepository(sessions)
     agent_drafts = PostgresAgentDraftRepository(sessions, skill_blobs)
     preview_repository = PostgresPreviewRepository(sessions)
@@ -2065,9 +2089,21 @@ def build_production_container(
         automations=automation_service,
         assistant=assistant,
         computer_desktop=DesktopControlService(sessions),
+        computer_desktops=computer_runtime.desktops,
+        computer_runtime=computer_runtime,
         computer_targets=ComputerTargetService(
             computer_runtime.registry,
-            [ComputerTarget.model_validate(t) for t in settings.assistant_computer_targets],
+            [
+                # A VM target always names the image this node actually runs,
+                # so bumping the VM image cannot silently leave a target (and
+                # every later target switch) pointing at the previous disk.
+                ComputerTarget.model_validate(t).model_copy(
+                    update={"image": settings.assistant_computer_vm_image}
+                )
+                if t.get("provider") == VM_PROVIDER and settings.assistant_computer_vm_image
+                else ComputerTarget.model_validate(t)
+                for t in settings.assistant_computer_targets
+            ],
         ),
         weixin=WeixinService(
             sessions,

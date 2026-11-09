@@ -10,6 +10,7 @@ from harness.computer.storage import ComputerLeaseRow
 from harness.core.errors import ConflictError, EventSequenceConflictError, NotFoundError
 from harness.core.events import RunEvent
 from harness.core.models import Run, RunStatus
+from harness.core.text import json_safe
 from harness.storage.database import SessionFactory
 from harness.storage.models import EventRow, RunRow
 
@@ -30,7 +31,7 @@ class PostgresRunRepository:
                     status=run.status.value,
                     fencing_token=run.fencing_token,
                     updated_at=run.updated_at,
-                    payload=run.model_dump(mode="json"),
+                    payload=json_safe(run.model_dump(mode="json")),
                 )
             )
             try:
@@ -71,7 +72,7 @@ class PostgresRunRepository:
                 status=updated.status.value,
                 fencing_token=updated.fencing_token,
                 updated_at=updated.updated_at,
-                payload=updated.model_dump(mode="json"),
+                payload=json_safe(updated.model_dump(mode="json")),
             )
         )
         async with self._sessions() as session:
@@ -168,7 +169,7 @@ class PostgresEventRepository:
                     run_id=event.run_id,
                     sequence=event.sequence,
                     timestamp=event.timestamp,
-                    payload=event.model_dump(mode="json"),
+                    payload=json_safe(event.model_dump(mode="json")),
                 )
             )
             try:

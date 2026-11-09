@@ -52,7 +52,9 @@ class Timing:
             raise ConflictError("every timing requires seconds")
         if self.kind is TimingKind.CRON and self.expression is None:
             raise ConflictError("cron timing requires expression")
-        if self.at is not None and self.at.tzinfo is None:
+        if self.at is not None and (
+            self.at.tzinfo is None or self.at.utcoffset() is None
+        ):
             raise ValueError("timing instants must include a timezone")
         if self.seconds is not None and self.seconds < 1:
             raise ConflictError("every timing requires a positive number of seconds")
@@ -86,9 +88,11 @@ class Timing:
         ``not_after`` includes the bound itself; callers keep their own
         terminal-state vocabulary (completed, expired, ended).
         """
-        if after.tzinfo is None:
+        if after.tzinfo is None or after.utcoffset() is None:
             raise ValueError("timing instants must include a timezone")
-        if not_after is not None and not_after.tzinfo is None:
+        if not_after is not None and (
+            not_after.tzinfo is None or not_after.utcoffset() is None
+        ):
             raise ValueError("timing instants must include a timezone")
         match self.kind:
             case TimingKind.ONCE:

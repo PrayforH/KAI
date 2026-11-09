@@ -391,6 +391,8 @@ class SpecialistMessageRequest(StudioModel):
     model_route: str | None = Field(default=None, alias="modelRoute", min_length=1, max_length=128)
     reply_to_run_id: str | None = Field(
         default=None, alias="replyToRunId", min_length=1, max_length=128)
+    reply_message_id: str | None = Field(
+        default=None, alias="replyMessageId", min_length=1, max_length=200)
 
 
 @router.get("/vault")
@@ -461,6 +463,7 @@ async def grant_vault_item(
 async def send_specialist_message(
     specialist_id: str,
     body: SpecialistMessageRequest,
+    request: Request,
     identity: Writer,
     assistant: Service,
     idempotency_key: Annotated[str, Header(min_length=8, max_length=128)],
@@ -469,6 +472,20 @@ async def send_specialist_message(
 
     无来源的旧客户端仍只登记回执；新客户端由服务端复用既有 AG-UI 执行管线。
     """
+    quoted_message_context = ""
+    if body.reply_message_id and body.source_thread_id:
+        # The quote is resolved against the conversation it was made in, not
+        # the Bot's thread that will receive it. The client excerpt is display
+        # only: the text the model sees always comes from the durable Run.
+        from harness.agui.routes import _quoted_context_from_reference
+
+        quoted_message_context = await _quoted_context_from_reference(
+            request.app.state.container,
+            identity.tenant_id,
+            identity.user_id,
+            body.source_thread_id,
+            {"messageId": body.reply_message_id},
+        )
     send = (
         assistant.send_mention_message
         if body.source_thread_id
@@ -483,7 +500,9 @@ async def send_specialist_message(
         **(
             {"source_thread_id": body.source_thread_id, "model_route": body.model_route,
              **({"reply_to_run_id": body.reply_to_run_id}
-                if body.reply_to_run_id else {})}
+                if body.reply_to_run_id else {}),
+             **({"quoted_message_context": quoted_message_context}
+                if quoted_message_context else {})}
             if body.source_thread_id
             else {}
         ),

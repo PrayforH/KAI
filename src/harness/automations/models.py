@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from enum import StrEnum
 
-from pydantic import Field, model_validator
+from pydantic import AwareDatetime, Field, model_validator
 
 from harness.studio.models import StudioModel
 
@@ -46,7 +45,7 @@ class AutomationRecordStatus(StrEnum):
 
 class AutomationSchedule(StudioModel):
     type: AutomationScheduleType = AutomationScheduleType.ONCE
-    at: datetime | None = None
+    at: AwareDatetime | None = None
     cron: str | None = Field(default=None, max_length=120)
     timezone: str = Field(default="Asia/Shanghai", min_length=1, max_length=80)
 
@@ -65,7 +64,7 @@ class AutomationSchedule(StudioModel):
 
 class AutomationValidity(StudioModel):
     type: AutomationValidityType = AutomationValidityType.FOREVER
-    until: datetime | None = None
+    until: AwareDatetime | None = None
 
     @model_validator(mode="after")
     def type_configuration(self) -> AutomationValidity:
@@ -86,14 +85,14 @@ class AutomationTask(StudioModel):
     schedule: AutomationSchedule
     validity: AutomationValidity = Field(default_factory=AutomationValidity)
     status: AutomationStatus = AutomationStatus.ACTIVE
-    next_run_at: datetime | None = Field(default=None, alias="nextRunAt")
-    last_run_at: datetime | None = Field(default=None, alias="lastRunAt")
+    next_run_at: AwareDatetime | None = Field(default=None, alias="nextRunAt")
+    last_run_at: AwareDatetime | None = Field(default=None, alias="lastRunAt")
     revision: int = Field(ge=1)
     source_template_id: str | None = Field(
         default=None, alias="sourceTemplateId", max_length=120
     )
-    created_at: datetime = Field(alias="createdAt")
-    updated_at: datetime = Field(alias="updatedAt")
+    created_at: AwareDatetime = Field(alias="createdAt")
+    updated_at: AwareDatetime = Field(alias="updatedAt")
 
 
 class CreateAutomationTaskRequest(StudioModel):
@@ -140,9 +139,9 @@ class AutomationRunRecord(StudioModel):
     thread_id: str = Field(default="", alias="threadId", max_length=256)
     session_id: str = Field(alias="sessionId")
     run_id: str = Field(alias="runId")
-    scheduled_at: datetime | None = Field(default=None, alias="scheduledAt")
-    started_at: datetime = Field(alias="startedAt")
-    finished_at: datetime | None = Field(default=None, alias="finishedAt")
+    scheduled_at: AwareDatetime | None = Field(default=None, alias="scheduledAt")
+    started_at: AwareDatetime = Field(alias="startedAt")
+    finished_at: AwareDatetime | None = Field(default=None, alias="finishedAt")
     duration_ms: int | None = Field(default=None, alias="durationMs")
     output_summary: str | None = Field(default=None, alias="outputSummary")
     artifacts: tuple[AutomationRecordArtifact, ...] = ()

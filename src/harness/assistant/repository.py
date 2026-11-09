@@ -195,15 +195,19 @@ class PostgresAssistantRepository:
         async with self._context() as session:
             return _objective(await self._owned(session, tenant_id, user_id, objective_id))
 
-    async def list(self, tenant_id: str, user_id: str, *, limit: int = 100) -> list[Objective]:
+    async def list(
+        self, tenant_id: str, user_id: str, *, limit: int | None = 100
+    ) -> list[Objective]:
+        statement = (
+            select(ObjectiveRow)
+            .where(ObjectiveRow.tenant_id == tenant_id, ObjectiveRow.user_id == user_id)
+            .order_by(ObjectiveRow.updated_at.desc(), ObjectiveRow.objective_id)
+        )
+        if limit is not None:
+            statement = statement.limit(limit)
         async with self._context() as session:
-            rows = await session.scalars(
-                select(ObjectiveRow)
-                .where(ObjectiveRow.tenant_id == tenant_id, ObjectiveRow.user_id == user_id)
-                .order_by(ObjectiveRow.updated_at.desc(), ObjectiveRow.objective_id)
-                .limit(limit)
-            )
-            return [_objective(row) for row in rows]
+            rows = (await session.scalars(statement)).all()
+        return [_objective(row) for row in rows]
 
     async def update(
         self,

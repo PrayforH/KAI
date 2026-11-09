@@ -610,6 +610,25 @@ class AguiRunService:
             deduplicated=creation.deduplicated,
         )
 
+    async def _durable_history_prompts(
+        self, tenant_id: str, binding: AguiThreadBinding,
+    ) -> list[str]:
+        """The conversation prefix the server already committed for this thread."""
+        runs = await self._run_service.list_for_sessions(
+            tenant_id, list(binding.session_ids), limit=200,
+        )
+        if not runs:
+            return []
+        latest = max(runs, key=lambda run: (run.created_at, run.run_id))
+        stored = latest.input.get("conversation_prompts")
+        if (
+            isinstance(stored, list) and stored
+            and all(isinstance(item, str) for item in stored)
+            and stored[-1] == latest.input.get("prompt")
+        ):
+            return [str(item) for item in stored]
+        return []
+
     async def _append_history_prompt(
         self, tenant_id: str, binding: AguiThreadBinding, prompt: str,
     ) -> list[str]:
@@ -641,6 +660,19 @@ class AguiRunService:
         # user message identifies the durable Run whose prefix was not loaded.
         # Match both that owner-scoped anchor and its text suffix: edits retain
         # the prefix before the edited turn without resurrecting later turns.
+        durable = await self._durable_history_prompts(tenant_id, binding)
+        if durable:
+            # Reloaded pages and short "stop" turns can carry only the newest
+            # message. Append to the committed prefix instead of rewriting it:
+            # a single-message request used to erase every earlier turn from
+            # the stored conversation and from the visible history.
+            prefix = prompts[:-1]
+            if prompts and len(prefix) < len(durable) and (
+                not prefix or list(durable[len(durable) - len(prefix):]) == prefix
+            ):
+                if prompts[-1] == durable[-1]:
+                    return list(durable)
+                return [*durable, prompts[-1]]
         users = [message for message in request.messages if message.role == "user"]
         if len(users) < 2 or len(prompts) < 2:
             return prompts

@@ -33,6 +33,15 @@ class LeaseState(StrEnum):
     EXPIRED = "expired"
 
 
+class DesktopState(StrEnum):
+    CREATED = "created"
+    STARTING = "starting"
+    IDLE = "idle"
+    BUSY = "busy"
+    STOPPED = "stopped"
+    FAILED = "failed"
+
+
 class ComputerBusyError(ConflictError):
     """Another live holder owns this computer."""
 
@@ -69,6 +78,34 @@ class AssistantComputer(BaseModel):
     last_active_at: datetime | None
 
 
+class ComputerDesktop(BaseModel):
+    """One Bot desktop inside an owner's VM.
+
+    ``epoch`` fences execution for this desktop alone; a desktop restart or a
+    takeover bumps it without disturbing other desktops of the same VM.
+    """
+
+    model_config = ConfigDict(frozen=True, from_attributes=True)
+
+    tenant_id: str
+    user_id: str
+    specialist_id: str
+    desktop_id: str
+    computer_id: str
+    state: DesktopState
+    display: str | None
+    unix_user: str | None
+    vnc_socket: str | None
+    profile_ref: str | None
+    workspace_ref: str | None
+    image: str | None
+    epoch: int
+    revision: int
+    last_active_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class ComputerLease(BaseModel):
     model_config = ConfigDict(frozen=True, from_attributes=True)
 
@@ -78,6 +115,7 @@ class ComputerLease(BaseModel):
     user_id: str
     owner: str
     purpose: LeasePurpose
+    desktop_id: str = "vm"
     epoch: int
     run_id: str | None
     session_id: str | None

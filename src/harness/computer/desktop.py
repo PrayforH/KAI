@@ -20,7 +20,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from harness.computer.binding import desktop_binding
@@ -132,6 +132,25 @@ class DesktopControlService:
                 row.updated_at = moment
             return DesktopControl.model_validate(row)
 
+    @staticmethod
+    async def _run_executing(session: AsyncSession, tenant_id: str, user_id: str) -> bool:
+        """A Run holding the execution lease is the only writer left to drain."""
+
+        from harness.computer.storage import ComputerLeaseRow
+
+        count = await session.scalar(
+            select(func.count())
+            .select_from(ComputerLeaseRow)
+            .where(
+                ComputerLeaseRow.tenant_id == tenant_id,
+                ComputerLeaseRow.user_id == user_id,
+                ComputerLeaseRow.state == "active",
+                ComputerLeaseRow.run_id.is_not(None),
+                ComputerLeaseRow.expires_at > func.clock_timestamp(),
+            )
+        )
+        return bool(count)
+
     async def request_human(
         self, tenant_id: str, user_id: str, *, expected_binding: str | None = None
     ) -> DesktopControl:
@@ -149,6 +168,10 @@ class DesktopControlService:
                 return DesktopControl.model_validate(row)
             if row.state == DesktopState.TAKEOVER_PENDING:
                 return DesktopControl.model_validate(row)
+            if await self._run_executing(session, row.tenant_id, row.user_id):
+                raise DesktopOccupiedError(
+                    "助理正在这台电脑上执行任务，等它结束或先中止后再取得控制权。"
+                )
             row.state = DesktopState.TAKEOVER_PENDING.value
             row.owner = None
             row.epoch += 1

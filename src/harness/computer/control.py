@@ -113,6 +113,32 @@ class HttpComputerControl:
             raise RuntimeError("computer desktop acknowledgement is invalid")
         return cast(dict[str, object], value)
 
+    async def desktop_slot(
+        self,
+        tenant_id: str,
+        user_id: str,
+        operation: str,
+        payload: Mapping[str, object],
+    ) -> dict[str, object]:
+        """Maintenance access to one Bot slot; the private node authorizes it."""
+
+        response = await self.client.post(
+            "/v1/computer/desktop-slot",
+            json={
+                "tenant_id": tenant_id,
+                "user_id": user_id,
+                "operation": operation,
+                "payload": dict(payload),
+            },
+            timeout=httpx.Timeout(150, connect=10),
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(f"computer desktop slot unavailable: HTTP {response.status_code}")
+        value: object = response.json()
+        if not isinstance(value, dict):
+            raise RuntimeError("computer desktop slot acknowledgement is invalid")
+        return cast(dict[str, object], value)
+
     async def lifecycle(
         self, token: ComputerLease, operation: str, *, image: str | None = None
     ) -> str | None:

@@ -10,6 +10,7 @@ import ctypes
 import importlib.util
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -21,8 +22,16 @@ from uuid import uuid4
 MAX_BYTES = 40 * 1024**2
 ROOT = Path("/var/lib/kai-computer")
 SUPERVISOR = Path("/opt/kai-computer/supervisor.py")
+SUPERVISOR_ROOT = Path("/var/lib/kai-computer")
+SLOT = re.compile(r"desktop_[a-f0-9]{24}")
 ACTIONS = frozenset({"init", "activate", "renew", "deactivate", "exec"})
 NATIVE_ACTIONS = frozenset({"native_desktop", "native_barrier", "desktop_export"})
+DESKTOP_ACTION = "desktop_session"
+CONTROL = Path("/opt/kai-computer/computer_control.py")
+DESKTOP_KEYS = frozenset(
+    {"op", "desktopId", "unixUser", "display", "profile", "workspace", "vncSocket"}
+)
+DESKTOP_OPS = frozenset({"ensure", "start", "stop", "status"})
 ENVIRONMENT = {"PATH": "/usr/local/bin:/usr/bin:/bin", "LANG": "C.UTF-8"}
 
 
@@ -39,7 +48,7 @@ def decode_request(body: bytes) -> tuple[str, dict[str, Any]]:
         or type(value.get("version")) is not int
         or value["version"] != 1
         or not isinstance(action, str)
-        or action not in ACTIONS | NATIVE_ACTIONS
+        or action not in ACTIONS | NATIVE_ACTIONS | {DESKTOP_ACTION}
         or not isinstance(spec, dict)
     ):
         raise ValueError("invalid guest request")
@@ -107,12 +116,16 @@ def run(*, require_workdisk: Callable[[], None] = _require_workdisk) -> None:
         require_workdisk()
         native_request(action, spec)
         return
+    if action == DESKTOP_ACTION:
+        # A Bot desktop slot is provisioned by a fixed root module; the request
+        # carries only slot descriptors, never a path, unit or command.
+        desktop_request(spec)
+        return
     _trusted(SUPERVISOR.parent, directory=True)
     _trusted(SUPERVISOR, directory=False)
     # The SSH server itself is outside the task namespace. Enforce the same
     # monotonic NNP boundary supplied by the Docker backend for every command.
-    if ctypes.CDLL(None, use_errno=True).prctl(38, 1, 0, 0, 0) != 0:
-        raise PermissionError("guest control could not enforce process privileges")
+    _enforce_nnp()
     if action != "deactivate":
         # A failed shared mount must never fall back to the guest OS's old or
         # empty HOME. Cleanup stays available even if the data disk is lost.
@@ -129,8 +142,12 @@ def run(*, require_workdisk: Callable[[], None] = _require_workdisk) -> None:
             env=ENVIRONMENT,
             check=True,
         )
-    _private_directory(ROOT)
-    spool = ROOT / "spool"
+    scope = spec.get("scope") or ""
+    if scope and SLOT.fullmatch(scope) is None:
+        raise ValueError("guest scope is invalid")
+    root = SUPERVISOR_ROOT if not scope else SUPERVISOR_ROOT / "scopes" / scope
+    _private_directory(root)
+    spool = root / "spool"
     _private_directory(spool)
     request = spool / (uuid4().hex + ".json")
     fd = os.open(request, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
@@ -139,11 +156,41 @@ def run(*, require_workdisk: Callable[[], None] = _require_workdisk) -> None:
             stream.write(body)
         os.execve(
             "/usr/bin/python3",
-            ["/usr/bin/python3", "-I", str(SUPERVISOR), action, str(request)],
+            ["/usr/bin/python3", "-I", str(SUPERVISOR), action, str(request), str(root)],
             ENVIRONMENT,
         )
     finally:
         request.unlink(missing_ok=True)
+
+
+def _enforce_nnp() -> None:
+    if ctypes.CDLL(None, use_errno=True).prctl(38, 1, 0, 0, 0) != 0:
+        raise PermissionError("guest control could not enforce process privileges")
+
+
+def desktop_request(request: dict[str, Any]) -> None:
+    if set(request) != DESKTOP_KEYS or request["op"] not in DESKTOP_OPS:
+        raise ValueError("desktop session request is invalid")
+    values = [
+        request[key]
+        for key in ("desktopId", "unixUser", "display", "profile", "workspace", "vncSocket")
+    ]
+    if any(not isinstance(value, str) for value in values):
+        raise ValueError("desktop session request is invalid")
+    _trusted(CONTROL.parent, directory=True)
+    _trusted(CONTROL, directory=False)
+    _enforce_nnp()
+    result = subprocess.run(
+        ["/usr/bin/python3", "-I", str(CONTROL), request["op"], *values],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        env=ENVIRONMENT,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("desktop session control refused")
+    print(json.dumps({"op": request["op"], "state": result.stdout.strip()}))
 
 
 def native_request(action: str, request: dict[str, Any]) -> None:

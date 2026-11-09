@@ -519,9 +519,13 @@ def main() -> int:
         )
         guard.namespace(Token(int(sys.argv[6]), sys.argv[7]))
         return 0
-    if len(sys.argv) != 3 or sys.argv[1] not in {"init", "activate", "renew", "deactivate", "exec"}:
+    if len(sys.argv) not in (3, 4) or sys.argv[1] not in {
+        "init", "activate", "renew", "deactivate", "exec"
+    }:
         raise ValueError("expected supervisor action and private request path")
-    guard = Guard()
+    # A Bot slot runs its own copy of this state machine, so one slot's
+    # activation can never drain another slot's namespace.
+    guard = Guard(Path(sys.argv[3])) if len(sys.argv) == 4 else Guard()
     spec = guard.consume(Path(sys.argv[2]))
     token = Token.parse(spec)
     if sys.argv[1] == "exec":

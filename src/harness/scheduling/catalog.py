@@ -8,16 +8,22 @@ a single catalog to read, sort and filter. It owns no writes and no execution.
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Callable
 from datetime import datetime
 from enum import StrEnum
-from typing import Protocol
+from typing import Protocol, TypeVar
 
 from pydantic import AwareDatetime, Field
 
 from harness.assistant.models import Objective
 from harness.automations.models import AutomationScheduleType, AutomationTask
+from harness.core.errors import ConflictError
 from harness.scheduling.timing import Timing, TimingKind
 from harness.studio.models import StudioModel
+
+logger = logging.getLogger(__name__)
+_Item = TypeVar("_Item")
 
 
 class ScheduleSource(StrEnum):
@@ -62,11 +68,17 @@ class ScheduleTask(StudioModel):
 
     @property
     def sort_key(self) -> tuple[bool, datetime, str]:
-        return (self.next_run_at is None, self.next_run_at or self.created_at, self.schedule_id)
+        return (
+            self.next_run_at is None,
+            self.next_run_at or self.created_at,
+            self.schedule_id,
+        )
 
 
 class ObjectiveSource(Protocol):
-    async def list(self, tenant_id: str, user_id: str, *, limit: int = 100) -> list[Objective]: ...
+    async def list(
+        self, tenant_id: str, user_id: str, *, limit: int | None = None
+    ) -> list[Objective]: ...
 
 
 class AutomationSource(Protocol):
@@ -75,7 +87,8 @@ class AutomationSource(Protocol):
 
 def _automation_timing(task: AutomationTask) -> ScheduleTiming:
     if task.schedule.type is AutomationScheduleType.ONCE:
-        assert task.schedule.at is not None
+        if task.schedule.at is None:
+            raise ConflictError("once automation schedule has no at timestamp")
         return ScheduleTiming.from_timing(Timing.once(task.schedule.at))
     return ScheduleTiming.from_timing(
         Timing.cron(task.schedule.cron or "", task.schedule.timezone)
@@ -119,11 +132,29 @@ def from_automation(task: AutomationTask) -> ScheduleTask:
     )
 
 
+def _project_safely(
+    project: Callable[[_Item], ScheduleTask | None], item: _Item, kind: str
+) -> ScheduleTask | None:
+    """Keep one corrupt row from taking down the whole schedule page."""
+
+    try:
+        return project(item)
+    except (ConflictError, ValueError) as error:
+        logger.warning(
+            "skipping invalid %s schedule %s: %s",
+            kind,
+            getattr(item, "objective_id", None) or getattr(item, "task_id", "?"),
+            error,
+        )
+        return None
+
+
 class ScheduleCatalog:
     """Read both schedule stores and answer with one ordered list.
 
     ``specialist_id`` narrows the result to objectives owned by one specialist;
     automation tasks have no specialist, so they are omitted under that filter.
+    Invalid persisted rows are logged and skipped rather than failing the page.
     """
 
     def __init__(self, objectives: ObjectiveSource, automations: AutomationSource) -> None:
@@ -140,16 +171,20 @@ class ScheduleCatalog:
     ) -> list[ScheduleTask]:
         tasks: list[ScheduleTask] = []
         if source in (None, ScheduleSource.OBJECTIVE):
-            for objective in await self._objectives.list(tenant_id, user_id):
+            objectives = await self._objectives.list(
+                tenant_id, user_id, limit=None
+            )
+            for objective in objectives:
                 if specialist_id is not None and objective.specialist_id != specialist_id:
                     continue
-                projected = from_objective(objective)
+                projected = _project_safely(from_objective, objective, "objective")
                 if projected is not None:
                     tasks.append(projected)
         if source in (None, ScheduleSource.AUTOMATION) and specialist_id is None:
-            tasks.extend(
-                from_automation(task)
-                for task in await self._automations.list(tenant_id, user_id)
-            )
+            automations = await self._automations.list(tenant_id, user_id)
+            for task in automations:
+                projected = _project_safely(from_automation, task, "automation")
+                if projected is not None:
+                    tasks.append(projected)
         return sorted(tasks, key=lambda task: task.sort_key)
 

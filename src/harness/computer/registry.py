@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,10 +27,12 @@ from harness.computer.models import (
     ComputerLeaseLostError,
     ComputerRecoveryRequiredError,
     ComputerState,
+    DesktopState,
     LeasePurpose,
     LeaseState,
 )
 from harness.computer.storage import AssistantComputerRow as Computer
+from harness.computer.storage import ComputerDesktopRow as Desktop
 from harness.computer.storage import ComputerLeaseRow as Lease
 from harness.core.errors import ConflictError, NotFoundError
 from harness.storage.database import SessionFactory
@@ -241,6 +243,7 @@ class ComputerRegistry:
         run_id: str,
         session_id: str,
         run_fencing_token: int | None = None,
+        desktop_id: str | None = None,
     ) -> ComputerLease:
         _identity(run_id, 128)
         _identity(session_id, 128)
@@ -248,6 +251,8 @@ class ComputerRegistry:
             type(run_fencing_token) is not int or run_fencing_token < 0
         ):
             raise ValueError("computer execution Run fence is invalid")
+        if desktop_id is not None:
+            _identity(desktop_id, 64)
         return await self._claim(
             tenant,
             user,
@@ -256,6 +261,7 @@ class ComputerRegistry:
             run_fencing_token=run_fencing_token,
             run_id=run_id,
             session_id=session_id,
+            desktop_id=desktop_id,
         )
 
     async def claim_recovery(
@@ -282,23 +288,33 @@ class ComputerRegistry:
         session_id: str | None = None,
         run_fencing_token: int | None = None,
         expected_image: str | None = None,
+        desktop_id: str | None = None,
     ) -> ComputerLease:
         _identity(owner, 160)
+        desktop: Desktop | None = None
         async with self._sessions.begin() as session:
             computer = await self._get(session, tenant, user, lock=True)
             if expected_image is not None and computer.image != expected_image:
                 raise ConflictError("computer image changed before migration acquired ownership")
+            if purpose is LeasePurpose.EXECUTE and desktop_id is not None:
+                desktop = await self._desktop(session, tenant, user, desktop_id, lock=True)
             moment = await _now(session)
             previous = await session.scalar(
                 select(Lease).where(
                     Lease.tenant_id == tenant,
                     Lease.user_id == user,
-                    Lease.epoch == computer.epoch,
+                    Lease.desktop_id == ("vm" if desktop is None else desktop.desktop_id),
+                    Lease.epoch
+                    == (computer.epoch if desktop is None else desktop.epoch),
                 )
             )
             if previous and previous.state == LeaseState.ACTIVE:
                 if previous.expires_at > moment:
-                    raise ComputerBusyError("computer already has a live holder")
+                    holder = previous.run_id or previous.owner
+                    raise ComputerBusyError(
+                        f"{'desktop' if desktop else 'computer'} already has a live holder "
+                        f"({holder})"
+                    )
                 if purpose is not LeasePurpose.RECOVER:
                     raise ComputerRecoveryRequiredError(
                         "expired execution requires provider fencing"
@@ -307,6 +323,48 @@ class ComputerRegistry:
                 # Retire the old row before inserting its replacement: the
                 # database also enforces one active holder per owner.
                 await session.flush()
+            if desktop is not None:
+                # A second active holder can only come from an older epoch that
+                # was never retired; refusing is safer than sharing the desktop.
+                live = await session.scalar(
+                    select(Lease).where(
+                        Lease.tenant_id == tenant,
+                        Lease.user_id == user,
+                        Lease.desktop_id == desktop.desktop_id,
+                        Lease.state == LeaseState.ACTIVE.value,
+                    )
+                )
+                if live is not None:
+                    raise ComputerBusyError(
+                        "desktop already has a live holder "
+                        f"({live.run_id or live.owner})"
+                    )
+                # Each Bot slot owns a separate guest state machine, so a
+                # second desktop may execute at the same time; they only share
+                # the machine's files and login state (the documented model).
+                if purpose is LeasePurpose.EXECUTE and desktop.state not in {
+                    DesktopState.CREATED,
+                    DesktopState.STARTING,
+                    DesktopState.IDLE,
+                    DesktopState.BUSY,
+                }:
+                    raise ComputerRecoveryRequiredError(
+                        "desktop is not running; ensure or recover it first"
+                    )
+                whole = await session.scalar(
+                    select(Lease).where(
+                        Lease.tenant_id == tenant,
+                        Lease.user_id == user,
+                        Lease.desktop_id == "vm",
+                        Lease.state == LeaseState.ACTIVE.value,
+                        Lease.purpose == LeasePurpose.EXECUTE.value,
+                    )
+                )
+                if whole is not None:
+                    raise ComputerBusyError(
+                        "computer already has a live whole-VM holder "
+                        f"({whole.run_id or whole.owner})"
+                    )
             if purpose is LeasePurpose.START:
                 if computer.provider_ref is not None:
                     raise ConflictError("computer is already attached; reconnect or recover it")
@@ -314,12 +372,57 @@ class ComputerRegistry:
                     raise ComputerRecoveryRequiredError("unfinished provisioning requires recovery")
                 state = ComputerState.STARTING
             elif purpose is LeasePurpose.EXECUTE:
-                if computer.state != ComputerState.IDLE or computer.provider_ref is None:
+                if computer.provider_ref is None or computer.state not in {
+                    ComputerState.IDLE,
+                    ComputerState.RUNNING,
+                }:
                     raise ComputerRecoveryRequiredError("computer is not ready for execution")
+                if desktop is None:
+                    other = await session.scalar(
+                        select(Lease).where(
+                            Lease.tenant_id == tenant,
+                            Lease.user_id == user,
+                            Lease.desktop_id != "vm",
+                            Lease.state == LeaseState.ACTIVE.value,
+                            Lease.purpose == LeasePurpose.EXECUTE.value,
+                        )
+                    )
+                    if other is not None:
+                        raise ComputerBusyError(
+                            "a Bot desktop is executing; whole-VM execution is unavailable"
+                        )
                 state = ComputerState.RUNNING
             else:
+                if purpose is LeasePurpose.RECOVER:
+                    active = await session.scalar(
+                        select(func.count())
+                        .select_from(Lease)
+                        .where(
+                            Lease.tenant_id == tenant,
+                            Lease.user_id == user,
+                            Lease.state == LeaseState.ACTIVE.value,
+                            Lease.purpose == LeasePurpose.EXECUTE.value,
+                        )
+                    )
+                    if active:
+                        raise ComputerRecoveryRequiredError(
+                            "active desktops must stop before computer recovery"
+                        )
                 state = ComputerState.RECOVERING
-            computer.epoch += 1
+            if desktop is None:
+                computer.epoch += 1
+                epoch = computer.epoch
+            else:
+                # The guest fences execution with one monotonic epoch, so a
+                # desktop lease continues the machine sequence instead of
+                # restarting at its own slot epoch. Until the guest keeps one
+                # namespace per slot, desktop executions stay serialized.
+                epoch = max(computer.epoch, desktop.epoch) + 1
+                computer.epoch = epoch
+                desktop.epoch = epoch
+                desktop.state = DesktopState.BUSY.value
+                desktop.revision += 1
+                desktop.updated_at = moment
             _touch(computer, moment, state)
             lease = Lease(
                 lease_id="computer_lease_" + uuid4().hex,
@@ -328,7 +431,8 @@ class ComputerRegistry:
                 computer_id=computer.computer_id,
                 owner=owner,
                 purpose=purpose.value,
-                epoch=computer.epoch,
+                desktop_id="vm" if desktop is None else desktop.desktop_id,
+                epoch=epoch,
                 run_id=run_id,
                 run_fencing_token=run_fencing_token,
                 session_id=session_id,
@@ -347,6 +451,28 @@ class ComputerRegistry:
             _touch(computer, moment)
             await session.flush()
             return ComputerLease.model_validate(lease)
+
+    async def reap_expired(self, tenant: str, user: str) -> int:
+        """Retire leases that outlived their TTL before a new claim fences them.
+
+        A guest reboot or a worker restart leaves rows that are still ``active``
+        but already past ``expires_at``; they would otherwise read as a live
+        holder forever and block every later Run on that computer.
+        """
+
+        async with self._sessions.begin() as session:
+            moment = await _now(session)
+            result = await session.execute(
+                update(Lease)
+                .where(
+                    Lease.tenant_id == tenant,
+                    Lease.user_id == user,
+                    Lease.state == LeaseState.ACTIVE.value,
+                    Lease.expires_at <= moment,
+                )
+                .values(state=LeaseState.EXPIRED.value, finished_at=moment)
+            )
+            return int(result.rowcount or 0)
 
     async def holder(self, token: ComputerLease) -> tuple[AssistantComputer, ComputerLease]:
         """Validate without extending permission; used by the privileged control service."""
@@ -387,7 +513,7 @@ class ComputerRegistry:
                     (
                         (Lease.tenant_id == Computer.tenant_id)
                         & (Lease.user_id == Computer.user_id)
-                        & (Lease.epoch == Computer.epoch)
+                        & (Lease.computer_id == Computer.computer_id)
                     ),
                 )
                 .where(
@@ -409,9 +535,32 @@ class ComputerRegistry:
             or lease.purpose != token.purpose
             or lease.run_id != token.run_id
             or lease.session_id != token.session_id
+            or not await ComputerRegistry._scope_is_current(session, computer, lease)
         ):
             raise ComputerLeaseLostError("computer lease identity does not match")
         return AssistantComputer.model_validate(computer), ComputerLease.model_validate(lease)
+
+    @staticmethod
+    async def _scope_is_current(
+        session: AsyncSession, computer: Computer, lease: Lease
+    ) -> bool:
+        """A lease is current only while its own scope still names that epoch.
+
+        VM-level start/recover leases fence through the computer row; execute
+        leases fence through their desktop, so two desktops of one VM never
+        invalidate each other's epochs.
+        """
+
+        if lease.desktop_id == "vm":
+            return lease.epoch == computer.epoch
+        epoch = await session.scalar(
+            select(Desktop.epoch).where(
+                Desktop.tenant_id == lease.tenant_id,
+                Desktop.user_id == lease.user_id,
+                Desktop.desktop_id == lease.desktop_id,
+            )
+        )
+        return epoch == lease.epoch
 
     async def complete_start(self, token: ComputerLease, *, provider_ref: str) -> AssistantComputer:
         """Publish a ready instance using the previously reserved work volume.
@@ -462,9 +611,43 @@ class ComputerRegistry:
         must retain ownership until recovery can fence the old process.
         """
 
-        async with self._holder(token, LeasePurpose.EXECUTE) as (_, computer, lease, moment):
+        async with self._holder(token, LeasePurpose.EXECUTE) as (
+            session,
+            computer,
+            lease,
+            moment,
+        ):
             computer.last_active_at = moment
-            _finish(computer, lease, moment, ComputerState.IDLE)
+            lease.state, lease.finished_at = LeaseState.RELEASED.value, moment
+            if lease.desktop_id != "vm":
+                desktop = await session.scalar(
+                    select(Desktop).where(
+                        Desktop.tenant_id == lease.tenant_id,
+                        Desktop.user_id == lease.user_id,
+                        Desktop.desktop_id == lease.desktop_id,
+                    )
+                )
+                if desktop is not None:
+                    desktop.state = DesktopState.IDLE.value
+                    desktop.last_active_at = moment
+                    desktop.revision += 1
+                    desktop.updated_at = moment
+            others = await session.scalar(
+                select(func.count())
+                .select_from(Lease)
+                .where(
+                    Lease.tenant_id == lease.tenant_id,
+                    Lease.user_id == lease.user_id,
+                    Lease.lease_id != lease.lease_id,
+                    Lease.state == LeaseState.ACTIVE.value,
+                    Lease.purpose == LeasePurpose.EXECUTE.value,
+                )
+            )
+            _touch(
+                computer,
+                moment,
+                ComputerState.RUNNING if others else ComputerState.IDLE,
+            )
             return AssistantComputer.model_validate(computer)
 
     async def complete_recovery(
@@ -529,7 +712,7 @@ class ComputerRegistry:
                 or lease.user_id != token.user_id
                 or lease.owner != token.owner
                 or lease.epoch != token.epoch
-                or computer.epoch != token.epoch
+                or not await self._scope_is_current(session, computer, lease)
                 or lease.state != LeaseState.ACTIVE
                 or lease.expires_at <= moment
                 or lease.purpose != token.purpose
@@ -539,6 +722,20 @@ class ComputerRegistry:
             ):
                 raise ComputerLeaseLostError("computer lease is expired, released or superseded")
             yield session, computer, lease, moment
+
+    @staticmethod
+    async def _desktop(
+        session: AsyncSession, tenant: str, user: str, desktop_id: str, *, lock: bool = False
+    ) -> Desktop:
+        query = select(Desktop).where(
+            Desktop.tenant_id == tenant,
+            Desktop.user_id == user,
+            Desktop.desktop_id == desktop_id,
+        )
+        row = await session.scalar(query.with_for_update() if lock else query)
+        if row is None:
+            raise NotFoundError("bot desktop not found")
+        return row
 
     @staticmethod
     async def _get(

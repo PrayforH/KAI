@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
 from harness.api.dependencies import (
     Identity,
@@ -39,8 +39,11 @@ Catalog = Annotated[ScheduleCatalog, Depends(get_schedule_catalog)]
 async def list_schedules(
     identity: Annotated[Identity, Depends(require_identity)],
     catalog: Catalog,
+    response: Response,
     specialist_id: Annotated[str | None, Query(alias="specialistId", max_length=128)] = None,
     source: Annotated[ScheduleSource | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[ScheduleTask]:
     ensure_permission(identity, "tasks:read")
     if source is ScheduleSource.AUTOMATION and not has_permission(identity, "studio:read"):
@@ -53,12 +56,18 @@ async def list_schedules(
         )
     if not has_permission(identity, "studio:read"):
         # A tasks-only credential still gets its objectives, never automation data.
-        return await catalog.list(
-            identity.tenant_id, identity.user_id, source=ScheduleSource.OBJECTIVE
+        tasks = await catalog.list(
+            identity.tenant_id,
+            identity.user_id,
+            specialist_id=specialist_id,
+            source=ScheduleSource.OBJECTIVE,
         )
-    return await catalog.list(
-        identity.tenant_id,
-        identity.user_id,
-        specialist_id=specialist_id,
-        source=source,
-    )
+    else:
+        tasks = await catalog.list(
+            identity.tenant_id,
+            identity.user_id,
+            specialist_id=specialist_id,
+            source=source,
+        )
+    response.headers["X-Total-Count"] = str(len(tasks))
+    return tasks[offset : offset + limit]

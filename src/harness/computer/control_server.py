@@ -3,19 +3,20 @@
 import asyncio
 import contextlib
 import hmac
+import json
 import logging
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field, SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.engine import make_url
 
 from harness.computer.access import CanonicalComputerAccess
@@ -50,6 +51,7 @@ from harness.computer.remote import (
 from harness.computer.storage import AssistantComputerRow, ComputerDesktopLeaseRow
 from harness.computer.vm import PROVIDER as VM_PROVIDER
 from harness.computer.vm_host import (
+    GuestGate,
     VmComputerControl,
     VmComputerLifecycle,
     VmComputerSpec,
@@ -92,11 +94,44 @@ class ImageCheckRequest(BaseModel):
     provider: str | None = None
 
 
+class DesktopSlotRequest(BaseModel):
+    """Bootstrap/maintenance access to one Bot slot, without an execution lease.
+
+    Only the private node holds this endpoint's secret: the request names the
+    owner and a pre-validated slot descriptor, and the guest gate validates the
+    descriptor again before it touches a unit.
+    """
+
+    tenant_id: str
+    user_id: str
+    operation: Literal["ensure", "stop", "status"]
+    payload: dict[str, Any]
+
+
 class DesktopRequest(BaseModel):
     token: ComputerLease
     operation: str
     payload: dict[str, Any]
     expected_epoch: int
+
+
+async def _active_execution(db: Any, computer: AssistantComputerRow) -> bool:
+    """Whether a Run still holds this computer's execution lease."""
+
+    from harness.computer.storage import ComputerLeaseRow
+
+    count = await db.scalar(
+        select(func.count())
+        .select_from(ComputerLeaseRow)
+        .where(
+            ComputerLeaseRow.tenant_id == computer.tenant_id,
+            ComputerLeaseRow.user_id == computer.user_id,
+            ComputerLeaseRow.state == "active",
+            ComputerLeaseRow.run_id.is_not(None),
+            ComputerLeaseRow.expires_at > func.clock_timestamp(),
+        )
+    )
+    return bool(count)
 
 
 async def drain_pending_takeovers(
@@ -115,41 +150,49 @@ async def drain_pending_takeovers(
     """
 
     served = screen.served
-    if not served:
-        return 0
     async with sessions() as db:
-        rows = (
-            await db.execute(
-                select(ComputerDesktopLeaseRow, AssistantComputerRow)
-                .join(
-                    AssistantComputerRow,
-                    and_(
-                        AssistantComputerRow.tenant_id == ComputerDesktopLeaseRow.tenant_id,
-                        AssistantComputerRow.user_id == ComputerDesktopLeaseRow.user_id,
-                    ),
-                )
-                .where(
-                    ComputerDesktopLeaseRow.state == DesktopState.TAKEOVER_PENDING.value,
-                    AssistantComputerRow.provider.in_((VM_PROVIDER, REMOTE_PROVIDER)),
-                    AssistantComputerRow.volume_ref.in_(served),
-                )
-                .limit(limit)
+        statement = (
+            select(ComputerDesktopLeaseRow, AssistantComputerRow)
+            .join(
+                AssistantComputerRow,
+                and_(
+                    AssistantComputerRow.tenant_id == ComputerDesktopLeaseRow.tenant_id,
+                    AssistantComputerRow.user_id == ComputerDesktopLeaseRow.user_id,
+                ),
             )
-        ).all()
+            .where(
+                ComputerDesktopLeaseRow.state == DesktopState.TAKEOVER_PENDING.value,
+                AssistantComputerRow.provider.in_((VM_PROVIDER, REMOTE_PROVIDER)),
+            )
+            .limit(limit)
+        )
+        if served:
+            statement = statement.where(AssistantComputerRow.volume_ref.in_(served))
+        rows = (await db.execute(statement)).all()
     confirmed = 0
     for lease, computer in rows:
-        screen.cancel(computer.volume_ref)
         remaining = (
             (lease.expires_at - datetime.now(UTC)).total_seconds()
             if lease.expires_at is not None
             else 0
         )
-        # The stop request lands between keystrokes; the busy flag clearing
-        # is the drain acknowledgement for this computer's queue.
-        if remaining <= 0 or not await screen.wait_drained(
-            computer.volume_ref, timeout=max(0.0, remaining), expected_epoch=lease.epoch
-        ):
+        if remaining <= 0:
             continue
+        if computer.volume_ref in served:
+            screen.cancel(computer.volume_ref)
+            # The stop request lands between keystrokes; the busy flag clearing
+            # is the drain acknowledgement for this computer's queue.
+            if not await screen.wait_drained(
+                computer.volume_ref, timeout=remaining, expected_epoch=lease.epoch
+            ):
+                continue
+        else:
+            # No viewer session is served by this node: the desktop viewer talks
+            # to the guest directly, so the only writer left is a Run holding an
+            # execution lease. Wait for that instead of a screen queue nobody
+            # fills, which used to leave every takeover pending forever.
+            if await _active_execution(db, computer):
+                continue
         state = await desktop_leases.confirm_human(
             lease.tenant_id, lease.user_id, expected_epoch=lease.epoch
         )
@@ -297,7 +340,10 @@ def create_app(settings: ControllerSettings) -> FastAPI:
             raise HTTPException(400, "Computer control request is invalid") from None
         try:
             return await controller.call(command.token, command.action, command.payload)
-        except (ComputerLeaseLostError, NotFoundError):
+        except (ComputerLeaseLostError, NotFoundError) as error:
+            logging.getLogger(__name__).warning(
+                "computer control refused: %s: %s", type(error).__name__, str(error)[:200]
+            )
             raise HTTPException(409, "Computer execution ownership was lost") from None
         except (httpx.HTTPError, RuntimeError, ValueError):
             # Never return Docker messages, request input, private paths or env.
@@ -378,6 +424,32 @@ def create_app(settings: ControllerSettings) -> FastAPI:
             )
             raise HTTPException(503, "Computer desktop could not be reached") from None
 
+    async def desktop_slot(request: Request):
+        try:
+            command = DesktopSlotRequest.model_validate_json(await private_body(request))
+        except ValidationError:
+            raise HTTPException(400, "Computer desktop slot request is invalid") from None
+        try:
+            computer = await registry.get(command.tenant_id, command.user_id)
+            spec = vm_specs.get(computer.volume_ref)
+            if spec is None or spec.guest_base_digest != computer.image:
+                raise RuntimeError("computer VM is not declared on this node")
+            result = await GuestGate(spec).call(
+                "desktop_session",
+                {**command.payload, "op": command.operation},
+                timeout_seconds=120,
+            )
+            answer: object = json.loads(result.stdout or "{}")
+            return {"op": command.operation, "state": cast(dict[str, Any], answer).get("state")}
+        except (NotFoundError,):
+            raise HTTPException(404, "Computer is not registered") from None
+        except (httpx.HTTPError, RuntimeError, ValueError, OSError, EOFError) as error:
+            logging.getLogger(__name__).warning(
+                "computer desktop slot failed: %s: %s", type(error).__name__, str(error)[:300]
+            )
+            raise HTTPException(503, "Computer desktop slot could not be reached") from None
+
+    app.add_api_route("/v1/computer/desktop-slot", desktop_slot, methods=["POST"])
     app.add_api_route("/v1/computer/desktop", desktop, methods=["POST"])
     return app
 
