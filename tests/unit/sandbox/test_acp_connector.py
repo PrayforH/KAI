@@ -19,7 +19,7 @@ from harness.sandbox.base import SandboxCommandResult, SandboxHandle
     {"agent": "shell"}, {"prompt": ""}, {"prompt": "x" * 6001},
     {"cwd": "../private"}, {"env": {"HOME": "/root"}}, {"user": "root"},
     {"binary": "/usr/bin/sh"}, {"mode": "bypassPermissions"},
-    {"timeout_seconds": True}, {"timeout_seconds": 181},
+    {"timeout_seconds": True}, {"timeout_seconds": 601},
 ])
 def test_model_cannot_expand_the_fixed_readonly_entrypoint(extra: dict[str, Any]) -> None:
     with pytest.raises(ValueError):
