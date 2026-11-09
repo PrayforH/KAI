@@ -1,0 +1,106 @@
+x-application-computer-env: &application-computer-env
+  - path: ${KAI_116_COMPUTER_DIR:?Set the private computer directory}/application.env
+    format: raw
+
+services:
+  api:
+    env_file: *application-computer-env
+  worker:
+    env_file: *application-computer-env
+  web:
+    environment:
+      KAI_DESKTOP_VIEWER_URL: http://computer-viewer:8842
+  computer-control:
+    image: ${KAI_116_APP_IMAGE:?Set the installed KAI API image}
+    pull_policy: never
+    entrypoint: ["/app/.venv/bin/python", "-m", "harness.computer.control_server"]
+    user: "0:0"
+    init: true
+    restart: unless-stopped
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "/app/.venv/bin/python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8840), 2).close()"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    env_file:
+      - path: ${KAI_116_COMPUTER_DIR}/control.env
+        format: raw
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${KAI_116_COMPUTER_DIR}/identities:/identities:ro
+  computer-viewer:
+    image: ${KAI_116_APP_IMAGE:?Set the installed KAI API image}
+    pull_policy: never
+    entrypoint: ["/app/.venv/bin/python", "-m", "harness.computer.viewer"]
+    user: "0:0"
+    init: true
+    restart: unless-stopped
+    pids_limit: 64
+    healthcheck:
+      test: ["CMD", "/app/.venv/bin/python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8842), 2).close()"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    environment:
+      KAI_VIEWER_CONFIG: /private/viewer.json
+    volumes:
+      - ${KAI_116_COMPUTER_DIR}/viewer.json:/private/viewer.json:ro
+      - ${KAI_116_COMPUTER_DIR}/identities:/identities:ro
+  computer-vm:
+    image: ${KAI_116_VM_RUNNER_IMAGE:?Set the installed immutable QEMU image ID}
+    pull_policy: never
+    container_name: kai-computer-116-vm
+    labels:
+      kai.computer.id: ${KAI_116_COMPUTER_VOLUME}
+    user: "28000:28000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    mem_limit: 10g
+    cpus: 2
+    pids_limit: 128
+    devices:
+      - ${KAI_116_COMPUTER_DIR}/kvm-device:/dev/kvm:rw
+    volumes:
+      - ${KAI_116_VM_BASE:?Set the verified sealed guest disk}:/base/sealed.qcow2:ro
+      - ${KAI_116_COMPUTER_DIR}/vm:/vm
+      - ${KAI_116_COMPUTER_DIR}/bots:/shared/bots
+      - computer-home:/shared/home
+    command:
+      - -machine
+      - q35,accel=kvm
+      - -cpu
+      - host
+      - -smp
+      - "2"
+      - -m
+      - "8192"
+      - -display
+      - none
+      - -monitor
+      - none
+      - -serial
+      - file:/vm/serial.log
+      - -drive
+      - file=/vm/root.qcow2,if=virtio,format=qcow2,cache=none,discard=unmap
+      - -drive
+      - file=/vm/seed.iso,format=raw,if=virtio,readonly=on
+      - -netdev
+      - user,id=net0,hostfwd=tcp:0.0.0.0:2222-:22
+      - -device
+      - virtio-net-pci,netdev=net0
+      - -device
+      - virtio-rng-pci
+      - -virtfs
+      - local,path=/shared/home,mount_tag=kai_home,security_model=passthrough,multidevs=forbid
+      - -virtfs
+      - local,path=/shared/bots,mount_tag=kai_bots,security_model=mapped-xattr,multidevs=forbid
+      - -sandbox
+      - on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny
+
+volumes:
+  computer-home:
+    external: true
+    name: ${KAI_116_COMPUTER_VOLUME:?Set the registered owner's work volume}

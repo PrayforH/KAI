@@ -1,0 +1,11 @@
+x-dictation: &dictation
+  HARNESS_DICTATION_ENABLED: "true"
+  HARNESS_DICTATION_ENGINE: qwen3
+  HARNESS_DICTATION_QWEN3_URL: http://172.20.109.166:18000/asr-rest
+  HARNESS_DICTATION_QWEN3_MODEL: qwen3-asr-0.6b
+
+services:
+  api:
+    environment: *dictation
+  worker:
+    environment: *dictation
