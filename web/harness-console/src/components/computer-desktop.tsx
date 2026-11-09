@@ -7,10 +7,10 @@ import type RFB from "@novnc/novnc";
 import styles from "./computer-desktop.module.css";
 
 type TargetSelection = { active_target: string | null; targets: { target_id: string; label: string; binding_key: string }[] };
-type ConnectionState = "connecting" | "reconnecting" | "connected" | "disconnected" | "unauthorized" | "waiting" | "starting";
+type ConnectionState = "connecting" | "reconnecting" | "connected" | "disconnected" | "unauthorized" | "starting";
 type ControlState = "observe" | "agent" | "human" | "takeover_pending";
 type DesktopControl = { state: ControlState; binding_key: string; desktop_id?: string; owner?: string | null; epoch?: number; revision?: number };
-const labels = { connecting: "正在连接", reconnecting: "正在重新连接", connected: "已连接", disconnected: "连接已断开", unauthorized: "请重新登录", waiting: "等待 Bot 桌面", starting: "正在启动 Bot 桌面" };
+const labels = { connecting: "正在连接", reconnecting: "正在重新连接", connected: "已连接", disconnected: "连接已断开", unauthorized: "请重新登录", starting: "正在连接" };
 
 
 export function ComputerDesktop({ embedded = false, onClose, botId }: {
@@ -107,12 +107,12 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
       } finally { polling = false; }
     }
     refreshControl.current = pollControl;
-    function retryConnection(waiting = false) {
+    function retryConnection() {
       if (disposed || retryTimer !== undefined) return;
       if (rfb) rfb.viewOnly = true;
       client.current = null;
-      if (retries >= 5) { setState(waiting ? "waiting" : "disconnected"); return; }
-      setState(waiting ? "waiting" : wasConnected ? "reconnecting" : "connecting");
+      if (retries >= 5) { setState("disconnected"); return; }
+      setState(wasConnected ? "reconnecting" : "connecting");
       const delay = Math.min(1500 * 2 ** retries++, 10000);
       retryTimer = setTimeout(() => { retryTimer = undefined; void connect(); }, delay);
     }
@@ -168,23 +168,21 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
                 : { cache: "no-store", signal: signal() },
             );
             if (disposed) return;
-            if (!start && response.status === 404) { retryConnection(true); return; }
             if (!response.ok) {
               if (!start) { retryConnection(); return; }
-              const body = await response.json().catch(() => null);
-              throw new Error(body?.error?.message ?? body?.detail ?? "云桌面启动未确认，请重试");
+              throw new Error(response.status === 404 ? "没有可用的 Bot 电脑" : "暂时无法连接电脑，请重试");
             }
             slot = await response.json();
           } catch (error) {
             if (disposed) return;
             if (!start) throw error;
-            setActionError(error instanceof Error && error.name === "Error" ? error.message : "云桌面启动未确认，请重试");
+            setActionError(error instanceof Error && error.name === "Error" ? error.message : "暂时无法连接电脑，请重试");
             setState("disconnected");
             return;
           }
           if (disposed) return;
           slotPrepared ||= start;
-          if (slot.state !== "busy" && slot.state !== "idle") { retryConnection(true); return; }
+          if (slot.state !== "busy" && slot.state !== "idle") { retryConnection(); return; }
           if (start) setState(wasConnected ? "reconnecting" : "connecting");
           desktopRef.current = slot.desktopId;
           viewerRef.current ??= window.crypto.randomUUID();
@@ -335,9 +333,9 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
         }} />
       {state !== "connected" && <div className={styles.overlay} data-state={state} role="status">
         <div className={styles.stateGlyph}><BotGlyph shape="block" color="#858585" /></div>
-        <strong>{state === "starting" ? labels.starting : state === "connecting" ? "正在连接电脑" : state === "reconnecting" ? "正在重新连接电脑" : state === "disconnected" ? "电脑暂未连接" : state === "waiting" ? "等待 Bot 启动桌面" : "请重新登录"}</strong>
+        <strong>{state === "starting" || state === "connecting" ? "正在连接电脑" : state === "reconnecting" ? "正在重新连接电脑" : state === "disconnected" ? "电脑暂未连接" : "请重新登录"}</strong>
         {state === "unauthorized" ? <Link href="/login">登录 KAI</Link>
-          : state === "disconnected" || state === "waiting" ? <button onClick={() => setRevision(value => value + 1)}>重新连接</button> : null}
+          : state === "disconnected" ? <button onClick={() => setRevision(value => value + 1)}>重新连接</button> : null}
       </div>}
     </div>
     <footer className={styles.toolbar}>

@@ -270,7 +270,7 @@ describe("Bot desktop preview", () => {
     await flush();
     const endpoint = "/api/studio/assistant/computer/desktops/start?bot_id=specialist_a";
     expect(requests.filter(url => url === endpoint)).toHaveLength(1);
-    expect(host.textContent).toContain("正在启动 Bot 桌面");
+    expect(host.textContent).toContain("正在连接电脑");
     expect(sockets).toHaveLength(0);
     complete(Response.json({ desktopId: `desktop_${"a".repeat(24)}`, state: "idle" }));
     await flush();
@@ -282,7 +282,7 @@ describe("Bot desktop preview", () => {
     startFailure = true;
     await act(async () => root.render(<ComputerDesktop botId="specialist_a" />));
     await flush();
-    expect(host.textContent).toContain("云桌面启动未确认");
+    expect(host.textContent).toContain("暂时无法连接电脑");
     expect(sockets).toHaveLength(0);
     startFailure = false;
     await click("重新连接");

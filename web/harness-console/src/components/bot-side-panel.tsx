@@ -71,7 +71,7 @@ function BotComputerCard({ botId, ready, onOpen }: { botId: string; ready: boole
       else if (preview.ok) {
         const { state: value } = await preview.json() as { state: string };
         if (!controller.signal.aborted) setState(
-          ({ stopped: "休眠中", created: "等待启动", starting: "正在启动", idle: "待命", busy: "运行中", failed: "启动失败" } as Record<string, string>)[value] ?? null,
+          ({ stopped: "休眠中", created: "休眠中", starting: "正在连接", idle: "待命", busy: "运行中", failed: "暂不可用" } as Record<string, string>)[value] ?? null,
         );
       }
     }
