@@ -43,3 +43,49 @@ async def test_read_state_survives_concurrent_title_archive_and_delayed_reads(da
         raise AssertionError("cross-user write permitted")
     except NotFoundError:
         pass
+
+
+@pytest.mark.asyncio
+async def test_task_count_and_pages_exclude_bot_threads_before_pagination(database):
+    _, sessions = database
+    repo = PostgresAguiThreadBindingRepository(sessions)
+    now = datetime.now(UTC)
+    task = AguiThreadBinding(
+        tenant_id="qa",
+        user_id="owner",
+        thread_id="older",
+        session_id="older-session",
+        project_id="project",
+        title="Weekly Report",
+        created_at=now,
+        updated_at=now,
+    )
+    for index, changes in enumerate(
+        [
+            {},
+            {"thread_id": "report-newer", "title": None},
+            {"thread_id": "archived", "archived_at": now},
+            {"thread_id": "another-project", "project_id": "other"},
+            {"thread_id": "another-user", "user_id": "other"},
+            {"thread_id": "bot", "kind": "bot"},
+        ]
+    ):
+        await repo.add(
+            task.model_copy(
+                update={
+                    "session_id": f"session-{index}",
+                    "updated_at": now + timedelta(seconds=index),
+                    **changes,
+                },
+            )
+        )
+
+    filters = {"kind": "task", "project_id": "project", "query": "REPORT"}
+    first = await repo.list_for_user("qa", "owner", limit=1, **filters)
+    second = await repo.list_for_user("qa", "owner", limit=1, offset=1, **filters)
+    empty = await repo.list_for_user("qa", "owner", limit=1, offset=2, **filters)
+    assert [binding.thread_id for binding in first + second] == ["report-newer", "older"]
+    assert not empty
+    assert await repo.count_for_user("qa", "owner", **filters) == 2
+    assert await repo.count_for_user("qa", "owner", archived=True, **filters) == 1
+    assert await repo.count_for_user("qa", "owner", **(filters | {"query": "%"})) == 0

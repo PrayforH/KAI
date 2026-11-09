@@ -770,7 +770,27 @@ class InMemoryAguiThreadBindingRepository:
         query: str | None = None,
         kind: ThreadKind | None = None,
     ) -> list[AguiThreadBinding]:
-        matches = [
+        return sorted(
+            self._matching_threads(tenant_id, user_id, archived, project_id, query, kind),
+            key=lambda binding: (
+                binding.pinned_at is not None,
+                binding.pinned_at or binding.updated_at,
+                binding.thread_id,
+            ),
+            reverse=True,
+        )[offset : offset + limit]
+
+    async def count_for_user(
+        self, tenant_id: str, user_id: str, *, archived: bool = False,
+        project_id: str | None = None, query: str | None = None, kind: ThreadKind | None = None,
+    ) -> int:
+        return len(self._matching_threads(tenant_id, user_id, archived, project_id, query, kind))
+
+    def _matching_threads(
+        self, tenant_id: str, user_id: str, archived: bool,
+        project_id: str | None, query: str | None, kind: ThreadKind | None,
+    ) -> list[AguiThreadBinding]:
+        return [
             binding
             for (item_tenant, item_user, _), binding in self._by_thread.items()
             if item_tenant == tenant_id
@@ -781,15 +801,6 @@ class InMemoryAguiThreadBindingRepository:
             and (not query or query.lower() in (binding.title or "").lower()
                  or query.lower() in binding.thread_id.lower())
         ]
-        return sorted(
-            matches,
-            key=lambda binding: (
-                binding.pinned_at is not None,
-                binding.pinned_at or binding.updated_at,
-                binding.thread_id,
-            ),
-            reverse=True,
-        )[offset : offset + limit]
 
     async def update_title(
         self,

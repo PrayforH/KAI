@@ -82,6 +82,9 @@ describe("productivity command center", () => {
     expect(productivityCommandResults("运行中", tasks, agents)).toEqual([
       expect.objectContaining({ kind: "task", id: "thread-new" }),
     ]);
+    expect(productivityCommandResults("thread-old", tasks, agents)).toEqual([
+      expect.objectContaining({ kind: "task", id: "thread-old" }),
+    ]);
     expect(productivityCommandResults("产品团队", tasks, agents)).toEqual([
       expect.objectContaining({ kind: "agent", title: "团队研究员" }),
     ]);

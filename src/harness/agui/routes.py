@@ -819,11 +819,13 @@ async def fork_agui_thread(
 async def list_agui_threads(
     identity: Annotated[Identity, Depends(require_identity)],
     container: Annotated[ApiContainer, Depends(get_container)],
+    response: Response,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     archived: Annotated[bool, Query()] = False,
     project_id: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
     thread_id: Annotated[str | None, Query(min_length=1, max_length=256)] = None,
     offset: Annotated[int, Query(ge=0)] = 0,
+    query: Annotated[str | None, Query(alias="q", max_length=256)] = None,
 ) -> list[AguiThreadSummary]:
     ensure_permission(identity, "tasks:read")
     if project_id is not None:
@@ -836,15 +838,27 @@ async def list_agui_threads(
         )
         bindings = [binding] if project_id is None or binding.project_id == project_id else []
     else:
-        bindings = await container.agui.list_bindings(
-            tenant_id=identity.tenant_id,
-            user_id=identity.user_id,
-            limit=limit,
-            archived=archived,
-            project_id=project_id,
-            offset=offset,
-            kind="task",
+        query = (query or "").strip() or None
+        bindings, total = await asyncio.gather(
+            container.agui.list_bindings(
+                tenant_id=identity.tenant_id,
+                user_id=identity.user_id,
+                limit=limit,
+                offset=offset,
+                archived=archived,
+                project_id=project_id,
+                query=query,
+                kind="task",
+            ),
+            container.agui.count_task_bindings(
+                tenant_id=identity.tenant_id,
+                user_id=identity.user_id,
+                archived=archived,
+                project_id=project_id,
+                query=query,
+            ),
         )
+        response.headers["X-Total-Count"] = str(total)
     all_session_ids = [session_id for binding in bindings for session_id in binding.session_ids]
     resolved_sessions, runs = await asyncio.gather(
         container.sessions.list_for_ids(

@@ -234,6 +234,15 @@ class AguiRunService:
     ) -> StoredAguiThreadBinding:
         return await self._bindings.mark_read(tenant_id, user_id, thread_id, read_at=read_at)
 
+    async def count_task_bindings(
+        self, *, tenant_id: str, user_id: str, archived: bool,
+        project_id: str | None, query: str | None,
+    ) -> int:
+        return await self._bindings.count_for_user(
+            tenant_id, user_id, archived=archived, project_id=project_id,
+            query=query, kind="task",
+        )
+
     async def set_archived(
         self,
         *,

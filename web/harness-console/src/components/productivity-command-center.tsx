@@ -19,7 +19,7 @@ import {
   type ProductivityCommandResult,
 } from "../lib/productivity-command-center";
 import type { TaskAgent } from "../lib/task-agent-catalog";
-import { loadTasks, type TaskSummary } from "../lib/task-history";
+import { loadTasks, searchTasks, type TaskSummary } from "../lib/task-history";
 
 const actionDestinations: Partial<Record<ProductivityActionId, string>> = {
   "studio-agents": "/studio/agents",
@@ -52,13 +52,15 @@ export function ProductivityCommandCenter({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
+  const [search, setSearch] = useState<{ query: string; tasks: TaskSummary[] } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
-  const results = useMemo(
-    () => productivityCommandResults(query, tasks, agents),
-    [agents, query, tasks],
-  );
+  const results = useMemo(() => {
+    const matching = search?.query === query.trim() ? search.tasks : [];
+    const combined = new Map([...tasks, ...matching].map(task => [task.thread_id, task]));
+    return productivityCommandResults(query, [...combined.values()], agents);
+  }, [agents, query, search, tasks]);
   const availableAgentCount = useMemo(
     () => searchableTaskAgents(agents).length,
     [agents],
@@ -83,6 +85,18 @@ export function ProductivityCommandCenter({
     window.addEventListener("keydown", onShortcut);
     return () => window.removeEventListener("keydown", onShortcut);
   }, [open]);
+
+  useEffect(() => {
+    const text = query.trim();
+    if (!open || !text) return;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void searchTasks(text).then(found => {
+        if (active) setSearch({ query: text, tasks: found });
+      }).catch(() => { /* Keep matching recent tasks when server search is unavailable. */ });
+    }, 180);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [open, query]);
 
   useEffect(() => {
     if (!open) return;

@@ -7,6 +7,7 @@ from sqlalchemy import CursorResult, column, delete, func, or_, select, update
 from sqlalchemy import cast as sql_cast
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.sql.elements import ColumnElement
 
 from harness.core.errors import ConflictError, NotFoundError
 from harness.core.models import (
@@ -842,16 +843,11 @@ class PostgresAguiThreadBindingRepository:
         query: str | None = None,
         kind: ThreadKind | None = None,
     ) -> list[AguiThreadBinding]:
-        archived_at = AguiThreadBindingRow.payload["archived_at"].as_string()
         updated_at = AguiThreadBindingRow.payload["updated_at"].as_string()
         pinned = AguiThreadBindingRow.payload["pinned_at"]
         statement = (
             select(AguiThreadBindingRow.payload)
-            .where(
-                AguiThreadBindingRow.tenant_id == tenant_id,
-                AguiThreadBindingRow.user_id == user_id,
-                archived_at.is_not(None) if archived else archived_at.is_(None),
-            )
+            .where(*self._thread_filters(tenant_id, user_id, archived, project_id, query, kind))
             # Pinned tasks lead the recency order; the pinned timestamp only
             # breaks ties between pinned rows.
             .order_by(
@@ -863,20 +859,43 @@ class PostgresAguiThreadBindingRepository:
             .offset(offset)
             .limit(limit)
         )
+        async with self._sessions() as session:
+            payloads = (await session.execute(statement)).scalars().all()
+            return [AguiThreadBinding.model_validate(payload) for payload in payloads]
+
+    async def count_for_user(
+        self, tenant_id: str, user_id: str, *, archived: bool = False,
+        project_id: str | None = None, query: str | None = None, kind: ThreadKind | None = None,
+    ) -> int:
+        statement = select(func.count()).select_from(AguiThreadBindingRow).where(
+            *self._thread_filters(tenant_id, user_id, archived, project_id, query, kind)
+        )
+        async with self._sessions() as session:
+            return int(await session.scalar(statement) or 0)
+
+    @staticmethod
+    def _thread_filters(
+        tenant_id: str, user_id: str, archived: bool,
+        project_id: str | None, query: str | None, kind: ThreadKind | None,
+    ) -> list[ColumnElement[bool]]:
+        archived_at = AguiThreadBindingRow.payload["archived_at"].as_string()
+        filters: list[ColumnElement[bool]] = [
+            AguiThreadBindingRow.tenant_id == tenant_id,
+            AguiThreadBindingRow.user_id == user_id,
+            archived_at.is_not(None) if archived else archived_at.is_(None),
+        ]
         if project_id is not None:
-            statement = statement.where(AguiThreadBindingRow.project_id == project_id)
+            filters.append(AguiThreadBindingRow.project_id == project_id)
         if kind is not None:
             stored_kind = AguiThreadBindingRow.payload["kind"].as_string()
-            statement = statement.where(func.coalesce(stored_kind, "task") == kind)
+            filters.append(func.coalesce(stored_kind, "task") == kind)
         if query:
-            statement = statement.where(or_(
+            filters.append(or_(
                 func.lower(AguiThreadBindingRow.payload["title"].as_string())
                 .contains(query.lower(), autoescape=True),
                 func.lower(AguiThreadBindingRow.thread_id).contains(query.lower(), autoescape=True),
             ))
-        async with self._sessions() as session:
-            payloads = (await session.execute(statement)).scalars().all()
-            return [AguiThreadBinding.model_validate(payload) for payload in payloads]
+        return filters
 
     async def update_title(
         self,

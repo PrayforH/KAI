@@ -7,6 +7,8 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
+from fastapi import Response
+
 from harness.agui import routes
 from harness.agui.conversation_input import has_conversation_input
 from harness.api.dependencies import ApiContainer, Identity
@@ -211,6 +213,7 @@ class StatusTests(unittest.IsolatedAsyncioTestCase):
         container = SimpleNamespace(
             agui=SimpleNamespace(
                 list_bindings=AsyncMock(return_value=[binding]),
+                count_task_bindings=AsyncMock(return_value=1),
                 resolve_title=AsyncMock(return_value="任务"),
             ),
             sessions=SimpleNamespace(list_for_ids=AsyncMock(return_value=[session])),
@@ -218,14 +221,16 @@ class StatusTests(unittest.IsolatedAsyncioTestCase):
             approvals=SimpleNamespace(list_for_runs=AsyncMock(return_value=[])),
         )
         identity = Identity(tenant_id="tenant", user_id="user")
+        response = Response()
         with patch.object(routes, "_pending_input_response", AsyncMock(return_value=TEXT)):
             for _ in range(2):
                 tasks = await routes.list_agui_threads(
-                    identity, cast(ApiContainer, container), 50, False
+                    identity, cast(ApiContainer, container), response, 50, False
                 )
                 self.assertTrue(tasks[0].pending_input)
                 self.assertEqual(tasks[0].status, "succeeded")
                 self.assertNotIn("questions", tasks[0].model_dump_json())
+                self.assertEqual(response.headers["X-Total-Count"], "1")
             reply = run("reply", "running").model_copy(
                 update={
                     "created_at": NOW + timedelta(seconds=1),
@@ -234,7 +239,7 @@ class StatusTests(unittest.IsolatedAsyncioTestCase):
             )
             container.runs.list_for_sessions.return_value = [first, reply]
             tasks = await routes.list_agui_threads(
-                identity, cast(ApiContainer, container), 50, False
+                identity, cast(ApiContainer, container), response, 50, False
             )
             self.assertFalse(tasks[0].pending_input)
 

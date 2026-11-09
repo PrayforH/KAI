@@ -138,7 +138,7 @@ export function productivityCommandResults(
     needle,
     (task) => ({
       title: task.title,
-      searchText: `${task.title} ${task.agent_name} ${task.agent_version} ${task.status} ${taskStatusLabels[task.status] ?? ""}`,
+      searchText: `${task.title} ${task.thread_id} ${task.agent_name} ${task.agent_version} ${task.status} ${taskStatusLabels[task.status] ?? ""}`,
     }),
   )
     .slice(0, 6)

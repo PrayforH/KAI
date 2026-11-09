@@ -335,6 +335,11 @@ class AguiThreadBindingRepository(Protocol):
         kind: ThreadKind | None = None,
     ) -> list[AguiThreadBinding]: ...
 
+    async def count_for_user(
+        self, tenant_id: str, user_id: str, *, archived: bool = False,
+        project_id: str | None = None, query: str | None = None, kind: ThreadKind | None = None,
+    ) -> int: ...
+
     async def update_title(
         self,
         tenant_id: str,

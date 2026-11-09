@@ -466,6 +466,11 @@ export function loadTasks(archived = false): Promise<TaskSummary[]> {
   return request;
 }
 
+export function searchTasks(query: string): Promise<TaskSummary[]> {
+  const parameters = new URLSearchParams({ q: query, limit: "12" });
+  return json<TaskSummary[]>(`/api/agui/threads?${parameters}`, TASK_LIST_REQUEST_TIMEOUT_MS);
+}
+
 /**
  * Last fetched task list without a network round trip. Fresh sidebar mounts
  * (page navigations) seed from this so the 任务/智能体 lists render in place
