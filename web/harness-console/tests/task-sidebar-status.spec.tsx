@@ -309,12 +309,12 @@ it("restores five rows after collapsing a project, a section, or the whole sideb
 });
 
 
-it("keeps main and specialist contacts reachable after selecting a historical task", async () => {
+it("keeps main and specialist contacts reachable in tasks and Studio workspaces", async () => {
   loadTasks.mockResolvedValue([task("succeeded", "historical")]);
   const container = document.createElement("div"); document.body.appendChild(container);
   const root = createRoot(container);
   const select = vi.fn();
-  const render = (thread: string, activeNav: "assistant" | "tasks") => root.render(
+  const render = (thread: string, activeNav: NonNullable<Parameters<typeof TaskSidebar>[0]["activeNav"]>) => root.render(
     <TaskSidebar activeNav={activeNav} currentThreadId={thread} collapsed={false}
       onToggle={() => {}} onSelect={select} onNewTask={() => {}} />,
   );
@@ -328,7 +328,11 @@ it("keeps main and specialist contacts reachable after selecting a historical ta
     expect(container.querySelector('.bot-rail a[href="/assistant?bot=specialist-routing-test"]')?.textContent).toContain("路由验收子助理");
     expect(container.querySelector('.bot-rail [data-active="true"]')).toBeNull();
     await act(async () => root.render(<div />));
-    await act(async () => render("historical", "tasks"));
-    expect(container.querySelector('.bot-rail a[href="/assistant"]')).not.toBeNull();
+    for (const workspace of ["agents", "automation", "knowledge"] as const) {
+      await act(async () => render("", workspace));
+      expect(container.querySelector('.bot-rail a[href="/assistant"]')).not.toBeNull();
+      expect(container.querySelector('.bot-rail a[href="/assistant?bot=specialist-routing-test"]')).not.toBeNull();
+      expect(container.querySelector('.bot-rail [data-active="true"]')).toBeNull();
+    }
   } finally { await act(async () => root.unmount()); container.remove(); }
 });

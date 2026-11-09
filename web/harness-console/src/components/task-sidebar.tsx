@@ -570,7 +570,14 @@ export function TaskSidebar({
               visible={["knowledge", "agents", "automation", "skills"]}
             />
           </div>
-          {(activeNav === "assistant" || activeNav === "tasks") && <BotRail currentThreadId={currentThreadId} activeBotId={activeBotId} userId={user.user_id} tenantId={membership?.tenant_id} liveRun={runView} groupsState={[expandedTaskGroups, setExpandedTaskGroups]} />}
+          <BotRail
+            currentThreadId={currentThreadId}
+            activeBotId={activeBotId}
+            userId={user.user_id}
+            tenantId={membership?.tenant_id}
+            liveRun={runView}
+            groupsState={[expandedTaskGroups, setExpandedTaskGroups]}
+          />
           <div className="task-list-toolbar task-project-toolbar">
             <div className="task-list-heading">
               <button type="button" className="task-section-toggle"
