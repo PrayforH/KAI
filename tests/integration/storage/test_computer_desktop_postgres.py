@@ -4,11 +4,14 @@ One locked row per computer; concurrency uses real database locking on the
 isolated integration database. No production computer or lease is touched.
 """
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
+from harness.api.app import create_memory_app
 from harness.computer.desktop import (
     AGENT_TTL_SECONDS,
     DRAIN_WINDOW_SECONDS,
@@ -16,6 +19,7 @@ from harness.computer.desktop import (
     DesktopOccupiedError,
     DesktopState,
 )
+from harness.computer.desktop_registry import DesktopRegistry, bot_desktop_key
 from harness.computer.registry import ComputerRegistry
 from tests.integration.storage.conftest import DatabaseFixture
 
@@ -156,3 +160,23 @@ async def test_heartbeat_keeps_an_active_takeover_alive(database: DatabaseFixtur
         assert refreshed.expires_at > datetime.now(UTC) + timedelta(seconds=60)
     with pytest.raises(DesktopOccupiedError):
         await service.acquire_agent("tenant-a", "user-a", owner="worker-1")
+
+@pytest.mark.asyncio
+async def test_bot_preview_resolves_only_the_callers_slot(database: DatabaseFixture):
+    _, sessions = database
+    registry = DesktopRegistry(sessions)
+    app = create_memory_app()
+    app.state.container = replace(app.state.container, computer_desktops=registry)
+    computer = await ComputerRegistry(sessions).ensure(
+        "tenant-a", "user-1", provider="vm-computer", image="sha256:" + "a" * 64
+    )
+    slot = await registry.ensure(
+        "tenant-a", "user-1", bot_desktop_key("specialist_fixture"),
+        computer_id=computer.computer_id,
+    )
+    url = "/v1/studio/assistant/computer/desktops/preview?bot_id=specialist_fixture"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        owned = await client.get(url, headers={"X-Tenant-ID": "tenant-a", "X-User-ID": "user-1"})
+        other = await client.get(url, headers={"X-Tenant-ID": "tenant-a", "X-User-ID": "user-2"})
+    assert owned.json() == {"desktopId": slot.desktop_id, "state": "created"}
+    assert other.status_code == 404
