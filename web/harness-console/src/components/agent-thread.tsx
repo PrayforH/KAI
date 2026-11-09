@@ -1124,7 +1124,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
         <div className="composer-toolbar">
           <ComposerAddControl filesOnly={filesOnly} knowledgeDisabled={runLocked || showStop || videoGenerating}
             configureKnowledge={conversationScope?.onConfigureKnowledge} />
-          {canMentionAssistants && !botScope && <button type="button" className="aui-composer-attach composer-mention-trigger"
+          {assistantSurface && !botScope && <button type="button" className="aui-composer-attach composer-mention-trigger"
             aria-label="提及助理" title="提及助理" disabled={busy}
             aria-controls={options[0] && "bot" in options[0] ? "composer-suggestions" : undefined} onClick={openAssistantMentions}>@</button>}
 

@@ -366,7 +366,7 @@ it("keeps the task agent switcher separate from the shared add control", () => {
   expect(agentThreadSource.indexOf("<TaskAgentSwitcher")).toBeGreaterThan(guard);
   expect(agentThreadSource).toContain("<ComposerAddControl filesOnly={filesOnly}");
   expect(agentThreadSource).toContain("configureKnowledge={conversationScope?.onConfigureKnowledge}");
-  expect(agentThreadSource).toContain('aria-label="提及助理"');
+  expect(agentThreadSource).toMatch(/assistantSurface && !botScope && <button[^>]+aria-label="提及助理"/);
   expect(agentThreadSource).not.toContain("<TaskKnowledgeControl");
 });
 
