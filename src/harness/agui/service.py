@@ -1163,6 +1163,7 @@ class AguiRunService:
                     agent_owner_user_id=session.resolved_agent_owner_user_id,
                     space_id=session.team_ids[0] if session.team_ids else None,
                     project_id=stored.project_id,
+                    previous_session_ids=stored.previous_session_ids,
                     branch_snapshot_id=stored.branch_snapshot_id,
                 )
                 resolved_owner = agent_owner_user_id or user_id
@@ -1195,7 +1196,7 @@ class AguiRunService:
                         team_ids=(space_id,) if space_id else (),
                         connection_mode=connection_mode,
                     )
-                    await self._bindings.rebind_session(
+                    rebound = await self._bindings.rebind_session(
                         tenant_id,
                         user_id,
                         thread_id,
@@ -1209,8 +1210,9 @@ class AguiRunService:
                         agent_version=agent_version,
                         agent_owner_user_id=next_session.resolved_agent_owner_user_id,
                         space_id=space_id,
-                        project_id=stored.project_id,
-                        branch_snapshot_id=stored.branch_snapshot_id,
+                        project_id=rebound.project_id,
+                        previous_session_ids=rebound.previous_session_ids,
+                        branch_snapshot_id=rebound.branch_snapshot_id,
                     )
                 if stored.archived_at is not None:
                     await self._bindings.set_archived(
