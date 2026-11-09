@@ -141,6 +141,7 @@ from harness.reliability.controller import MaintenanceReaper, ReliabilityControl
 from harness.reliability.metrics import ReliabilityMetrics
 from harness.reliability.probes import CapacityProbe, QueueStats
 from harness.reliability.service import ReliabilityService
+from harness.runtime.artifact_tools import ArtifactPublisher
 from harness.runtime.cc_switch import CcSwitchClaudeConfig
 from harness.runtime.codex_tool_gate import CodexToolGate
 from harness.runtime.deepagents_factory import build_deepagents_runtime
@@ -1621,13 +1622,16 @@ def build_production_container(
         session: Session,
         handle: SandboxHandle | None = None,
         sandbox: SandboxProvider | None = None,
+        artifact_publisher: ArtifactPublisher | None = None,
     ):
         from harness.runtime.platform_tools import PlatformToolOverlay
         from harness.studio.runtime_builder import builder_overlay
 
         overlay = await builder_overlay(container, events, run, session)
         computer_overlay = (
-            await computer_runtime.gui_overlay(session, sandbox, handle)
+            await computer_runtime.gui_overlay(
+                session, sandbox, handle, artifact_publisher=artifact_publisher,
+            )
             if handle is not None and sandbox is not None
             else PlatformToolOverlay()
         )

@@ -142,6 +142,7 @@ from harness.reliability.metrics import ReliabilityMetrics
 from harness.reliability.probes import CapacityProbe, QueueStats
 from harness.reliability.repositories import InMemoryReliabilityRepository
 from harness.reliability.service import ReliabilityService
+from harness.runtime.artifact_tools import ArtifactPublisher
 from harness.runtime.base import AgentRuntime
 from harness.runtime.cc_switch import load_cc_switch_claude_config
 from harness.runtime.codex_tool_gate import CodexToolGate
@@ -1001,6 +1002,7 @@ def build_memory_container(
         session: Session,
         handle: SandboxHandle | None = None,
         sandbox: SandboxProvider | None = None,
+        _artifact_publisher: ArtifactPublisher | None = None,
     ):
         from harness.studio.runtime_builder import builder_overlay
 

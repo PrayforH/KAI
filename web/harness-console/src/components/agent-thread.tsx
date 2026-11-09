@@ -1800,7 +1800,8 @@ export function HarnessAssistantMessage() {
       <AssistantNoticeSource parts={content} />
     </AssistantMessage.Root>;
   }
-  if (duplicateAssistantReply && !isNotice && !controlSummary && !showingInputCard) return null;
+  if (duplicateAssistantReply && !isNotice && !controlSummary && !showingInputCard &&
+    !turnArtifacts.length && !turnPresentations.length) return null;
   const responseActions = !hasVideoGeneration ? (
     <div className="assistant-message-controls">
       <AssistantActionBar.Root className="assistant-feedback-actions" hideWhenRunning>

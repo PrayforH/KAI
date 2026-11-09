@@ -1,12 +1,16 @@
+import base64
 import hashlib
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from harness.config import Settings
+from harness.computer.gui_tools import computer_gui_overlay
 from harness.core.models import Artifact, ArtifactStatus
 from harness.observability.provider import Observability, build_observability
 from harness.runtime.artifact_tools import (
@@ -108,6 +112,37 @@ def publisher(
         events,
         synced,
     )
+
+
+@pytest.mark.asyncio
+async def test_screenshot_delivery_publishes_png_without_exporting_an_observation(tmp_path: Path):
+    service, artifacts, events, synced = publisher(tmp_path, limit=100)
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9GQAAAAASUVORK5CYII="
+    )
+    sandbox = SimpleNamespace(
+        session=SimpleNamespace(tenant_id="tenant-a", user_id="user-a"),
+        desktop_action=AsyncMock(return_value={"png_base64": base64.b64encode(png).decode()}),
+    )
+    handle = SimpleNamespace(provider="vm-computer", sandbox_id="sandbox-a")
+    overlay = computer_gui_overlay(
+        None, sandbox, handle, shared_bot_workspace=True, artifact_publisher=service,
+    )
+    screenshot = next(tool.handler for tool in overlay.tools if tool.name == "computer_screenshot")
+    observed = await screenshot({"scale": 0.5})
+    assert observed["content"][0]["type"] == "image"
+    assert not artifacts.uploads
+    delivered = await screenshot({"scale": 0.5, "deliver": True})
+    assert "artifact-1" in delivered["content"][0]["text"]
+    sandbox.desktop_action.assert_awaited_with(
+        handle, "screenshot", {"scale": 0.5}, expected_epoch=None,
+    )
+    assert artifacts.uploads == [{
+        "tenant_id": "tenant-a", "run_id": "run-a", "name": "电脑截图.png",
+        "media_type": "image/png", "content": png,
+    }]
+    assert events.appended[0]["event_type"] == "artifact.ready"
+    assert not synced
 
 
 @pytest.mark.asyncio

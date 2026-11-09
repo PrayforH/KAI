@@ -6,11 +6,14 @@ carries the epoch it acquired, and a user takeover fences stale callers with
 a clear message instead of a silent failure.
 """
 
+import base64
 import json
 from typing import Any, Protocol
 
 from harness.computer.desktop import DesktopControlService, DesktopOccupiedError
 from harness.computer.models import ComputerLeaseLostError
+from harness.core.errors import ConflictError
+from harness.runtime.artifact_tools import ArtifactPublisher
 from harness.runtime.platform_tools import PlatformTool, PlatformToolOverlay
 from harness.sandbox.base import SandboxHandle
 
@@ -101,6 +104,7 @@ def computer_gui_overlay(
     *,
     native_desktop: bool = False,
     shared_bot_workspace: bool = False,
+    artifact_publisher: ArtifactPublisher | None = None,
 ) -> PlatformToolOverlay:
     export_source = "Bot 工作目录" if shared_bot_workspace else "桌面 ~/deliver"
     export_enabled = handle.provider == "vm-computer" and (native_desktop or shared_bot_workspace)
@@ -144,13 +148,31 @@ def computer_gui_overlay(
     async def screenshot(arguments: dict[str, Any]) -> dict[str, Any]:
         # Forward region/scale untouched: the node validates them, and dropping
         # them here silently turns every cropped view into a full-screen one.
-        result = await act("screenshot", dict(arguments))
-        content: dict[str, Any] | None = result.get("content")  # type: ignore[assignment]
-        if content is not None:
-            return result
+        capture = dict(arguments)
+        deliver = capture.pop("deliver", False) is True
+        if deliver and artifact_publisher is None:
+            return {**_text("当前运行无法发布截图附件。"), "isError": True}
+        result = await act("screenshot", capture)
+        if "content" in result:
+            return {**result, "isError": True} if deliver else result
         png = result.get("png_base64")
         if not isinstance(png, str):
-            return _text("截图未返回画面数据。")
+            error_result = _text("截图未返回画面数据。")
+            if deliver:
+                error_result["isError"] = True
+            return error_result
+        if deliver:
+            assert artifact_publisher is not None
+            try:
+                image = base64.b64decode(png, validate=True)
+                if not image.startswith(b"\x89PNG\r\n\x1a\n"):
+                    raise ValueError("截图不是有效的 PNG。")
+                artifact = await artifact_publisher.publish_content(
+                    name="电脑截图.png", media_type="image/png", content=image,
+                )
+            except (ValueError, ConflictError) as error:
+                return {**_text(f"截图附件未发布：{error}"), "isError": True}
+            return _text(f"截图已发布为聊天附件：{artifact.name}（{artifact.artifact_id}）。")
         return {
             "content": [
                 {
@@ -318,7 +340,8 @@ def computer_gui_overlay(
                 name="computer_screenshot",
                 description=(
                     "获取桌面画面。可只截某个区域（region）或缩小（scale）以降低开销；"
-                    "能用 shell 读到的内容不要截图。"
+                    "截图是用户要的产物时设置 deliver=true，直接发布聊天附件。"
+                    "仅观察画面时省略 deliver。能用 shell 读到的内容不要截图。"
                 ),
                 schema={
                     "type": "object",
@@ -339,6 +362,10 @@ def computer_gui_overlay(
                             "minimum": 0.2,
                             "maximum": 1,
                             "description": "可选：缩放比例，默认 1.0",
+                        },
+                        "deliver": {
+                            "type": "boolean",
+                            "description": "截图是本次交付物时设为 true，直接交付 PNG 附件。",
                         },
                     },
                 },
@@ -384,5 +411,10 @@ def computer_gui_overlay(
         ),
         instructions=workspace_instructions
         + (NATIVE_INSTRUCTIONS + "\n" if native_desktop else "")
+        + (
+            "用户说“给我截图”“发截图”或把截屏图片作为结果时，直接用 computer_screenshot"
+            " 的 deliver=true。收到发布回执后，告知用户可查看附件，无需重新截图或导出。\n"
+            if artifact_publisher is not None else ""
+        )
         + INSTRUCTIONS,
     )

@@ -22,6 +22,7 @@ from harness.computer.vm import VmComputerDriver
 from harness.config import Settings
 from harness.core.errors import ConflictError, NotFoundError
 from harness.core.models import Run, Session
+from harness.runtime.artifact_tools import ArtifactPublisher
 from harness.runtime.platform_tools import PlatformToolOverlay
 from harness.sandbox.base import SandboxHandle
 from harness.storage.database import SessionFactory
@@ -237,7 +238,8 @@ class ComputerRuntime:
         return stopped
 
     async def gui_overlay(
-        self, session: Session, sandbox: object, handle: object
+        self, session: Session, sandbox: object, handle: object,
+        *, artifact_publisher: ArtifactPublisher | None = None,
     ) -> PlatformToolOverlay:
         """Desktop tools only for a live Computer run with its real handle."""
 
@@ -251,6 +253,7 @@ class ComputerRuntime:
             handle,
             native_desktop=sandbox.driver.native_desktop,
             shared_bot_workspace=sandbox.bot_desktop is not None,
+            artifact_publisher=artifact_publisher,
         )
         if not getattr(sandbox.driver, "acp", False):
             return gui

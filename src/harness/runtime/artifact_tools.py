@@ -120,8 +120,6 @@ class ArtifactPublisher:
         if self._read_workspace_file is not None:
             content = await self._read_workspace_file(relative.as_posix(), self._max_file_bytes)
             source_name = relative.name
-            if len(content) > self._max_file_bytes:
-                raise ValueError(f"artifact exceeds maximum size of {self._max_file_bytes} bytes")
         else:
             await self._sync_workspace()
             resolved = self._local_file(relative)
@@ -134,20 +132,39 @@ class ArtifactPublisher:
         content_type = (
             media_type or mimetypes.guess_type(source_name)[0] or "application/octet-stream"
         )
+        return await self.publish_content(
+            name=display_name or source_name,
+            media_type=content_type,
+            content=content,
+            source_path=relative.as_posix(),
+        )
+
+    async def publish_content(
+        self,
+        *,
+        name: str,
+        media_type: str,
+        content: bytes,
+        source_path: str | None = None,
+    ) -> Artifact:
+        """Publish bytes already captured by a run tool."""
+        if len(content) > self._max_file_bytes:
+            raise ValueError(f"artifact exceeds maximum size of {self._max_file_bytes} bytes")
         if (
             self._validate_generated_html
-            and content_type.split(";", 1)[0].strip().lower() == "text/html"
+            and media_type.split(";", 1)[0].strip().lower() == "text/html"
         ):
             await validate_html_document(content)
         artifact = await self._artifacts.upload(
             tenant_id=self._tenant_id,
             run_id=self._run_id,
-            name=display_name or source_name,
-            media_type=content_type,
+            name=name,
+            media_type=media_type,
             content=content,
         )
         payload = artifact.model_dump(mode="json")
-        payload["source_path"] = relative.as_posix()
+        if source_path is not None:
+            payload["source_path"] = source_path
         await self._events.append(
             tenant_id=self._tenant_id,
             run_id=self._run_id,

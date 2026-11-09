@@ -285,7 +285,10 @@ class RunOrchestrator:
         context_service: ContextService | None = None,
         sandbox_leases: SandboxLeaseService | None = None,
         platform_tools_factory: (
-            Callable[[Run, Session, SandboxHandle, SandboxProvider], Awaitable[PlatformToolOverlay]]
+            Callable[
+                [Run, Session, SandboxHandle, SandboxProvider, ArtifactPublisher | None],
+                Awaitable[PlatformToolOverlay],
+            ]
             | None
         ) = None,
     ) -> None:
@@ -1634,11 +1637,6 @@ class RunOrchestrator:
                 assert artifact_file_plane is not None
                 return await artifact_file_plane.download_file(path, max_bytes=max_bytes)
 
-            platform_tools = (
-                await self._platform_tools_factory(run, session, handle, active_sandbox)
-                if self._platform_tools_factory
-                else PlatformToolOverlay()
-            )
             interaction_guidance = await self._interaction_guidance(run)
             artifact_publisher = (
                 ArtifactPublisher(
@@ -1657,6 +1655,13 @@ class RunOrchestrator:
                 )
                 if self._artifacts is not None
                 else None
+            )
+            platform_tools = (
+                await self._platform_tools_factory(
+                    run, session, handle, active_sandbox, artifact_publisher
+                )
+                if self._platform_tools_factory
+                else PlatformToolOverlay()
             )
 
             recovery_projection = (
