@@ -15,6 +15,7 @@ from harness.computer.models import (
     ComputerState,
 )
 from harness.computer.registry import ComputerRegistry
+from harness.computer.storage import AssistantComputerRow
 from harness.storage.database import SessionFactory
 from tests.integration.storage.conftest import DatabaseFixture
 from tests.integration.storage.test_computer_registry_postgres import expire
@@ -72,6 +73,25 @@ def manager(sessions: SessionFactory, driver: Driver) -> ComputerManager:
     return ComputerManager(
         ComputerRegistry(sessions), driver, owner="worker-a", heartbeat_seconds=0.02
     )
+
+
+@pytest.mark.asyncio
+async def test_registered_computer_with_provider_instance_is_recovered(database: DatabaseFixture):
+    _, sessions = database
+    driver = Driver()
+    driver.recover_to = "physical-existing"
+    m = manager(sessions, driver)
+    await m.registry.ensure("t", "u", provider=driver.provider, image=driver.image)
+    async with sessions.begin() as session:
+        computer = await session.get(AssistantComputerRow, ("t", "u"))
+        assert computer is not None
+        computer.provider_ref = driver.recover_to
+
+    ready = await m.ready("t", "u")
+
+    assert ready.state is ComputerState.IDLE
+    assert ready.provider_ref == "physical-existing"
+    assert driver.calls == ["recover"]
 
 
 @pytest.mark.asyncio

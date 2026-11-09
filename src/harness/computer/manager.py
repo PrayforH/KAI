@@ -96,7 +96,10 @@ class ComputerManager:
                 and computer.provider_ref is not None
             ):
                 return computer
-            if computer.state in {ComputerState.REGISTERED, ComputerState.FAILED}:
+            if (
+                computer.state in {ComputerState.REGISTERED, ComputerState.FAILED}
+                and computer.provider_ref is None
+            ):
                 token = await self.registry.claim_start(tenant, user, owner=self.owner)
 
                 try:
