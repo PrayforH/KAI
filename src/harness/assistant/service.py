@@ -660,6 +660,7 @@ class AssistantService:
             append_to_history=True,
             deduplicate_active_input=False,
             assistant_dispatch=dispatched,
+            bot_specialist_id=specialist_id,
             quoted_message_context=quoted_message_context,
             request=RunAgentInput(
                 thread_id=target.thread_id,
@@ -1356,6 +1357,9 @@ class AssistantService:
                     agent_version=execution.brief.agent_version,
                     project_id=execution.brief.project_id,
                     assistant_dispatch=specialist_dispatch,
+                    bot_specialist_id=(
+                        objective.specialist_id if not objective.managed_thread_id else None
+                    ),
                     connection_mode="service_owned",
                     request=RunAgentInput(
                         thread_id=execution.thread_id,
@@ -1404,15 +1408,11 @@ class AssistantService:
     # ------------------------------------------------------------------
 
     async def _default_agent(self, tenant_id: str, user_id: str) -> tuple[str, str]:
-        """给"还没挑智能体"的新 Bot 一个可执行的默认值，不做隐性发布。"""
-        for specialist in await self.repository.list_specialists(tenant_id, user_id):
-            if specialist.agent_name and specialist.agent_version:
-                return specialist.agent_name, specialist.agent_version
-        published = await self._agents.list_published(tenant_id, user_id)
-        for version in published:
-            if version.name and version.version:
-                return version.name, version.version
-        raise ConflictError("还没有可用的执行智能体，请先发布一个")
+        """Resolve the platform's general assistant for a new Bot."""
+        agent = await self._agents.ensure_user_default(tenant_id, user_id)
+        if agent is None:
+            raise ConflictError("通用助手尚未配置")
+        return agent.name, agent.version
 
     async def has_specialist_conversation(
         self, tenant_id: str, user_id: str, specialist_id: str
@@ -1480,8 +1480,8 @@ class AssistantService:
         for item in siblings:
             if item.slug == slug:
                 return item, False
-        # 新建 Bot 不强制用户挑执行智能体：先沿用本人已有 Bot 用过的那个，
-        # 再退到本人已发布的第一份；真正跑哪份在执行时仍然可见。
+        # API callers can still provide a published coordinate explicitly.
+        # The default is always the platform general assistant.
         if not (agent_name and agent_version):
             agent_name, agent_version = await self._default_agent(tenant_id, user_id)
         await self._agents.get_published(tenant_id, user_id, agent_name, agent_version)
@@ -2012,8 +2012,6 @@ class AssistantService:
             user_id,
             name=name,
             description=description,
-            agent_name=agent_name,
-            agent_version=agent_version,
         )
         # 职责的执行绑定永远来自 Bot 自己的记录（新建时已解析并校验），
         # 调用方传来的版本只做提示，不进执行。

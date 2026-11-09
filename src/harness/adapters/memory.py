@@ -20,6 +20,7 @@ from harness.core.models import (
     RunStatus,
     Session,
     ThreadFile,
+    ThreadKind,
     UserMemory,
     WorkspaceSnapshot,
 )
@@ -767,12 +768,14 @@ class InMemoryAguiThreadBindingRepository:
         project_id: str | None = None,
         offset: int = 0,
         query: str | None = None,
+        kind: ThreadKind | None = None,
     ) -> list[AguiThreadBinding]:
         matches = [
             binding
             for (item_tenant, item_user, _), binding in self._by_thread.items()
             if item_tenant == tenant_id
             and item_user == user_id
+            and (kind is None or binding.kind == kind)
             and (binding.archived_at is not None) is archived
             and (project_id is None or binding.project_id == project_id)
             and (not query or query.lower() in (binding.title or "").lower()

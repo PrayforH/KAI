@@ -17,7 +17,7 @@ from harness.agui.response import final_response_text
 from harness.agui.service import AguiRunService
 from harness.application.agents import AgentService
 from harness.application.runs import RunService
-from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
+from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD, primary_specialist_id
 from harness.assistant.controls import CONTROL_HELP, RUN_LABELS, ControlIntent
 from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
 from harness.core.models import InputArtifact, Run
@@ -100,6 +100,11 @@ class PersonalConversation:
             space_id=space,
             project_id=getattr(record, "project_id", None),
             connection_mode="service_owned",
+            bot_specialist_id=(
+                primary_specialist_id(tenant_id, user_id)
+                if target_thread == PERSONAL_ASSISTANT_THREAD
+                else None
+            ),
             # Distinct external messages must retain their own durable key,
             # including two identical greetings while another turn is active.
             deduplicate_active_input=False,

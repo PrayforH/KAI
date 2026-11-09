@@ -34,7 +34,7 @@ from harness.context.models import SessionContextDigest
 from harness.context.service import ContextService
 from harness.core.errors import ConflictError, NotFoundError
 from harness.core.models import AguiThreadBinding as StoredAguiThreadBinding
-from harness.core.models import Run
+from harness.core.models import Run, ThreadKind
 from harness.core.ports import AguiThreadBindingRepository
 from harness.projects.models import ProjectRunContext
 from harness.projects.skill_snapshots import ProjectSkillSnapshots
@@ -216,6 +216,7 @@ class AguiRunService:
         project_id: str | None = None,
         offset: int = 0,
         query: str | None = None,
+        kind: ThreadKind | None = None,
     ) -> list[StoredAguiThreadBinding]:
         return await self._bindings.list_for_user(
             tenant_id,
@@ -224,6 +225,7 @@ class AguiRunService:
             archived=archived,
             project_id=project_id,
             offset=offset,
+            kind=kind,
             **({"query": query} if query is not None else {}),
         )
 
@@ -385,6 +387,7 @@ class AguiRunService:
         deduplicate_active_input: bool = True,
         append_to_history: bool = False,
         assistant_dispatch: bool = False,
+        bot_specialist_id: str | None = None,
     ) -> AguiRunCreation:
         prompt, input_artifact_ids = _latest_user_input(request)
         conversation_prompts = _user_prompts(request)
@@ -406,6 +409,7 @@ class AguiRunService:
                 space_id=space_id,
                 connection_mode=connection_mode,
                 project_id=project_id,
+                bot_specialist_id=bot_specialist_id,
             )
             project_context = (
                 await self._project_context(tenant_id, user_id, binding.project_id)
@@ -1136,6 +1140,7 @@ class AguiRunService:
         space_id: str | None,
         connection_mode: Literal["caller_owned", "service_owned"] = "caller_owned",
         project_id: str | None = None,
+        bot_specialist_id: str | None = None,
     ) -> AguiThreadBinding:
         async with self._lock:
             try:
@@ -1240,6 +1245,8 @@ class AguiRunService:
                     thread_id=thread_id,
                     project_id=project_id,
                     session_id=session.session_id,
+                    kind="bot" if bot_specialist_id is not None else "task",
+                    specialist_id=bot_specialist_id,
                     created_at=timestamp,
                     updated_at=timestamp,
                 )

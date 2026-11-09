@@ -19,6 +19,7 @@ from harness.core.models import (
     InputArtifact,
     Session,
     ThreadFile,
+    ThreadKind,
     UserMemory,
     WorkspaceSnapshot,
 )
@@ -839,6 +840,7 @@ class PostgresAguiThreadBindingRepository:
         project_id: str | None = None,
         offset: int = 0,
         query: str | None = None,
+        kind: ThreadKind | None = None,
     ) -> list[AguiThreadBinding]:
         archived_at = AguiThreadBindingRow.payload["archived_at"].as_string()
         updated_at = AguiThreadBindingRow.payload["updated_at"].as_string()
@@ -863,6 +865,9 @@ class PostgresAguiThreadBindingRepository:
         )
         if project_id is not None:
             statement = statement.where(AguiThreadBindingRow.project_id == project_id)
+        if kind is not None:
+            stored_kind = AguiThreadBindingRow.payload["kind"].as_string()
+            statement = statement.where(func.coalesce(stored_kind, "task") == kind)
         if query:
             statement = statement.where(or_(
                 func.lower(AguiThreadBindingRow.payload["title"].as_string())

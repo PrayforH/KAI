@@ -18,6 +18,7 @@ from harness.core.models import (
     RunStatus,
     Session,
     ThreadFile,
+    ThreadKind,
     UserMemory,
     WorkspaceSnapshot,
 )
@@ -331,6 +332,7 @@ class AguiThreadBindingRepository(Protocol):
         project_id: str | None = None,
         offset: int = 0,
         query: str | None = None,
+        kind: ThreadKind | None = None,
     ) -> list[AguiThreadBinding]: ...
 
     async def update_title(

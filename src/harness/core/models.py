@@ -276,6 +276,9 @@ class ProcessedInput(FrozenModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+ThreadKind = Literal["task", "bot"]
+
+
 class AguiThreadBinding(FrozenModel):
     tenant_id: str
     user_id: str
@@ -284,6 +287,8 @@ class AguiThreadBinding(FrozenModel):
     previous_session_ids: tuple[str, ...] = ()
     branch_snapshot_id: str | None = None
     branched_from_thread_id: str | None = None
+    kind: ThreadKind = "task"
+    specialist_id: str | None = None
     title: str | None = None
     title_source: Literal["fallback", "model", "user"] | None = None
     title_updated_at: datetime | None = None

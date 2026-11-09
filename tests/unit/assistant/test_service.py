@@ -169,3 +169,18 @@ async def test_routing_parent_must_be_the_owned_main_conversation():
     agui.get_thread_record_for_session.assert_awaited_with(
         tenant_id="t", user_id="u", session_id="session"
     )
+
+
+@pytest.mark.asyncio
+async def test_new_bot_uses_general_assistant_even_with_an_existing_vertical_bot():
+    service, _, repo, _, _, _, _ = setup()
+    repo.list_specialists.return_value = [
+        SimpleNamespace(slug="vertical", agent_name="vertical", agent_version="1", config={})
+    ]
+    repo.create_specialist.side_effect = lambda specialist: specialist
+    service._agents.ensure_user_default.return_value = SimpleNamespace(
+        name="lead-agent", version="2"
+    )
+    specialist, created = await service.create_specialist("t", "u", name="新助手", description="")
+    assert created
+    assert (specialist.agent_name, specialist.agent_version) == ("lead-agent", "2")

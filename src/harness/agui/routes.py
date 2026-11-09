@@ -603,6 +603,11 @@ async def run_agui_agent(
         connection_mode=connection_mode,
         project_id=project_id,
         quoted_message_context=quoted_context,
+        bot_specialist_id=(
+            primary_specialist_id(identity.tenant_id, identity.user_id)
+            if body.thread_id == PERSONAL_ASSISTANT_THREAD
+            else None
+        ),
         append_to_history=(props.get("appendToHistory") is True
                            and props.get("conversationSurface") == "assistant"),
     )
@@ -835,6 +840,7 @@ async def list_agui_threads(
             archived=archived,
             project_id=project_id,
             offset=offset,
+            kind="task",
         )
     all_session_ids = [session_id for binding in bindings for session_id in binding.session_ids]
     resolved_sessions, runs = await asyncio.gather(
