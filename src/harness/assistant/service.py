@@ -909,6 +909,31 @@ class AssistantService:
             agentOwnerUserId=binding.agent_owner_user_id, spaceId=binding.space_id,
         )
 
+    async def specialist_for_thread(
+        self, tenant_id: str, user_id: str, thread_id: str,
+    ) -> str | None:
+        """Identify an owned Bot conversation before it has a Run or binding."""
+        try:
+            if thread_id.startswith("assistant_specialist_"):
+                specialist_id = thread_id.removeprefix("assistant_")
+            elif thread_id.startswith("assistant_objective_"):
+                duty = await self.repository.get(
+                    tenant_id, user_id, thread_id.removeprefix("assistant_")
+                )
+                if duty.specialist_id is None or duty.managed_thread_id is not None:
+                    return None
+                specialist_id = duty.specialist_id
+            else:
+                return None
+            specialist = await self.repository.get_specialist(tenant_id, user_id, specialist_id)
+        except NotFoundError:
+            return None
+        if specialist.status is SpecialistStatus.ARCHIVED:
+            return None
+        if await self.specialist_thread(tenant_id, user_id, specialist) == thread_id:
+            return specialist.specialist_id
+        return None
+
     async def resolve_targets(self, tenant_id: str, user_id: str, query: str, *, limit: int = 5):
         """Resolve owned contacts and tasks without manufacturing a replacement thread."""
         value = unicodedata.normalize("NFKC", query).strip()

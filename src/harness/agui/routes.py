@@ -592,6 +592,13 @@ async def run_agui_agent(
         body.thread_id,
         props.get("replyTo"),
     )
+    bot_specialist_id = None
+    if body.thread_id == PERSONAL_ASSISTANT_THREAD:
+        bot_specialist_id = primary_specialist_id(identity.tenant_id, identity.user_id)
+    elif container.assistant is not None and project_id is None:
+        bot_specialist_id = await container.assistant.specialist_for_thread(
+            identity.tenant_id, identity.user_id, body.thread_id,
+        )
     creation = await container.agui.create_run_with_result(
         tenant_id=identity.tenant_id,
         user_id=identity.user_id,
@@ -603,11 +610,7 @@ async def run_agui_agent(
         connection_mode=connection_mode,
         project_id=project_id,
         quoted_message_context=quoted_context,
-        bot_specialist_id=(
-            primary_specialist_id(identity.tenant_id, identity.user_id)
-            if body.thread_id == PERSONAL_ASSISTANT_THREAD
-            else None
-        ),
+        bot_specialist_id=bot_specialist_id,
         append_to_history=(props.get("appendToHistory") is True
                            and props.get("conversationSurface") == "assistant"),
     )

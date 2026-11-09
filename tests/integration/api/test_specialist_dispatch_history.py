@@ -1,6 +1,8 @@
 """Generated specialist briefs stay in execution context, not duplicated user bubbles."""
 
 import json
+from dataclasses import replace
+from unittest.mock import AsyncMock
 
 import pytest
 from ag_ui.core import RunAgentInput, UserMessage
@@ -9,6 +11,8 @@ from httpx import ASGITransport, AsyncClient
 from harness.agui.routes import _history_messages_for_run
 from harness.api.app import create_memory_app
 from harness.api.dependencies import Identity
+from harness.assistant.service import AssistantService
+from harness.core.errors import NotFoundError
 from tests.integration.api.test_agui_history_pagination import FIXTURE_MANIFEST, HEADERS
 
 
@@ -103,3 +107,50 @@ async def test_bot_work_stays_in_history_without_consuming_task_page_slots():
         )
         assert history.status_code == 200
         assert any(item["content"] == "核对原文" for item in history.json()["messages"])
+
+
+@pytest.mark.asyncio
+async def test_first_web_turn_resolves_owned_bot_before_creating_a_binding():
+    app = create_memory_app(auto_execute=True)
+    container = app.state.container
+    repo = AsyncMock()
+    repo.list_specialists.return_value = []
+    repo.create_specialist.side_effect = lambda specialist: specialist
+    assistant = AssistantService(
+        repo, agents=container.agents, auth=container.auth, projects=container.projects,
+        agui=container.agui, runs=container.runs, events=container.events,
+    )
+    app.state.container = replace(container, assistant=assistant)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        bot, _ = await assistant.create_specialist(
+            "tenant-a", "user-1", name="Web Bot", description="",
+            agent_name="echo-agent", agent_version="0.1.0",
+        )
+        bot_thread = f"assistant_{bot.specialist_id}"
+        unknown_thread = "assistant_specialist_unowned"
+
+        async def get_specialist(tenant_id, user_id, specialist_id):
+            if (tenant_id, user_id, specialist_id) == ("tenant-a", "user-1", bot.specialist_id):
+                return bot
+            raise NotFoundError("Bot not found")
+
+        repo.get_specialist.side_effect = get_specialist
+        for thread_id in (unknown_thread, bot_thread):
+            turn = RunAgentInput(
+                thread_id=thread_id, run_id=thread_id, state={},
+                messages=[UserMessage(id="question", content="核对原文")],
+                tools=[], context=[], forwarded_props={"conversationSurface": "assistant"},
+            )
+            result = await client.post(
+                "/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
+                headers=HEADERS, json=turn.model_dump(mode="json", by_alias=True),
+            )
+            assert result.status_code == 200
+
+        tasks = await client.get("/v1/agui/threads?limit=1", headers=HEADERS)
+        assert [row["thread_id"] for row in tasks.json()] == [unknown_thread]
+        binding = await container.agui.get_thread_record(
+            tenant_id="tenant-a", user_id="user-1", thread_id=bot_thread,
+        )
+        assert (binding.kind, binding.specialist_id) == ("bot", bot.specialist_id)
