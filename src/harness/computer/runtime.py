@@ -2,6 +2,7 @@
 
 import re
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 
 import httpx
 
@@ -256,6 +257,18 @@ class ComputerRuntime:
             artifact_publisher=artifact_publisher,
         )
         if not getattr(sandbox.driver, "acp", False):
+            if sandbox.driver.provider != REMOTE_PROVIDER and any(
+                target.get("provider") == REMOTE_PROVIDER
+                and target.get("tenant_id") == session.tenant_id
+                and target.get("user_id") == session.user_id
+                for target in self.settings.assistant_computer_targets
+            ):
+                return replace(gui, instructions=gui.instructions + (
+                    "\n本次执行目标是云电脑。右侧预览本地电脑不会更改执行目标。"
+                    "如果用户明确要求在已绑定的本地电脑上操作，先请用户在右侧选本地电脑，"
+                    "点击「供助理使用」后重试。当前云电脑的 Shell、文件和网络只能说明云电脑的情况；"
+                    "不要探测本地电脑的 SSH、寻找跳板凭据，或据此判断本地软件及登录状态。"
+                ))
             return gui
         acp = computer_acp_overlay(sandbox, handle)
         return PlatformToolOverlay(tools=(*gui.tools, *acp.tools),
