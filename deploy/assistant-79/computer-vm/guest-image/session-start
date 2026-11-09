@@ -30,7 +30,7 @@ runtime="/run/kai-bots/$desktop_id"
 install -d -m 0700 -o "$UNIX_USER" -g "$UNIX_USER" "$runtime"
 exec setpriv --reuid="$uid" --regid="$gid" --init-groups \
   env -i PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 TZ="${TZ:-Asia/Shanghai}" \
-  HOME="$HOME" DISPLAY=":$DISPLAY_NUMBER" XAUTHORITY="$runtime/Xauthority" \
+  HOME="$HOME" WORKSPACE="$WORKSPACE" DISPLAY=":$DISPLAY_NUMBER" XAUTHORITY="$runtime/Xauthority" \
   XDG_RUNTIME_DIR="$runtime" KAI_DESKTOP_RUNTIME="$runtime" \
   DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" \
   DESKTOP_ID="$desktop_id" VNC_SOCKET="$VNC_SOCKET" \

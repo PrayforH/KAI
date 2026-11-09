@@ -275,7 +275,7 @@ class Workspace:
 
 def main() -> None:
     try:
-        result = Workspace(Path("/home/kai/workspace")).invoke(sys.argv[1], json.load(sys.stdin))
+        result = Workspace(Path.cwd()).invoke(sys.argv[1], json.load(sys.stdin))
         print(json.dumps(result))
     except (OSError, ValueError, KeyError, TypeError):
         # File names, transferred bytes and exception details may be private.

@@ -61,6 +61,7 @@ from harness.computer.conventions import (
 from harness.computer.desktop import DesktopControlService
 from harness.computer.desktop_registry import bot_desktop_key
 from harness.computer.runtime import ComputerRuntime
+from harness.computer.sandbox import ComputerSandboxProvider
 from harness.computer.targets import ComputerTarget, ComputerTargetService
 from harness.computer.vm import PROVIDER as VM_PROVIDER
 from harness.config import Settings
@@ -1631,7 +1632,9 @@ def build_production_container(
             else PlatformToolOverlay()
         )
         conventions_overlay = (
-            computer_conventions_overlay()
+            computer_conventions_overlay(
+                handle.remote_workspace if isinstance(sandbox, ComputerSandboxProvider) else None
+            )
             if handle is not None and sandbox is not None
             else PlatformToolOverlay()
         )

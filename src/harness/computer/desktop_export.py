@@ -11,6 +11,7 @@ import json
 import os
 import re
 import stat
+import sys
 import time
 from collections.abc import Callable
 from contextlib import ExitStack, contextmanager
@@ -124,23 +125,33 @@ def task_writer(check: Callable[[], None]):
         os.setgroups(groups)
 
 
-def copy_file(payload: dict[str, Any], check: Callable[[], None]) -> dict[str, Any]:
+def copy_file(
+    payload: dict[str, Any], check: Callable[[], None], *, workspace: Path | None = None,
+) -> dict[str, Any]:
     parts, name = arguments(payload)
     check()
-    with directory(OUTBOX, parts[:-1]) as source_dir:
+    with directory(workspace or OUTBOX, parts[:-1]) as source_dir:
         source = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=source_dir)
     try:
+        if workspace is not None:
+            uid = os.geteuid()
+            return copy_to_workspace(
+                source, name, regular(source, uid), check, workspace=workspace, uid=uid,
+            )
         before = regular(source, DESKTOP_UID)
         with task_writer(check) as guarded_check:
-            return copy_to_workspace(source, name, before, guarded_check)
+            return copy_to_workspace(
+                source, name, before, guarded_check, workspace=WORKSPACE, uid=TASK_UID,
+            )
     finally:
         os.close(source)
 
 
 def copy_to_workspace(
-    source: int, name: str, before: os.stat_result, check: Callable[[], None]
+    source: int, name: str, before: os.stat_result, check: Callable[[], None],
+    *, workspace: Path, uid: int,
 ) -> dict[str, Any]:
-    with directory(WORKSPACE, ["outputs", "desktop"], create=True) as target_dir:
+    with directory(workspace, ["outputs", "desktop"], create=True) as target_dir:
         temporary = f".desktop.kai-upload-{uuid4().hex}"
         output = None
         staging = None
@@ -188,7 +199,7 @@ def copy_to_workspace(
                     name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=target_dir
                 )
                 try:
-                    info = regular(existing, TASK_UID)
+                    info = regular(existing, uid)
                     if info.st_size != total or digest(existing, check) != value.hexdigest():
                         raise FileExistsError("export name is already used; choose another name")
                     if signature(os.fstat(existing)) != signature(info):
@@ -234,14 +245,23 @@ def run(request: dict[str, Any], *, state_root: Path) -> dict[str, Any]:
         ):
             raise PermissionError("desktop export lost its execution lease")
 
+    return export_result(request["payload"], check)
+
+
+def export_result(
+    payload: dict[str, Any], check: Callable[[], None], *, workspace: Path | None = None,
+) -> dict[str, Any]:
     try:
-        return copy_file(request["payload"], check)
+        return copy_file(payload, check, workspace=workspace)
     except FileNotFoundError:
         return {
             "ok": False,
             "error": {
                 "code": "FILE_NOT_FOUND",
-                "message": "请先将已完成的文件保存到桌面 ~/deliver，再用相对文件名导出",
+                "message": (
+                    "请先将文件保存到 Bot 工作目录，再用相对路径导出" if workspace is not None
+                    else "请先将已完成的文件保存到桌面 ~/deliver，再用相对文件名导出"
+                ),
             },
         }
     except FileExistsError:
@@ -254,3 +274,10 @@ def run(request: dict[str, Any], *, state_root: Path) -> dict[str, Any]:
         }
     except ValueError as error:
         return {"ok": False, "error": {"code": "INVALID_EXPORT", "message": str(error)}}
+
+
+if __name__ == "__main__":
+    # The Bot exporter inherits the active execution namespace and slot UID.
+    if os.geteuid() == 0:
+        raise PermissionError("Bot workspace export requires its unprivileged account")
+    print(json.dumps(export_result(json.load(sys.stdin), lambda: None, workspace=Path.cwd())))

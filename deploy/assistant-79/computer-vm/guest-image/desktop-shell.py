@@ -18,6 +18,7 @@ from appearance import THEMES, WALLPAPERS, Appearance
 from PIL import Image, ImageDraw, ImageOps, ImageTk
 
 HOME = Path.home()
+WORKSPACE = Path(os.environ.get("WORKSPACE", str(HOME)))
 RUNTIME = Path(os.environ.get("KAI_DESKTOP_RUNTIME", "/run/kai-desktop"))
 APPS = {
     "browser": (
@@ -32,7 +33,7 @@ APPS = {
         ],
     ),
     "terminal": ("终端", "x-terminal-emulator", []),
-    "files": ("文件", "thunar", [str(HOME)]),
+    "files": ("文件", "thunar", [str(WORKSPACE)]),
     "editor": ("文本编辑", "mousepad", []),
 }
 
@@ -189,7 +190,7 @@ class Desktop:
             [path, *arguments],
             stdin=subprocess.DEVNULL,
             start_new_session=True,
-            cwd=HOME,
+            cwd=WORKSPACE,
             env={
                 **os.environ,
                 "GTK_THEME": "Adwaita:dark" if self.settings["theme"] == "dark" else "Adwaita",

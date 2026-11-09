@@ -37,6 +37,15 @@ AGENT_GID = 28000
 HOME = "/home/kai"
 MAX_SPEC_BYTES = 40 * 1024 * 1024
 
+# subprocess sets cwd before dropping UID. Open the Bot's working directory
+# after that drop so a replaced path cannot grant traversal as root.
+_SCOPED_EXEC = """import os, sys
+fd = os.open(sys.argv[1], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+os.fchdir(fd)
+os.close(fd)
+os.execvpe(sys.argv[2], sys.argv[2:], os.environ)
+"""
+
 
 @dataclass(frozen=True)
 class Token:
@@ -334,6 +343,13 @@ class Guard:
             raise ValueError("invalid execution request")
         raw_input = spec.get("stdin_base64")
         content = base64.b64decode(raw_input, validate=True) if isinstance(raw_input, str) else None
+        command = cast(list[str], argv)
+        scoped = self.home != HOME
+        if scoped:
+            if cwd != f"{self.home}/workspace":
+                raise ValueError("execution directory does not match its Bot slot")
+            command = [sys.executable, "-I", "-c", _SCOPED_EXEC, cwd, *command]
+            cwd = "/"
         with self._locked():
             state = self._read()
             self._live(state, token)
@@ -351,7 +367,7 @@ class Guard:
                 _setns(mount_ns, 0x00020000)
                 _setns(pid_ns, 0x20000000)
                 process = subprocess.Popen(
-                    cast(list[str], argv),
+                    command,
                     cwd=cwd,
                     env={
                         "PATH": f"{self.home}/.local/bin:{self.home}/bin:"
@@ -363,6 +379,7 @@ class Guard:
                     user=self.uid,
                     group=self.gid,
                     extra_groups=[],
+                    umask=0o077 if scoped else -1,
                     stdin=subprocess.PIPE if content is not None else subprocess.DEVNULL,
                     close_fds=True,
                     start_new_session=True,
@@ -519,13 +536,20 @@ def main() -> int:
         )
         guard.namespace(Token(int(sys.argv[6]), sys.argv[7]))
         return 0
-    if len(sys.argv) not in (3, 4) or sys.argv[1] not in {
+    if len(sys.argv) not in (3, 4, 7) or sys.argv[1] not in {
         "init", "activate", "renew", "deactivate", "exec"
     }:
         raise ValueError("expected supervisor action and private request path")
     # A Bot slot runs its own copy of this state machine, so one slot's
     # activation can never drain another slot's namespace.
-    guard = Guard(Path(sys.argv[3])) if len(sys.argv) == 4 else Guard()
+    if len(sys.argv) == 7:
+        if sys.argv[1] != "exec":
+            raise ValueError("Bot identity is only used for execution")
+        guard = Guard(
+            Path(sys.argv[3]), uid=int(sys.argv[4]), gid=int(sys.argv[5]), home=sys.argv[6],
+        )
+    else:
+        guard = Guard(Path(sys.argv[3])) if len(sys.argv) == 4 else Guard()
     spec = guard.consume(Path(sys.argv[2]))
     token = Token.parse(spec)
     if sys.argv[1] == "exec":

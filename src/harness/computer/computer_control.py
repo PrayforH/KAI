@@ -34,6 +34,27 @@ ENVIRONMENT = {"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:
                "LANG": "C.UTF-8"}
 
 
+def _slot_key(desktop_id: str) -> str:
+    if not DESKTOP_ID.fullmatch(desktop_id):
+        raise ValueError("desktop id is invalid")
+    return hashlib.sha256(desktop_id.encode()).hexdigest()
+
+
+def _validate_account(account: pwd.struct_passwd, home: str) -> pwd.struct_passwd:
+    if (
+        not UID_BASE <= account.pw_uid < UID_BASE + UID_SPAN
+        or account.pw_gid != account.pw_uid
+        or account.pw_dir != home
+    ):
+        raise ValueError("desktop account does not match the slot")
+    return account
+
+
+def slot_account(desktop_id: str) -> pwd.struct_passwd:
+    key = _slot_key(desktop_id)
+    return _validate_account(pwd.getpwnam(f"kai-bot-{key[:8]}"), str(BOTS / key[:16]))
+
+
 @dataclass(frozen=True)
 class SessionPlan:
     desktop_id: str
@@ -67,15 +88,14 @@ def plan(
     vnc_socket: str,
 ) -> SessionPlan:
     """Validate a caller's slot description and derive the only allowed paths."""
-    if not DESKTOP_ID.fullmatch(desktop_id):
-        raise ValueError("desktop id is invalid")
+    key = _slot_key(desktop_id)
     if not UNIX_USER.fullmatch(unix_user):
         raise ValueError("desktop unix user is invalid")
     if display.startswith(":"):
         display = display[1:]
     if not DISPLAY.fullmatch(display):
         raise ValueError("desktop display is invalid")
-    short = hashlib.sha256(desktop_id.encode()).hexdigest()[:16]
+    short = key[:16]
     if profile != f"{BOTS}/{short}/chromium" or workspace != f"{BOTS}/{short}/workspace":
         raise ValueError("desktop profile or workspace escaped its bot directory")
     if vnc_socket != f"{RUNTIME}/{desktop_id}/vnc.sock":
@@ -200,12 +220,7 @@ def _ensure_account(session: SessionPlan) -> None:
     if account is not None:
         # A slot is addressed by its own hash-derived name; a changed UID would
         # silently hand another Bot's files to this one.
-        if (
-            not UID_BASE <= account.pw_uid < UID_BASE + UID_SPAN
-            or account.pw_gid != account.pw_uid
-            or account.pw_dir != session.home
-        ):
-            raise ValueError("desktop account does not match the slot")
+        _validate_account(account, session.home)
         return
     identifier = _allocate_uid(session.desktop_id)
     subprocess.run(

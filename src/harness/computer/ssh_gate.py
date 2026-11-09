@@ -126,7 +126,10 @@ def run(*, require_workdisk: Callable[[], None] = _require_workdisk) -> None:
     # The SSH server itself is outside the task namespace. Enforce the same
     # monotonic NNP boundary supplied by the Docker backend for every command.
     _enforce_nnp()
-    if action != "deactivate":
+    scope = spec.get("scope") or ""
+    if not isinstance(scope, str) or (scope and SLOT.fullmatch(scope) is None):
+        raise ValueError("guest scope is invalid")
+    if action != "deactivate" and not scope:
         # A failed shared mount must never fall back to the guest OS's old or
         # empty HOME. Cleanup stays available even if the data disk is lost.
         require_workdisk()
@@ -142,9 +145,17 @@ def run(*, require_workdisk: Callable[[], None] = _require_workdisk) -> None:
             env=ENVIRONMENT,
             check=True,
         )
-    scope = spec.get("scope") or ""
-    if scope and SLOT.fullmatch(scope) is None:
-        raise ValueError("guest scope is invalid")
+    identity: list[str] = []
+    if scope and action == "exec":
+        _trusted(CONTROL.parent, directory=True)
+        _trusted(CONTROL, directory=False)
+        loader = importlib.util.spec_from_file_location("kai_computer_control", CONTROL)
+        if loader is None or loader.loader is None:
+            raise RuntimeError("desktop slot module is missing")
+        module = importlib.util.module_from_spec(loader)
+        loader.loader.exec_module(module)
+        account = module.slot_account(scope)
+        identity = [str(account.pw_uid), str(account.pw_gid), account.pw_dir]
     root = SUPERVISOR_ROOT if not scope else SUPERVISOR_ROOT / "scopes" / scope
     _private_directory(root)
     spool = root / "spool"
@@ -156,7 +167,7 @@ def run(*, require_workdisk: Callable[[], None] = _require_workdisk) -> None:
             stream.write(body)
         os.execve(
             "/usr/bin/python3",
-            ["/usr/bin/python3", "-I", str(SUPERVISOR), action, str(request), str(root)],
+            ["/usr/bin/python3", "-I", str(SUPERVISOR), action, str(request), str(root), *identity],
             ENVIRONMENT,
         )
     finally:

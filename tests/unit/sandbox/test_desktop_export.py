@@ -188,3 +188,14 @@ def test_workdisk_writer_drops_identity_and_restores_it_even_on_lease_loss(monke
         assert state == {"uid": export.TASK_UID, "gid": export.TASK_UID, "groups": []}
         guarded()
     assert state == {"uid": 0, "gid": 0, "groups": [0, 12]}
+def test_bot_exports_same_filename_to_its_own_workspace(tmp_path):
+    for bot, content in (("a", b"Bot A"), ("b", b"Bot B")):
+        workspace = tmp_path / bot
+        workspace.mkdir()
+        (workspace / "report.txt").write_bytes(content)
+        result = export.export_result({"path": "report.txt"}, lambda: None, workspace=workspace)
+        assert result["path"] == "outputs/desktop/report.txt"
+        assert (workspace / result["path"]).read_bytes() == content
+        assert export.export_result(
+            {"path": "../a/report.txt"}, lambda: None, workspace=workspace,
+        )["error"]["code"] == "INVALID_EXPORT"

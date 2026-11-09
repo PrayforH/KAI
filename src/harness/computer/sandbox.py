@@ -17,7 +17,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from harness.computer.desktop import DesktopControlService
-from harness.computer.docker import WORKSPACE, DockerComputerDriver
+from harness.computer.docker import DockerComputerDriver, workspace_for
 from harness.computer.manager import ComputerAllocation, ComputerManager
 from harness.computer.models import ComputerBusyError, ComputerRecoveryRequiredError
 from harness.computer.registry import ComputerRegistry
@@ -36,6 +36,12 @@ from harness.sandbox.deferred import UnsupportedEgressError
 @dataclass
 class _Scope:
     tasks: asyncio.TaskGroup
+
+
+@dataclass(frozen=True)
+class BotDesktopTarget:
+    desktop_id: str
+    reserve: Callable[[], Awaitable[None]]
 
 
 @dataclass
@@ -67,7 +73,7 @@ class ComputerSandboxProvider:
         max_bytes: int = 512 * 1024**2,
         max_members: int = 10_000,
         busy_wait_seconds: float = 120.0,
-        desktop_for_run: Callable[[Run], Awaitable[str | None]] | None = None,
+        bot_desktop: BotDesktopTarget | None = None,
     ) -> None:
         if busy_wait_seconds < 0:
             raise ValueError("computer busy wait cannot be negative")
@@ -77,9 +83,7 @@ class ComputerSandboxProvider:
         self.local_root = local_root
         self.max_bytes, self.max_members = max_bytes, max_members
         self.busy_wait_seconds = busy_wait_seconds
-        # None keeps the historical whole-VM lease; a resolver maps each Run to
-        # its Bot desktop so parallel Bots of one VM never block each other.
-        self.desktop_for_run = desktop_for_run
+        self.bot_desktop = bot_desktop
         self._scopes: dict[str, _Scope] = {}
         self._leases: dict[str, _Lease] = {}
 
@@ -110,12 +114,13 @@ class ComputerSandboxProvider:
         if run.tenant_id != self.session.tenant_id or run.session_id != self.session.session_id:
             raise ValueError("Computer Run identity does not match its bound Session")
         path = Path(tempfile.mkdtemp(prefix="kai-computer-run-", dir=self.local_root))
+        desktop_id = self.bot_desktop.desktop_id if self.bot_desktop else None
         handle = SandboxHandle(
             sandbox_id="computer-run-" + uuid4().hex,
             path=path,
             provider=self.driver.provider,
             isolation_level=SandboxIsolation.CONTAINER,
-            remote_workspace=WORKSPACE,
+            remote_workspace=workspace_for(desktop_id),
             deferred_tool_execution=True,
             persistent_workspace=True,
         )
@@ -131,7 +136,7 @@ class ComputerSandboxProvider:
     def image_office(self) -> bool:
         """Whether this provider's computer image ships the office runtime."""
 
-        return bool(getattr(self.driver, "image_office", False))
+        return self.bot_desktop is None and bool(getattr(self.driver, "image_office", False))
 
     def owns(self, handle: SandboxHandle) -> bool:
         lease = self._leases.get(handle.sandbox_id)
@@ -198,7 +203,8 @@ class ComputerSandboxProvider:
         deadline = asyncio.get_running_loop().time() + self.busy_wait_seconds
         delay = self._BUSY_RETRY_INITIAL_SECONDS
         while True:
-            desktop_id = await self.desktop_for_run(run) if self.desktop_for_run else None
+            if self.bot_desktop:
+                await self.bot_desktop.reserve()
             try:
                 async with manager.execution(
                     self.session.tenant_id,
@@ -206,7 +212,7 @@ class ComputerSandboxProvider:
                     run_id=lease.run.run_id,
                     session_id=lease.run.session_id,
                     run_fencing_token=run.fencing_token,
-                    desktop_id=desktop_id,
+                    desktop_id=self.bot_desktop.desktop_id if self.bot_desktop else None,
                 ) as allocation:
                     if not ready.done():
                         ready.set_result(
@@ -293,7 +299,9 @@ class ComputerSandboxProvider:
     ) -> dict[str, object]:
         """One visible-desktop action through the node's unified control gate."""
 
-        allocation, _ = await self._remote(handle, prepare_workspace=operation == "export")
+        allocation, workspace = await self._remote(handle, prepare_workspace=operation == "export")
+        if operation == "export" and self.bot_desktop:
+            return await workspace.export(payload)
         return await self.driver.host.desktop(
             allocation.token, operation, payload, expected_epoch=expected_epoch
         )

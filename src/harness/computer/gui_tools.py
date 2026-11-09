@@ -100,7 +100,19 @@ def computer_gui_overlay(
     handle: SandboxHandle,
     *,
     native_desktop: bool = False,
+    shared_bot_workspace: bool = False,
 ) -> PlatformToolOverlay:
+    export_source = "Bot 工作目录" if shared_bot_workspace else "桌面 ~/deliver"
+    export_enabled = handle.provider == "vm-computer" and (native_desktop or shared_bot_workspace)
+    workspace_instructions = ""
+    if shared_bot_workspace:
+        workspace_instructions = (
+            "当前 Bot 的 shell 和桌面应用共用工作目录。"
+            "从桌面或 shell 保存后，可用工作目录内的相对路径调用 computer_export_file，"
+            "再用附件发布工具发布 outputs/desktop 下的导出文件。\n"
+        )
+    elif handle.provider == "vm-computer":
+        workspace_instructions = VM_INSTRUCTIONS + (EXPORT_INSTRUCTIONS if export_enabled else "")
     tenant_id, user_id, owner = (
         sandbox.session.tenant_id,
         sandbox.session.user_id,
@@ -270,7 +282,7 @@ def computer_gui_overlay(
                     PlatformTool(
                         name="computer_export_file",
                         description=(
-                            "将桌面 ~/deliver 中指定的已完成文件复制到任务工作区 outputs/desktop，"
+                            f"将{export_source}中指定的已完成文件复制到任务工作区 outputs/desktop，"
                             "返回可供现有文件读取/附件发布工具使用的路径、大小和摘要。"
                             "文本、视频等格式统一；不覆盖不同的同名文件。"
                         ),
@@ -281,7 +293,7 @@ def computer_gui_overlay(
                                 "path": {
                                     "type": "string",
                                     "maxLength": 1024,
-                                    "description": "~/deliver 内的相对文件路径，不是任意绝对路径",
+                                    "description": f"相对{export_source}的文件路径",
                                 },
                                 "name": {
                                     "type": "string",
@@ -294,7 +306,7 @@ def computer_gui_overlay(
                         handler=export_file,
                     ),
                 )
-                if handle.provider == "vm-computer" and native_desktop
+                if export_enabled
                 else ()
             ),
             *native_tools,
@@ -366,8 +378,7 @@ def computer_gui_overlay(
                 handler=lambda arguments: act("key", arguments),
             ),
         ),
-        instructions=(VM_INSTRUCTIONS if handle.provider == "vm-computer" else "")
-        + (EXPORT_INSTRUCTIONS if handle.provider == "vm-computer" and native_desktop else "")
+        instructions=workspace_instructions
         + (NATIVE_INSTRUCTIONS + "\n" if native_desktop else "")
         + INSTRUCTIONS,
     )

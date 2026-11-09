@@ -12,6 +12,7 @@ from typing import Protocol
 
 from harness.computer import gate_ack
 from harness.computer.control import ComputerControl, ControlAction
+from harness.computer.desktop_registry import profile_refs
 from harness.computer.manager import ComputerAllocation
 from harness.computer.models import (
     AssistantComputer,
@@ -22,6 +23,10 @@ from harness.computer.models import (
 from harness.sandbox.base import SandboxCommandResult
 
 WORKSPACE = "/home/kai/workspace"
+
+
+def workspace_for(desktop_id: str | None) -> str:
+    return profile_refs(desktop_id)[1] if desktop_id not in (None, "vm") else WORKSPACE
 
 
 class ComputerHost(ComputerControl, Protocol):
@@ -120,7 +125,7 @@ class DockerComputerDriver:
         self._validate(allocation.computer, allocation.token, LeasePurpose.EXECUTE)
         payload: dict[str, object] = {
             "argv": list(argv),
-            "cwd": WORKSPACE,
+            "cwd": workspace_for(allocation.token.desktop_id),
             "environment": dict(environment or {}),
             "timeout_seconds": timeout_seconds,
         }

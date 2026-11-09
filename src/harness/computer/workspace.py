@@ -11,7 +11,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from harness.computer import workspace_guest
-from harness.computer.docker import DockerComputerDriver
+from harness.computer.docker import WORKSPACE, DockerComputerDriver
 from harness.computer.manager import ComputerAllocation
 from harness.sandbox.base import replace_collected_file, workspace_relative_target
 
@@ -44,9 +44,17 @@ class ComputerWorkspace:
         self._collected: set[str] = set()
 
     async def _call(self, operation: str, payload: Mapping[str, object]) -> dict[str, Any]:
+        return await self._execute(["python3", "-I", "-c", _GUEST, operation], payload)
+
+    async def export(self, payload: Mapping[str, object]) -> dict[str, Any]:
+        return await self._execute(
+            ["python3", "-I", "/opt/kai-computer/desktop_export.py"], payload,
+        )
+
+    async def _execute(self, argv: Sequence[str], payload: Mapping[str, object]) -> dict[str, Any]:
         result = await self.driver.execute(
             self.allocation,
-            ["python3", "-I", "-c", _GUEST, operation],
+            argv,
             stdin=json.dumps(payload).encode(),
             timeout_seconds=120,
         )
@@ -71,7 +79,7 @@ class ComputerWorkspace:
         ):
             raise ValueError("Computer workspace manifest exceeds limits")
         for path in files:
-            workspace_relative_target("/home/kai/workspace", path)
+            workspace_relative_target(WORKSPACE, path)
         return files
 
     async def capture_baseline(self) -> None:
@@ -87,7 +95,7 @@ class ComputerWorkspace:
         if total > self.max_bytes or len(entries) > self.max_members:
             raise ValueError("Computer workspace upload exceeds limits")
         for path, _, _ in entries:
-            workspace_relative_target("/home/kai/workspace", path)
+            workspace_relative_target(WORKSPACE, path)
         batch: list[tuple[str, bytes, int]] = []
         batch_bytes = 0
         for path, data, mode in entries:
@@ -179,7 +187,7 @@ class ComputerWorkspace:
     async def download(
         self, path: str, *, max_bytes: int, metadata: WorkspaceFile | None = None
     ) -> bytes:
-        workspace_relative_target("/home/kai/workspace", path)
+        workspace_relative_target(WORKSPACE, path)
         if max_bytes < 0:
             raise ValueError("Computer workspace download bound is invalid")
         info = metadata or WorkspaceFile.model_validate(
@@ -212,7 +220,7 @@ class ComputerWorkspace:
 
     @staticmethod
     def mirror_target(local: Path, path: str) -> Path:
-        workspace_relative_target("/home/kai/workspace", path)
+        workspace_relative_target(WORKSPACE, path)
         target = local.joinpath(*path.split("/"))
         if target.is_symlink() or not target.resolve().is_relative_to(local.resolve()):
             raise ValueError("Computer collection path escaped its local mirror")
