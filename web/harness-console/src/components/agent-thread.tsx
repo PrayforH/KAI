@@ -65,7 +65,6 @@ import { useAssistantBot, useAssistantSurface } from "./assistant-bot-context";
 import { AssistantConversationTail } from "./assistant-conversation-tail";
 import { HandoverInlineRows, shouldShowHandoverRows } from "./handover-row";
 import {
-  MENTION_PREFIX,
   deliverMentions,
   mentionIdempotencyKey,
   parseMentions,
@@ -153,11 +152,8 @@ import {
 
 import { createRandomId } from "../lib/random-id";
 import { ComposerAssist, composerOptions } from "./composer-assist";
-import {
-  TaskKnowledgeControl,
-  TaskKnowledgeSelection,
-  useTaskKnowledge,
-} from "./task-knowledge-context";
+import { TaskKnowledgeSelection } from "./task-knowledge-context";
+import { ComposerAddControl } from "./composer-add-control";
 import { composerTrigger, queueAttachments, queueMayDispatch, releaseUncertainSends, restorePromptQueue, settleAssistantFollowup, nextQueuedPrompt, nextSteeringPrompt, reconcilePromptHistory, type QueuedPrompt } from "../lib/composer-interactions";
 
 import { writeTextToClipboard } from "../lib/clipboard";
@@ -463,7 +459,6 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const composingRef = useRef(false);
   const voiceComposer = useDictationComposer(inputRef, () => aui.composer().getState().text,
     (text) => aui.composer().setText(text), composingRef);
-  const knowledge = useTaskKnowledge();
   // @ 候选只出现在助理面：普通任务与项目任务保持原来的输入行为。
   const mentionableAssistants = useMentionableAssistants(assistantSurface);
   // 和普通聊天一样：@ 名字直接写在文本行里，可以有多个；
@@ -482,14 +477,10 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     return () => window.removeEventListener("harness:open-wiki", onOpenWiki);
   }, []);
   const options = dismissedText === composerText ? [] : composerOptions(
-    composerText,
-    caret,
-    assistantSurface ? mentionableAssistants : [],
-    agentSelection.selected?.skills,
-    conversationScope ? [] : knowledge.available,
-    knowledge.selected,
-    !assistantSurface,
+    composerText, caret, mentionableAssistants, agentSelection.selected?.skills,
   );
+  const activeSuggestion = Math.max(0, Math.min(suggestionIndex, options.length - 1));
+  const filesOnly = Boolean(botScope || conversationScope?.compactComposer);
   const busy = threadRunning || showStop || runLocked || videoGenerating;
   useEffect(() => {
     if (!queueKey) return;
@@ -559,43 +550,40 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     aui.composer().setText("");
     return true;
   }
+  function replaceSuggestionText(start: number, end: number, value: string) {
+    const next = composerText.slice(0, start) + value + composerText.slice(end);
+    aui.composer().setText(next);
+    const position = start + value.length;
+    setCaret(position);
+    inputRef.current?.focus({ preventScroll: true });
+    requestAnimationFrame(() => {
+      const input = inputRef.current;
+      if (input?.value === next) input.setSelectionRange(position, position);
+    });
+    return next;
+  }
+  function openAssistantMentions() {
+    const start = inputRef.current?.selectionStart ?? composerText.length;
+    const end = inputRef.current?.selectionEnd ?? start;
+    if (composerTrigger(composerText, start)?.symbol === "@") {
+      inputRef.current?.focus({ preventScroll: true });
+      setCaret(start);
+    } else {
+      const separator = start > 0 && !/\s/u.test(composerText[start - 1]) ? " " : "";
+      replaceSuggestionText(start, end, separator + "@");
+    }
+    setSuggestionIndex(0);
+    setDismissedText(null);
+  }
   function chooseSuggestion(index: number) {
     const option = options[index];
     if (!option) return;
     const trigger = composerTrigger(composerText, caret);
     if (!trigger) return;
     if (option.id.startsWith("/")) { command(option.id); return; }
-    // `@` 先选助理：名字直接留在文本行里（和普通聊天一样），只是插入，不提交。
-    if (trigger.symbol === "@" && option.id.startsWith(MENTION_PREFIX)) {
-      const specialistId = option.id.slice(MENTION_PREFIX.length);
-      const bot = mentionableAssistants.find((item) => item.specialistId === specialistId);
-      if (!bot || busy) return;
-      const next = composerText.slice(0, trigger.start) + `@${bot.name} ` + composerText.slice(trigger.end);
-      aui.composer().setText(next);
-      setDismissedText(next);
-      setCaret(trigger.start + bot.name.length + 2);
-      inputRef.current?.focus();
-      return;
-    }
-    // `@` selects knowledge bases for this thread (task surface only); the
-    // mention text is removed and the picker stays open so several bases can be
-    // toggled in a row.
-    if (trigger.symbol === "@") {
-      const reference = option.id.slice(1);
-      if (busy) return;
-      knowledge.toggle(reference);
-      const next = composerText.slice(0, trigger.start) + composerText.slice(trigger.end);
-      aui.composer().setText(next);
-      setDismissedText(null);
-      setCaret(trigger.start);
-      window.dispatchEvent(new Event("harness:select-knowledge"));
-      return;
-    }
-    const next = composerText.slice(0, trigger.start) + (option.agent ? "" : `${option.id} `) + composerText.slice(trigger.end);
-    aui.composer().setText(next);
-    setDismissedText(next);
-    if (option.agent) agentSelection.onChange(option.agent);
-    else inputRef.current?.focus();
+    if ("bot" in option && busy) return;
+    const value = "bot" in option ? `@${option.bot.name} ` : `${option.id} `;
+    setDismissedText(replaceSuggestionText(trigger.start, trigger.end, value));
   }
   async function enqueue(steer = false) {
     if (!composerText.trim() && !composerAttachments.length) return;
@@ -1034,10 +1022,10 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       </AssistantConversationTail>
       {steeringNotice && !assistantSurface && <p className="composer-status-announcement" role="status">{steeringNotice}</p>}
       {inputError && <p className="composer-input-error" role="alert">{inputError}</p>}
-      {!conversationScope?.compactComposer && <TaskKnowledgeSelection disabled={busy || Boolean(conversationScope)} />}
+      {!filesOnly && <TaskKnowledgeSelection disabled={busy || Boolean(conversationScope)} />}
       <ReplyComposerBar />
       <Composer.Root onSubmitCapture={(event: FormEvent) => { event.preventDefault(); event.stopPropagation(); if (!composingRef.current) submitComposer(); }}>
-        <ComposerAssist options={options} index={suggestionIndex} onChoose={chooseSuggestion} />
+        <ComposerAssist options={options} index={activeSuggestion} onChoose={chooseSuggestion} />
         {wikiSlug ? (
           <WikiPageDrawer
             key={wikiSlug}
@@ -1048,7 +1036,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
         ) : null}
         {helpOpen && <div className="composer-assist composer-help-popover" role="dialog" aria-label="输入帮助">
           <button type="button" onClick={() => setHelpOpen(false)}>关闭</button>
-          <p>{assistantSurface ? "/ 执行命令 · @ 提及助理 · $ 引用技能" : "/ 执行命令 · @ 选择知识库（可多选） · $ 引用技能"}</p>
+          <p>{assistantSurface ? "/ 执行命令 · @ 提及助理 · $ 引用技能" : "/ 执行命令 · + 添加附件或知识库 · $ 引用技能"}</p>
           <p>{assistantSurface ? "Enter 发送消息，Shift Enter 换行。运行中发送的文字会直接补充到当前工作；附件在当前回复结束后发送。" : <>运行中 Enter {followUpBehavior === "steer" ? "补充说明" : "加入队列"}，Alt Enter 使用另一种方式，Shift Enter 换行。可在个人设置的配置中更改默认行为。</>}</p>
         </div>}
         {activeSkillLaunch && selectedSkill && (
@@ -1080,8 +1068,8 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
           }
           rows={Math.min(8, Math.max(2, composerText.split("\n").length))}
           aria-controls={options.length ? "composer-suggestions" : undefined}
-          aria-activedescendant={options.length ? `composer-option-${suggestionIndex}` : undefined}
-          onChange={(event) => { voiceComposer.onChange(event.target.value); if (!composingRef.current) setCaret(event.target.selectionStart); }}
+          aria-activedescendant={options.length ? `composer-option-${activeSuggestion}` : undefined}
+          onChange={(event) => { voiceComposer.onChange(event.target.value); if (!composingRef.current) { setCaret(event.target.selectionStart); setSuggestionIndex(0); } }}
           onCompositionEnd={(event) => { voiceComposer.onCompositionEnd(); setCaret(event.currentTarget.selectionStart); }}
           onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
           onPaste={(event) => {
@@ -1099,9 +1087,9 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
             if (options.length && ["ArrowDown", "ArrowUp", "Escape", "Enter", "Tab"].includes(event.key) && !event.shiftKey) {
               event.preventDefault();
               if (event.key === "Escape") setDismissedText(composerText);
-              else if (event.key === "ArrowDown") setSuggestionIndex((value) => (value + 1) % options.length);
-              else if (event.key === "ArrowUp") setSuggestionIndex((value) => (value + options.length - 1) % options.length);
-              else chooseSuggestion(suggestionIndex);
+              else if (event.key === "ArrowDown") setSuggestionIndex((activeSuggestion + 1) % options.length);
+              else if (event.key === "ArrowUp") setSuggestionIndex((activeSuggestion + options.length - 1) % options.length);
+              else chooseSuggestion(activeSuggestion);
             } else if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
               submitComposer(event.altKey);
@@ -1111,14 +1099,13 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
         </div>
         <div className="composer-footer">
         <div className="composer-toolbar">
-          <Composer.AddAttachment>
-            <svg className="aui-composer-attach-icon" viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M10 4.5v11M4.5 10h11" />
-            </svg>
-          </Composer.AddAttachment>
+          <ComposerAddControl filesOnly={filesOnly} knowledgeDisabled={runLocked || showStop || videoGenerating}
+            configureKnowledge={conversationScope?.onConfigureKnowledge} />
+          {assistantSurface && !botScope && <button type="button" className="aui-composer-attach composer-mention-trigger"
+            aria-label="提及助理" title="提及助理" disabled={busy}
+            aria-controls={options[0] && "bot" in options[0] ? "composer-suggestions" : undefined} onClick={openAssistantMentions}>@</button>}
 
           {!conversationScope?.compactComposer && !assistantSurface && <>
-          {conversationScope ? <button type="button" className="aui-composer-attach" aria-label="配置智能体知识库" title="配置智能体知识库" onClick={conversationScope.onConfigureKnowledge}>@</button> : <TaskKnowledgeControl disabled={runLocked || showStop || videoGenerating} />}
           <TaskAgentSwitcher
             agents={agentSelection.agents}
             selected={agentSelection.selected}

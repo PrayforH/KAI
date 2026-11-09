@@ -427,6 +427,24 @@ body.codex-theme-v1 .task-version-switcher .task-agent-switcher-copy strong { fo
 .composer-assist-options strong, .composer-assist-options small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.45; }
 .composer-assist-bounded footer { flex-shrink: 0; padding: 6px 10px 2px; }
 
+.composer-assist[data-mentions="true"] .composer-assist-options > button {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+.composer-add-control { position: relative; flex: 0 0 auto; }
+.composer-add-control > button { position: relative; }
+.composer-add-control .composer-add-panel {
+  left: 0;
+  width: min(280px, calc(100vw - 48px));
+  min-width: 0;
+  max-height: min(320px, 50dvh);
+  box-sizing: border-box;
+}
+.composer-add-panel > .task-knowledge-option:disabled { opacity: .45; cursor: default; }
+.composer-add-control .task-knowledge-count { position: absolute; right: 0; top: 0; font-size: 10px; }
+.composer-mention-trigger { font-size: 16px; font-weight: 500; }
+
 html body.codex-theme-v1 .settings-title, html body.codex-theme-v1 .settings-section { width: min(100%, 1000px); max-width: 1000px; }
 html body.codex-theme-v1 .settings-index .settings-return-app { display: flex; gap: 9px; margin: -8px 0 24px; padding: 8px; font-size: 14px; color: var(--codex-ink); }
 html body.codex-theme-v1 .settings-index .settings-return-app svg { width: 20px; height: 20px; }
@@ -1320,3 +1338,9 @@ body.codex-theme-v1 .harness-composer-shell .composer-file-card[data-kind="file"
 .reply-web-image-controls { position: absolute; top: 44px; right: 4px; left: 4px; display: flex; justify-content: space-between; pointer-events: none; }
 .reply-web-image-controls button { width: 28px; height: 32px; padding: 0; border: 1px solid var(--codex-line); border-radius: 7px; background: var(--codex-surface); color: var(--codex-ink); font: 24px/1 var(--codex-font-ui); cursor: pointer; pointer-events: auto; }
 .reply-web-image-controls button:disabled { visibility: hidden; }
+
+.composer-assist[data-mentions="true"] {
+  right: auto;
+  width: min(280px, 100%);
+  box-sizing: border-box;
+}

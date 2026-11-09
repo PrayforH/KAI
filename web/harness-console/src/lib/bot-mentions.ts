@@ -9,6 +9,7 @@ export type MentionedAssistant = {
   specialistId: string;
   name: string;
   description?: string;
+  appearance?: { color?: string; avatar?: string };
 };
 
 export const MENTION_PREFIX = "@assistant:";
@@ -21,25 +22,27 @@ export function useMentionableAssistants(enabled: boolean): MentionedAssistant[]
       setItems([]);
       return;
     }
-    let alive = true;
-    void assistantRequest<Specialist[]>("specialists")
-      .then(list => {
-        if (!alive) return;
-        setItems(
-          list
-            .filter(item => item.status !== "archived" && !isPrimaryBot(item))
-            .map(item => ({
-              specialistId: item.specialistId,
-              name: item.name,
-              description: item.description || undefined,
-            })),
-        );
-      })
-      .catch(() => {
-        /* 候选读不到时不猜：没有候选就保持普通输入。 */
-      });
+    let revision = 0;
+    const load = async () => {
+      const requested = ++revision;
+      try {
+        const list = await assistantRequest<Specialist[]>("specialists");
+        if (requested !== revision) return;
+        setItems(list
+          .filter(item => item.status !== "archived" && !isPrimaryBot(item))
+          .map(item => ({
+            specialistId: item.specialistId,
+            name: item.name,
+            description: item.description || undefined,
+            appearance: item.config?.appearance as MentionedAssistant["appearance"],
+          })));
+      } catch { /* Keep the last available list when a refresh fails. */ }
+    };
+    void load();
+    window.addEventListener("kai:specialists-changed", load);
     return () => {
-      alive = false;
+      revision++;
+      window.removeEventListener("kai:specialists-changed", load);
     };
   }, [enabled]);
   return items;

@@ -359,17 +359,15 @@ it("does not assign a newer run to an older durable assistant", () => {
   expect(turnOwnsRun("assistant-run_1", "run_2", true, "run_2")).toBe(false);
 });
 
-it("drops the knowledge-@ and agent switcher from the assistant chat composer", () => {
-  // 任务页保留完整工具条（知识库 @ + 「通用助手」切换器）；
-  // 助理面是聊天形态，这两个控件都多余，只能挂在 !assistantSurface 分支里。
+it("keeps the task agent switcher separate from the shared add control", () => {
   expect(agentThreadSource.match(/<TaskAgentSwitcher/g)).toHaveLength(1);
   const guard = agentThreadSource.indexOf("!conversationScope?.compactComposer && !assistantSurface");
   expect(guard).toBeGreaterThan(-1);
   expect(agentThreadSource.indexOf("<TaskAgentSwitcher")).toBeGreaterThan(guard);
-  expect(agentThreadSource.indexOf('title="配置智能体知识库"')).toBeGreaterThan(guard);
-  expect(agentThreadSource).toContain(
-    "const assistantSurface = useAssistantSurface();",
-  );
+  expect(agentThreadSource).toContain("<ComposerAddControl filesOnly={filesOnly}");
+  expect(agentThreadSource).toContain("configureKnowledge={conversationScope?.onConfigureKnowledge}");
+  expect(agentThreadSource).toContain('aria-label="提及助理"');
+  expect(agentThreadSource).not.toContain("<TaskKnowledgeControl");
 });
 
 it("keeps only copy and reply in the assistant chat message actions", () => {
