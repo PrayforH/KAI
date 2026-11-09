@@ -14,7 +14,7 @@ import pytest
 from pydantic import ValidationError
 
 from harness.computer.models import ComputerLeaseLostError, LeasePurpose
-from harness.computer.remote import RemoteComputerLifecycle, RemoteComputerSpec
+from harness.computer.remote import RemoteComputerControl, RemoteComputerLifecycle, RemoteComputerSpec
 from harness.computer.ssh_transport import SshEndpoint
 from harness.sandbox.base import SandboxCommandResult
 
@@ -160,3 +160,37 @@ async def test_declared_identity_mismatch_never_executes_or_fences():
                 SimpleNamespace(host_operation=holder), {target.volume_ref: target}
             ).lifecycle(None, "ensure")
         gate.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_remote_acp_uses_the_whole_computer_gate_contract():
+    target = spec().model_copy(update={"acp": True})
+    token = SimpleNamespace(
+        purpose=LeasePurpose.EXECUTE,
+        epoch=9,
+        lease_id="lease-fixture",
+        expires_at=SimpleNamespace(timestamp=lambda: 9999999999),
+        desktop_id="vm",
+    )
+    computer = SimpleNamespace(
+        provider="remote-computer",
+        volume_ref=target.volume_ref,
+        computer_id=target.computer_id,
+        image=target.guest_base_digest,
+    )
+    registry = SimpleNamespace(holder=AsyncMock(return_value=(computer, token)))
+    gate = AsyncMock()
+    payload = {
+        "agent": "claude",
+        "cwd": "/home/operator/workspace",
+        "prompt": "Reply with a fixture marker",
+        "timeout_seconds": 45,
+    }
+    with patch("harness.computer.vm_host.GuestGate", return_value=gate):
+        control = RemoteComputerControl(registry, {target.volume_ref: target})
+        await control.call(token, "acp", payload)
+    gate.call.assert_awaited_once_with(
+        "acp",
+        {**payload, "epoch": 9, "lease_id": "lease-fixture", "expires_at": 9999999999},
+        timeout_seconds=45,
+    )

@@ -348,10 +348,13 @@ class SshComputerControl:
             "epoch": current.epoch,
             "lease_id": current.lease_id,
             "expires_at": current.expires_at.timestamp(),
-            # A desktop-scoped lease runs in its own guest state machine, so
-            # two Bots never drain each other's namespace.
-            "scope": "" if current.desktop_id == "vm" else current.desktop_id,
         }
+        if self.provider == PROVIDER:
+            # VM desktop leases fence their own guest namespace.
+            request["scope"] = "" if current.desktop_id == "vm" else current.desktop_id
+        else:
+            # Remote gates only accept the original whole-computer contract.
+            request.pop("scope", None)
         duration = payload.get("timeout_seconds", 30)
         if not isinstance(duration, (int, float)) or not 0 < duration <= 3600:
             raise ValueError("computer execution duration is invalid")
