@@ -1139,7 +1139,7 @@ function AuthenticatedHome() {
         </div>
         {assistantView && botSideOpen && (!botParam || bot?.specialistId === botParam) && (
           <BotSidePanel
-            key={botParam ?? PERSONAL_ASSISTANT_THREAD}
+            key={`assistant-rail:${botParam ?? PERSONAL_ASSISTANT_THREAD}`}
             primary={!botParam}
             botId={bot?.specialistId}
             name={bot?.name ?? "主助理"}
