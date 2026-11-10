@@ -91,10 +91,12 @@
 > - P0 已实现并上 116（提交 `3f88e452`，镜像 `kai/alignment-web:duty-repeat-20261110`）。
 > - P1a 已实现（提交 `9153b8dc`，镜像 `kai/alignment-web:tasks-tab-20261110`）：侧栏新增「任务」
 >   tab，点击任务打开编辑弹窗（名称/任务要求/执行周期一次保存），删除=停止 Objective。
-> - P2 执行记录内页已实现（提交 `34f8889f`，镜像 `kai/alignment-web:assistant-recall-20261110`）：
+> - P2 执行记录内页已实现（提交 `34f8889f`，镜像 `kai/alignment-web:assistant-recall-20261110`；
+>   迭代 `61c0c491` 补齐 feishu/delegate-specialist/trial 命名空间、排队中筛选与 100 条上限提示，
+>   镜像 `kai/alignment-web:assistant-recall-20261110-v2`）：
 >   弹窗底部「运行记录」进入内页，状态/触发类型筛选 + 10 条一页分页，每条执行
->   「在会话中定位」回 `/?thread=&run=`；`Execution` 补 `triggerKey`（schedule/manual/
->   delegate/manage 命名空间）。同一版还把「模型自动」「自动展开云电脑」「聊天记录」一起上 116。
+>   「在会话中定位」回 `/?thread=&run=`；`Execution` 补 `triggerKey`。同一版还把「模型自动」
+>   「自动展开云电脑」「聊天记录」一起上 116。
 > - 遗留：P1b「新建任务」需要后端把 `specialistId` 透传到 `POST /objectives`（service 已支持，
 >   API 未暴露），暂以「在会话里让助理建任务」代替；职责行只显示周期摘要，有效期要打开编辑器
 >   看——`GET /primary/duties` 不回传 `endsAt`，等 P3 一起补；会议前提醒的时区沿用 brief 时区。
