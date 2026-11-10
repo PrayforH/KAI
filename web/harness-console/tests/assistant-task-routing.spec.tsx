@@ -36,7 +36,11 @@ vi.mock("../src/components/assistant-runtime-shell", () => ({ AssistantRuntimeSh
 vi.mock("../src/components/assistant-computer-pane", () => ({ AssistantComputerPane: ({ children }: { children: ReactNode }) => children }));
 vi.mock("../src/components/assistant-channel-status", () => ({ AssistantChannelStatus: () => null }));
 vi.mock("../src/components/assistant-progress-strip", () => ({ AssistantProgressStrip: () => null }));
-vi.mock("../src/components/desktop-occupancy-chip", () => ({ DesktopOccupancyChip: () => null }));
+vi.mock("../src/components/desktop-occupancy-chip", () => ({
+  DesktopOccupancyChip: () => null,
+  useDesktopOccupancy: () => null,
+  occupancyHolding: () => null,
+}));
 vi.mock("../src/components/assistant-computer-link", () => ({ AssistantComputerLink: () => null }));
 vi.mock("../src/components/workbench-rail", () => ({ WorkbenchRail: () => null }));
 vi.mock("../src/components/productivity-command-center", () => ({ ProductivityCommandCenter: () => null }));

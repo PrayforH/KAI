@@ -125,13 +125,15 @@ export function desktopOccupancyLabel(data: DesktopOccupancy | null): DesktopOcc
 }
 
 /**
- * 顶栏电脑入口旁的只读占用 chip（接 P1-4 的 desktop/occupancy 投影）。
- * 轻轮询：页签隐藏时暂停，focus/visibilitychange 立即刷新，失败静默保留上次值。
+ * 共享桌面的只读占用投影。轻轮询：页签隐藏时暂停，focus/visibilitychange
+ * 立即刷新，失败静默保留上次值。`enabled=false` 时完全不发请求——页面用它
+ * 在电脑面板打开期间让位给 chip，避免同一投影被轮询两次。
  */
-export function DesktopOccupancyChip() {
+export function useDesktopOccupancy(enabled = true): DesktopOccupancy | null {
   const [data, setData] = useState<DesktopOccupancy | null>(null);
 
   useEffect(() => {
+    if (!enabled) return;
     let alive = true;
     let pending = false;
     let controller: AbortController | null = null;
@@ -169,11 +171,20 @@ export function DesktopOccupancyChip() {
       alive = false;
       clearInterval(interval);
       controller?.abort();
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", refresh);
     };
-  }, []);
+  }, [enabled]);
 
+  return data;
+}
+
+/** The execution currently holding the shared desktop, if any. */
+export function occupancyHolding(data: DesktopOccupancy | null): string | null {
+  return data?.holder?.execution_id ?? null;
+}
+
+/** 顶栏电脑入口旁的只读占用 chip（接 P1-4 的 desktop/occupancy 投影）。 */
+export function DesktopOccupancyChip() {
+  const data = useDesktopOccupancy();
   const label = desktopOccupancyLabel(data);
   if (!label) return null;
   return (

@@ -32,9 +32,10 @@ import {
 } from "../components/assistant-bot-context";
 import { botAccent } from "../components/bot-rail";
 import { botAppearanceVars } from "../lib/bot-appearance";
-import { DesktopOccupancyChip } from "../components/desktop-occupancy-chip";
+import { DesktopOccupancyChip, occupancyHolding, useDesktopOccupancy } from "../components/desktop-occupancy-chip";
 import { AssistantComputerPane } from "../components/assistant-computer-pane";
 import { AssistantRuntimeShell } from "../components/assistant-runtime-shell";
+import { AssistantHistoryPanel } from "../components/assistant-history-panel";
 import { ProductivityCommandCenter } from "../components/productivity-command-center";
 import { RunTraceConsole } from "../components/run-trace-console";
 import {
@@ -245,6 +246,11 @@ function AuthenticatedHome() {
     setComputerOpen(new URLSearchParams(window.location.search).get("computer") === "open");
   }, [user.user_id]);
   const showComputer = (open: boolean) => {
+    if (!open) {
+      // Closing by hand is a decision, not a lapse: the same execution must not
+      // pop the desktop open again. A new execution may.
+      dismissedExecution.current = occupancyHolding(occupancy);
+    }
     setComputerOpen(open);
     if (open) { setBotSideOpen(false); setTaskRailOpen(false); setRailExpanded(false); }
     try {
@@ -265,6 +271,19 @@ function AuthenticatedHome() {
     (!threadId || threadId === PERSONAL_ASSISTANT_THREAD || botParam !== null)
     ? "assistant" : "task";
   const assistantView = conversationSurface === "assistant";
+  // 助理页盯共享桌面的真实执行状态：真的有人（职责执行）在用桌面时自动展开电脑；
+  // 用户在本次执行里手动关掉后不再自动弹，换下一次执行才重新联动。
+  const occupancy = useDesktopOccupancy(assistantView && !computerOpen);
+  const autoOpenedExecution = useRef<string | null>(null);
+  const dismissedExecution = useRef<string | null>(null);
+  const holdingExecution = occupancyHolding(occupancy);
+  useEffect(() => {
+    if (!assistantView || computerOpen || !holdingExecution) return;
+    if (dismissedExecution.current === holdingExecution
+      || autoOpenedExecution.current === holdingExecution) return;
+    autoOpenedExecution.current = holdingExecution;
+    showComputer(true);
+  }, [assistantView, computerOpen, holdingExecution]); // showComputer only toggles state.
 
   useEffect(() => {
     if (!assistantEntry) { botViewedRef.current = null; return; }
@@ -387,6 +406,7 @@ function AuthenticatedHome() {
   const [taskSidebarOpen, setTaskSidebarOpen] = useState(true);
   const [taskRailOpen, setTaskRailOpen] = useState(false);
   const [botSideOpen, setBotSideOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const assistantRailOpen = assistantView && botSideOpen && (!botParam || bot?.specialistId === botParam);
   const [railExpanded, setRailExpanded] = useState(false);
   const [railPreview, setRailPreview] = useState<(PreviewTarget & { nonce: number }) | null>(null);
@@ -1014,6 +1034,18 @@ function AuthenticatedHome() {
             </div>
             <div className="header-utilities">
               {assistantView && computerOpen && <DesktopOccupancyChip />}
+              {assistantView && (
+                <button
+                  type="button"
+                  className="header-icon-button"
+                  aria-label="聊天记录"
+                  aria-expanded={historyOpen}
+                  title="聊天记录"
+                  onClick={() => setHistoryOpen((current) => !current)}
+                >
+                  <SidebarIcon name="history" />
+                </button>
+              )}
               <SidebarPanelToggle
                 expanded={assistantView ? botSideOpen : taskRailOpen}
                 surface={assistantView ? (botParam ? "bot" : "primary") : "task"}
@@ -1148,6 +1180,14 @@ function AuthenticatedHome() {
             )}
           </section>
           </AssistantComputerPane>
+          {assistantView && (
+            <AssistantHistoryPanel
+              open={historyOpen}
+              threadId={bot?.threadId ?? threadId}
+              assistantName={bot?.name ?? "主助理"}
+              onClose={() => setHistoryOpen(false)}
+            />
+          )}
           {assistantRailOpen && (
             <BotSidePanel
               key={botParam ?? PERSONAL_ASSISTANT_THREAD}

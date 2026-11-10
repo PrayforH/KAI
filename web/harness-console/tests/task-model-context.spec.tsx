@@ -54,8 +54,10 @@ describe("TaskModelControl", () => {
       </TaskModelProvider>,
     );
 
-    expect(html).toContain('<option value="" selected="">DeepSeek V4 Flash</option>');
-    expect(html).toContain("跟随 Agent");
+    expect(html).toContain('<option value="" selected="">自动 · DeepSeek V4 Flash</option>');
+    // 自动 resolves to the Agent default and says so; the rules live in the title.
+    expect(html).toContain(">自动<");
+    expect(html).toContain("需要读图时切到支持视觉的路由");
     expect(html).not.toContain("仅本次任务");
   });
   it("keeps independent builder choices explicit without an Agent default option", () => {
@@ -64,7 +66,7 @@ describe("TaskModelControl", () => {
       onOverrideChange={() => undefined}><TaskModelControl disabled={false} /></TaskModelProvider>);
     expect(html).toContain('<option value="deepseek-v4-flash" selected="">');
     expect(html).not.toContain('value=""');
-    expect(html).not.toContain("跟随 Agent");
+    expect(html).not.toContain("自动");
     expect(html).toContain("当前对话");
   });
 

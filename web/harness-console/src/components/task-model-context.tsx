@@ -82,6 +82,8 @@ export function TaskModelControl({
     <div
       className="task-model-control"
       data-overridden={selected ? "true" : "false"}
+      title={independent ? undefined
+        : "自动：使用 Agent 的默认模型；需要读图时切到支持视觉的路由；当前不可用的路由不会出现在列表里。"}
     >
       <label>
         <span className="task-model-control-mark" aria-hidden="true">
@@ -95,7 +97,7 @@ export function TaskModelControl({
           onChange={(event) => setOverrideRouteId(event.target.value || null)}
         >
           {(!independent || !selected) && <option value="" disabled={independent}>
-            {independent ? "选择模型" : agentDefault?.label ?? "Agent 默认模型"}
+            {independent ? "选择模型" : `自动 · ${agentDefault?.label ?? "Agent 默认模型"}`}
           </option>}
           {overrideRoutes.map((route) => (
             <option key={route.id} value={route.id}>
@@ -110,7 +112,7 @@ export function TaskModelControl({
         </span>
       </label>
       <span className="task-model-control-status">
-        {independent ? "当前对话" : selected?.modelType === "video_generation" ? "视频生成" : selected ? "仅本次任务" : "跟随 Agent"}
+        {independent ? "当前对话" : selected?.modelType === "video_generation" ? "视频生成" : selected ? "仅本次任务" : "自动"}
       </span>
     </div>
   );
