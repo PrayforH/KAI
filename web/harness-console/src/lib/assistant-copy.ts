@@ -99,7 +99,21 @@ export function compactAssistantReceipt(text: string): string {
   const lead = facts.slice(0, 2);
   // Keep later failures and concrete input requests visible as well.
   const attention = facts.slice(2).filter(line => problem.test(line));
-  const result = [...new Set([...lead, ...attention])];
+  const kept = [...new Set([...lead, ...attention])];
+  // 一句「需要你补：」后面跟着的清单就是这条收据要传达的事实；
+  // 只留冒号会把请求截成一句没下文的半句话。
+  const follow = kept.filter(line => /[：:]$/.test(line)).flatMap(line => {
+    const start = facts.indexOf(line);
+    if (start < 0) return [];
+    const items: string[] = [];
+    for (let index = start + 1; index < facts.length && items.length < 6; index++) {
+      const item = facts[index]!;
+      if (/[：:]$/.test(item)) break;
+      items.push(item);
+    }
+    return items;
+  });
+  const result = [...new Set([...kept, ...follow])];
   return result.join("\n\n");
 }
 

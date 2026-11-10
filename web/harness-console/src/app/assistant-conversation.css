@@ -576,6 +576,25 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .assis
   border-radius: 4px;
 }
 
+/* 事件行（已发送消息给 / 消息来自）按 Grok 的紧凑节奏贴合消息流：
+   事件消息自身不再占一层 8px 消息边距，连续事件之间只隔 10px，
+   与主要气泡的间距区分开。 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message.assistant-message-event {
+  margin: 4px 0;
+  padding: 0;
+}
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message.assistant-message-event .assistant-event-line {
+  margin: 0;
+}
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message.assistant-message-event + .harness-assistant-message.assistant-message-event {
+  margin-top: 6px;
+}
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message.assistant-message-event .assistant-event-line .bot-rail-avatar {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .handover-local-tool-permission-card {
   width: min(640px, 92%);
   margin: 6px auto 2px;

@@ -86,13 +86,13 @@ describe("bot rail shows names only", () => {
     expect(host.querySelectorAll(".bot-rail-label small")).toHaveLength(0);
   });
 
-  it("keeps the paused marker on the row without a description line", async () => {
+  it("shows the name alone whether or not the Bot is enabled", async () => {
     await mount();
     const row = [...host.querySelectorAll(".bot-rail-item")].find((node) =>
       (node.textContent ?? "").includes("休息提醒"),
     )!;
-    expect(row.getAttribute("data-paused")).toBe("true");
-    expect(row.getAttribute("title")).toBe("已暂停 · 无人查看");
+    expect(row.getAttribute("data-paused")).toBeNull();
+    expect(row.getAttribute("title")).toBeNull();
     expect(row.querySelector(".bot-rail-label")?.textContent).toBe("休息提醒");
     expect(row.querySelector(".bot-rail-label small")).toBeNull();
   });

@@ -37,11 +37,6 @@ export function specialistAppearance(item: Specialist): { color: string; avatar:
   return { color: raw?.color ?? botAccent(item.specialistId), avatar: raw?.avatar ?? "blob" };
 }
 
-/** 无人查看导致的例行程序暂停（其它 reason 将来再扩展，本切片只认 unviewed）。 */
-export function isUnviewedPaused(item: Pick<Specialist, "routinePausedReason">): boolean {
-  return item.routinePausedReason?.reason === "unviewed";
-}
-
 export function botAccent(key: string): string {
   let hash = 0;
   for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) % 997;
@@ -187,10 +182,10 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
     setSpecialists(items => items.map(bot => bot.specialistId === updated.specialistId ? updated : bot));
     window.dispatchEvent(new CustomEvent("kai:specialists-changed"));
   }
-  async function changeStatus(item: Specialist, status: "active" | "paused" | "archived") {
+  async function archiveBot(item: Specialist) {
     setRailError("");
     const latest = await assistantRequest<{specialist: Specialist}>(`specialists/${encodeURIComponent(item.specialistId)}`);
-    await assistantRequest(`specialists/${encodeURIComponent(item.specialistId)}/status`, "POST", {status, expectedRevision: latest.specialist.revision});
+    await assistantRequest(`specialists/${encodeURIComponent(item.specialistId)}/status`, "POST", {status: "archived", expectedRevision: latest.specialist.revision});
     await load(); window.dispatchEvent(new CustomEvent("kai:specialists-changed"));
   }
   const ordered = stableBotOrder(specialists);
@@ -213,16 +208,15 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
     const working = botIsWorking(item.activity, currentThreadId, liveRun);
     return <li key={item.specialistId} className="bot-rail-row">
       <Link className="bot-rail-item" data-active={(isPrimaryBot(item) ? !activeBot && currentThreadId === PERSONAL_ASSISTANT_THREAD : activeBot === item.specialistId) ? "true" : undefined}
-        data-paused={isUnviewedPaused(item) ? "true" : undefined} data-unread={botSidebar(item).unread ? "true" : undefined}
-        title={working ? "正在工作" : isUnviewedPaused(item) ? "已暂停 · 无人查看" : undefined}
+        data-unread={botSidebar(item).unread ? "true" : undefined}
+        title={working ? "正在工作" : undefined}
         href={botConversationHref(item)} scroll={false}>
         <BotRailAvatar tone={specialistAppearance(item).color} shape={specialistAppearance(item).avatar} working={working} />
         <span className="bot-rail-label"><strong>{item.name}</strong></span>
         {botSidebar(item).unread && <span className="bot-rail-unread" aria-label="未读" />}
       </Link>
-      <BotRailMenu bot={item} groups={groups} onUpdate={patch => saveSidebar(item, patch)}
-        onEdit={() => setEditing(item.specialistId)} onArchive={() => changeStatus(item, "archived")}
-        onStatus={next => changeStatus(item, next)} />
+      <BotRailMenu bot={item} onUpdate={patch => saveSidebar(item, patch)}
+        onEdit={() => setEditing(item.specialistId)} onArchive={() => archiveBot(item)} />
     </li>;
   }
   return (

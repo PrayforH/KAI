@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "./auth-provider";
 import { NestedMenu } from "./nested-menu";
 import { SidebarIcon } from "./sidebar-icon";
 import { useColorMode, type ColorMode } from "../lib/color-mode";
+import { openSettings } from "../lib/settings-link";
 
 const ROLE_LABELS = {
   owner: "所有者",
@@ -45,6 +47,7 @@ function ThemeQuickSwitch() {
 
 export function AccountMenu() {
   const { user, membership } = useAuth();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const initial = (user.display_name || user.email).trim().slice(0, 1).toUpperCase();
@@ -89,7 +92,11 @@ export function AccountMenu() {
           </div>
           <ThemeQuickSwitch />
           <nav className="account-actions" aria-label="账户操作">
-            <Link className="account-settings" href="/settings">
+            <Link
+              className="account-settings"
+              href="/settings"
+              onClick={(event) => openSettings(event, router)}
+            >
               <SidebarIcon name="settings" />
               个人设置
             </Link>

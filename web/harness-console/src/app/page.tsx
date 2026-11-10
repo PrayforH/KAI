@@ -54,6 +54,7 @@ import { ProductBrandMark, ProductLoading, PRODUCT_NAME } from "../components/pr
 import { ComputerIcon, SidebarPanelIcon } from "../components/panel-icons";
 import { WorkbenchRail } from "../components/workbench-rail";
 import type { PreviewTarget } from "../components/rail-file-preview";
+import { PreviewDialog } from "../components/preview-dialog";
 import { useRunActivity, useRunViewModel } from "../lib/activity-store";
 import { persistTaskVersion, taskVersionBusy } from "../lib/task-version";
 import { useRunStream } from "../lib/run-stream-store";
@@ -389,12 +390,20 @@ function AuthenticatedHome() {
   const assistantRailOpen = assistantView && botSideOpen && (!botParam || bot?.specialistId === botParam);
   const [railExpanded, setRailExpanded] = useState(false);
   const [railPreview, setRailPreview] = useState<(PreviewTarget & { nonce: number }) | null>(null);
+  // The assistant opens previews in one centered dialog; task pages keep the rail.
+  const [dialogPreview, setDialogPreview] = useState<PreviewTarget | null>(null);
   const previewNonce = useRef(0);
-  // Artifact cards in the transcript ask the rail to show that file.
+  // Artifact cards in the transcript ask the surface to show that file.
   useEffect(() => {
     const handler = (event: Event) => {
       const detail = (event as CustomEvent).detail as (PreviewTarget & { expanded?: boolean }) | undefined;
       if (!detail?.artifact_id) return;
+      // The dialog floats above the conversation, so the assistant keeps its
+      // panels open; the task page has to clear the way for the rail.
+      if (assistantView) {
+        setDialogPreview(detail);
+        return;
+      }
       setComputerOpen(false);
       setBotSideOpen(false);
       previewNonce.current += 1;
@@ -404,7 +413,7 @@ function AuthenticatedHome() {
     };
     window.addEventListener("harness:preview-artifact", handler);
     return () => window.removeEventListener("harness:preview-artifact", handler);
-  }, []);
+  }, [assistantView]);
   const [compactTaskSidebar, setCompactTaskSidebar] = useState(false);
   const taskSelectionRevision = useRef(0);
   const [localThreadId, setLocalThreadId] = useState<string | null>(null);
@@ -1143,7 +1152,6 @@ function AuthenticatedHome() {
             <BotSidePanel
               key={botParam ?? PERSONAL_ASSISTANT_THREAD}
               primary={!botParam}
-              personalSkills={!botParam}
               botId={bot?.specialistId}
               name={bot?.name ?? "主助理"}
               tone={bot?.appearance?.color ?? botAccent(bot?.specialistId ?? "")}
@@ -1170,6 +1178,13 @@ function AuthenticatedHome() {
           projectId={activeProjectId}
           previewRequest={railPreview}
         />
+        {dialogPreview && (
+          <PreviewDialog
+            key={`${dialogPreview.artifact_id}-${dialogPreview.thread_id ?? ""}`}
+            target={dialogPreview}
+            onClose={() => setDialogPreview(null)}
+          />
+        )}
       </div>
     </main>
   );

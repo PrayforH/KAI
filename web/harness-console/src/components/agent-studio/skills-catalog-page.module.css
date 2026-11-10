@@ -222,6 +222,136 @@
   margin-left: auto;
 }
 
+.scopeHint {
+  margin: 8px 0 0;
+  color: var(--codex-faint, #737373);
+  font-size: 10px;
+}
+
+/* Personal Skill suggestions surfaced by the catalog itself; the right-hand
+   assistant panel is no longer a place to manage Skills. */
+.proposals {
+  margin-top: 22px;
+  display: grid;
+  gap: 10px;
+}
+
+.proposals > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.proposals > header > div {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.proposals h2 {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: -0.02em;
+}
+
+.proposals > header > div > span {
+  color: var(--codex-faint, #737373);
+  font: 700 12px/1 var(--codex-font-mono, ui-monospace, monospace);
+}
+
+.proposals > header > small {
+  color: var(--codex-faint, #737373);
+  font-size: 10px;
+}
+
+.proposal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 12px;
+  background: var(--codex-surface-raised, #242424);
+}
+
+.proposalCopy {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.proposalCopy > strong {
+  font-size: 12px;
+}
+
+.proposalCopy p {
+  margin: 0;
+  color: var(--codex-muted, #a1a1a1);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.proposalCopy small {
+  color: var(--codex-faint, #737373);
+  font-size: 9px;
+}
+
+.proposalReply {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--codex-surface-hover, #2a2a2a);
+}
+
+.proposalDraft summary {
+  color: var(--codex-ink, #ffffff);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.proposalDraft pre {
+  max-height: 180px;
+  overflow: auto;
+  margin: 6px 0 0;
+  padding: 9px;
+  border-radius: 7px;
+  color: var(--codex-ink-soft, #d6d6d6);
+  background: var(--codex-field, #191919);
+  font: 500 10px/1.6 var(--codex-font-mono, ui-monospace, monospace);
+  white-space: pre-wrap;
+}
+
+.proposalActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.proposalActions button {
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--codex-accent, #ececec);
+  border-radius: 7px;
+  color: var(--codex-on-accent, #07111a);
+  background: var(--codex-accent, #ececec);
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.proposalActions button:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.proposalActions .secondaryAction {
+  border-color: var(--codex-line-strong, #444444);
+  color: var(--codex-ink, #ffffff);
+  background: transparent;
+}
+
 .catalog {
   margin-top: 30px;
 }
@@ -786,6 +916,23 @@
 
 .secondaryAction:hover {
   background: var(--codex-surface-hover, #2a2a2a);
+}
+
+.dangerAction {
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--kb-danger, #fa423e);
+  border-radius: 7px;
+  color: var(--kb-danger, #fa423e);
+  background: transparent;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dangerAction:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 @media (max-width: 980px) {

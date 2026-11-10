@@ -13,7 +13,7 @@ vi.mock("next/link", () => ({
   default: ({ children, ...props }: { children?: unknown }) => <a {...props}>{children as never}</a>,
 }));
 
-import { BotRail, isUnviewedPaused } from "../src/components/bot-rail";
+import { BotRail } from "../src/components/bot-rail";
 import type { Specialist } from "../src/lib/assistant-client";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -50,11 +50,6 @@ const normalActive = specialist({
   specialistId: "specialist_normal",
   name: "行业快报监控",
 });
-const otherReason = specialist({
-  specialistId: "specialist_other_reason",
-  name: "示例 Bot",
-  routinePausedReason: { reason: "manual" },
-});
 
 let root: Root | undefined;
 let host: HTMLDivElement;
@@ -80,55 +75,29 @@ async function mount(list: Specialist[]) {
   await act(async () => {});
 }
 
-describe("isUnviewedPaused", () => {
-  it("only treats reason=unviewed as paused", () => {
-    expect(isUnviewedPaused(pausedActive)).toBe(true);
-    expect(isUnviewedPaused(normalActive)).toBe(false);
-    expect(isUnviewedPaused(otherReason)).toBe(false);
-  });
-});
+describe("bot rail no longer distinguishes enabled state", () => {
+  it("renders paused and running bots with identical rows", async () => {
+    await mount([pausedActive, pausedPending, normalActive]);
 
-describe("bot rail paused badge", () => {
-  it("marks every unviewed-paused bot in both groups without adding a second line", async () => {
-    await mount([pausedActive, normalActive, pausedPending, otherReason]);
-
-    const paused = [...host.querySelectorAll('.bot-rail-item[data-paused="true"]')];
-    expect(paused).toHaveLength(2);
-    const pausedNames = paused.map(
-      (node) => node.querySelector(".bot-rail-label strong")?.textContent,
+    const rows = [...host.querySelectorAll(".bot-rail-item")].filter((node) =>
+      node.textContent,
     );
-    expect(pausedNames).toEqual(["休息提醒", "天气提醒"]);
-    for (const node of paused) {
-      // 侧栏只显示名称；暂停提示走 title，不占副行。
+    expect(rows.length).toBeGreaterThan(0);
+    for (const node of rows) {
+      expect(node.getAttribute("data-paused")).toBeNull();
+      expect(node.getAttribute("title")).not.toBe("已暂停 · 无人查看");
       expect(node.querySelector(".bot-rail-label small")).toBeNull();
-      expect(node.getAttribute("title")).toBe("已暂停 · 无人查看");
       expect(node.textContent ?? "").not.toContain("已暂停");
     }
   });
 
-  it("leaves normal bots and non-unviewed reasons unmarked", async () => {
-    await mount([pausedActive, normalActive, otherReason]);
-
+  it("keeps only the bot name in each row", async () => {
+    await mount([pausedActive, normalActive]);
     const byName = (name: string) =>
       [...host.querySelectorAll(".bot-rail-item")].find((node) =>
         (node.textContent ?? "").includes(name),
       ) ?? null;
-    const normal = byName("行业快报监控");
-    expect(normal?.getAttribute("data-paused")).toBeNull();
-    expect(normal?.getAttribute("title")).toBeNull();
-    expect(normal?.querySelector(".bot-rail-label")?.textContent).toBe("行业快报监控");
-
-    const other = byName("示例 Bot");
-    expect(other?.getAttribute("data-paused")).toBeNull();
-    expect(other?.querySelector(".bot-rail-label")?.textContent).toBe("示例 Bot");
-  });
-
-  it("never marks the main assistant entry", async () => {
-    await mount([pausedActive]);
-    const main = host.querySelector('.bot-rail-item[href="/assistant"]');
-    expect(main).not.toBeNull();
-    expect(main?.getAttribute("data-paused")).toBeNull();
-    expect(main?.querySelector(".bot-rail-label")?.textContent).toBe("主助理");
-    expect(main?.textContent).not.toContain("已暂停");
+    expect(byName("休息提醒")?.querySelector(".bot-rail-label")?.textContent).toBe("休息提醒");
+    expect(byName("行业快报监控")?.getAttribute("data-paused")).toBeNull();
   });
 });

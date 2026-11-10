@@ -26,6 +26,7 @@ import {
   setTaskArchived,
   type TaskSummary,
 } from "../../lib/task-history";
+import { safeReturnTo } from "../../lib/settings-link";
 
 const ROLE_LABELS = {
   owner: "所有者",
@@ -234,6 +235,13 @@ function SettingsContent() {
   const [activeSection, setActiveSection] =
     useState<SettingsSectionId>("profile");
   const contentRef = useRef<HTMLDivElement>(null);
+  const [returnTo, setReturnTo] = useState("/");
+  useEffect(() => {
+    const target = safeReturnTo(
+      new URLSearchParams(window.location.search).get("returnTo"),
+    );
+    if (target) setReturnTo(target);
+  }, []);
   useEffect(() => { if (contentRef.current) contentRef.current.scrollTop = 0; }, [activeSection]);
   const [profileMessage, setProfileMessage] = useState<Message>(null);
   const [passwordMessage, setPasswordMessage] = useState<Message>(null);
@@ -335,7 +343,7 @@ function SettingsContent() {
       >
         <div className="settings-layout">
           <aside className="settings-index" aria-label="设置目录">
-            <a className="settings-return-app" href="/" aria-label="返回应用"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 10H4m5-5-5 5 5 5" /></svg><span>返回应用</span></a>
+            <a className="settings-return-app" href={returnTo} aria-label="返回应用"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 10H4m5-5-5 5 5 5" /></svg><span>返回应用</span></a>
             <p>设置</p>
             {visibleNavigation.map((item) => (
               <a

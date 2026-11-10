@@ -84,19 +84,24 @@ export function parseCsvRows(text: string, limit = CSV_PREVIEW_ROWS): string[][]
   return rows.slice(0, limit + 1);
 }
 
-function contentUrl(target: PreviewTarget): string {
+/** The dialog chrome and the preview share these routes, so both always open
+ * and download the same content the preview shows. */
+export function artifactContentUrl(target: PreviewTarget): string {
   const params = new URLSearchParams();
   if (target.thread_id) params.set("thread_id", target.thread_id);
   params.set("preview", "1");
   return `/api/harness/artifacts/${encodeURIComponent(target.artifact_id)}?${params.toString()}`;
 }
 
-function downloadUrl(target: PreviewTarget): string {
+export function artifactDownloadUrl(target: PreviewTarget): string {
   const params = new URLSearchParams();
   if (target.thread_id) params.set("thread_id", target.thread_id);
   const query = params.toString();
   return `/api/harness/artifacts/${encodeURIComponent(target.artifact_id)}${query ? `?${query}` : ""}`;
 }
+
+const contentUrl = artifactContentUrl;
+const downloadUrl = artifactDownloadUrl;
 
 function ExternalLinkIcon() {
   return (
@@ -108,7 +113,12 @@ function ExternalLinkIcon() {
   );
 }
 
-export function RailFilePreview({ target }: { target: PreviewTarget }) {
+/** `hideHeader` lets a dialog own the title and actions instead of repeating
+ * them above the preview body. */
+export function RailFilePreview({ target, hideHeader = false }: {
+  target: PreviewTarget;
+  hideHeader?: boolean;
+}) {
   const kind = previewKindFor(target.media_type ?? "", target.name ?? "");
   const url = contentUrl(target);
   const theme = useCodeTheme();
@@ -154,7 +164,7 @@ export function RailFilePreview({ target }: { target: PreviewTarget }) {
 
   return (
     <div className="rail-preview" data-kind={kind}>
-      <header className="rail-preview-head">
+      {!hideHeader && <header className="rail-preview-head">
         <span className="rail-preview-name" title={target.name}>{target.name}</span>
         <div className="rail-preview-actions">
           {/* Every artifact opens in its own tab, previewable or not: the
@@ -180,7 +190,7 @@ export function RailFilePreview({ target }: { target: PreviewTarget }) {
             <CodexResponseIcon name="download" />
           </a>
         </div>
-      </header>
+      </header>}
       <div className="rail-preview-body">
         {["xlsx", "docx", "pptx", "legacy-office"].includes(kind) ? (
           <OfficeFilePreview key={url} url={url} kind={kind as OfficeKind} name={target.name} size={target.size_bytes} />

@@ -115,7 +115,10 @@ export type SkillProposal = {
 export type PersonalSkill = {
   skillId: string; name: string; displayName: string; description: string;
   enabled: boolean; revision: number; sourceProposalId?: string | null;
-  skill: { name: string; description: string; instructions: string };
+  skill: {
+    name: string; description: string; instructions: string;
+    files?: Array<{ path: string; sizeBytes?: number | null }>;
+  };
   createdAt: string; updatedAt: string;
 };
 export async function listSkillProposals(): Promise<SkillProposal[]> {

@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { formatBytes, type ArtifactDetails } from "./artifact-list";
-import { RailFilePreview, type PreviewTarget } from "./rail-file-preview";
+import type { PreviewTarget } from "./rail-file-preview";
+import { PreviewDialog } from "./preview-dialog";
 import styles from "./assistant-results.module.css";
 
 /** Durable artifacts from the conversation, with local preview state only. */
@@ -33,15 +34,16 @@ export function AssistantResults({ artifacts }: { artifacts: ArtifactDetails[] }
                 <span className={styles.mark} aria-hidden="true">{name.includes(".") ? name.split(".").at(-1)?.slice(0, 5).toUpperCase() : "FILE"}</span>
                 <span className={styles.copy}><strong>{name}</strong><small>{formatBytes(file.size_bytes)} · 预览</small></span>
               </button>
-              <a className={styles.download} href={url} download={name} aria-label={`下载 ${name}`}>下载</a>
+              <a className={styles.download} href={url} download={name} aria-label={`下载 ${name}`} title={`下载 ${name}`}>
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                  <path d="M8 2.6v7.2M5 6.8l3 3 3-3M2.8 12.6h10.4" />
+                </svg>
+              </a>
             </article>
           );
         })}
       </div>
-      {selected && <div className={styles.preview}>
-        <button type="button" className={styles.close} onClick={() => setSelected(null)} aria-label="收起文件预览">收起预览</button>
-        <RailFilePreview key={selected.artifact_id} target={selected} />
-      </div>}
+      {selected && <PreviewDialog key={selected.artifact_id} target={selected} onClose={() => setSelected(null)} />}
     </section>
   );
 }

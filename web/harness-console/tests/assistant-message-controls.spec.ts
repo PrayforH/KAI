@@ -24,6 +24,12 @@ it("bounds every Bot presentation rule to the assistant shell", () => {
   expect(read("web-codex.css")).not.toContain('[data-surface="assistant"]');
 });
 
+it("keeps delivery and source events on one compact line rhythm", () => {
+  expect(assistant).toMatch(/\.harness-assistant-message\.assistant-message-event\s*\{[^}]*margin:\s*4px 0;[^}]*padding:\s*0;/s);
+  expect(assistant).toMatch(/\.assistant-message-event \.assistant-event-line\s*\{[^}]*margin:\s*0;/s);
+  expect(assistant).toMatch(/\.assistant-message-event \+ \.harness-assistant-message\.assistant-message-event\s*\{[^}]*margin-top:\s*6px;/s);
+});
+
 it("keeps Bot reply geometry out of task and project replies", () => {
   expect(assistant).toMatch(/\.chat-stage\[data-surface="assistant"\] \.assistant-answer-row \{[^}]*display:\s*flex;/);
   expect(read("web-codex.css")).not.toContain('.chat-stage:not([data-surface="assistant"]) .harness-assistant-message .assistant-answer');

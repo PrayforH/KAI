@@ -3400,7 +3400,7 @@ body.codex-theme-v1:has(.console-shell) .aui-thread-root .aui-thread-viewport {
   min-height: 0;
 }
 
-/* ── 左栏「机器人」区（助理页）：头像列表 + 在岗/待启用分组 ── */
+/* ── 左栏「机器人」区（助理页）：只按本人置顶/分组排列，不再分启用与否 ── */
 body.codex-theme-v1:has(.console-shell) .bot-rail {
   margin: 2px 8px 10px;
   padding: 2px 6px 6px;
@@ -3501,11 +3501,6 @@ body.codex-theme-v1:has(.console-shell) .bot-rail-label strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* 侧栏只显示名称；无人查看暂停用名称颜色 + title 提示，不加第二行文案。 */
-body.codex-theme-v1:has(.console-shell) .bot-rail-item[data-paused="true"] .bot-rail-label strong {
-  color: #d2a83a;
 }
 
 body.codex-theme-v1:has(.console-shell) .bot-rail-more {

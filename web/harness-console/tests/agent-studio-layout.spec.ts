@@ -603,7 +603,7 @@ describe("Agent Studio management page", () => {
     expect(skillsCatalog).toContain("SKILL_SCOPE_LABELS");
     expect(skillCreatorLaunch).toContain('name: "skill-creator"');
     expect(skillCreatorLaunch).toContain("个人 Skill");
-    expect(skillCreatorLaunch).toContain("平台 Skill");
+    expect(skillCreatorLaunch).toContain("全局 Skill");
     expect(skillCreatorLaunch).toContain("Agent Skill");
     expect(homePage).toContain("parseSkillCreatorLaunch");
     expect(homePage).toContain("persistTaskComposerDraft");

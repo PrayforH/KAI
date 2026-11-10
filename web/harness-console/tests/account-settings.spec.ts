@@ -10,6 +10,10 @@ const settings = readFileSync(
   join(process.cwd(), "src/app/settings/page.tsx"),
   "utf8",
 );
+const settingsLink = readFileSync(
+  join(process.cwd(), "src/lib/settings-link.ts"),
+  "utf8",
+);
 const taskSidebar = readFileSync(
   join(process.cwd(), "src/components/task-sidebar.tsx"),
   "utf8",
@@ -50,6 +54,14 @@ describe("account settings", () => {
     expect(menu).not.toContain('<ProductIcon name="book" />');
     expect(menu).toContain('<SidebarIcon name="settings" />');
     expect(menu).toContain('<SidebarIcon name="logout" />');
+  });
+
+  it("returns to the page that opened settings", () => {
+    expect(menu).toContain("openSettings(event, router)");
+    expect(settings).toContain("safeReturnTo");
+    expect(settings).toContain("href={returnTo}");
+    expect(settingsLink).toContain("returnTo=");
+    expect(settingsLink).toContain('value.startsWith("//")');
   });
 
   it("aligns the theme row with account actions", () => {

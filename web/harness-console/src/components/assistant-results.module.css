@@ -1,16 +1,15 @@
-.results { margin: 14px 0; width: fit-content; max-width: min(420px, 100%); min-width: 0; }
-.results[data-preview-open="true"] { width: 100%; max-width: 100%; }
-.files { display: grid; gap: 8px; max-width: min(26.25rem, 100%); }
-.file { display: flex; align-items: center; min-width: 0; border: 1px solid var(--border, #8884); border-radius: 12px; overflow: hidden; background: var(--card, transparent); }
-.open { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; padding: 12px; color: inherit; background: none; border: 0; text-align: left; cursor: pointer; }
-.mark { display: grid; place-items: center; flex: 0 0 38px; height: 42px; border: 1px solid #8884; border-radius: 6px; font-size: 10px; font-weight: 650; }
-.copy { display: grid; gap: 3px; min-width: 0; }
-.copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 550; }
-.copy small { font-size: 12px; opacity: .65; }
-.download { flex: 0 0 auto; padding: 12px 16px; font-size: 13px; color: inherit; text-decoration: none; }
+.results { margin: 12px 0; width: fit-content; max-width: min(420px, 100%); min-width: 0; }
+.files { display: grid; gap: 6px; max-width: min(26.25rem, 100%); }
+.file { display: flex; align-items: center; min-width: 0; border: 1px solid #8884; border-radius: 12px; overflow: hidden; background: var(--card, transparent); transition: border-color 140ms ease; }
+.file:hover { border-color: #8887; }
+.open { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 10px 12px; color: inherit; background: none; border: 0; text-align: left; cursor: pointer; }
+.mark { display: grid; place-items: center; flex: 0 0 34px; height: 38px; border: 1px solid #8884; border-radius: 8px; font-size: 9.5px; font-weight: 650; letter-spacing: .04em; }
+.copy { display: grid; gap: 2px; min-width: 0; }
+.copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; font-weight: 550; }
+.copy small { font-size: 11.5px; opacity: .6; }
+.download { display: grid; place-items: center; flex: 0 0 auto; width: 34px; height: 34px; margin-right: 8px; border-radius: 8px; color: inherit; opacity: .7; text-decoration: none; transition: opacity 140ms ease, background-color 140ms ease; }
+.download svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.4; }
+.download:hover { opacity: 1; }
 .open:hover, .download:hover { background: #8881; }
-.open:focus-visible, .download:focus-visible, .close:focus-visible { outline: 2px solid currentColor; outline-offset: -3px; }
-.preview { margin-top: 10px; border: 1px solid #8884; border-radius: 12px; overflow: hidden; }
-.preview :global(.rail-preview) { height: 520px; max-height: 70vh; min-height: 260px; }
-.close { display: block; margin: 8px 12px 4px auto; color: inherit; background: none; border: 0; padding: 4px 8px; cursor: pointer; font-size: 12px; }
-@media (max-width: 600px) { .download { padding-inline: 12px; } .preview :global(.rail-preview) { height: 380px; } }
+.open:focus-visible, .download:focus-visible { outline: 2px solid currentColor; outline-offset: -3px; }
+@media (max-width: 600px) { .download { width: 32px; height: 32px; margin-right: 6px; } }

@@ -165,3 +165,29 @@ it("keeps the file rows unfilled until they are hovered or open", () => {
   expect(rule).toContain("background: transparent");
   expect(rule).toContain("border: 0");
 });
+
+it("leaves the title and actions to the host when its header is hidden", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response("# 标题", { status: 200 })));
+  const withHeader = await render(target("report.md", "text/markdown"));
+  expect(withHeader.querySelector(".rail-preview-head")).not.toBeNull();
+
+  const second = document.createElement("div");
+  document.body.appendChild(second);
+  const bare = createRoot(second);
+  await act(async () => {
+    bare.render(<RailFilePreview target={target("report.md", "text/markdown")} hideHeader />);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  // The dialog owns the name and file actions; the body still renders.
+  expect(second.querySelector(".rail-preview-head")).toBeNull();
+  expect(second.querySelector(".rail-preview-body")?.textContent).toContain("标题");
+  act(() => bare.unmount());
+  second.remove();
+});
+
+it("exports the same routes the dialog chrome uses", async () => {
+  const { artifactContentUrl, artifactDownloadUrl } = await import("../src/components/rail-file-preview");
+  const preview = target("report.md", "text/markdown", { thread_id: "t 1" });
+  expect(artifactContentUrl(preview)).toBe("/api/harness/artifacts/a1?thread_id=t+1&preview=1");
+  expect(artifactDownloadUrl(preview)).toBe("/api/harness/artifacts/a1?thread_id=t+1");
+});

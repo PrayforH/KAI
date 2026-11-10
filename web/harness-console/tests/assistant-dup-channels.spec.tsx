@@ -64,9 +64,12 @@ describe("artifact capsules stay metadata-only", () => {
     const results = read("src/components/assistant-results.tsx");
     expect(results).toContain("formatBytes(file.size_bytes)");
     expect(results).toContain("预览");
-    // 正文只在用户点开预览后由 RailFilePreview 按需加载。
-    expect(results).toContain("<RailFilePreview");
+    // 正文只在用户点开弹窗后由 RailFilePreview 按需加载。
+    expect(results).toContain("<PreviewDialog");
+    const dialog = read("src/components/preview-dialog.tsx");
+    expect(dialog).toContain("<RailFilePreview");
     expect(results).not.toContain("dangerouslySetInnerHTML");
+    expect(dialog).not.toContain("dangerouslySetInnerHTML");
   });
 
   it("the summary row shows thumbs + count, not prose", () => {

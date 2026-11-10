@@ -7,7 +7,6 @@ import { AssistantComputerLink } from "./assistant-computer-link";
 import { AssistantResults } from "./assistant-results";
 import { BotDuties } from "./bot-duties-dialog";
 import { BotRailAvatar } from "./bot-rail";
-import { SkillProposalsCard } from "./skill-proposals-card";
 import styles from "./bot-side-panel.module.css";
 
 function BotLibrary({ threadId }: { threadId: string }) {
@@ -76,8 +75,8 @@ function BotComputerCard({ botId, ready, onOpen }: { botId?: string; ready: bool
   </section>;
 }
 
-export function BotSidePanel({ botId, primary = false, personalSkills = false, name, tone, shape, threadId, ready, onClose, onDetails, onComputer }: {
-  botId?: string; primary?: boolean; personalSkills?: boolean; name: string; tone: string; shape?: string; threadId: string; ready: boolean;
+export function BotSidePanel({ botId, primary = false, name, tone, shape, threadId, ready, onClose, onDetails, onComputer }: {
+  botId?: string; primary?: boolean; name: string; tone: string; shape?: string; threadId: string; ready: boolean;
   onClose: () => void; onDetails?: () => void; onComputer: () => void;
 }) {
   const [tab, setTab] = useState<"activity" | "library">("activity");
@@ -104,7 +103,6 @@ export function BotSidePanel({ botId, primary = false, personalSkills = false, n
     </header>
     <div className={styles.content} role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-${tab}`}>
       {tab === "activity" ? <>
-        {primary && personalSkills && <SkillProposalsCard enabled={ready} />}
         {(primary || botId) && <BotDuties specialistId={primary ? undefined : botId} compact />}
         <BotComputerCard botId={primary ? undefined : botId} ready={ready} onOpen={onComputer} />
       </> : <BotLibrary threadId={threadId} />}

@@ -318,7 +318,7 @@ export function HandoverInlineRows({ messageId, liveRunId }: { messageId: string
         // Only a confirmed execution settles this specific handover.
         const settled = () => {
           handoverStore.markConfigured(notice.handoverId);
-          // rail 也立刻重拉，把该 bot 从「待启用」移到「在岗」。
+          // rail 也立刻重拉，让该 bot 的配置与状态跟上这次转交。
           window.dispatchEvent(
             new CustomEvent("kai:specialists-changed", {
               detail: { specialistId: notice.specialistId, reason: "configured" },

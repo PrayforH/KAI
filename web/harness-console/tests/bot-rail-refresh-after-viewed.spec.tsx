@@ -66,8 +66,8 @@ async function mount(list: Specialist[]) {
   await act(async () => {});
 }
 
-describe("bot rail refreshes as soon as viewed clears the pause", () => {
-  it("drops the paused badge when the page reports a successful view", async () => {
+describe("bot rail refreshes as soon as the page reports a view", () => {
+  it("reloads the directory when the page reports a successful view", async () => {
     assistantRequest
       .mockResolvedValueOnce([paused])
       .mockResolvedValue([cleared]);
@@ -75,10 +75,7 @@ describe("bot rail refreshes as soon as viewed clears the pause", () => {
       root!.render(<BotRail currentThreadId="assistant" />);
     });
     await act(async () => {});
-
-    const pausedRow = host.querySelector('.bot-rail-item[data-paused="true"]');
-    expect(pausedRow).not.toBeNull();
-    expect(pausedRow?.getAttribute("title")).toBe("已暂停 · 无人查看");
+    const callsAfterMount = assistantRequest.mock.calls.length;
 
     await act(async () => {
       window.dispatchEvent(
@@ -89,13 +86,13 @@ describe("bot rail refreshes as soon as viewed clears the pause", () => {
     });
     await act(async () => {});
 
-    expect(host.querySelector('.bot-rail-item[data-paused="true"]')).toBeNull();
-    expect(host.textContent ?? "").not.toContain("已暂停");
-    // 侧栏只显示名称：重拉后不留暂停标记，也不把旧描述塞回来。
+    expect(assistantRequest.mock.calls.length).toBeGreaterThan(callsAfterMount);
+    // 侧栏只显示名称：重拉后不留状态标记，也不把旧描述塞回来。
     const botLabel = [...host.querySelectorAll(".bot-rail-item")].find((node) =>
       (node.textContent ?? "").includes("休息提醒"),
     );
     expect(botLabel?.querySelector(".bot-rail-label")?.textContent).toBe("休息提醒");
+    expect(botLabel?.getAttribute("data-paused")).toBeNull();
     expect(host.textContent ?? "").not.toContain("职责说明");
   });
 

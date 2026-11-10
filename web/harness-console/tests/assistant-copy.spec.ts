@@ -60,6 +60,19 @@ it("reduces coordination narration while keeping later blockers", () => {
  expect(assistantCopy("状态 succeeded，schedule_minutes 待补充。")).toBe("状态 本次处理已结束，执行频率 待补充。");
 });
 
+it("keeps the list that follows an input request instead of ending at the colon", () => {
+  const text = "核验已完成，发现的问题我已全部修正并重新生成文件（原三个文件的结论如下）。\n\n"
+    + "台账仍是唯一来源；凡纪要未点名的人与未定的日期，都停留在“待补”或“（待确认）”，没有替你推断写成事实。\n\n"
+    + "下面几项我确实无法从纪要推断，需要你补：\n\n"
+    + "1. 项目负责人\n2. 上线日期\n3. 验收人\n4. 预算口径";
+  const copy = compactAssistantReceipt(text);
+  expect(copy).toContain("需要你补：");
+  expect(copy).toContain("项目负责人");
+  expect(copy).toContain("上线日期");
+  expect(copy).toContain("验收人");
+  expect(copy.trim().endsWith("：")).toBe(false);
+});
+
 it("removes a complete or truncated legacy source footer from quoted receipts", () => {
  for(const url of ["/assistant?bot=specialist_bd6ae2c429d24bd88b771fd112219c62)","/assistant?bot=specialist_bd6ae2c429d24bd88b771fd1"])
   expect(assistantQuoteCopy("报告已准备好。 [回到原对话]("+url)).toBe("报告已准备好。");

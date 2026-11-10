@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ProductIcon } from "./product-icon";
+import { settingsHref } from "../lib/settings-link";
 import styles from "./assistant-channel-status.module.css";
 
 type Channel = { name: string; state: "online" | "offline" | "unbound" | "unknown" | "disconnected" };
@@ -47,8 +47,18 @@ export function AssistantChannelStatus() {
     <span>{!status ? "正在读取连接状态" : connected.length ? "已连接：" : attention.length ? "连接状态：" : "未连接"}</span>
     {connected.map(channel => <span className={styles.connected} key={channel.name}><i aria-hidden="true" />{channel.name}</span>)}
     {attention.map(channel => <span className={styles.attention} key={channel.name}>{channel.name}{labels[channel.state]}</span>)}
-    <Link className={styles.configure} href="/settings#assistant" aria-label="配置助理通道" title="助理连接设置">
+    <a
+      className={styles.configure}
+      href="/settings#assistant"
+      aria-label="配置助理通道"
+      title="助理连接设置"
+      onClick={(event) => {
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        window.location.assign(settingsHref("#assistant"));
+      }}
+    >
       {connected.length ? <ProductIcon name="settings" /> : "配置"}
-    </Link>
+    </a>
   </div>;
 }

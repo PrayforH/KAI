@@ -13,6 +13,17 @@ import {
 } from "../../lib/studio-client";
 import { useDialogFocus } from "../../lib/use-dialog-focus";
 import {
+  deletePersonalSkill,
+  dismissSkillProposal,
+  generateSkillProposal,
+  listPersonalSkills,
+  listSkillProposals,
+  saveSkillProposal,
+  setPersonalSkillEnabled,
+  type PersonalSkill,
+  type SkillProposal,
+} from "../../lib/assistant-client";
+import {
   DEFAULT_SKILL_CREATOR,
   SKILL_SCOPE_LABELS,
   skillCreatorHref,
@@ -32,19 +43,43 @@ interface CatalogSkill {
   fileCount: number;
   agents: Array<{ draftId: string; label: string }>;
   package: StudioPlatformSkillPackage | null;
+  personalSkill: PersonalSkill | null;
 }
 
 const HIDDEN_SKILLS_STORAGE_KEY = "harness-skill-catalog-hidden:v1";
 
 const CATALOG_PAGE_SIZE = 20;
 
+const SCOPE_HINTS: Record<"all" | SkillInstallScope, string> = {
+  all: "个人 Skill 只对你生效；全局 Skill 由工作区统一维护；Agent Skill 随智能体版本发布。",
+  personal: "只作用于你的个人助理：保存后默认停用，启用后才会注入新任务。",
+  platform: "工作区统一维护，可导入任意智能体的草稿快照。",
+  agent: "随智能体草稿发布，只对该智能体生效。",
+};
+
 /** Merge the platform package catalog with the Skills declared by agent
  *  drafts into the single row list the page renders. */
-function buildCatalog(
+export function buildCatalog(
   platformPackages: StudioPlatformSkillPackage[],
   studioDrafts: StudioAgentSkillCatalogEntry[],
+  personalSkills: PersonalSkill[] = [],
 ): CatalogSkill[] {
   const byName = new Map<string, CatalogSkill>();
+  for (const skill of personalSkills) {
+    byName.set(`personal-skill:${skill.skillId}`, {
+      key: `personal-skill:${skill.skillId}`,
+      name: skill.name,
+      displayName: skill.displayName || skill.name,
+      description: skill.description,
+      instructions: skill.skill.instructions,
+      scope: "personal",
+      files: (skill.skill.files ?? []).map((file) => ({ path: file.path })),
+      fileCount: skill.skill.files?.length ?? 0,
+      agents: [],
+      package: null,
+      personalSkill: skill,
+    });
+  }
   for (const item of platformPackages) {
     byName.set(`platform-package:${item.packageId}`, {
       key: `platform-package:${item.packageId}`,
@@ -59,6 +94,7 @@ function buildCatalog(
       fileCount: item.skill.fileCount ?? item.skill.files.length,
       agents: [],
       package: item,
+      personalSkill: null,
     });
   }
   for (const draft of studioDrafts) {
@@ -93,6 +129,7 @@ function buildCatalog(
           fileCount,
           agents: [{ draftId: draft.id, label: draft.displayName || draft.name }],
           package: null,
+          personalSkill: null,
         });
       }
     }
@@ -122,6 +159,9 @@ export function SkillsCatalogPage() {
   const [uploadDraftId, setUploadDraftId] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadPending, setUploadPending] = useState(false);
+  const [personalPending, setPersonalPending] = useState<string | null>(null);
+  const [proposals, setProposals] = useState<SkillProposal[]>([]);
+  const [proposalPending, setProposalPending] = useState<string | null>(null);
   const [renderLimit, setRenderLimit] = useState(CATALOG_PAGE_SIZE);
   const loadGeneration = useRef(0);
   const drawerRef = useRef<HTMLElement>(null);
@@ -132,14 +172,19 @@ export function SkillsCatalogPage() {
     setError("");
     const generation = ++loadGeneration.current;
     try {
-      const [agents, platformCatalog] = await Promise.all([
+      const [agents, platformCatalog, personal, nextProposals] = await Promise.all([
         studioClient.listAgentSkills(),
         studioClient.listPlatformSkills(),
+        // Older deployments may not expose the personal Skill API yet; the
+        // rest of the catalog must still render in that case.
+        listPersonalSkills().catch(() => []),
+        listSkillProposals().catch(() => []),
       ]);
       if (generation !== loadGeneration.current) return;
       const visible = agents.filter((agent) => isAgentVisible(agent, showInternalAgents));
-      setSkills(buildCatalog(platformCatalog.packages, visible));
+      setSkills(buildCatalog(platformCatalog.packages, visible, personal));
       setDrafts(visible);
+      setProposals(nextProposals);
     } catch (caught) {
       if (generation === loadGeneration.current) setError(caught instanceof Error ? caught.message : "技能目录暂时不可用。");
     } finally {
@@ -177,6 +222,77 @@ export function SkillsCatalogPage() {
     });
   }, []);
 
+  async function togglePersonal(skill: PersonalSkill) {
+    if (personalPending) return;
+    setPersonalPending(skill.skillId);
+    setError("");
+    try {
+      const updated = await setPersonalSkillEnabled(
+        skill.skillId,
+        !skill.enabled,
+        skill.revision,
+      );
+      await load();
+      setNotice(
+        updated.enabled
+          ? `已启用 ${updated.displayName}；之后的个人助理任务会注入它。`
+          : `已停用 ${updated.displayName}；之后的个人助理任务不再注入它。`,
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "修改个人 Skill 状态失败。");
+    } finally {
+      setPersonalPending(null);
+    }
+  }
+
+  async function removePersonal(skill: PersonalSkill) {
+    if (personalPending) return;
+    if (!window.confirm(`删除个人 Skill“${skill.displayName}”？之后的个人助理任务不再使用它。`)) return;
+    setPersonalPending(skill.skillId);
+    setError("");
+    try {
+      const result = await deletePersonalSkill(skill.skillId);
+      if (selectedKey === `personal-skill:${skill.skillId}`) setSelectedKey(null);
+      await load();
+      setNotice(result.deleted ? `已删除 ${skill.displayName}。` : `${skill.displayName} 已不存在。`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "删除个人 Skill 失败。");
+    } finally {
+      setPersonalPending(null);
+    }
+  }
+
+  async function actOnProposal(
+    proposal: SkillProposal,
+    action: "generate" | "save" | "dismiss",
+  ) {
+    if (proposalPending) return;
+    setProposalPending(`${proposal.proposalId}:${action}`);
+    setError("");
+    try {
+      if (action === "generate") {
+        await generateSkillProposal(proposal.proposalId);
+        setNotice("已生成草案，确认内容后保存为个人 Skill。");
+      } else if (action === "save") {
+        const saved = await saveSkillProposal(proposal.proposalId, proposal.revision);
+        setNotice(
+          `已保存「${saved.displayName}」，默认停用；在个人 Skill 中启用后才会注入新任务。`,
+        );
+        await load();
+        setSelectedKey(`personal-skill:${saved.skillId}`);
+        return;
+      } else {
+        await dismissSkillProposal(proposal.proposalId, proposal.revision);
+        setNotice("已忽略这条建议，7 天内不再重复提示。");
+      }
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "个人 Skill 建议操作失败。");
+    } finally {
+      setProposalPending(null);
+    }
+  }
+
   const closeDetail = useCallback(() => setSelectedKey(null), []);
   useDialogFocus({
     open: Boolean(selectedKey),
@@ -190,6 +306,17 @@ export function SkillsCatalogPage() {
       matchesSkillQuery(skill, query),
     );
   }, [skills, query, scopeFilter]);
+
+  // Proposals belong to the personal scope; they stay visible under 全部 so a
+  // new suggestion is not missed just because another filter was left selected.
+  const activeProposals = useMemo(
+    () => proposals.filter(
+      (proposal) => proposal.status === "proposed" || proposal.status === "draft",
+    ),
+    [proposals],
+  );
+  const showProposals = activeProposals.length > 0
+    && (scopeFilter === "all" || scopeFilter === "personal");
 
   // The catalog can hold hundreds of rows; render the list in scroll-sized
   // pages so opening the page never builds every row at once.
@@ -236,6 +363,7 @@ export function SkillsCatalogPage() {
 
   const targetDraft = drafts.find((draft) => draft.id === targetDraftId) ?? null;
   const selectedPackage = selectedSkill?.package ?? null;
+  const selectedPersonal = selectedSkill?.personalSkill ?? null;
   const targetHasCurrentPackage = Boolean(
     selectedPackage
     && targetDraft?.skills.some(
@@ -262,7 +390,7 @@ export function SkillsCatalogPage() {
         + "后续平台更新不会改变当前草稿快照。",
       );
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "平台 Skill 导入失败。");
+      setError(caught instanceof Error ? caught.message : "全局 Skill 导入失败。");
     } finally {
       setInstalling(false);
     }
@@ -314,9 +442,79 @@ export function SkillsCatalogPage() {
             aria-label="搜索技能"
           />
         </div>
+        <p className={styles.scopeHint}>{SCOPE_HINTS[scopeFilter]}</p>
 
         <FeedbackToast message={notice} onDismiss={() => setNotice("")} />
         <FeedbackToast message={error} tone="error" onDismiss={() => setError("")} />
+
+        {showProposals && (
+          <section className={styles.proposals} aria-label="个人 Skill 建议">
+            <header>
+              <div>
+                <h2>个人 Skill 建议</h2>
+                <span>{activeProposals.length}</span>
+              </div>
+              <small>来自你重复完成的任务；保存后默认停用。</small>
+            </header>
+            {activeProposals.map((proposal) => {
+              const draft = proposal.draft;
+              return (
+                <article key={proposal.proposalId} className={styles.proposal}>
+                  <div className={styles.proposalCopy}>
+                    <strong>{proposal.title}</strong>
+                    <p>{proposal.summary}</p>
+                    <small>{proposal.sources.length} 个任务 · 来自你的执行记录</small>
+                    {proposal.reply && (
+                      <p className={styles.proposalReply}>{proposal.reply}</p>
+                    )}
+                    {proposal.followUpQuestions?.map((question) => (
+                      <small key={question}>· {question}</small>
+                    ))}
+                    {draft && (
+                      <details className={styles.proposalDraft}>
+                        <summary>{draft.name}</summary>
+                        <p>{draft.description}</p>
+                        <pre>{draft.instructions}</pre>
+                      </details>
+                    )}
+                  </div>
+                  <div className={styles.proposalActions}>
+                    {!draft && (
+                      <button
+                        type="button"
+                        disabled={proposalPending !== null}
+                        onClick={() => void actOnProposal(proposal, "generate")}
+                      >
+                        {proposalPending === `${proposal.proposalId}:generate`
+                          ? "生成中…"
+                          : proposal.reply ? "继续生成" : "生成草稿"}
+                      </button>
+                    )}
+                    {draft && (
+                      <button
+                        type="button"
+                        disabled={proposalPending !== null}
+                        onClick={() => void actOnProposal(proposal, "save")}
+                      >
+                        {proposalPending === `${proposal.proposalId}:save`
+                          ? "保存中…"
+                          : "保存为个人 Skill"}
+                      </button>
+                    )}
+                    <button
+                      className={styles.secondaryAction}
+                      type="button"
+                      disabled={proposalPending !== null}
+                      onClick={() => void actOnProposal(proposal, "dismiss")}
+                    >
+                      {proposalPending === `${proposal.proposalId}:dismiss` ? "忽略中…" : "忽略"}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </section>
+        )}
 
         <section className={styles.catalog} aria-label="技能目录">
           <header className={styles.catalogHeader}>
@@ -342,7 +540,7 @@ export function SkillsCatalogPage() {
               <p>选择技能用途，进入对话描述目标与示例。</p>
               <div className={styles.creationScopes}>
                 <Link href={skillCreatorHref("personal")}>个人 Skill</Link>
-                <Link href={skillCreatorHref("platform")}>平台 Skill</Link>
+                <Link href={skillCreatorHref("platform")}>全局 Skill</Link>
                 <Link href="/studio/agents?section=skills">Agent Skill · 选择智能体</Link>
               </div>
             </> : <>
@@ -367,12 +565,16 @@ export function SkillsCatalogPage() {
               <Link href="/studio/agents?section=skills">去安装</Link>
             </div>
           ) : visibleSkills.length === 0 ? (
-            <div className={styles.empty}>没有匹配的技能</div>
+            <div className={styles.empty}>
+              {scopeFilter === "personal"
+                ? "暂无个人 Skill。重复完成同类任务后，这里会出现可复用的建议。"
+                : "没有匹配的技能"}
+            </div>
           ) : (
             <div className={styles.groups}>
               <section className={styles.group}>
                 {pageSkills.map((skill) => {
-                  const visible = !hiddenKeys.has(skill.key);
+                  const visible = Boolean(skill.personalSkill) || !hiddenKeys.has(skill.key);
                   return (
                     <div className={styles.row} data-enabled={visible} key={skill.key}>
                       <button
@@ -388,12 +590,16 @@ export function SkillsCatalogPage() {
                       </button>
                       <div className={styles.rowActions}>
                         <span className={styles.rowMeta}>
-                          {SKILL_SCOPE_LABELS[skill.scope]} · {skill.package
-                            ? (skill.agents.length ? `${skill.agents.length} 个智能体已导入` : "可导入")
-                            : skill.scope === "agent" ? `${skill.agents.length} 个智能体` : "内置"}
+                          {skill.personalSkill
+                            ? `${SKILL_SCOPE_LABELS.personal} · ${skill.personalSkill.enabled ? "已启用" : "未启用"}`
+                            : <>{SKILL_SCOPE_LABELS[skill.scope]} · {skill.package
+                              ? (skill.agents.length ? `${skill.agents.length} 个智能体已导入` : "可导入")
+                              : skill.scope === "agent" ? `${skill.agents.length} 个智能体` : "内置"}</>}
                         </span>
                         {skill.package ? (
                           <span className={styles.packageRevision}>r{skill.package.revision}</span>
+                        ) : skill.personalSkill ? (
+                          <span className={styles.packageRevision}>r{skill.personalSkill.revision}</span>
                         ) : (
                           <button
                             className={styles.skillToggle}
@@ -463,7 +669,7 @@ export function SkillsCatalogPage() {
             <p>{selectedSkill.description}</p>
             {selectedSkill.package && (
               <>
-                <section className={styles.packageFacts} aria-label="平台 Skill 包信息">
+                <section className={styles.packageFacts} aria-label="全局 Skill 包信息">
                   <div><span>包修订</span><strong>r{selectedSkill.package.revision}</strong></div>
                   <div><span>风险</span><strong>{selectedSkill.package.riskLevel === "low" ? "低" : "需审阅"}</strong></div>
                   <div><span>许可证</span><strong>{selectedSkill.package.license}</strong></div>
@@ -510,14 +716,39 @@ export function SkillsCatalogPage() {
             </section>
             <section className={styles.detailSection}>
               <h4>最近状态</h4>
-              <span>{selectedSkill.package
-                ? "平台包只在导入时复制；平台后续更新不会改变已导入或已发布版本。"
-                : `${hiddenKeys.has(selectedSkill.key) ? "已从本机列表隐藏" : "在本机列表中显示"}（不影响平台启用状态） · 需要在新版本发布时固化为不可变快照。`}</span>
+              <span>{selectedSkill.personalSkill
+                ? `${selectedSkill.personalSkill.enabled
+                  ? "已启用：之后的个人助理任务会注入此 Skill"
+                  : "未启用：保存后不会注入任何任务"} · r${selectedSkill.personalSkill.revision}`
+                : selectedSkill.package
+                  ? "平台包只在导入时复制；平台后续更新不会改变已导入或已发布版本。"
+                  : `${hiddenKeys.has(selectedSkill.key) ? "已从本机列表隐藏" : "在本机列表中显示"}（不影响平台启用状态） · 需要在新版本发布时固化为不可变快照。`}</span>
             </section>
           </div>
           {canManage && (
             <footer className={styles.drawerActions}>
-              {selectedSkill.package ? (
+              {selectedPersonal ? (
+                <>
+                  <button
+                    className={styles.actionButton}
+                    type="button"
+                    disabled={personalPending === selectedPersonal.skillId}
+                    onClick={() => void togglePersonal(selectedPersonal)}
+                  >
+                    {personalPending === selectedPersonal.skillId
+                      ? "正在保存…"
+                      : selectedPersonal.enabled ? "停用" : "启用"}
+                  </button>
+                  <button
+                    className={styles.dangerAction}
+                    type="button"
+                    disabled={personalPending === selectedPersonal.skillId}
+                    onClick={() => void removePersonal(selectedPersonal)}
+                  >
+                    删除
+                  </button>
+                </>
+              ) : selectedSkill.package ? (
                 canManageCatalog ? (
                 <div className={styles.installControls}>
                   {drafts.length > 0 ? (
@@ -548,7 +779,7 @@ export function SkillsCatalogPage() {
                   )}
                 </div>
                 ) : (
-                  <span className={styles.actionLink}>平台 Skill 由管理员统一导入，如需使用请联系管理员。</span>
+                  <span className={styles.actionLink}>全局 Skill 由管理员统一导入，如需使用请联系管理员。</span>
                 )
               ) : (
                 <button
@@ -559,7 +790,8 @@ export function SkillsCatalogPage() {
                   {hiddenKeys.has(selectedSkill.key) ? "在本机列表显示" : "从本机列表隐藏"}
                 </button>
               )}
-              {(selectedSkill.name === DEFAULT_SKILL_CREATOR.name || !selectedSkill.package)
+              {!selectedPersonal
+                && (selectedSkill.name === DEFAULT_SKILL_CREATOR.name || !selectedSkill.package)
                 && !hiddenKeys.has(selectedSkill.key) && (
                 <Link
                   className={styles.actionLink}

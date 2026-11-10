@@ -5,27 +5,22 @@ import type { Specialist } from "../lib/assistant-client";
 import { botSidebar, type BotSidebar } from "../lib/bot-sidebar";
 import styles from "./bot-rail-menu.module.css";
 
-export function BotRailMenu({ bot, groups, onUpdate, onEdit, onArchive, onStatus }: {
-  bot: Specialist; groups: string[];
+export function BotRailMenu({ bot, onUpdate, onEdit, onArchive }: {
+  bot: Specialist;
   onUpdate: (patch: Partial<BotSidebar>) => Promise<void>;
   onEdit: () => void; onArchive: () => Promise<void>;
-  onStatus: (next: "active" | "paused") => Promise<void>;
 }) {
   const anchor = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<{left: number; top: number} | null>(null);
-  const [mode, setMode] = useState<"main" | "groups" | "new" | "archive">("main");
-  const [group, setGroup] = useState("");
+  const [mode, setMode] = useState<"main" | "archive">("main");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const sidebar = botSidebar(bot);
   function close() { if (busy) return; setPosition(null); anchor.current?.focus(); }
   useEffect(() => {
     if (!position) return;
-    if (!busy) {
-      if (mode === "new") panel.current?.querySelector<HTMLInputElement>("input")?.focus();
-      else panel.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
-    }
+    if (!busy) panel.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
     function outside(event: PointerEvent) {
       if (!panel.current?.contains(event.target as Node) && !anchor.current?.contains(event.target as Node)) setPosition(null);
     }
@@ -61,29 +56,9 @@ export function BotRailMenu({ bot, groups, onUpdate, onEdit, onArchive, onStatus
       }}>
       {mode === "main" && <>
         {item(sidebar.pinned ? "取消置顶" : "置顶", () => void apply(() => onUpdate({pinned: !sidebar.pinned})))}
-        {item("移动到分组 ›", () => setMode("groups"))}
-        {item("移至新分组…", () => { setGroup(""); setMode("new"); })}
-        {item(sidebar.unread ? "标记为已读" : "标记为未读", () => void apply(() => onUpdate({unread: !sidebar.unread})))}
-        <hr />
         {item("编辑资料", () => { setPosition(null); onEdit(); })}
-        {item("从侧边栏隐藏", () => void apply(() => onUpdate({hidden: true})))}
-        <hr />
-        {/* 资料弹窗只留外观与三项资料，接单状态放在这里，暂停的 Bot 才恢复得回来。 */}
-        {bot.status === "ready" && item("启用助理", () => void apply(() => onStatus("active")))}
-        {bot.status === "active" && item("暂停接单", () => void apply(() => onStatus("paused")))}
-        {bot.status === "paused" && item("恢复接单", () => void apply(() => onStatus("active")))}
         <hr />{item("归档 Bot…", () => setMode("archive"), true)}
       </>}
-      {mode === "groups" && <>{item("‹ 返回", () => setMode("main"))}
-        {item("未分组", () => void apply(() => onUpdate({group: ""})))}
-        {groups.map(name => <button type="button" role="menuitem" key={name} disabled={busy}
-          onClick={() => void apply(() => onUpdate({group: name}))}>{name}{sidebar.group === name ? " ✓" : ""}</button>)}
-      </>}
-      {mode === "new" && <form onSubmit={event => { event.preventDefault(); if (group.trim()) void apply(() => onUpdate({group: group.trim()})); }}>
-        <label htmlFor={`group-${bot.specialistId}`}>新分组名称</label>
-        <input id={`group-${bot.specialistId}`} value={group} maxLength={40} autoFocus onChange={event => setGroup(event.target.value)} disabled={busy} />
-        <div className={styles.actions}><button type="button" onClick={() => setMode("main")} disabled={busy}>取消</button><button type="submit" disabled={busy || !group.trim()}>创建并移入</button></div>
-      </form>}
       {mode === "archive" && <>
         <strong>归档“{bot.name}”？</strong>
         <p>不再接受新的职责执行，聊天与成果保留，可在设置的「机器人」中恢复。已开始的任务不会被强制中断。</p>

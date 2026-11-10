@@ -33,6 +33,10 @@ const sidebar = readFileSync(
   join(process.cwd(), "src/components/task-sidebar.tsx"),
   "utf8",
 );
+const sidePanel = readFileSync(
+  join(process.cwd(), "src/components/bot-side-panel.tsx"),
+  "utf8",
+);
 
 describe("Skills catalog page", () => {
   it("is a Studio route rendered through the unified manager", () => {
@@ -89,8 +93,32 @@ describe("Skills catalog page", () => {
     expect(component).toContain('skillCreatorHref("platform")');
     expect(component).toContain('href="/studio/agents"');
     expect(component).toContain("个人 Skill");
-    expect(component).toContain("平台 Skill");
+    expect(component).toContain("全局 Skill");
     expect(component).toContain("Agent Skill");
+  });
+
+  it("lists real personal Skills under the personal scope and manages them", () => {
+    expect(component).toContain("listPersonalSkills");
+    expect(component).toContain("setPersonalSkillEnabled");
+    expect(component).toContain("deletePersonalSkill");
+    expect(component).toContain("personal-skill:");
+    expect(component).toContain("之后的个人助理任务会注入此 Skill");
+    expect(component).toContain("保存后不会注入任何任务");
+    expect(styles).toContain(".dangerAction");
+  });
+
+  it("surfaces personal Skill proposals in the catalog, not the assistant rail", () => {
+    // The Skill module is the one place to manage personal and global Skills;
+    // the right-hand assistant panel stays focused on duties and the computer.
+    expect(component).toContain("listSkillProposals");
+    expect(component).toContain("generateSkillProposal");
+    expect(component).toContain("saveSkillProposal");
+    expect(component).toContain("dismissSkillProposal");
+    expect(component).toContain("个人 Skill 建议");
+    expect(component).toContain("保存为个人 Skill");
+    expect(component).toContain("SCOPE_HINTS");
+    expect(sidePanel).not.toContain("SkillProposalsCard");
+    expect(sidePanel).not.toContain("personalSkills");
   });
 
   it("uses the centered management-list layout", () => {

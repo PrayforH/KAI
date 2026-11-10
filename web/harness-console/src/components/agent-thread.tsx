@@ -1819,7 +1819,7 @@ export function HarnessAssistantMessage() {
     <AnswerCitationProvider citations={answerCitations}>
     <PublishedBlocksProvider sources={publishedBlocks}>
     <AssistantMessage.Root
-      className="harness-assistant-message"
+      className={assistantSurface && isNotice ? "harness-assistant-message assistant-message-event" : "harness-assistant-message"}
       data-turn-id={messageId}
       tabIndex={-1}
       data-test-run={conversationScope && messageId.startsWith("assistant-") ? messageId.replace(/^assistant-/, "") : undefined}

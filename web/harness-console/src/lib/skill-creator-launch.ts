@@ -10,7 +10,7 @@ export interface SkillCreatorLaunch {
 
 export const SKILL_SCOPE_LABELS: Record<SkillInstallScope, string> = {
   personal: "个人 Skill",
-  platform: "平台 Skill",
+  platform: "全局 Skill",
   agent: "Agent Skill",
 };
 
