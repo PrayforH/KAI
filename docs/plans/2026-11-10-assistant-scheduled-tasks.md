@@ -87,9 +87,13 @@
 
 ## 6. 分期
 
-> 进度：P0 已实现并上 116（提交 `3f88e452`，镜像 `kai/alignment-web:duty-repeat-20261110`）。
-> 已知遗留：职责行只显示周期摘要，有效期仍需打开编辑器查看——`GET /primary/duties`
-> 不回传 `endsAt`，等 P3 一起补；会议前提醒的时区沿用 brief 时区。
+> 进度：
+> - P0 已实现并上 116（提交 `3f88e452`，镜像 `kai/alignment-web:duty-repeat-20261110`）。
+> - P1a 已实现（提交 `9153b8dc`，镜像 `kai/alignment-web:tasks-tab-20261110`）：侧栏新增「任务」
+>   tab，点击任务打开编辑弹窗（名称/任务要求/执行周期一次保存），删除=停止 Objective。
+> - 遗留：P1b「新建任务」需要后端把 `specialistId` 透传到 `POST /objectives`（service 已支持，
+>   API 未暴露），暂以「在会话里让助理建任务」代替；职责行只显示周期摘要，有效期要打开编辑器
+>   看——`GET /primary/duties` 不回传 `endsAt`，等 P3 一起补；会议前提醒的时区沿用 brief 时区。
 
 **P0 周期与有效期（纯前端，现有接口）**
 - `automation-schedule.ts`：`buildCron`/`readCronFrequency`/`scheduleSummary` 增加每月/每年。
@@ -99,8 +103,9 @@
   并发修改提示刷新；不产生新的执行。
 
 **P1 任务面板与编辑弹窗**
-- 侧栏新增「任务」tab；任务卡片、编辑弹窗（名称/要求/周期）、暂停/恢复、删除（停止）。
-- 新建任务：任务 tab 内「新建」，沿用当前 Bot 绑定的 agent 版本；没有绑定则引导先开聊。
+- 已完成（P1a）：侧栏「任务」tab；任务卡片、编辑弹窗（名称/要求/周期）、暂停/恢复、删除（停止）。
+- 待做（P1b）：新建任务——后端 `POST /objectives` 增加可选 `specialistId`（`AssistantService.create`
+  已支持，只在 API 层透传），前端「新建」沿用当前 Bot 的 agent 版本；没有绑定则引导先开聊。
 - 验收：新建→出现在列表→刷新仍在；编辑名称/要求生效；删除后列表移除且不再执行。
 
 **P2 执行记录内页与来源标签**
