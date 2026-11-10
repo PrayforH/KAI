@@ -32,6 +32,59 @@
 .state[data-status="active"] { color: #35c26a; }
 .state[data-status="paused"] { color: #e8a33d; }
 
+/* 执行记录内页 */
+.runs { display: grid; gap: 10px; }
+.runsHead { display: flex; align-items: center; gap: 10px; }
+.runsHead strong { font-size: 14px; font-weight: 550; }
+.back {
+  padding: 4px 10px;
+  border: 1px solid var(--codex-line);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.back:hover { background: var(--codex-surface-hover); }
+.runsSub { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--codex-line); border-radius: 12px; }
+.filters { display: flex; gap: 6px; flex-wrap: wrap; }
+.filters select {
+  padding: 4px 8px;
+  border: 1px solid var(--codex-line);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+}
+.runRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--codex-line);
+  border-radius: 12px;
+}
+.runSummary { margin: 2px 0 0; color: var(--codex-muted); font-size: 12px; line-height: 1.5; }
+.runLink { flex-shrink: 0; color: var(--codex-muted); font-size: 12px; white-space: nowrap; }
+a.runLink { text-decoration: none; }
+a.runLink:hover { text-decoration: underline; }
+.runLink[aria-disabled="true"] { opacity: .6; }
+.pager { display: flex; align-items: center; gap: 8px; color: var(--codex-muted); font-size: 12px; }
+.pager button {
+  padding: 4px 10px;
+  border: 1px solid var(--codex-line);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.pager button:disabled { opacity: .45; cursor: default; }
+
 /* 编辑弹窗：沿用 Bot 编辑弹窗的暗色面板语言 */
 .backdrop {
   position: fixed;

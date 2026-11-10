@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { assistantRequest, type ObjectiveSchedule } from "../lib/assistant-client";
 import { dutyScheduleText } from "./bot-duties-dialog";
+import { DutyRunHistory } from "./duty-run-history";
 import {
   BRIEF_FIELDS,
   DutyScheduleFields,
@@ -22,10 +23,11 @@ function whenLabel(value?: string | null): string {
 
 /** The prototype's edit modal: name, requirements and repeat in one dialog that
  *  saves the whole brief at once; stop is the delete. */
-export function DutyEditDialog({ duty, onClose, onSaved }: {
+export function DutyEditDialog({ duty, onClose, onSaved, onOpenRuns }: {
   duty: Duty;
   onClose: () => void;
   onSaved: (duty: BotDuty) => void;
+  onOpenRuns?: (duty: Duty) => void;
 }) {
   const draft = useDutyScheduleDraft(duty);
   const { objective, editable, dirty: scheduleDirty, incomplete, nextSchedule } = draft;
@@ -130,6 +132,8 @@ export function DutyEditDialog({ duty, onClose, onSaved }: {
       {duty.nextCheckAt && <p className={styles.hint}>{whenLabel(duty.nextCheckAt)}</p>}
       {error && <p role="alert" className={styles.error}>{error}</p>}
       <footer className={styles.actions}>
+        {onOpenRuns && <button type="button" className={styles.plain} disabled={busy}
+          onClick={() => onOpenRuns(duty)}>运行记录</button>}
         {editable && <button type="button" className={styles.danger} disabled={busy}
           onClick={() => armed ? void act("stop") : setArmed(true)}>
           {armed ? "确认删除？" : "删除任务"}
@@ -153,6 +157,7 @@ export function BotTasks({ specialistId }: { specialistId?: string }) {
   const [duties, setDuties] = useState<Duty[] | null>(null);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<Duty | null>(null);
+  const [runsFor, setRunsFor] = useState<Duty | null>(null);
   useEffect(() => {
     let current = true;
     void assistantRequest<{ duties: Duty[] }>(
@@ -166,6 +171,11 @@ export function BotTasks({ specialistId }: { specialistId?: string }) {
   function replace(updated: BotDuty) {
     setDuties(items => items?.map(item => item.objectiveId === updated.objectiveId
       ? { ...item, ...updated } : item) ?? null);
+  }
+
+  if (runsFor) {
+    return <DutyRunHistory objectiveId={runsFor.objectiveId} title={runsFor.title}
+      scheduleText={dutyScheduleText(runsFor.schedule)} onBack={() => setRunsFor(null)} />;
   }
 
   return <section className={styles.tasks} aria-label="任务">
@@ -186,6 +196,7 @@ export function BotTasks({ specialistId }: { specialistId?: string }) {
       <span className={styles.state} data-status={duty.status}>{dutyStatus[duty.status] ?? duty.status}</span>
     </button>)}
     {editing && <DutyEditDialog key={`${editing.objectiveId}-${editing.revision}`} duty={editing}
-      onClose={() => setEditing(null)} onSaved={replace} />}
+      onClose={() => setEditing(null)} onSaved={replace}
+      onOpenRuns={duty => { setEditing(null); setRunsFor(duty); }} />}
   </section>;
 }

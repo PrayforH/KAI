@@ -20,7 +20,9 @@ export type Objective = {
 };
 export type Execution = { executionId: string; threadId: string; runId: string | null;
   status: "pending" | "running" | "succeeded" | "failed" | "cancelled";
-  summary: string; createdAt: string };
+  summary: string; createdAt: string;
+  /** schedule:/manual:/delegate:/manage: — drives the run-history filter. */
+  triggerKey?: string; scheduledFor?: string | null; errorCode?: string | null };
 export type Notice = { itemId: string; objectiveId: string; title: string; content: string;
   kind: string; createdAt: string; readAt: string | null; threadId?: string | null;
   sourceSequence?: number | null;
