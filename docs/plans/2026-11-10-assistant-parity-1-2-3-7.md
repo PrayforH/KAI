@@ -7,19 +7,25 @@
 
 - 已实现并上 116：提交 `c411c378`（3、7）+ `34f8889f`（1、2），镜像
   `kai/alignment-web:assistant-recall-20261110`。
-- 回滚：`skill-loop/compose.before-assistant-recall.json`。
+- 迭代：提交 `61c0c491`（定位翻页、触发类型补全、抽屉位置），镜像
+  `kai/alignment-web:assistant-recall-20261110-v2`。
+- 回滚：最新一步用 `skill-loop/compose.before-assistant-recall-v2.json`；
+  退回第一版用 `skill-loop/compose.before-assistant-recall.json`。
 - 验证：`/`、`/assistant` 200；容器 healthy；分块含
-  `assistant-history-located` 与「聊天记录」；新增测试 10 项（`tests/duty-run-history.spec.tsx`
-  4 项、`tests/assistant-history-panel.spec.tsx` 6 项），全量仍只有
-  `tests/assistant-viewed-marks.spec.tsx` 的 2 项既有失败。
+  `assistant-history-located` 与「聊天记录」；本轮测试 16 项（执行记录 5、
+  聊天记录 6、定位翻页 3、自动展开 2），全量 282 个文件 1731 项通过 /
+  1 项跳过（顺带修正了 `tests/assistant-viewed-marks.spec.tsx` 里按旧结构
+  断言电脑入口的 2 项）。
 
 ## 1 定时任务记录与跳转
 
 - `DutyEditDialog` 底部「运行记录」→ `DutyRunHistory` 内页（同一任务列表位置替换，
   返回后回到任务列表）。
 - 数据：`GET /objectives/{id}/executions`（最多 100 条）。`Execution` 补 `triggerKey`，
-  按命名空间显示 定时/手动/委派/管理：`schedule:`、`manual:`、`delegate:`、`manage:`。
-- 状态筛选：已完成 / 执行失败 / 执行中 / 已取消；客户端 10 条一页，显示
+  按后端真实写入的命名空间显示 定时/手动/飞书/委派/管理/演练：`schedule:`、`manual:`、
+  `feishu:`、`delegate:`、`delegate-specialist:`（交接，归入委派）、`manage:`、`trial:`。
+  命中 100 条上限时补充说明「更早的记录暂不可见」。
+- 状态筛选：已完成 / 执行失败 / 执行中 / 排队中 / 已取消；客户端 10 条一页，显示
   `共 N 条 · 第 x/y 页`。
 - 跳转：`taskThreadHref(threadId, runId)` → `/?thread=…&run=…`；没有 `runId` 的执行
   标注「尚未产生会话」，不给死链。
@@ -36,9 +42,14 @@
 - 文件与消息关联：产物带 `run_id`，消息 id 约定 `assistant-<runId>[-suffix]`
   （`messageOwnsArtifact`，与 `agent-thread.ts` 的 `messageOwnsRun` 同口径）。
   用户上传的附件来自消息 content 的 input part，直接挂在自己的消息上。
-- 定位：`locateInChat(messageId)` 查 `[data-message-id]`，`scrollIntoView` 后加
+- 定位：`src/lib/chat-locate.ts` 先查已挂载的 `[data-message-id]`；assistant-ui 只挂载
+  已导入的几页消息，找不到时通过 `registerHistoryLocator`（`agent-thread.tsx` 注册）
+  让会话 `loadEarlier()` 往回翻页再试（最多 5 页），找到后 `scrollIntoView` 并加
   `assistant-history-located` 1.8 秒（样式在 `assistant-conversation.css`），与原型
-  `paLocateInChat` 一致；找不到时提示「未在当前会话中找到这条消息」。
+  `paLocateInChat` 一致；翻完仍找不到提示「未在当前会话中找到这条消息」，翻页失败
+  提示「未能加载更早的消息，请重试」。
+- 抽屉：右侧浮层从顶栏下方展开（`top: var(--shell-header-height)`，顶栏保持在上层），
+  离开助理面自动收起；≤640px 时占满宽度。
 - 文件预览：产物派发既有 `harness:preview-artifact` 事件，助理页复用居中预览弹窗；
   上传附件走 `/api/input-artifacts/{id}/content?inline=1`。
 - 已知取舍：每次打开读全量历史（最多 20 页 × 100 run）+ 200 个产物；对超大历史后续
