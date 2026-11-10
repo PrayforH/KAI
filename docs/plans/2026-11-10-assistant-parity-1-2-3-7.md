@@ -69,6 +69,33 @@
 - 助理页在真实 `holder.execution_id` 出现且电脑未展开时自动打开一次；
   `dismissedExecution` 记住手动关闭的执行，同一执行不再弹回；新执行可再次联动。
 
+## 长期记忆写入链路修复（2026-11-11）
+
+- 现象：助理调用 `propose_memory` 后只回一句「待确认 / 我搜不到」，用户以为写入失败。
+- 根因 1（交互）：`propose_agent` 默认 `pending`，需要设置页确认；对话里没有任何入口，
+  用户在聊天里看不到「去哪确认」。
+  → 新增 `memory-proposal-card.tsx`：工具结果直接渲染卡片，pending 给「确认保存」
+  （调 `memory-bank/entries/{id}/confirm`，带 `expectedVersion`），active 显示
+  「已写入长期记忆」，`untrusted-memory-deny` / `InputValidationError` 分别说明原因。
+  历史消息只有运行视图结果摘要时也按同一套解析（5 个用例覆盖）。
+- 根因 2（自动提取）：116 的 `HARNESS_MEMORY_EXTRACTION_BASE_URL` 缺 `/v1`，
+  provider 根路径返回 HTML SPA，70 个任务全部 `memory_extraction_JSONDecodeError`。
+  → `compose.private.json` 里 `services.api` / `services.worker` 改为
+  `http://172.20.109.174:4000/v1`（递归 diff 只允许这两处变化，
+  备份 `skill-loop/compose.before-memory-extraction.json`），重建 api/worker。
+  重跑验证：任务从 `failed` 转为 `completed`，新产生 pending 条目
+  「用户希望以后建议都输出为 HTML 精美格式。」；直接用容器内 `MemoryExtractor`
+  probe 也返回同一条候选，证据逐字命中。
+- 残留：少量任务 provider 返回 `content: null` / 非 JSON（`AttributeError` /
+  `ValidationError`），会按 5 次退避后置 failed；解析入口的健壮性需要后端镜像重建，
+  暂未纳入本次 web 发布。旧的 58 条 JSONDecodeError 任务未自动回填，需要时按
+  `status='pending', attempts=0` 重排即可。
+- 验证：283 个测试文件 / 1736 通过 / 1 跳过；tsc 无错误；116 web 升到
+  `kai/alignment-web:assistant-recall-20261110-v4`（备份
+  `skill-loop/compose.before-memory-card.json`），`/`、`/assistant`、`/settings`、
+  `/studio/automation` 均 200，新 chunk 含「记忆待确认 / 确认保存」标记。
+- 提交：`55aa5d86`。
+
 ## 待办
 
 - P1b 新建任务仍缺 `POST /objectives` 的 `specialistId` 透传。
