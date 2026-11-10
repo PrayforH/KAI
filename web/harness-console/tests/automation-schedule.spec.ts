@@ -3,8 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   WEEKDAYS_CRON,
   buildCron,
+  buildDutyCron,
+  describeCron,
   nextWeekdayEvenHour,
   readCronFrequency,
+  readDutyRepeat,
   scheduleSummary,
 } from "../src/lib/automation-schedule";
 import type { ApiAutomationTask } from "../src/lib/studio-client";
@@ -53,10 +56,49 @@ describe("summarising a schedule", () => {
     expect(scheduleSummary(taskWithCron("0 */4 * * 1-5"))).toBe("工作日每 4 小时");
   });
 
-  it("falls back to the expression instead of guessing", () => {
-    expect(scheduleSummary(taskWithCron("0 9 15 * *"))).toBe("0 9 15 * *");
+  it("names monthly and annual clocks instead of dumping the expression", () => {
+    expect(scheduleSummary(taskWithCron("0 9 15 * *"))).toBe("每月 15 日 09:00");
+    expect(scheduleSummary(taskWithCron("0 9 1 3 *"))).toBe("每年 3 月 1 日 09:00");
     expect(scheduleSummary(taskWithCron("0 9 * * *"))).toBe("每天 09:00");
     expect(scheduleSummary(taskWithCron("0 18 * * 5"))).toBe("每周五 18:00");
+  });
+
+  it("falls back to the expression instead of guessing", () => {
+    expect(scheduleSummary(taskWithCron("0 9 * * 1-5"))).toBe("0 9 * * 1-5");
+    expect(scheduleSummary(taskWithCron("30 22 1 3 1"))).toBe("30 22 1 3 1");
+  });
+});
+
+describe("the duty repeat vocabulary", () => {
+  it("round-trips every repeat the editor offers", () => {
+    const repeats = [
+      { repeat: "daily", time: "09:00" },
+      { repeat: "weekly", time: "18:30", weekday: 5 },
+      { repeat: "monthly", time: "08:00", dayOfMonth: 15 },
+      { repeat: "yearly", time: "07:05", dayOfMonth: 1, month: 3 },
+    ] as const;
+    for (const repeat of repeats) {
+      const cron = buildDutyCron(repeat);
+      expect(readDutyRepeat(cron)).toEqual(repeat);
+      expect(describeCron(cron)).not.toBeNull();
+    }
+    expect(buildDutyCron(repeats[0])).toBe("0 9 * * *");
+    expect(buildDutyCron(repeats[1])).toBe("30 18 * * 5");
+    expect(buildDutyCron(repeats[2])).toBe("0 8 15 * *");
+    expect(buildDutyCron(repeats[3])).toBe("5 7 1 3 *");
+  });
+
+  it("keeps expressions it cannot describe on the raw cron", () => {
+    expect(readDutyRepeat("0 9 * * 1-5")).toBeNull();
+    expect(readDutyRepeat("*/15 * * * *")).toBeNull();
+    expect(describeCron("30 22 1 3 1")).toBeNull();
+    expect(describeCron("0 9 32 * *")).toBeNull();
+    expect(readDutyRepeat("not a cron")).toBeNull();
+  });
+
+  it("accepts 7 as Sunday, like the cron parser does", () => {
+    expect(readDutyRepeat("0 9 * * 7")).toEqual({ repeat: "weekly", time: "09:00", weekday: 0 });
+    expect(describeCron("0 9 * * 7")).toBe("每周日 09:00");
   });
 });
 

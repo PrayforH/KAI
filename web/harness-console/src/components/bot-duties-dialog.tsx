@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { assistantRequest, type Execution } from "../lib/assistant-client";
+import { assistantRequest, type Execution, type ObjectiveSchedule } from "../lib/assistant-client";
+import { describeCron } from "../lib/automation-schedule";
 import { taskThreadHref } from "../lib/conversation-navigation";
 import { DutyScheduleControl, type BotDuty } from "./duty-schedule-control";
 import styles from "./bot-edit-dialog.module.css";
@@ -13,6 +14,20 @@ const dutyStatus: Record<string, string> = {
 const executionStatus: Record<Execution["status"], string> = {
   pending: "排队中", running: "执行中", succeeded: "已完成", failed: "执行失败", cancelled: "已取消",
 };
+
+/** The saved rule in one line, in the same words the editor offers. */
+export function dutyScheduleText(schedule: ObjectiveSchedule | null): string {
+  if (!schedule) return "按需交办";
+  if (schedule.meetingStartsAt) return `会议前 ${schedule.minutesBefore ?? "N"} 分钟提醒`;
+  if (schedule.kind === "once" && schedule.at) {
+    return `单次 ${new Date(schedule.at).toLocaleString("zh-CN")}`;
+  }
+  if (schedule.kind === "cron" && schedule.expression) {
+    return describeCron(schedule.expression) ?? schedule.expression;
+  }
+  if (schedule.intervalMinutes) return `每 ${schedule.intervalMinutes} 分钟`;
+  return "按需交办";
+}
 
 export function DutyHistory({ objectiveId }: { objectiveId: string }) {
   const [executions, setExecutions] = useState<Execution[] | null>(null);
@@ -77,7 +92,9 @@ export function BotDuties({ specialistId, compact = false }: { specialistId?: st
       {duties?.map(duty => <section key={duty.objectiveId}>
         <div className={`${styles.routine} ${styles.compactRoutine}`}>
         <div className={styles.routineCopy}>
-          <strong>{duty.title}</strong><small>{dutyStatus[duty.status]}</small>
+          <strong>{duty.title}</strong>
+          <small>{dutyScheduleText(duty.schedule)}</small>
+          <small>{dutyStatus[duty.status]}</small>
         </div>
         {duty.schedule && (duty.status === "active" || duty.status === "paused") &&
           <button type="button" role="switch" className={styles.routineToggle} aria-label={duty.title}
@@ -97,6 +114,7 @@ export function BotDuties({ specialistId, compact = false }: { specialistId?: st
         <div className={styles.routine}>
           <div className={styles.routineCopy}>
             <strong>{duty.title}</strong>
+            <small>{dutyScheduleText(duty.schedule)}</small>
             {duty.latestExecution && <small>最近执行 {executionStatus[duty.latestExecution.status]}</small>}
           </div>
           <span className={styles.routineState}>{dutyStatus[duty.status]}</span>

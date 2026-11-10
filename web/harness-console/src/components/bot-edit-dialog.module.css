@@ -255,6 +255,9 @@
 .dutyTrigger label { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
 .dutyTrigger :is(select, input) { max-width: 65%; padding: .4rem .6rem; border: 1px solid var(--border, #8884); border-radius: .5rem; background: var(--card, #222); color: inherit; font: inherit; }
 .dutyTrigger small { color: #999; }
+/* 每月/每年的「月 + 日」是一组控件，右对齐成一行，和单格输入同宽。 */
+.dutyDate { display: flex; align-items: center; gap: .4rem; max-width: 65%; }
+.dutyTrigger .dutyDate :is(select, input) { max-width: none; }
 .dutyTrigger button { justify-self: end; padding: .4rem .6rem; background: transparent; color: inherit; border: 1px solid #8884; border-radius: .5rem; cursor: pointer; }
 .dutyTrigger button:disabled { opacity: .5; cursor: default; }
 .dutyTrigger p { margin: 0; font-size: .8rem; }

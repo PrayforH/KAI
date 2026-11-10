@@ -82,6 +82,58 @@ export function readCronFrequency(cron: string, weekday: number): ScheduleReadin
   return null;
 }
 
+/** The repeats a duty (assistant 定时任务) offers, in the prototype's vocabulary. */
+export type DutyRepeat = "once" | "daily" | "weekly" | "monthly" | "yearly";
+
+export type DutyRepeatReading =
+  | { repeat: "daily"; time: string }
+  | { repeat: "weekly"; time: string; weekday: number }
+  | { repeat: "monthly"; time: string; dayOfMonth: number }
+  | { repeat: "yearly"; time: string; dayOfMonth: number; month: number };
+
+/** The cron a repeat means. Monthly/annual carry an explicit day, because a
+ *  five-field cron cannot derive it from "每月". */
+export function buildDutyCron(reading: DutyRepeatReading): string {
+  const [hour, minute] = reading.time.split(":").map((item) => Number(item) || 0);
+  const clock = `${minute} ${hour}`;
+  if (reading.repeat === "daily") return `${clock} * * *`;
+  if (reading.repeat === "weekly") return `${clock} * * ${reading.weekday}`;
+  if (reading.repeat === "monthly") return `${clock} ${reading.dayOfMonth} * *`;
+  return `${clock} ${reading.dayOfMonth} ${reading.month} *`;
+}
+
+/** What a cron means in duty terms, or null when no repeat produces it. */
+export function readDutyRepeat(cron: string): DutyRepeatReading | null {
+  const parts = cron.trim().split(/\s+/);
+  if (parts.length !== 5) return null;
+  const [minute, hour, dayOfMonth, month, weekday] = parts;
+  if (!/^\d{1,2}$/.test(minute) || !/^\d{1,2}$/.test(hour)) return null;
+  const time = `${pad(Number(hour))}:${pad(Number(minute))}`;
+  if (dayOfMonth === "*" && month === "*") {
+    if (weekday === "*") return { repeat: "daily", time };
+    if (/^[0-7]$/.test(weekday)) return { repeat: "weekly", time, weekday: Number(weekday) % 7 };
+    return null;
+  }
+  if (!/^\d{1,2}$/.test(dayOfMonth) || Number(dayOfMonth) < 1 || Number(dayOfMonth) > 31) return null;
+  if (month === "*" && weekday === "*") {
+    return { repeat: "monthly", time, dayOfMonth: Number(dayOfMonth) };
+  }
+  if (/^\d{1,2}$/.test(month) && Number(month) >= 1 && Number(month) <= 12 && weekday === "*") {
+    return { repeat: "yearly", time, dayOfMonth: Number(dayOfMonth), month: Number(month) };
+  }
+  return null;
+}
+
+/** A cron as a person reads it, for lists and summaries. */
+export function describeCron(cron: string): string | null {
+  const reading = readDutyRepeat(cron);
+  if (!reading) return null;
+  if (reading.repeat === "daily") return `每天 ${reading.time}`;
+  if (reading.repeat === "weekly") return `每${WEEKDAY_LABELS[reading.weekday]} ${reading.time}`;
+  if (reading.repeat === "monthly") return `每月 ${reading.dayOfMonth} 日 ${reading.time}`;
+  return `每年 ${reading.month} 月 ${reading.dayOfMonth} 日 ${reading.time}`;
+}
+
 /** How a schedule reads in the task list, without claiming more than the cron says. */
 export function scheduleSummary(task: ApiAutomationTask): string {
   const schedule = task.schedule;
@@ -91,11 +143,8 @@ export function scheduleSummary(task: ApiAutomationTask): string {
   const cron = schedule.cron ?? "";
   const parts = cron.trim().split(/\s+/);
   if (parts.length !== 5) return cron;
-  const [minute, hour, dayOfMonth, month, weekday] = parts;
+  const [minute, hour, , , weekday] = parts;
   const unconstrained = (value: string) => value === "*" || value === "?";
-  // A day-of-month or month constraint makes the schedule a monthly/annual one, which
-  // "每天"/"每周" would misdescribe; those keep their expression.
-  if (!unconstrained(dayOfMonth) || !unconstrained(month)) return cron;
   if (hour.startsWith("*/")) {
     const interval = Number(hour.slice(2));
     if (weekday === "1-5") return `工作日每 ${interval} 小时`;
@@ -103,11 +152,9 @@ export function scheduleSummary(task: ApiAutomationTask): string {
     return cron;
   }
   if (!/^\d{1,2}$/.test(minute) || !/^\d{1,2}$/.test(hour)) return cron;
-  const timeText = `${pad(Number(hour))}:${pad(Number(minute))}`;
-  if (unconstrained(weekday)) return `每天 ${timeText}`;
-  if (!/^[0-6]$/.test(weekday)) return cron;
-  // WEEKDAY_LABELS already carry the 周/日 prefix: "每周五", not "每周周五".
-  return `每${WEEKDAY_LABELS[Number(weekday) % 7]} ${timeText}`;
+  // Daily, weekly, monthly and annual clocks all come from one reading, so the list
+  // says the same thing the editor shows.
+  return describeCron(cron) ?? cron;
 }
 
 /** The next moment the weekday-every-two-hours template actually fires. */
