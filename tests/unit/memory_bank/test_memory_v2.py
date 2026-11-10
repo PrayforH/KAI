@@ -208,7 +208,7 @@ async def test_extraction_requires_evidence_and_known_replacement():
 
 
 @pytest.mark.asyncio
-async def test_extraction_reports_empty_content_as_retryable_value_error():
+async def test_extraction_treats_empty_content_as_no_candidates():
     async def handler(request):
         return httpx.Response(200, json={"choices": [{"message": {"content": None}}]})
 
@@ -218,8 +218,7 @@ async def test_extraction_reports_empty_content_as_retryable_value_error():
         "deepseek-v4-flash",
         transport=httpx.MockTransport(handler),
     )
-    with pytest.raises(ValueError, match="empty content"):
-        await extractor.extract("我习惯使用中文", [])
+    assert await extractor.extract("我习惯使用中文", []) == []
 
 
 @pytest.mark.asyncio

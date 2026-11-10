@@ -103,13 +103,13 @@ class MemoryExtractor:
         if response.status_code != 200:
             raise ValueError(f"extraction provider returned HTTP {response.status_code}")
         # Some OpenAI-compatible gateways return content: null (empty completion)
-        # instead of an error; surface that as a retryable ValueError, not AttributeError.
+        # instead of an error. Nothing to extract is a valid outcome, not a failure.
         payload = response.json()
         choices = payload.get("choices") or []
         message = choices[0].get("message") if choices else None
         content = message.get("content") if isinstance(message, dict) else None
         if not isinstance(content, str) or not content.strip():
-            raise ValueError("extraction provider returned empty content")
+            return []
         text = content.strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
