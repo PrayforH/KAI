@@ -41,7 +41,10 @@ it("labels trigger namespaces instead of dumping the raw key", () => {
   expect(triggerKind("schedule:cron:0 9 * * *")).toBe("schedule");
   expect(triggerKind("manual:abc")).toBe("manual");
   expect(triggerKind("delegate:run:objective")).toBe("delegate");
+  expect(triggerKind("delegate-specialist:message:objective")).toBe("delegate");
   expect(triggerKind("manage:run:objective")).toBe("manage");
+  expect(triggerKind("trial:specialist_1:2")).toBe("trial");
+  expect(triggerKind("feishu:digest")).toBe("feishu");
   expect(triggerKind(undefined)).toBe("other");
 });
 
@@ -73,6 +76,12 @@ it("shows a page of runs, filters them, and links each to its conversation", asy
 
   await choose("按状态筛选", "failed");
   expect(host.textContent).toContain("没有符合筛选条件的记录");
+});
+
+it("says so when the server's 100-row cap is reached", async () => {
+  request.mockImplementation(async () => Array.from({ length: 100 }, (_, index) => run(index)));
+  await render(<DutyRunHistory objectiveId="coding" title="检查改动" scheduleText="每天 09:00" onBack={vi.fn()} />);
+  expect(host.textContent).toContain("服务端一次最多返回最近 100 条执行");
 });
 
 it("goes back to the task list", async () => {

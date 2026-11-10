@@ -22,12 +22,14 @@ describe("one computer per person, reachable from every assistant conversation",
 
   it("mounts the pane for the assistant entry, not only the main thread", () => {
     // 电脑属于这个人：主助理与子助理会话都能打开同一台；控制权靠 desktop 租约独占。
-    expect(page).toContain("<AssistantComputerPane open={assistantEntry && computerOpen}");
+    expect(page).toContain("<AssistantComputerPane open={assistantView && computerOpen}");
     expect(page).not.toContain("<AssistantComputerPane open={personalAssistant && computerOpen}");
   });
 
-  it("keeps the header control on the same surface", () => {
-    expect(page).toContain("computerControl={assistantEntry ? (");
-    expect(page).not.toContain("computerControl={personalAssistant ? (");
+  it("keeps the computer control on the same surface", () => {
+    // 助理面板里的「打开电脑」和自动展开共用 showComputer，只有助理面才挂这块面板。
+    expect(page).toContain("{assistantRailOpen && (");
+    expect(page).toContain("onComputer={() => showComputer(true)}");
+    expect(page).not.toContain("onComputer={personalAssistant");
   });
 });

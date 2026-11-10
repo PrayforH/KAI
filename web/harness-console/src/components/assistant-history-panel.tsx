@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { requireAuthenticatedResponse } from "../lib/client-auth";
+import { locateInChat as locateMessage } from "../lib/chat-locate";
 import { loadFullThreadHistory } from "../lib/task-history";
 import { formatBytes } from "./artifact-list";
 import styles from "./assistant-history-panel.module.css";
@@ -166,17 +167,6 @@ export function dayOf(value?: string | null): string {
   return `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}`;
 }
 
-/** Scroll the chat to one message and flash it, like the prototype's locate. */
-export function locateInChat(messageId: string, root: ParentNode | null = typeof document === "undefined" ? null : document): boolean {
-  const target = root?.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`);
-  if (!target) return false;
-  target.scrollIntoView?.({ block: "center", behavior: "smooth" });
-  target.classList.remove("assistant-history-located");
-  void target.offsetWidth;
-  target.classList.add("assistant-history-located");
-  window.setTimeout(() => target.classList.remove("assistant-history-located"), 1800);
-  return true;
-}
 
 function fileHref(file: HistoryFile, threadId: string): string {
   if (file.inlineHref) return file.inlineHref;
@@ -255,8 +245,10 @@ export function AssistantHistoryPanel({ open, threadId, assistantName = "助理"
 
   function locate(messageId: string | null) {
     if (!messageId) { setNotice("这条记录没有关联消息"); return; }
-    if (!locateInChat(messageId)) setNotice("未在当前会话中找到这条消息");
-    else setNotice("");
+    setNotice("");
+    void locateMessage(messageId, threadId).then(found => {
+      if (!found) setNotice("未在当前会话中找到这条消息");
+    }).catch(() => setNotice("未能加载更早的消息，请重试"));
   }
 
   const list = tab === "all" ? entries : tab === "files" ? files : media;

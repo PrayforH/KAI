@@ -6,21 +6,29 @@ import { taskThreadHref } from "../lib/conversation-navigation";
 import styles from "./bot-tasks.module.css";
 
 const PAGE_SIZE = 10;
+/** GET /objectives/{id}/executions returns at most this many, newest first. */
+const SERVER_LIMIT = 100;
 const statusLabel: Record<Execution["status"], string> = {
   pending: "排队中", running: "执行中", succeeded: "已完成", failed: "执行失败", cancelled: "已取消",
 };
 
 /** Trigger keys are namespaced by who started the run. The prototype offers
- *  one 类型 filter; these are the namespaces the server actually writes. */
-export function triggerKind(key?: string): "schedule" | "manual" | "delegate" | "manage" | "other" {
+ *  one 类型 filter; these are the namespaces the server actually writes
+ *  (`delegate-specialist:` is the handover path, still a delegation). */
+export function triggerKind(key?: string): "schedule" | "manual" | "feishu" | "delegate" | "manage" | "trial" | "other" {
   if (key?.startsWith("schedule:")) return "schedule";
   if (key?.startsWith("manual:")) return "manual";
-  if (key?.startsWith("delegate:")) return "delegate";
+  if (key?.startsWith("feishu:")) return "feishu";
+  if (key?.startsWith("delegate:") || key?.startsWith("delegate-specialist:")) return "delegate";
   if (key?.startsWith("manage:")) return "manage";
+  if (key?.startsWith("trial:")) return "trial";
   return "other";
 }
 
-const triggerLabel = { schedule: "定时", manual: "手动", delegate: "委派", manage: "管理", other: "其他" } as const;
+const triggerLabel = {
+  schedule: "定时", manual: "手动", feishu: "飞书", delegate: "委派",
+  manage: "管理", trial: "演练", other: "其他",
+} as const;
 
 export function filterExecutions(
   executions: Execution[],
@@ -74,6 +82,7 @@ export function DutyRunHistory({ objectiveId, title, scheduleText, onBack }: {
           <option value="succeeded">已完成</option>
           <option value="failed">执行失败</option>
           <option value="running">执行中</option>
+          <option value="pending">排队中</option>
           <option value="cancelled">已取消</option>
         </select>
         <select aria-label="按触发类型筛选" value={trigger}
@@ -81,8 +90,10 @@ export function DutyRunHistory({ objectiveId, title, scheduleText, onBack }: {
           <option value="all">全部类型</option>
           <option value="schedule">定时</option>
           <option value="manual">手动</option>
+          <option value="feishu">飞书</option>
           <option value="delegate">委派</option>
           <option value="manage">管理</option>
+          <option value="trial">演练</option>
         </select>
       </div>
     </div>
@@ -104,5 +115,8 @@ export function DutyRunHistory({ objectiveId, title, scheduleText, onBack }: {
       <button type="button" disabled={current === 0} onClick={() => setPage(current - 1)}>上一页</button>
       <button type="button" disabled={current >= pages - 1} onClick={() => setPage(current + 1)}>下一页</button>
     </nav>}
+    {runs && runs.length >= SERVER_LIMIT && <p className={styles.hint}>
+      服务端一次最多返回最近 {SERVER_LIMIT} 条执行，更早的记录暂不可见。
+    </p>}
   </section>;
 }

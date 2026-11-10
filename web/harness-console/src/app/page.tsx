@@ -239,6 +239,7 @@ function AuthenticatedHome() {
   const personalAssistant = assistantEntry && threadId === PERSONAL_ASSISTANT_THREAD;
   // 助理入口一律用对话形态；选中机器人时标题与输入框跟着它变。
   const [computerOpen, setComputerOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [readyConversation, setReadyConversation] = useState<string | null>(null);
   useEffect(() => {
     // A previous visit must not connect the desktop during a new chat load.
@@ -284,6 +285,11 @@ function AuthenticatedHome() {
     autoOpenedExecution.current = holdingExecution;
     showComputer(true);
   }, [assistantView, computerOpen, holdingExecution]); // showComputer only toggles state.
+  // Leaving the assistant surface closes 聊天记录 with it; the drawer belongs
+  // to the assistant, not to whichever task replaces it.
+  useEffect(() => {
+    if (!assistantView) setHistoryOpen(false);
+  }, [assistantView]);
 
   useEffect(() => {
     if (!assistantEntry) { botViewedRef.current = null; return; }
@@ -406,7 +412,6 @@ function AuthenticatedHome() {
   const [taskSidebarOpen, setTaskSidebarOpen] = useState(true);
   const [taskRailOpen, setTaskRailOpen] = useState(false);
   const [botSideOpen, setBotSideOpen] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
   const assistantRailOpen = assistantView && botSideOpen && (!botParam || bot?.specialistId === botParam);
   const [railExpanded, setRailExpanded] = useState(false);
   const [railPreview, setRailPreview] = useState<(PreviewTarget & { nonce: number }) | null>(null);

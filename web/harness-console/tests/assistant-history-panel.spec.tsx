@@ -7,8 +7,9 @@ const history = vi.fn();
 vi.mock("../src/lib/task-history", () => ({ loadFullThreadHistory: (...args: unknown[]) => history(...args) }));
 vi.mock("../src/lib/client-auth", () => ({ requireAuthenticatedResponse: (value: unknown) => value }));
 import {
-  AssistantHistoryPanel, fileGlyph, fileKindOf, filterFiles, historyEntries, locateInChat,
+  AssistantHistoryPanel, fileGlyph, fileKindOf, filterFiles, historyEntries,
 } from "../src/components/assistant-history-panel";
+import { flashMessage } from "../src/lib/chat-locate";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 const host = document.createElement("div");
@@ -123,5 +124,5 @@ it("searches file names and keeps media search disabled", async () => {
 });
 
 it("returns false when the message is not in the chat", () => {
-  expect(locateInChat("missing-run")).toBe(false);
+  expect(flashMessage("missing-run")).toBe(false);
 });

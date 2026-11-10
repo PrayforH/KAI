@@ -14,6 +14,7 @@ import { startSteeringPolling } from "../lib/steering-poller";
 import { ConversationControl } from "./conversation-control";
 import { MessageAttachmentGroup } from "./message-attachment-view";
 import { useThreadHistoryReady } from "./thread-history-ready";
+import { registerHistoryLocator } from "../lib/chat-locate";
 import { ProductBrandMark } from "./product-brand";
 
 import Link from "next/link";
@@ -2152,6 +2153,15 @@ export function AgentThread({
     importRepository: (repository) => threadRuntime?.import(repository),
   });
   useAutoLoadEarlierMessages(frame, historyPagination, { readerDriven: assistantSurface });
+  // 历史面板只挂载了已导入的几页消息；定位老消息时先让会话把更早的页翻进来。
+  useEffect(() => {
+    registerHistoryLocator({
+      threadId,
+      hasMore: () => historyPagination.hasMore,
+      loadEarlier: historyPagination.loadEarlier,
+    });
+    return () => registerHistoryLocator(null);
+  }, [threadId, historyPagination.hasMore, historyPagination.loadEarlier]);
   const composerDraftScope = useMemo(
     () => ({ userId, threadId }),
     [threadId, userId],
