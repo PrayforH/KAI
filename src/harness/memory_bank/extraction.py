@@ -6,7 +6,7 @@ import json
 from collections.abc import Sequence
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
 from harness.memory_bank.models import MemoryEntry, MemoryStatus, MemoryType
 from harness.memory_bank.safety import normalize_memory_content
@@ -102,10 +102,26 @@ class MemoryExtractor:
             )
         if response.status_code != 200:
             raise ValueError(f"extraction provider returned HTTP {response.status_code}")
-        text = response.json()["choices"][0]["message"]["content"].strip()
+        # Some OpenAI-compatible gateways return content: null (empty completion)
+        # instead of an error; surface that as a retryable ValueError, not AttributeError.
+        payload = response.json()
+        choices = payload.get("choices") or []
+        message = choices[0].get("message") if choices else None
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("extraction provider returned empty content")
+        text = content.strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-        result = ExtractionResult.model_validate_json(text)
+        try:
+            result = ExtractionResult.model_validate_json(text)
+        except ValidationError:
+            # A model may wrap the object in prose; only salvage a complete
+            # { ... } slice, otherwise let the job retry with a clean failure.
+            start, end = text.find("{"), text.rfind("}")
+            if start < 0 or end <= start:
+                raise
+            result = ExtractionResult.model_validate_json(text[start : end + 1])
         old = {entry.entry_id: entry for entry in existing}
         accepted: list[MemoryCandidate] = []
         for candidate in result.candidates:

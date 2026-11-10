@@ -198,10 +198,48 @@ async def test_extraction_requires_evidence_and_known_replacement():
         )
 
     extractor = MemoryExtractor(
-        "http://test/v1", SecretStr("test"), "deepseek-v4-flash", transport=httpx.MockTransport(handler)
+        "http://test/v1",
+        SecretStr("test"),
+        "deepseek-v4-flash",
+        transport=httpx.MockTransport(handler),
     )
     candidates = await extractor.extract("我习惯使用中文", [])
     assert len(candidates) == 1 and candidates[0].memory_type is MemoryType.PREFERENCE
+
+
+@pytest.mark.asyncio
+async def test_extraction_reports_empty_content_as_retryable_value_error():
+    async def handler(request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": None}}]})
+
+    extractor = MemoryExtractor(
+        "http://test/v1",
+        SecretStr("test"),
+        "deepseek-v4-flash",
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(ValueError, match="empty content"):
+        await extractor.extract("我习惯使用中文", [])
+
+
+@pytest.mark.asyncio
+async def test_extraction_salvages_json_wrapped_in_prose():
+    async def handler(request):
+        body = json.dumps(
+            {"candidates": [{"content": "用户偏好中文", "evidence": "我习惯使用中文"}]},
+            ensure_ascii=False,
+        )
+        content = f"好的，结果如下：\n{body}\n以上。"
+        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+    extractor = MemoryExtractor(
+        "http://test/v1",
+        SecretStr("test"),
+        "deepseek-v4-flash",
+        transport=httpx.MockTransport(handler),
+    )
+    candidates = await extractor.extract("我习惯使用中文", [])
+    assert [candidate.content for candidate in candidates] == ["用户偏好中文"]
 
 
 @pytest.mark.asyncio
