@@ -162,6 +162,7 @@ describe("Bot side panel", () => {
     const openComputer = vi.fn();
     assistantRequest.mockImplementation(async (path: string) => {
       if (path === "specialists/specialist_demo") return detail();
+      if (path === "primary/duties") return { duties: [] };
       throw new Error(path);
     });
     const threadId = primary ? "kai-personal-assistant-v1" : "bot-thread";
@@ -183,16 +184,23 @@ describe("Bot side panel", () => {
       onComputer={openComputer} />));
     await flush();
     expect(fetcher).toHaveBeenCalledWith(previewUrl, expect.anything());
-    expect(host.textContent).toContain("即将进行");
     expect(host.textContent).toContain(computerLabel);
     expect(host.textContent).not.toContain("管理例行任务");
     expect(host.textContent).not.toContain("建议");
+    // 任务 is its own tab now: the duties are only fetched when it opens.
+    expect(assistantRequest).not.toHaveBeenCalled();
+    await act(async () => buttonByText("任务")!.click());
+    await flush();
+    expect(host.textContent).toContain("暂无定时任务");
+    expect(host.textContent).not.toContain(computerLabel);
     await act(async () => buttonByText("资料库")!.click());
     await flush();
     expect(host.textContent).toContain("交付.txt");
     expect(host.textContent).not.toContain("其他.txt");
     expect(host.textContent).not.toContain("已授权资料");
     expect(host.textContent).not.toContain(computerLabel);
-    expect(assistantRequest).toHaveBeenCalledExactlyOnceWith("specialists/specialist_demo");
+    expect(assistantRequest).toHaveBeenCalledExactlyOnceWith(
+      primary ? "primary/duties" : "specialists/specialist_demo",
+    );
   });
 });

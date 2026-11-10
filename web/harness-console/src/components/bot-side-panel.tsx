@@ -5,9 +5,16 @@ import { requireAuthenticatedResponse } from "../lib/client-auth";
 import type { ArtifactDetails } from "./artifact-list";
 import { AssistantComputerLink } from "./assistant-computer-link";
 import { AssistantResults } from "./assistant-results";
-import { BotDuties } from "./bot-duties-dialog";
 import { BotRailAvatar } from "./bot-rail";
+import { BotTasks } from "./bot-tasks";
 import styles from "./bot-side-panel.module.css";
+
+const TABS = [
+  { key: "activity", label: "动态" },
+  { key: "tasks", label: "任务" },
+  { key: "library", label: "资料库" },
+] as const;
+type Tab = typeof TABS[number]["key"];
 
 function BotLibrary({ threadId }: { threadId: string }) {
   const [files, setFiles] = useState<ArtifactDetails[] | null>(threadId ? null : []);
@@ -79,7 +86,7 @@ export function BotSidePanel({ botId, primary = false, name, tone, shape, thread
   botId?: string; primary?: boolean; name: string; tone: string; shape?: string; threadId: string; ready: boolean;
   onClose: () => void; onDetails?: () => void; onComputer: () => void;
 }) {
-  const [tab, setTab] = useState<"activity" | "library">("activity");
+  const [tab, setTab] = useState<Tab>("activity");
   const id = useId();
   const label = primary ? "助理侧栏" : "Bot 侧栏";
   return <aside className={styles.panel} aria-label={`${name}的侧栏`}>
@@ -89,23 +96,23 @@ export function BotSidePanel({ botId, primary = false, name, tone, shape, thread
       {onDetails ? <button type="button" className={styles.name} aria-label={`${name}详情`} onClick={onDetails}>{name}</button>
         : <h2 className={styles.name}>{name}</h2>}
       <div className={styles.tabs} role="tablist" aria-label={label}>
-        {(["activity", "library"] as const).map(value => <button type="button" key={value} role="tab"
-          id={`${id}-${value}`} aria-selected={tab === value} aria-controls={`${id}-panel`}
-          tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)}
+        {TABS.map(({ key, label: text }) => <button type="button" key={key} role="tab"
+          id={`${id}-${key}`} aria-selected={tab === key} aria-controls={`${id}-panel`}
+          tabIndex={tab === key ? 0 : -1} onClick={() => setTab(key)}
           onKeyDown={event => {
             if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
             event.preventDefault();
-            const next = value === "activity" ? "library" : "activity";
+            const at = TABS.findIndex(item => item.key === key);
+            const next = TABS[(at + (event.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length].key;
             setTab(next);
             document.getElementById(`${id}-${next}`)?.focus();
-          }}>{value === "activity" ? "动态" : "资料库"}</button>)}
+          }}>{text}</button>)}
       </div>
     </header>
     <div className={styles.content} role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-${tab}`}>
-      {tab === "activity" ? <>
-        {(primary || botId) && <BotDuties specialistId={primary ? undefined : botId} compact />}
-        <BotComputerCard botId={primary ? undefined : botId} ready={ready} onOpen={onComputer} />
-      </> : <BotLibrary threadId={threadId} />}
+      {tab === "activity" ? <BotComputerCard botId={primary ? undefined : botId} ready={ready} onOpen={onComputer} />
+        : tab === "tasks" ? <BotTasks specialistId={primary ? undefined : botId} />
+          : <BotLibrary threadId={threadId} />}
     </div>
   </aside>;
 }
