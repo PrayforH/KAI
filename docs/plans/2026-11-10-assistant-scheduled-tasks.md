@@ -87,6 +87,10 @@
 
 ## 6. 分期
 
+> 进度：P0 已实现并上 116（提交 `3f88e452`，镜像 `kai/alignment-web:duty-repeat-20261110`）。
+> 已知遗留：职责行只显示周期摘要，有效期仍需打开编辑器查看——`GET /primary/duties`
+> 不回传 `endsAt`，等 P3 一起补；会议前提醒的时区沿用 brief 时区。
+
 **P0 周期与有效期（纯前端，现有接口）**
 - `automation-schedule.ts`：`buildCron`/`readCronFrequency`/`scheduleSummary` 增加每月/每年。
 - `duty-schedule-control.tsx`：重复 / 时间 / 有效期三格；高级区保留原有能力；保存改用 PUT。
