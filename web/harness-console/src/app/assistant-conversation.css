@@ -778,6 +778,10 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
 }
 
 /* 聊天记录「在聊天中定位」：闪一下原消息，1.8s 后由 JS 移除，和原型一致。 */
+/* 定位时顶部对齐，留一点呼吸位（原型是 14px）。 */
+.console-shell[data-conversation-surface="assistant"] .aui-thread-viewport [data-message-id] {
+  scroll-margin-top: 16px;
+}
 .console-shell[data-conversation-surface="assistant"] .aui-thread-viewport [data-message-id].assistant-history-located {
   position: relative;
   border-radius: 14px;

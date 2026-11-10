@@ -24,7 +24,8 @@ function nextFrames(): Promise<void> {
 export function flashMessage(messageId: string, root: ParentNode | null = typeof document === "undefined" ? null : document): boolean {
   const target = root?.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`);
   if (!target) return false;
-  target.scrollIntoView?.({ block: "center", behavior: "smooth" });
+  // 与原型一致顶部对齐：长消息居中会把发送人和第一行切掉。
+  target.scrollIntoView?.({ block: "start", behavior: "smooth" });
   target.classList.remove("assistant-history-located");
   void target.offsetWidth;
   target.classList.add("assistant-history-located");
