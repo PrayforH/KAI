@@ -104,6 +104,9 @@ import { WikiPageDrawer } from "./knowledge/wiki-page-drawer";
 import { MarkdownText } from "./markdown-text";
 import { SubagentCard } from "./subagent-card";
 import { ToolCard } from "./tool-card";
+import {
+  MemoryProposalCard, MemoryToolNotice, memoryToolFailure, parseMemoryProposal,
+} from "./memory-proposal-card";
 import { useRunActivity, useRunViewModel } from "../lib/activity-store";
 import {
   reduceRunViewModel,
@@ -1388,6 +1391,16 @@ function HarnessToolPart(part: ToolCallMessagePartProps) {
   if (part.toolName === "harness_present_ui") {
     // Rendered once, below the answer, by the turn's presentation list.
     return null;
+  }
+  if (part.toolName === "mcp__harness-memory__propose_memory") {
+    // 记忆写入的终点在用户确认；直接把确认动作放进对话里，别让人再去翻设置。
+    // 重载后的历史消息可能只有运行视图里的结果摘要，两种情况都认。
+    const recorded = runView?.tools.find(tool => tool.id === part.toolCallId);
+    const raw = part.result ?? recorded?.resultPreview;
+    const proposal = parseMemoryProposal(raw);
+    if (proposal) return <MemoryProposalCard proposal={proposal} />;
+    const failure = part.isError ? memoryToolFailure(raw) : null;
+    if (failure) return <MemoryToolNotice reason={failure} />;
   }
   if (shouldSuppressRawToolCard(runView, part.toolCallId)) {
     return null;
