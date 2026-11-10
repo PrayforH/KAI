@@ -87,8 +87,13 @@
   「用户希望以后建议都输出为 HTML 精美格式。」；直接用容器内 `MemoryExtractor`
   probe 也返回同一条候选，证据逐字命中。
 - 残留：少量任务 provider 返回 `content: null` / 非 JSON（`AttributeError` /
-  `ValidationError`），会按 5 次退避后置 failed；解析入口的健壮性需要后端镜像重建，
-  暂未纳入本次 web 发布。旧的 58 条 JSONDecodeError 任务未自动回填，需要时按
+  `ValidationError`）。已在 `extraction.py` 加固：空补全按「无候选」直接完成，
+  包裹在说明文字里的 JSON 截取完整 `{...}` 再校验（`0dd78195`、`52231ece`，
+  14 项单测通过）。后端镜像 `kai/alignment-api:memory-fix-20261111-v2` /
+  `kai/alignment-worker:memory-fix-20261111-v2` 已重建并重建容器
+  （备份 `skill-loop/compose.before-memory-fix-v2.json`）；原先失败的两个任务
+  重排后 1 次即 completed，当前无 retrying。
+  旧的 58 条 JSONDecodeError 任务未自动回填，需要时按
   `status='pending', attempts=0` 重排即可。
 - 验证：283 个测试文件 / 1736 通过 / 1 跳过；tsc 无错误；116 web 升到
   `kai/alignment-web:assistant-recall-20261110-v4`（备份
