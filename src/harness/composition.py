@@ -43,8 +43,10 @@ from harness.assistant.delegation import (
 from harness.assistant.file_delivery import ChannelFiles
 from harness.assistant.memory_tools import MemoryBankGateway, assistant_memory_overlay
 from harness.assistant.messaging import assistant_messaging_overlay
+from harness.assistant.personal_skills import PersonalSkillService
 from harness.assistant.repository import PostgresAssistantRepository
 from harness.assistant.service import AssistantService
+from harness.assistant.skill_proposals import SkillProposalService
 from harness.auth.api_access import ApiAccessService
 from harness.auth.audit import AuditService
 from harness.auth.repositories import PostgresAuditRepository, PostgresAuthRepository
@@ -2005,8 +2007,22 @@ def build_production_container(
         intent_selector=UIIntentSelector.from_settings(settings),
         memory=memory_bank,
     )
+    assistant_repository = PostgresAssistantRepository(sessions)
+    skill_conversation_service = ControlPlaneSkillConversationService(model_configurations)
+    personal_skill_service: PersonalSkillService | None = None
+    skill_proposal_service: SkillProposalService | None = None
+    if settings.assistant_skill_proposals_enabled:
+        personal_skill_service = PersonalSkillService(assistant_repository)
+        skill_proposal_service = SkillProposalService(
+            assistant_repository,
+            events=raw_event_repository,
+            personal_skills=personal_skill_service,
+            projects=project_service,
+            skill_conversation=skill_conversation_service,
+            catalogs=capability_catalogs,
+        )
     assistant = AssistantService(
-        PostgresAssistantRepository(sessions),
+        assistant_repository,
         agents=agent_service,
         auth=auth,
         projects=project_service,
@@ -2016,6 +2032,8 @@ def build_production_container(
         event_service=events,
         quotas=enforced_quotas,
         team_spaces=team_spaces,
+        personal_skills=personal_skill_service,
+        skill_proposals=skill_proposal_service,
     )
     assistant.set_cipher(mcp_credential_service.cipher)
     events.add_persisted_listener(assistant.observe_run_event)
@@ -2172,7 +2190,7 @@ def build_production_container(
         agui=agui,
         auto_execute=False,
         event_wakeup=bus,
-        skill_conversation=ControlPlaneSkillConversationService(model_configurations),
+        skill_conversation=skill_conversation_service,
         sandbox_maintenance=next(
             (reaper for name, reaper in sandbox_reapers if name == default_name), None
         ),

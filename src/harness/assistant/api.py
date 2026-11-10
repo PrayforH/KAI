@@ -27,6 +27,7 @@ from harness.assistant.models import (
     UpdateObjectiveRequest,
 )
 from harness.assistant.service import AssistantService
+from harness.assistant.skill_models import PersonalSkill, SkillProposal
 from harness.assistant.vault import (
     VaultDeleteRequest,
     VaultGrantRequest,
@@ -762,3 +763,107 @@ async def list_handovers(
     return await assistant.repository.handovers(
         identity.tenant_id, identity.user_id, specialist_id=specialist_id
     )
+
+
+class SkillProposalGenerateRequest(StudioModel):
+    model_route: str | None = Field(default=None, alias="modelRoute", max_length=100)
+
+
+class SkillProposalConfirmRequest(StudioModel):
+    expected_revision: int = Field(alias="expectedRevision", ge=1)
+
+
+class PersonalSkillEnabledRequest(StudioModel):
+    enabled: bool
+    expected_revision: int = Field(alias="expectedRevision", ge=1)
+
+
+@router.get("/skill-proposals")
+async def list_skill_proposals(
+    identity: Reader,
+    assistant: Service,
+    status: str | None = Query(default=None),
+) -> list[SkillProposal]:
+    return await assistant.list_skill_proposals(
+        identity.tenant_id, identity.user_id, status=status
+    )
+
+
+@router.post("/skill-proposals/{proposal_id}/generate")
+async def generate_skill_proposal(
+    proposal_id: str,
+    body: SkillProposalGenerateRequest,
+    identity: Writer,
+    assistant: Service,
+) -> SkillProposal:
+    return await assistant.generate_skill_proposal(
+        identity.tenant_id,
+        identity.user_id,
+        proposal_id,
+        model_route=body.model_route,
+    )
+
+
+@router.post("/skill-proposals/{proposal_id}/save")
+async def save_skill_proposal(
+    proposal_id: str,
+    body: SkillProposalConfirmRequest,
+    identity: Writer,
+    assistant: Service,
+) -> PersonalSkill:
+    """Save a generated draft disabled; enabling is a separate explicit action."""
+    return await assistant.save_skill_proposal(
+        identity.tenant_id,
+        identity.user_id,
+        proposal_id,
+        expected_revision=body.expected_revision,
+    )
+
+
+@router.post("/skill-proposals/{proposal_id}/dismiss")
+async def dismiss_skill_proposal(
+    proposal_id: str,
+    body: SkillProposalConfirmRequest,
+    identity: Writer,
+    assistant: Service,
+) -> SkillProposal:
+    return await assistant.dismiss_skill_proposal(
+        identity.tenant_id,
+        identity.user_id,
+        proposal_id,
+        expected_revision=body.expected_revision,
+    )
+
+
+@router.get("/personal-skills")
+async def list_personal_skills(
+    identity: Reader, assistant: Service
+) -> list[PersonalSkill]:
+    return await assistant.list_personal_skills(identity.tenant_id, identity.user_id)
+
+
+@router.post("/personal-skills/{skill_id}/enabled")
+async def set_personal_skill_enabled(
+    skill_id: str,
+    body: PersonalSkillEnabledRequest,
+    identity: Writer,
+    assistant: Service,
+) -> PersonalSkill:
+    return await assistant.set_personal_skill_enabled(
+        identity.tenant_id,
+        identity.user_id,
+        skill_id,
+        enabled=body.enabled,
+        expected_revision=body.expected_revision,
+    )
+
+
+@router.delete("/personal-skills/{skill_id}")
+async def delete_personal_skill(
+    skill_id: str, identity: Writer, assistant: Service
+) -> dict[str, bool]:
+    return {
+        "deleted": await assistant.delete_personal_skill(
+            identity.tenant_id, identity.user_id, skill_id
+        )
+    }

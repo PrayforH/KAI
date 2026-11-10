@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     )
     # A Run whose computer is briefly held waits instead of failing; 0 disables.
     assistant_computer_busy_wait_seconds: float = Field(default=120, ge=0, le=3600)
+    # 轻量 Skill 闭环：从重复成功任务生成建议，用户显式保存并启用后才注入运行。
+    assistant_skill_proposals_enabled: bool = False
     # Per-Bot desktops: an assistant Run executes on its own desktop slot
     # inside the owner's VM instead of holding the whole-machine lease.
     assistant_computer_per_bot_desktop: bool = False

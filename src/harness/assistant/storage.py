@@ -253,3 +253,64 @@ class DesktopTurnRow(Base):
     acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AssistantSkillProposalRow(Base):
+    """A repeated-work suggestion; dismissal cools it down instead of deleting it."""
+
+    __tablename__ = "assistant_skill_proposals"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "user_id",
+            "fingerprint",
+            name="uq_assistant_skill_proposal_fingerprint",
+        ),
+        Index(
+            "ix_assistant_skill_proposal_owner",
+            "tenant_id",
+            "user_id",
+            "updated_at",
+        ),
+    )
+
+    proposal_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(128))
+    user_id: Mapped[str] = mapped_column(String(128))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32))
+    revision: Mapped[int] = mapped_column(Integer)
+    cooldown_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class PersonalSkillRow(Base):
+    """User-owned Skill content injected into that user's personal-assistant Runs."""
+
+    __tablename__ = "assistant_personal_skills"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "user_id",
+            "name",
+            name="uq_assistant_personal_skill_name",
+        ),
+        Index(
+            "ix_assistant_personal_skill_owner",
+            "tenant_id",
+            "user_id",
+            "updated_at",
+        ),
+    )
+
+    skill_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(128))
+    user_id: Mapped[str] = mapped_column(String(128))
+    name: Mapped[str] = mapped_column(String(64))
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    revision: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)

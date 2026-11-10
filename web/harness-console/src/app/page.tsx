@@ -1143,6 +1143,7 @@ function AuthenticatedHome() {
             <BotSidePanel
               key={botParam ?? PERSONAL_ASSISTANT_THREAD}
               primary={!botParam}
+              personalSkills={!botParam}
               botId={bot?.specialistId}
               name={bot?.name ?? "主助理"}
               tone={bot?.appearance?.color ?? botAccent(bot?.specialistId ?? "")}

@@ -25,8 +25,11 @@ class ProjectSkillSnapshots:
         *,
         local: tuple[SkillSnapshot, ...] = (),
     ) -> list[dict[str, Any]]:
-        platform = tuple(ref for ref in references if not ref.startswith("project-skill:"))
-        expected = {ref for ref in references if ref.startswith("project-skill:")}
+        local_prefixes = ("project-skill:", "personal-skill:")
+        platform = tuple(
+            ref for ref in references if not ref.startswith(local_prefixes)
+        )
+        expected = {ref for ref in references if ref.startswith(local_prefixes)}
         if expected != {snapshot.source for snapshot in local}:
             raise ValueError("Project Skill snapshot references do not match")
         snapshots = (*skill_snapshots_for_references(platform, runtime, strict=True), *local)

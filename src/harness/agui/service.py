@@ -33,6 +33,7 @@ from harness.application.workspaces import WorkspaceService
 from harness.context.models import SessionContextDigest
 from harness.context.service import ContextService
 from harness.core.errors import ConflictError, NotFoundError
+from harness.core.manifest import SkillSnapshot
 from harness.core.models import AguiThreadBinding as StoredAguiThreadBinding
 from harness.core.models import Run, ThreadKind
 from harness.core.ports import AguiThreadBindingRepository
@@ -398,6 +399,9 @@ class AguiRunService:
         assistant_dispatch: bool = False,
         bot_specialist_id: str | None = None,
         background_duty: bool = False,
+        # Already-snapshotted personal Skills; capture here so the Run pins the
+        # exact revisions that were enabled when it was created.
+        personal_skill_snapshots: tuple[SkillSnapshot, ...] = (),
     ) -> AguiRunCreation:
         prompt, input_artifact_ids = _latest_user_input(request)
         conversation_prompts = _user_prompts(request)
@@ -446,6 +450,9 @@ class AguiRunService:
                     tenant_id, binding, request, conversation_prompts
                 )
             captured_skills = []
+            skill_references = list(
+                project_context.skill_references if project_context is not None else ()
+            )
             if project_context is not None and project_context.skill_references:
                 if self._project_skill_snapshots is None:
                     raise ConflictError("Project Skill snapshot storage is unavailable")
@@ -459,6 +466,21 @@ class AguiRunService:
                         else {}
                     ),
                 )
+            if personal_skill_snapshots:
+                if self._project_skill_snapshots is None:
+                    raise ConflictError("Personal Skill snapshot storage is unavailable")
+                personal_references = tuple(
+                    snapshot.source for snapshot in personal_skill_snapshots
+                )
+                captured_skills.extend(
+                    await self._project_skill_snapshots.capture(
+                        tenant_id,
+                        personal_references,
+                        session.runtime_type,
+                        local=personal_skill_snapshots,
+                    )
+                )
+                skill_references.extend(personal_references)
             effective_input_ids = list(
                 dict.fromkeys(
                     (
@@ -548,8 +570,8 @@ class AguiRunService:
                     else {}
                 ),
                 **(
-                    {"project_skill_references": list(project_context.skill_references)}
-                    if project_context is not None and project_context.skill_references
+                    {"project_skill_references": skill_references}
+                    if skill_references
                     else {}
                 ),
                 **(

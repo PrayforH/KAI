@@ -36,14 +36,17 @@ from harness.assistant.models import (
     SpecialistStatus,
 )
 from harness.assistant.permissions import require_local_tools
+from harness.assistant.skill_models import PersonalSkill, SkillProposal
 from harness.assistant.storage import (
     AssistantInboxRow,
+    AssistantSkillProposalRow,
     DesktopTurnRow,
     ManagedTaskRow,
     ObjectiveCheckpointRow,
     ObjectiveEventRow,
     ObjectiveExecutionRow,
     ObjectiveRow,
+    PersonalSkillRow,
     SpecialistCredentialRow,
     SpecialistHandoverRow,
     SpecialistRow,
@@ -2175,3 +2178,280 @@ class PostgresAssistantRepository:
                 expiresAt=row.expires_at,
                 releasedAt=row.released_at,
             )
+
+    # -- personal Skill proposals ------------------------------------------------
+    #
+    # Proposals are evidence attached to a user, not to a thread. The unique
+    # fingerprint makes duplicate collection from concurrent Workers a no-op.
+
+    @staticmethod
+    def _skill_proposal(row: AssistantSkillProposalRow) -> SkillProposal:
+        return SkillProposal.model_validate(row.payload)
+
+    async def skill_proposal(
+        self, tenant_id: str, user_id: str, proposal_id: str
+    ) -> SkillProposal:
+        async with self._context() as session:
+            row = await session.scalar(
+                select(AssistantSkillProposalRow).where(
+                    AssistantSkillProposalRow.tenant_id == tenant_id,
+                    AssistantSkillProposalRow.user_id == user_id,
+                    AssistantSkillProposalRow.proposal_id == proposal_id,
+                )
+            )
+            if row is None:
+                raise NotFoundError("Skill proposal not found")
+            return self._skill_proposal(row)
+
+    async def list_skill_proposals(
+        self,
+        tenant_id: str,
+        user_id: str,
+        *,
+        status: str | None = None,
+        limit: int = 50,
+    ) -> list[SkillProposal]:
+        statement = (
+            select(AssistantSkillProposalRow)
+            .where(
+                AssistantSkillProposalRow.tenant_id == tenant_id,
+                AssistantSkillProposalRow.user_id == user_id,
+            )
+            .order_by(AssistantSkillProposalRow.updated_at.desc())
+            .limit(limit)
+        )
+        if status is not None:
+            statement = statement.where(AssistantSkillProposalRow.status == status)
+        async with self._context() as session:
+            rows = (await session.scalars(statement)).all()
+        return [self._skill_proposal(row) for row in rows]
+
+    async def find_skill_proposal(
+        self, tenant_id: str, user_id: str, fingerprint: str
+    ) -> SkillProposal | None:
+        async with self._context() as session:
+            row = await session.scalar(
+                select(AssistantSkillProposalRow).where(
+                    AssistantSkillProposalRow.tenant_id == tenant_id,
+                    AssistantSkillProposalRow.user_id == user_id,
+                    AssistantSkillProposalRow.fingerprint == fingerprint,
+                )
+            )
+            return self._skill_proposal(row) if row is not None else None
+
+    async def save_skill_proposal(
+        self,
+        proposal: SkillProposal,
+        *,
+        expected_revision: int | None = None,
+    ) -> SkillProposal:
+        """Insert a new proposal, or compare-and-swap an existing one by revision."""
+        async with self._context(write=True) as session:
+            row = await session.scalar(
+                select(AssistantSkillProposalRow)
+                .where(
+                    AssistantSkillProposalRow.tenant_id == proposal.tenant_id,
+                    AssistantSkillProposalRow.user_id == proposal.user_id,
+                    AssistantSkillProposalRow.proposal_id == proposal.proposal_id,
+                )
+                .with_for_update()
+            )
+            if row is None:
+                if expected_revision is not None and expected_revision != 1:
+                    raise ConflictError(
+                        "Skill proposal changed; reload before saving"
+                    )
+                row = AssistantSkillProposalRow(
+                    proposal_id=proposal.proposal_id,
+                    tenant_id=proposal.tenant_id,
+                    user_id=proposal.user_id,
+                    fingerprint=proposal.fingerprint,
+                    status=proposal.status.value,
+                    revision=proposal.revision,
+                    cooldown_until=proposal.cooldown_until,
+                    created_at=proposal.created_at,
+                    updated_at=proposal.updated_at,
+                    payload=proposal.model_dump(mode="json", by_alias=True),
+                )
+                session.add(row)
+                try:
+                    await session.flush()
+                except IntegrityError as error:
+                    raise ConflictError(
+                        "A Skill proposal for this pattern already exists"
+                    ) from error
+                return proposal
+            current = self._skill_proposal(row)
+            if expected_revision is not None and current.revision != expected_revision:
+                raise ConflictError("Skill proposal changed; reload before saving")
+            row.fingerprint = proposal.fingerprint
+            row.status = proposal.status.value
+            row.revision = proposal.revision
+            row.cooldown_until = proposal.cooldown_until
+            row.updated_at = proposal.updated_at
+            row.payload = proposal.model_dump(mode="json", by_alias=True)
+            try:
+                await session.flush()
+            except IntegrityError as error:
+                raise ConflictError(
+                    "A Skill proposal for this pattern already exists"
+                ) from error
+            return proposal
+
+    async def recent_succeeded_executions(
+        self, tenant_id: str, user_id: str, *, limit: int = 20
+    ) -> list[ObjectiveExecution]:
+        """Newest real successes, excluding no-op checks and model-less skips."""
+        async with self._context() as session:
+            rows = (
+                await session.scalars(
+                    select(ObjectiveExecutionRow)
+                    .where(
+                        ObjectiveExecutionRow.tenant_id == tenant_id,
+                        ObjectiveExecutionRow.user_id == user_id,
+                        ObjectiveExecutionRow.status
+                        == ObjectiveExecutionStatus.SUCCEEDED.value,
+                    )
+                    .order_by(ObjectiveExecutionRow.created_at.desc())
+                    .limit(limit * 2)
+                )
+            ).all()
+        executions = [
+            ObjectiveExecution.model_validate(row.payload) for row in rows
+        ]
+        return [
+            execution
+            for execution in executions
+            if execution.run_id is not None
+            and execution.finished_at is not None
+            and not execution.skipped_no_model
+            and "retry" not in execution.trigger_key.lower()
+        ][:limit]
+
+    # -- personal Skills ---------------------------------------------------------
+
+    @staticmethod
+    def _personal_skill(row: PersonalSkillRow) -> PersonalSkill:
+        return PersonalSkill.model_validate(row.payload)
+
+    async def personal_skill(
+        self, tenant_id: str, user_id: str, skill_id: str
+    ) -> PersonalSkill:
+        async with self._context() as session:
+            row = await session.scalar(
+                select(PersonalSkillRow).where(
+                    PersonalSkillRow.tenant_id == tenant_id,
+                    PersonalSkillRow.user_id == user_id,
+                    PersonalSkillRow.skill_id == skill_id,
+                )
+            )
+            if row is None:
+                raise NotFoundError("Personal Skill not found")
+            return self._personal_skill(row)
+
+    async def list_personal_skills(
+        self, tenant_id: str, user_id: str, *, enabled_only: bool = False
+    ) -> list[PersonalSkill]:
+        statement = (
+            select(PersonalSkillRow)
+            .where(
+                PersonalSkillRow.tenant_id == tenant_id,
+                PersonalSkillRow.user_id == user_id,
+            )
+            .order_by(PersonalSkillRow.updated_at.desc())
+        )
+        if enabled_only:
+            statement = statement.where(PersonalSkillRow.enabled.is_(True))
+        async with self._context() as session:
+            rows = (await session.scalars(statement)).all()
+        return [self._personal_skill(row) for row in rows]
+
+    async def find_personal_skill_by_name(
+        self, tenant_id: str, user_id: str, name: str
+    ) -> PersonalSkill | None:
+        async with self._context() as session:
+            row = await session.scalar(
+                select(PersonalSkillRow).where(
+                    PersonalSkillRow.tenant_id == tenant_id,
+                    PersonalSkillRow.user_id == user_id,
+                    PersonalSkillRow.name == name,
+                )
+            )
+            return self._personal_skill(row) if row is not None else None
+
+    async def create_personal_skill(self, skill: PersonalSkill) -> PersonalSkill:
+        async with self._context(write=True) as session:
+            session.add(
+                PersonalSkillRow(
+                    skill_id=skill.skill_id,
+                    tenant_id=skill.tenant_id,
+                    user_id=skill.user_id,
+                    name=skill.name,
+                    enabled=skill.enabled,
+                    revision=skill.revision,
+                    created_at=skill.created_at,
+                    updated_at=skill.updated_at,
+                    payload=skill.model_dump(mode="json", by_alias=True),
+                )
+            )
+            try:
+                await session.flush()
+            except IntegrityError as error:
+                raise ConflictError("A personal Skill with this name already exists") from error
+        return skill
+
+    async def set_personal_skill_enabled(
+        self,
+        tenant_id: str,
+        user_id: str,
+        skill_id: str,
+        *,
+        enabled: bool,
+        expected_revision: int,
+        now: datetime,
+    ) -> PersonalSkill:
+        async with self._context(write=True) as session:
+            row = await session.scalar(
+                select(PersonalSkillRow)
+                .where(
+                    PersonalSkillRow.tenant_id == tenant_id,
+                    PersonalSkillRow.user_id == user_id,
+                    PersonalSkillRow.skill_id == skill_id,
+                )
+                .with_for_update()
+            )
+            if row is None:
+                raise NotFoundError("Personal Skill not found")
+            current = self._personal_skill(row)
+            if current.revision != expected_revision:
+                raise ConflictError("Personal Skill changed; reload before enabling")
+            updated = current.model_copy(
+                update={
+                    "enabled": enabled,
+                    "revision": current.revision + 1,
+                    "updated_at": now,
+                }
+            )
+            row.enabled = enabled
+            row.revision = updated.revision
+            row.updated_at = now
+            row.payload = updated.model_dump(mode="json", by_alias=True)
+            return updated
+
+    async def delete_personal_skill(
+        self, tenant_id: str, user_id: str, skill_id: str
+    ) -> bool:
+        async with self._context(write=True) as session:
+            row = await session.scalar(
+                select(PersonalSkillRow)
+                .where(
+                    PersonalSkillRow.tenant_id == tenant_id,
+                    PersonalSkillRow.user_id == user_id,
+                    PersonalSkillRow.skill_id == skill_id,
+                )
+                .with_for_update()
+            )
+            if row is None:
+                return False
+            await session.delete(row)
+        return True

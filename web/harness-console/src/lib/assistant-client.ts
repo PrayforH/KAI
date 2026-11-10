@@ -92,3 +92,60 @@ export async function assistantRequest<T>(path: string, method = "GET", body?: u
   }
   return response.status === 204 ? undefined as T : response.json();
 }
+
+/**
+ * 轻量 Skill 闭环：建议来自重复成功任务，保存后仍保持停用，必须显式启用才注入运行。
+ */
+export type SkillProposalSource = {
+  objectiveId: string; executionId: string; runId: string; threadId: string;
+  title: string; summary: string; projectId?: string | null;
+  specialistId?: string | null; tools?: string[]; finishedAt?: string | null;
+};
+export type SkillProposal = {
+  proposalId: string; status: "proposed" | "draft" | "saved" | "dismissed";
+  revision: number; title: string; summary: string;
+  sources: SkillProposalSource[];
+  draft?: {
+    name: string; description: string; instructions: string;
+  } | null;
+  reply?: string; followUpQuestions?: string[];
+  skillId?: string | null; cooldownUntil?: string | null;
+  createdAt: string; updatedAt: string;
+};
+export type PersonalSkill = {
+  skillId: string; name: string; displayName: string; description: string;
+  enabled: boolean; revision: number; sourceProposalId?: string | null;
+  skill: { name: string; description: string; instructions: string };
+  createdAt: string; updatedAt: string;
+};
+export async function listSkillProposals(): Promise<SkillProposal[]> {
+  return assistantRequest<SkillProposal[]>("skill-proposals");
+}
+export async function generateSkillProposal(proposalId: string): Promise<SkillProposal> {
+  return assistantRequest<SkillProposal>(
+    `skill-proposals/${encodeURIComponent(proposalId)}/generate`, "POST", {},
+  );
+}
+export async function saveSkillProposal(proposalId: string, expectedRevision: number): Promise<PersonalSkill> {
+  return assistantRequest<PersonalSkill>(
+    `skill-proposals/${encodeURIComponent(proposalId)}/save`, "POST", { expectedRevision },
+  );
+}
+export async function dismissSkillProposal(proposalId: string, expectedRevision: number): Promise<SkillProposal> {
+  return assistantRequest<SkillProposal>(
+    `skill-proposals/${encodeURIComponent(proposalId)}/dismiss`, "POST", { expectedRevision },
+  );
+}
+export async function listPersonalSkills(): Promise<PersonalSkill[]> {
+  return assistantRequest<PersonalSkill[]>("personal-skills");
+}
+export async function setPersonalSkillEnabled(skillId: string, enabled: boolean, expectedRevision: number): Promise<PersonalSkill> {
+  return assistantRequest<PersonalSkill>(
+    `personal-skills/${encodeURIComponent(skillId)}/enabled`, "POST", { enabled, expectedRevision },
+  );
+}
+export async function deletePersonalSkill(skillId: string): Promise<{ deleted: boolean }> {
+  return assistantRequest<{ deleted: boolean }>(
+    `personal-skills/${encodeURIComponent(skillId)}`, "DELETE",
+  );
+}

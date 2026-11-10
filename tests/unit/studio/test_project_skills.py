@@ -85,3 +85,26 @@ async def test_captured_run_skills_survive_catalog_revision_and_verify_tenant(
 def test_new_runs_fail_explicitly_for_stale_project_skill_versions():
     with pytest.raises(ConflictError, match="update the project selection"):
         skill_snapshots_for_references(("pptx-generator@99",), "claude-agent-sdk", strict=True)
+
+
+@pytest.mark.asyncio
+async def test_personal_skill_snapshots_use_the_same_capture_and_restore_path() -> None:
+    from harness.core.manifest import SkillSnapshot
+
+    storage = InMemoryArtifactStore()
+    snapshots = ProjectSkillSnapshots(SkillBlobStore(storage))
+    personal = SkillSnapshot(
+        name="weekly-report",
+        description="每周销售汇总",
+        source="personal-skill:pskill_1@3",
+        files=(),
+        content_hash="a" * 64,
+    )
+    pinned = await snapshots.capture(
+        "tenant-a",
+        (personal.source,),
+        "claude-agent-sdk",
+        local=(personal,),
+    )
+    restored = await snapshots.restore("tenant-a", pinned)
+    assert [item.source for item in restored] == ["personal-skill:pskill_1@3"]

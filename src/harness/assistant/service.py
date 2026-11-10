@@ -57,7 +57,10 @@ from harness.assistant.models import (
     SpecialistStatus,
 )
 from harness.assistant.permissions import pending_local_tools, require_local_tools
+from harness.assistant.personal_skills import PersonalSkillService
 from harness.assistant.repository import MANAGED_PROGRESS_EVENTS, PostgresAssistantRepository
+from harness.assistant.skill_models import PersonalSkill, SkillProposal
+from harness.assistant.skill_proposals import SkillProposalService
 from harness.assistant.storage import VaultItemRow
 from harness.assistant.vault import VaultCategory, VaultGrant, VaultItem
 from harness.auth.service import AuthService
@@ -95,6 +98,8 @@ class AssistantService:
         event_service: EventService | None = None,
         quotas: Any = None,
         team_spaces: TeamSpaceService | None = None,
+        personal_skills: PersonalSkillService | None = None,
+        skill_proposals: SkillProposalService | None = None,
     ) -> None:
         self.repository = repository
         self._agents, self._auth, self._projects = agents, auth, projects
@@ -103,6 +108,9 @@ class AssistantService:
         # 计量：只有配置了配额服务才可能拿到真实用量；None 时如实标记未知。
         self._quotas = quotas
         self._team_spaces = team_spaces
+        # 轻量 Skill 闭环是兼容性新增：未接线时保持原有执行路径。
+        self._personal_skills = personal_skills
+        self._skill_proposals = skill_proposals
 
     def with_repository(self, repository: PostgresAssistantRepository) -> AssistantService:
         return AssistantService(
@@ -116,7 +124,100 @@ class AssistantService:
             event_service=self._event_service,
             quotas=self._quotas,
             team_spaces=self._team_spaces,
+            personal_skills=(
+                self._personal_skills.with_repository(repository)
+                if self._personal_skills is not None
+                else None
+            ),
+            skill_proposals=(
+                self._skill_proposals.with_repository(repository)
+                if self._skill_proposals is not None
+                else None
+            ),
         )
+
+    async def list_skill_proposals(
+        self, tenant_id: str, user_id: str, *, status: str | None = None
+    ) -> list[SkillProposal]:
+        if self._skill_proposals is None:
+            # The feature is opt-in; an empty list keeps the existing UI quiet.
+            return []
+        return await self._skill_proposals.list(tenant_id, user_id, status=status)
+
+    async def generate_skill_proposal(
+        self,
+        tenant_id: str,
+        user_id: str,
+        proposal_id: str,
+        *,
+        model_route: str | None = None,
+    ) -> SkillProposal:
+        if self._skill_proposals is None:
+            raise ConflictError("个人 Skill 建议功能未启用")
+        return await self._skill_proposals.generate(
+            tenant_id, user_id, proposal_id, model_route=model_route
+        )
+
+    async def save_skill_proposal(
+        self,
+        tenant_id: str,
+        user_id: str,
+        proposal_id: str,
+        *,
+        expected_revision: int,
+    ) -> PersonalSkill:
+        if self._skill_proposals is None:
+            raise ConflictError("个人 Skill 建议功能未启用")
+        return await self._skill_proposals.save(
+            tenant_id, user_id, proposal_id, expected_revision=expected_revision
+        )
+
+    async def dismiss_skill_proposal(
+        self,
+        tenant_id: str,
+        user_id: str,
+        proposal_id: str,
+        *,
+        expected_revision: int,
+    ) -> SkillProposal:
+        if self._skill_proposals is None:
+            raise ConflictError("个人 Skill 建议功能未启用")
+        return await self._skill_proposals.dismiss(
+            tenant_id, user_id, proposal_id, expected_revision=expected_revision
+        )
+
+    async def list_personal_skills(
+        self, tenant_id: str, user_id: str
+    ) -> list[PersonalSkill]:
+        if self._personal_skills is None:
+            return []
+        return await self._personal_skills.list(tenant_id, user_id)
+
+    async def set_personal_skill_enabled(
+        self,
+        tenant_id: str,
+        user_id: str,
+        skill_id: str,
+        *,
+        enabled: bool,
+        expected_revision: int,
+    ) -> PersonalSkill:
+        if self._personal_skills is None:
+            raise ConflictError("个人 Skill 功能未启用")
+        return await self._personal_skills.set_enabled(
+            tenant_id,
+            user_id,
+            skill_id,
+            enabled=enabled,
+            expected_revision=expected_revision,
+        )
+
+    async def delete_personal_skill(
+        self, tenant_id: str, user_id: str, skill_id: str
+    ) -> bool:
+        if self._personal_skills is None:
+            raise ConflictError("个人 Skill 功能未启用")
+        return await self._personal_skills.delete(tenant_id, user_id, skill_id)
 
     async def validate(self, tenant_id: str, user_id: str, brief: ObjectiveBrief) -> None:
         user, membership = await self._auth.profile(tenant_id, user_id)
@@ -1192,13 +1293,28 @@ class AssistantService:
                     if updated.finished_at is not None
                     else (None, None)
                 )
-                await self.repository.save_execution(
+                saved = await self.repository.save_execution(
                     updated,
                     token,
                     datetime.now(UTC),
                     usage_tokens=usage_tokens,
                     usage_cost=usage_cost,
                 )
+                if (
+                    saved
+                    and updated.status is ObjectiveExecutionStatus.SUCCEEDED
+                    and not updated.skipped_no_model
+                    and self._skill_proposals is not None
+                ):
+                    # Evidence collection must never block execution settlement.
+                    try:
+                        async with asyncio.timeout(8):
+                            await self._skill_proposals.observe_success(updated)
+                    except Exception:
+                        logger.exception(
+                            "Skill proposal collection deferred: %s",
+                            updated.execution_id,
+                        )
             except (NotFoundError, PermissionDeniedError) as error:
                 # Revocation never starts another run; an existing run is cancelled too.
                 recovered = await self._recover(execution)
@@ -1406,12 +1522,21 @@ class AssistantService:
                         or not execution.matches_schedule(current)
                     ):
                         return _superseded_schedule(execution, datetime.now(UTC))
+                personal_skill_snapshots = (
+                    await self._personal_skills.enabled_snapshots(
+                        execution.tenant_id, execution.user_id
+                    )
+                    if execution.brief.project_id is None
+                    and self._personal_skills is not None
+                    else ()
+                )
                 creation = await self._agui.create_run_with_result(
                     tenant_id=execution.tenant_id,
                     user_id=execution.user_id,
                     agent_name=execution.brief.agent_name,
                     agent_version=execution.brief.agent_version,
                     project_id=execution.brief.project_id,
+                    personal_skill_snapshots=personal_skill_snapshots,
                     assistant_dispatch=specialist_dispatch,
                     background_duty=execution.thread_id == f"assistant_{objective.objective_id}",
                     bot_specialist_id=(
