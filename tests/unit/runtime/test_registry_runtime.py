@@ -472,8 +472,8 @@ async def test_manifest_primary_route_selects_its_route_bound_gateway(
             update={
                 "model": base_spec.model.model_copy(
                     update={
-                        "route_id": "minimax-m3",
-                        "model": "MiniMax-M3",
+                        "route_id": "minimax-m3-1-flash",
+                        "model": "MiniMax-M3.1-flash",
                     }
                 )
             }
@@ -522,9 +522,9 @@ async def test_manifest_primary_route_selects_its_route_bound_gateway(
             credential=SecretStr("new-api-secret"),
         ),
         fallback_config=CcSwitchClaudeConfig(
-            route_id="minimax-m3",
+            route_id="minimax-m3-1-flash",
             base_url="https://minimax.example",
-            model="MiniMax-M3",
+            model="MiniMax-M3.1-flash",
             provider="new-api",
             credential=SecretStr("minimax-secret"),
             capabilities=frozenset({"streaming", "tool_use"}),
@@ -533,7 +533,7 @@ async def test_manifest_primary_route_selects_its_route_bound_gateway(
             CcSwitchClaudeConfig(
                 route_id="deepseek-v4-pro",
                 base_url="https://new-api.example",
-                model="MiniMax-M3",
+                model="MiniMax-M3.1-flash",
                 provider="new-api",
                 credential=SecretStr("new-api-secret"),
             ),
@@ -566,14 +566,14 @@ async def test_manifest_primary_route_selects_its_route_bound_gateway(
     events = [event async for event in runtime.execute(context)]
 
     assert captured[0].env["ANTHROPIC_BASE_URL"] == "https://minimax.example"
-    assert captured[0].model == "MiniMax-M3"
+    assert captured[0].model == "MiniMax-M3.1-flash"
     assert captured[0].permission_mode == "dontAsk"
     assert captured[0].allowed_tools == []
     assert captured[0].env["ANTHROPIC_AUTH_TOKEN"] == "minimax-secret"
     assert "ANTHROPIC_API_KEY" not in captured[0].env
     assert (
         next(event for event in events if event.type == "model.route.selected").payload["route_id"]
-        == "minimax-m3"
+        == "minimax-m3-1-flash"
     )
     assert next(
         event for event in events if event.type == "model.route.selected"
@@ -608,13 +608,13 @@ async def test_manifest_primary_route_selects_its_route_bound_gateway(
     override_events = [event async for event in runtime.execute(override_context)]
 
     assert captured[1].env["ANTHROPIC_BASE_URL"] == "https://new-api.example"
-    assert captured[1].model == "MiniMax-M3"
+    assert captured[1].model == "MiniMax-M3.1-flash"
     assert captured[1].permission_mode == "dontAsk"
     selected = next(event for event in override_events if event.type == "model.route.selected")
     assert selected.payload["route_id"] == "deepseek-v4-pro"
-    assert selected.payload["model"] == "MiniMax-M3"
+    assert selected.payload["model"] == "MiniMax-M3.1-flash"
     assert selected.payload["selection_source"] == "task_override"
-    assert selected.payload["agent_default_route"] == "minimax-m3"
+    assert selected.payload["agent_default_route"] == "minimax-m3-1-flash"
 
 
 @pytest.mark.asyncio

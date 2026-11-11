@@ -126,8 +126,8 @@ def create_draft_spec(
             constraints=("不得绕过平台权限、审批、Sandbox 或网络边界",),
         ),
         model=DraftModelSelection(
-            routeId="deepseek-v4-pro",
-            model="deepseek-v4-pro",
+            routeId="deepseek-flash",
+            model="deepseek-flash",
         ),
         systemPrompt=_system_prompt(display_name, domain),
         # Skills are optional behavior modules. New drafts start without a

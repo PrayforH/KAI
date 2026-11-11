@@ -152,7 +152,7 @@ def test_default_draft_compiles_to_existing_reproducible_bundle_contract() -> No
         manifest = bundle.read("agent.yaml").decode()
         directory = ToolDirectorySnapshot.model_validate_json(bundle.read("tool-directory.json"))
         studio_metadata = StudioBundleMetadata.model_validate_json(bundle.read("studio.json"))
-    assert "route: deepseek-v4-pro" in manifest
+    assert "route: deepseek-flash" in manifest
     assert "runtime: claude-agent-sdk" in manifest
     assert "mode: isolated" in manifest
     assert directory.exposure_mode == "eager"
@@ -671,8 +671,8 @@ def test_nexau_export_imports_python_bindings_skills_and_unlimited_runtime() -> 
 
     assert imported.lossless is False
     assert imported.spec.builtin_tools == ("Read",)
-    assert imported.spec.model.route_id == "minimax-m3"
-    assert imported.spec.model.model == "MiniMax-M3"
+    assert imported.spec.model.route_id == "minimax-m3-1-flash"
+    assert imported.spec.model.model == "MiniMax-M3.1-flash"
     assert "vision" in imported.spec.model.required_capabilities
     assert [item.name for item in imported.spec.python_tools] == ["score_detections"]
     assert "def run(arguments)" in imported.spec.python_tools[0].code
@@ -998,7 +998,7 @@ def test_disabled_catalog_resources_fail_closed() -> None:
         update={
             "model_routes": tuple(
                 item.model_copy(update={"enabled": False})
-                if item.route_id == "deepseek-v4-pro"
+                if item.route_id == "deepseek-flash"
                 else item
                 for item in catalog.model_routes
             ),
@@ -1030,7 +1030,7 @@ def test_model_and_execution_profile_capabilities_must_be_compatible() -> None:
         update={
             "model_routes": tuple(
                 item.model_copy(update={"capabilities": ("streaming",)})
-                if item.route_id == "deepseek-v4-pro"
+                if item.route_id == "deepseek-flash"
                 else item
                 for item in catalog.model_routes
             ),

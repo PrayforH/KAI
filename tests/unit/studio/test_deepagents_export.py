@@ -371,7 +371,7 @@ def test_export_declares_dropped_knowledge_and_mcp_env_placeholders() -> None:
     extensions = json.loads(_read(exported.content, "agent-studio.json"))
     assert extensions["knowledgeReferences"] == ["kb-policy"]
     assert "知识库" in extensions["droppedSemantics"]
-    assert extensions["deepagentsModel"] == "openai:deepseek-v4-pro"
+    assert extensions["deepagentsModel"] == "openai:deepseek-flash"
 
     readme = _read(exported.content, "README.md")
     assert "TAVILY_API_KEY" in readme
