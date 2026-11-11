@@ -2172,10 +2172,14 @@ export function AgentThread({
       threadId,
       hasMore: () => historyPagination.hasMore,
       loadEarlier: historyPagination.loadEarlier,
+      waitForLoading: historyPagination.waitForLoading,
       frame: () => frame.current,
     });
     return () => registerHistoryLocator(null);
-  }, [threadId, historyPagination.hasMore, historyPagination.loadEarlier]);
+  }, [
+    threadId, historyPagination.hasMore, historyPagination.loadEarlier,
+    historyPagination.waitForLoading,
+  ]);
   const composerDraftScope = useMemo(
     () => ({ userId, threadId }),
     [threadId, userId],

@@ -10,7 +10,7 @@ import {
   AssistantHistoryPanel, fileGlyph, fileKindOf, filterFiles, historyEntries,
 } from "../src/components/assistant-history-panel";
 import { clearHistoryIndex } from "../src/lib/history-index";
-import { flashMessage } from "../src/lib/chat-locate";
+import { flashMessage, registerHistoryLocator } from "../src/lib/chat-locate";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 const host = document.createElement("div");
@@ -27,6 +27,7 @@ afterEach(() => {
   root = createRoot(host);
   history.mockReset();
   clearHistoryIndex();
+  registerHistoryLocator(null);
   document.querySelectorAll("[data-message-id]").forEach(node => node.remove());
   vi.unstubAllGlobals();
 });
@@ -170,4 +171,82 @@ it("reuses a fresh index when the drawer is reopened", async () => {
   });
   expect(history).toHaveBeenCalledTimes(loads);
   expect(host.textContent).toContain("帮我看下报告");
+});
+
+it("asks the reader to retry instead of claiming a message is missing while history loads", async () => {
+  await render();
+  // A mounted locator whose frame is gone means "cannot check yet", not "absent".
+  registerHistoryLocator({
+    threadId: "thread_1",
+    hasMore: () => true,
+    loadEarlier: async () => "exhausted" as const,
+    frame: () => null,
+  });
+  await click("在聊天中定位");
+  expect(host.textContent).toContain("聊天记录仍在加载，请稍后重试");
+  expect(host.textContent).not.toContain("未在当前会话中找到这条消息");
+});
+
+it("hides the loading hint when a filter has no matches", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  history.mockImplementation(async (_threadId: string, options: { onPage?: (page: unknown) => void }) => {
+    options.onPage?.({ messages: [{ id: "user-run_1", role: "user", content: "唯一一条记录" }] });
+    await gate;
+    return [];
+  });
+  stubFetch();
+  await act(async () => {
+    root.render(<AssistantHistoryPanel open threadId="thread_1" assistantName="小树" onClose={() => {}} />);
+    await new Promise(resolve => setTimeout(resolve, 10));
+  });
+  expect(host.textContent).toContain("正在读取更早的记录");
+
+  const search = [...host.querySelectorAll("input")].find(item => item.getAttribute("aria-label") === "搜索聊天记录") as HTMLInputElement;
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!;
+    setter.call(search, "没有这条");
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    await new Promise(resolve => setTimeout(resolve, 160));
+  });
+  expect(host.textContent).toContain("没有符合筛选条件的记录");
+  expect(host.textContent).not.toContain("正在读取更早的记录");
+  await act(async () => { release(); await new Promise(resolve => setTimeout(resolve, 10)); });
+});
+
+it("keeps the reader's place when an older page prepends above them", async () => {
+  const gates: Array<() => void> = [];
+  history.mockImplementation(async (_threadId: string, options: { onPage?: (page: unknown) => void }) => {
+    options.onPage?.({ messages: [{ id: "user-new", role: "user", content: "最新" }] });
+    await new Promise<void>(resolve => gates.push(resolve));
+    options.onPage?.({ messages: [{ id: "user-old", role: "user", content: "较早" }] });
+    await new Promise<void>(resolve => gates.push(resolve));
+    options.onPage?.({ messages: [{ id: "user-oldest", role: "user", content: "最早" }] });
+    return [];
+  });
+  stubFetch();
+  await act(async () => {
+    root.render(<AssistantHistoryPanel open threadId="thread_1" assistantName="小树" onClose={() => {}} />);
+    await new Promise(resolve => setTimeout(resolve, 10));
+  });
+  const body = host.querySelector("article")?.parentElement as HTMLDivElement | null;
+  expect(body).not.toBeNull();
+  let height = 1_200;
+  Object.defineProperty(body!, "scrollHeight", { configurable: true, get: () => height });
+  Object.defineProperty(body!, "clientHeight", { configurable: true, get: () => 500 });
+
+  // The first page fills in: still pinned to the newest message.
+  await act(async () => { gates.shift()!(); await new Promise(resolve => setTimeout(resolve, 10)); });
+  expect(body!.scrollTop).toBe(1_200);
+
+  // The reader scrolls up, away from the bottom.
+  await act(async () => {
+    body!.scrollTop = 200;
+    body!.dispatchEvent(new Event("scroll"));
+  });
+
+  // An older page arrives above the viewport; the offset must absorb it.
+  height = 1_600;
+  await act(async () => { gates.shift()!(); await new Promise(resolve => setTimeout(resolve, 10)); });
+  expect(body!.scrollTop).toBe(600);
 });

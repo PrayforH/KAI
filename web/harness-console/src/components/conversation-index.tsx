@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
+import type { LoadEarlierFn } from "../lib/task-history";
 
 type Entry = { id: string; label: string; answer: string; node: HTMLElement };
 
@@ -15,7 +16,7 @@ const NEIGHBOUR_LINE_WIDTHS = [19, 14, 10, 7, 6];
 export function ConversationIndex({ frame, threadId, pagination }: {
   frame: RefObject<HTMLDivElement | null>;
   threadId: string;
-  pagination?: { total: number; hasMore: boolean; loadEarlier: (pages?: number) => Promise<boolean> };
+  pagination?: { total: number; hasMore: boolean; loadEarlier: LoadEarlierFn };
 }) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [active, setActive] = useState("");

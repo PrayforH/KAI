@@ -70,8 +70,8 @@ function errorText(cause: unknown): string {
   return cause instanceof Error && cause.message ? cause.message : "聊天记录暂时无法读取";
 }
 
-const MessageRow = memo(function MessageRow({ entry, assistantName, locating, onLocate }: {
-  entry: HistoryEntry; assistantName: string; locating: boolean;
+const MessageRow = memo(function MessageRow({ entry, assistantName, locating, busy, onLocate }: {
+  entry: HistoryEntry; assistantName: string; locating: boolean; busy: boolean;
   onLocate: (messageId: string | null) => void;
 }) {
   // A file whose run fell outside the loaded history has no message to land
@@ -82,13 +82,13 @@ const MessageRow = memo(function MessageRow({ entry, assistantName, locating, on
   return <article className={styles.msg}>
     <div className={styles.meta}>
       <span className={styles.sender}>{entry.role === "user" ? "我" : assistantName}</span>
-      <button type="button" className={styles.locate} disabled={!targetId || locating}
+      <button type="button" className={styles.locate} disabled={!targetId || busy}
         onClick={() => onLocate(targetId)}>{locating ? "正在定位…" : "在聊天中定位"}</button>
     </div>
     {entry.text && <p className={styles.text}>{entry.text}</p>}
     {entry.files.length > 0 && <div className={styles.chips}>
       {entry.files.map(file => <button type="button" key={file.id} className={styles.chip}
-        title={file.name} onClick={() => onLocate(file.messageId)}>
+        title={file.name} disabled={busy} onClick={() => onLocate(file.messageId)}>
         <span className={styles.glyph} data-kind={fileKindOf(file.name, file.mediaType)}>{fileGlyph(file.name, file.mediaType)}</span>
         <span className={styles.chipName}>{file.name}</span>
       </button>)}
@@ -96,8 +96,8 @@ const MessageRow = memo(function MessageRow({ entry, assistantName, locating, on
   </article>;
 });
 
-const FileRow = memo(function FileRow({ file, threadId, assistantName, locating, onLocate }: {
-  file: HistoryFile; threadId: string; assistantName: string; locating: boolean;
+const FileRow = memo(function FileRow({ file, threadId, assistantName, locating, busy, onLocate }: {
+  file: HistoryFile; threadId: string; assistantName: string; locating: boolean; busy: boolean;
   onLocate: (messageId: string | null) => void;
 }) {
   return <article className={styles.fileRow}>
@@ -112,15 +112,15 @@ const FileRow = memo(function FileRow({ file, threadId, assistantName, locating,
       </span>
     </span>
     <span className={styles.fileActions}>
-      <button type="button" className={styles.locate} disabled={!file.messageId || locating}
+      <button type="button" className={styles.locate} disabled={!file.messageId || busy}
         onClick={() => onLocate(file.messageId)}>{locating ? "正在定位…" : "在聊天中定位"}</button>
       <a className={styles.link} href={fileHref(file, threadId)} target="_blank" rel="noreferrer">打开</a>
     </span>
   </article>;
 });
 
-const MediaItem = memo(function MediaItem({ file, threadId, locating, onLocate }: {
-  file: HistoryFile; threadId: string; locating: boolean;
+const MediaItem = memo(function MediaItem({ file, threadId, locating, busy, onLocate }: {
+  file: HistoryFile; threadId: string; locating: boolean; busy: boolean;
   onLocate: (messageId: string | null) => void;
 }) {
   const kind = fileKindOf(file.name, file.mediaType);
@@ -133,7 +133,7 @@ const MediaItem = memo(function MediaItem({ file, threadId, locating, onLocate }
     </button>
     <figcaption>
       <span className={styles.chipName}>{file.name}</span>
-      <button type="button" className={styles.locate} disabled={!file.messageId || locating}
+      <button type="button" className={styles.locate} disabled={!file.messageId || busy}
         onClick={() => onLocate(file.messageId)}>{locating ? "正在定位…" : "在聊天中定位"}</button>
     </figcaption>
   </figure>;
@@ -235,10 +235,17 @@ export function AssistantHistoryPanel({ open, threadId, assistantName = "助理"
   }, [open, threadId]);
 
   // Keep the reader's place while older pages prepend above the list, and stay
-  // pinned to the newest message when that is where they were.
+  // pinned to the newest message when that is where they were. While a search
+  // narrows the list, neither applies: snapping to the bottom would throw the
+  // reader out of the results they are scanning.
+  const searching = debouncedQuery.trim().length > 0;
   useLayoutEffect(() => {
     const element = body.current;
     if (!element) return;
+    if (searching) {
+      lastScrollHeight.current = element.scrollHeight;
+      return;
+    }
     if (lastScrollHeight.current === 0 || stickToBottom.current) {
       element.scrollTop = element.scrollHeight;
     } else {
@@ -246,7 +253,7 @@ export function AssistantHistoryPanel({ open, threadId, assistantName = "助理"
       if (grew > 0) element.scrollTop += grew;
     }
     lastScrollHeight.current = element.scrollHeight;
-  }, [data]);
+  }, [data, searching]);
 
   const entries = useMemo(
     () => data && tab === "all" ? filterEntries(data.entries, { query: debouncedQuery, sender }) : [],
@@ -263,10 +270,18 @@ export function AssistantHistoryPanel({ open, threadId, assistantName = "助理"
     setNotice("正在加载更早的消息…");
     setLocatingId(messageId);
     try {
-      const found = await locateMessage(messageId, threadId, {
+      const outcome = await locateMessage(messageId, threadId, {
         onProgress: () => setNotice("正在加载更早的消息…"),
       });
-      setNotice(found ? "" : "未在当前会话中找到这条消息");
+      // "busy" only means a page is still in flight; it is not proof the
+      // message is gone, so never turn it into "not found".
+      setNotice(
+        outcome === "located"
+          ? ""
+          : outcome === "retry"
+            ? "聊天记录仍在加载，请稍后重试"
+            : "未在当前会话中找到这条消息",
+      );
     } catch {
       setNotice("未能加载更早的消息，请重试");
     } finally {
@@ -336,7 +351,7 @@ export function AssistantHistoryPanel({ open, threadId, assistantName = "助理"
       </select>}
     </div>
     <div ref={body} className={styles.body} onScroll={onBodyScroll}>
-      {loadingMore && data && <p className={styles.hint}>正在读取更早的记录…</p>}
+      {loadingMore && data && !empty && <p className={styles.hint}>正在读取更早的记录…</p>}
       {error && <p role="alert" className={styles.error}>{error}
         <button type="button" className={styles.link} onClick={retry}>重试</button></p>}
       {!error && data === null && <p className={styles.hint}>正在读取聊天记录…</p>}
@@ -344,14 +359,17 @@ export function AssistantHistoryPanel({ open, threadId, assistantName = "助理"
       {notice && <p role="status" className={styles.notice}>{notice}</p>}
 
       {tab === "all" && entries.map(entry => <MessageRow key={entry.id} entry={entry}
-        assistantName={assistantName} locating={locatingId === entry.id} onLocate={locate} />)}
+        assistantName={assistantName} locating={locatingId === entry.id}
+        busy={locatingId !== null} onLocate={locate} />)}
 
       {tab === "files" && files.map(file => <FileRow key={file.id} file={file} threadId={threadId}
-        assistantName={assistantName} locating={locatingId === file.messageId} onLocate={locate} />)}
+        assistantName={assistantName} locating={locatingId === file.messageId}
+        busy={locatingId !== null} onLocate={locate} />)}
 
       {tab === "media" && <div className={styles.grid}>
         {media.map(file => <MediaItem key={file.id} file={file} threadId={threadId}
-          locating={locatingId === file.messageId} onLocate={locate} />)}
+          locating={locatingId === file.messageId}
+          busy={locatingId !== null} onLocate={locate} />)}
       </div>}
     </div>
   </aside>;

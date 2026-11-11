@@ -246,7 +246,7 @@ describe("thread history pagination", () => {
       .mockImplementationOnce(() => new Promise<Response>(resolve => { resolvePage = resolve; })));
     await render();
     await bootstrapLatestPage();
-    let pending!: Promise<boolean>;
+    let pending!: ReturnType<typeof state.loadEarlier>;
     await act(async () => { pending = state.loadEarlier(); });
     await render("other-assistant");
     await act(async () => { resolvePage(page([message("user-1", "user", "first")])); await pending; });

@@ -3,14 +3,21 @@
  * 历史面板能读到完整历史，但 assistant-ui 只挂载已导入的消息，
  * 老消息必须先通过会话自己的 loadEarlier 导入，滚动才有落点。
  */
+import type { LoadEarlierResult } from "./task-history";
+
 type Locator = {
   threadId: string;
   hasMore: () => boolean;
   /** Loads up to `pages` earlier pages and imports them once. */
-  loadEarlier: (pages?: number) => Promise<boolean>;
+  loadEarlier: (pages?: number) => Promise<LoadEarlierResult | boolean>;
+  /** Resolves when another reader's in-flight page request settles. */
+  waitForLoading?: () => Promise<void>;
   /** The conversation frame, so 定位 never matches another thread's DOM. */
   frame?: () => HTMLElement | null;
 };
+
+/** Why a locate finished; "retry" is not proof the message is absent. */
+export type LocateOutcome = "located" | "missing" | "retry";
 
 let locator: Locator | null = null;
 
@@ -18,7 +25,11 @@ let locator: Locator | null = null;
 const LOCATE_PAGE_BATCH = 3;
 /** A guard-rail, not the old 5-page ceiling: the thread itself ends earlier. */
 const LOCATE_MAX_PAGES = 21;
-const LOCATE_WAIT_MS = 500;
+/**
+ * How long one import may take to mount. Long threads render across several
+ * frames, and jsdom-style fixed frame counts cannot judge that.
+ */
+const LOCATE_WAIT_MS = 1_200;
 const LOCATE_DEADLINE_MS = 15_000;
 
 export function registerHistoryLocator(value: Locator | null): void {
@@ -79,29 +90,73 @@ async function waitForMessage(messageId: string, root: () => ParentNode | null):
   }
 }
 
+/** The frame that actually rendered this locator's thread. */
+function rootFor(registered: Locator | null): ParentNode | null {
+  if (typeof document === "undefined") return null;
+  // A registered locator with a frame callback must never fall back to the
+  // whole document: that would match another thread that happens to be mounted.
+  if (registered) return registered.frame ? registered.frame() : document;
+  return document;
+}
+
+function normalizeResult(value: LoadEarlierResult | boolean): LoadEarlierResult {
+  if (value === true) return "loaded";
+  if (value === false) return "exhausted";
+  return value;
+}
+
 export async function locateInChat(
   messageId: string,
   threadId?: string,
   options: { onProgress?: () => void; maxPages?: number } = {},
-): Promise<boolean> {
-  const root = () => locator?.frame?.() ?? (typeof document === "undefined" ? null : document);
+): Promise<LocateOutcome> {
+  // Capture the locator for the whole walk: switching threads mid-locate must
+  // not keep paging the new thread on behalf of the old one.
+  const active = locator;
+  const root = () => rootFor(active);
   const current = root();
-  if (current && findMessage(messageId, current)) return flashMessage(messageId, current);
-  if (!locator || (threadId && locator.threadId !== threadId)) return false;
+  if (current && findMessage(messageId, current)) {
+    return flashMessage(messageId, current) ? "located" : "missing";
+  }
+  if (!active || (threadId && active.threadId !== threadId)) return "missing";
 
   const maxPages = options.maxPages ?? LOCATE_MAX_PAGES;
   const deadline = Date.now() + LOCATE_DEADLINE_MS;
   let loadedPages = 0;
+  let waitedForBusy = false;
   while (loadedPages < maxPages && Date.now() < deadline) {
-    if (!locator.hasMore()) break;
-    const loaded = await locator.loadEarlier(Math.min(LOCATE_PAGE_BATCH, maxPages - loadedPages));
-    if (!loaded) break;
+    if (locator !== active) return "retry";
+    if (!active.hasMore()) break;
+    const outcome = normalizeResult(
+      await active.loadEarlier(Math.min(LOCATE_PAGE_BATCH, maxPages - loadedPages)),
+    );
+    if (locator !== active) return "retry";
+    if (outcome === "busy") {
+      // Another reader (scroll-to-top, the index rail) already has a page in
+      // flight. Wait for it, then retry once; never report "missing" for busy.
+      if (waitedForBusy) return "retry";
+      waitedForBusy = true;
+      await active.waitForLoading?.();
+      if (locator !== active) return "retry";
+      if (await waitForMessage(messageId, root)) {
+        return flashMessage(messageId, root()) ? "located" : "retry";
+      }
+      continue;
+    }
+    if (outcome === "exhausted") break;
+    if (outcome === "failed") {
+      // A transport error says nothing about whether the message exists.
+      const target = root();
+      return target && findMessage(messageId, target) ? "located" : "retry";
+    }
     loadedPages += LOCATE_PAGE_BATCH;
     options.onProgress?.();
     if (await waitForMessage(messageId, root)) {
-      return flashMessage(messageId, root());
+      return flashMessage(messageId, root()) ? "located" : "retry";
     }
   }
+  if (locator !== active) return "retry";
   const target = root();
-  return target ? flashMessage(messageId, target) : false;
+  if (!target) return "retry";
+  return flashMessage(messageId, target) ? "located" : "missing";
 }
