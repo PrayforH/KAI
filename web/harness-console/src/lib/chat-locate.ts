@@ -177,6 +177,9 @@ export async function locateInChat(
   options: { onProgress?: () => void; maxPages?: number } = {},
 ): Promise<LocateOutcome> {
   const deadline = Date.now() + LOCATE_DEADLINE_MS;
+  // Check the thread before touching the DOM: a locator for another thread can
+  // only expose a stranger's frame, and its "not here" is not "not anywhere".
+  if (locator && threadId && locator.threadId !== threadId) return "retry";
   // A message that is already on screen needs no paging and no seeded window.
   const alreadyMounted = flashMounted(locator, messageId);
   if (alreadyMounted) return alreadyMounted;
@@ -186,7 +189,7 @@ export async function locateInChat(
   let active = locator;
   // Without a registered thread nothing can be paged, and absence is unproven.
   if (!active) return "retry";
-  if (threadId && active.threadId !== threadId) return "missing";
+  if (threadId && active.threadId !== threadId) return "retry";
   if (active.ready && !active.ready()) {
     // Cold open: the first page has not seeded `hasMore` yet. Treating that as
     // "no earlier pages" reported a false miss within a millisecond.
@@ -233,6 +236,13 @@ export async function locateInChat(
       if (locator !== active) return "retry";
       const mountedNow = flashMounted(active, messageId);
       if (mountedNow) return mountedNow;
+      // That settle may have been the thread's last page, and assistant-ui only
+      // renders a freshly imported repository on later frames. Read `hasMore`
+      // right away and the message looks absent before it is ever drawn. Give
+      // the final page one mount window, clamped to the walk's own deadline.
+      if (!active.hasMore() && await waitForMessage(messageId, root, mountDeadline())) {
+        return flashMounted(active, messageId) ?? "retry";
+      }
       continue;
     }
     if (outcome === "exhausted") { reachedEnd = true; break; }
