@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
+import {
+  getLocatePhase, LOCATE_LANDED_EVENT, LOCATE_LANDED_PULSE_MS, subscribeLocatePhase,
+} from "../lib/locate-signal";
 import type { LoadEarlierFn } from "../lib/task-history";
 
 type Entry = {
@@ -18,6 +21,13 @@ type Entry = {
 const IDLE_LINE_WIDTH = 6;
 const ACTIVE_LINE_WIDTH = 8;
 const NEIGHBOUR_LINE_WIDTHS = [19, 14, 10, 7, 6];
+/** The tick's painted width; the CSS scales it with a compositor transform. */
+const LINE_BASE_WIDTH = 19;
+
+function lineWidthFor(entryId: string, index: number, expandedIndex: number, active: string): number {
+  if (expandedIndex < 0) return entryId === active ? ACTIVE_LINE_WIDTH : IDLE_LINE_WIDTH;
+  return NEIGHBOUR_LINE_WIDTHS[Math.min(NEIGHBOUR_LINE_WIDTHS.length - 1, Math.abs(index - expandedIndex))];
+}
 
 /** Indexes user turns inside this thread only, including restored history and branches. */
 export function ConversationIndex({ frame, threadId, pagination }: {
@@ -28,6 +38,7 @@ export function ConversationIndex({ frame, threadId, pagination }: {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [active, setActive] = useState("");
   const [hovered, setHovered] = useState("");
+  const [landed, setLanded] = useState("");
   const buttons = useRef(new Map<string, HTMLButtonElement>());
   useEffect(() => {
     const root = frame.current;
@@ -57,8 +68,13 @@ export function ConversationIndex({ frame, threadId, pagination }: {
       if (trackRaf) return;
       trackRaf = requestAnimationFrame(() => { trackRaf = 0; track(); });
     }
+    let deferred = false;
     function refresh() {
       raf = 0;
+      // A locate re-imports the thread and then scrolls to an old message.
+      // Measuring every turn in those frames was layout thrash on top of the
+      // landing; wait for the walk to settle, then scan once.
+      if (getLocatePhase(threadId) !== "idle") { deferred = true; return; }
       const nextViewport = root!.querySelector<HTMLElement>(".aui-thread-viewport");
       if (nextViewport !== viewport) {
         viewport?.removeEventListener("scroll", queueTrack);
@@ -86,12 +102,17 @@ export function ConversationIndex({ frame, threadId, pagination }: {
       track();
     }
     function schedule() { if (!raf) raf = requestAnimationFrame(refresh); }
+    const unsubscribe = subscribeLocatePhase((key, phase) => {
+      if (key !== threadId) return;
+      // Resume with the one scan that was skipped while the locate landed.
+      if (phase === "idle" && deferred) { deferred = false; schedule(); }
+    });
     const mutation = new MutationObserver(schedule);
     mutation.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-turn-id", "data-turn-label", "data-turn-answer"] });
     const resize = new ResizeObserver(schedule);
     resize.observe(root);
     refresh();
-    return () => { mutation.disconnect(); resize.disconnect(); viewport?.removeEventListener("scroll", queueTrack); if (raf) cancelAnimationFrame(raf); if (trackRaf) cancelAnimationFrame(trackRaf); };
+    return () => { unsubscribe(); mutation.disconnect(); resize.disconnect(); viewport?.removeEventListener("scroll", queueTrack); if (raf) cancelAnimationFrame(raf); if (trackRaf) cancelAnimationFrame(trackRaf); };
   }, [frame, threadId]);
   useEffect(() => {
     const button = buttons.current.get(active);
@@ -101,6 +122,36 @@ export function ConversationIndex({ frame, threadId, pagination }: {
       else if (button.offsetTop + button.offsetHeight > rail.scrollTop + rail.clientHeight) rail.scrollTop = button.offsetTop + button.offsetHeight - rail.clientHeight;
     }
   }, [active]);
+  // Pulse the tick the locate landed on, so the rail answers "where did I go".
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setLanded("");
+    let timer = 0;
+    function onLanded(event: Event) {
+      const messageId = (event as CustomEvent<{ messageId?: string }>).detail?.messageId;
+      const root = frame.current;
+      if (!messageId || !root) return;
+      let node: HTMLElement | null = null;
+      for (const candidate of root.querySelectorAll<HTMLElement>("[data-message-id]")) {
+        if (candidate.dataset.messageId === messageId) { node = candidate; break; }
+      }
+      if (!node) return;
+      // A tick is the user turn; an assistant reply is its following sibling,
+      // so the owner is the last turn at or before the landed message.
+      let owner: HTMLElement | null = null;
+      for (const turn of root.querySelectorAll<HTMLElement>("[data-turn-id]")) {
+        if (turn === node || turn.contains(node)) { owner = turn; break; }
+        if (turn.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) owner = turn;
+        else break;
+      }
+      if (!owner?.dataset.turnId) return;
+      setLanded(owner.dataset.turnId);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setLanded(""), LOCATE_LANDED_PULSE_MS);
+    }
+    window.addEventListener(LOCATE_LANDED_EVENT, onLanded);
+    return () => { window.removeEventListener(LOCATE_LANDED_EVENT, onLanded); window.clearTimeout(timer); };
+  }, [frame, threadId]);
   // The ticks are one list, so they wait for the count the history endpoint
   // already returns. That count only ever grows: a reload of the first page
   // clears the accumulation for a moment, and reading that as "no turns" made
@@ -157,13 +208,16 @@ export function ConversationIndex({ frame, threadId, pagination }: {
         aria-label={`第 ${index + 1} 轮：加载更早的轮次`}
         onClick={() => void revealPending(index)}
       ><span aria-hidden="true" /></button>)}
-      {entries.map((entry, index) => <button key={entry.id} ref={node => { if (node) buttons.current.set(entry.id, node); else buttons.current.delete(entry.id); }} type="button" style={{ "--index-line-width": `${expandedIndex < 0 ? (entry.id === active ? ACTIVE_LINE_WIDTH : IDLE_LINE_WIDTH) : NEIGHBOUR_LINE_WIDTHS[Math.min(4, Math.abs(index - expandedIndex))]}px`} as CSSProperties} data-highlighted={entry.id === hovered} aria-label={`第 ${index + 1} 轮：${entry.label}`} aria-current={entry.id === active ? "location" : undefined} onMouseEnter={() => setHovered(entry.id)} onFocus={() => setHovered(entry.id)} onBlur={() => setHovered("")} onKeyDown={event => {
+      {entries.map((entry, index) => {
+        const widthPx = lineWidthFor(entry.id, index, expandedIndex, active);
+        return <button key={entry.id} ref={node => { if (node) buttons.current.set(entry.id, node); else buttons.current.delete(entry.id); }} type="button" style={{ "--index-line-width": `${widthPx}px`, "--index-scale": `${widthPx / LINE_BASE_WIDTH}` } as CSSProperties} data-highlighted={entry.id === hovered} data-located={entry.id === landed ? "true" : undefined} aria-label={`第 ${index + 1} 轮：${entry.label}`} aria-current={entry.id === active ? "location" : undefined} onMouseEnter={() => setHovered(entry.id)} onFocus={() => setHovered(entry.id)} onBlur={() => setHovered("")} onKeyDown={event => {
         const offset = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
         const target = event.key === "Home" ? 0 : event.key === "End" ? entries.length - 1 : index + offset;
         if (offset || event.key === "Home" || event.key === "End") { event.preventDefault(); buttons.current.get(entries[Math.max(0, Math.min(entries.length - 1, target))].id)?.focus(); }
       }} onClick={() => {
         scrollToTurn(entry.node); setActive(entry.id); setHovered("");
-      }}><span aria-hidden="true" /></button>)}
+      }}><span aria-hidden="true" /></button>;
+      })}
     </div>
     {preview && <div className="conversation-index-preview" style={{top: previewTop}} aria-hidden="true"><strong>{preview.label}</strong><p>{preview.answer || "这一轮暂无回答"}</p></div>}
   </nav>;

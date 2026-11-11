@@ -298,3 +298,26 @@ it("keeps the reader's place when an older page prepends above them", async () =
   await act(async () => { gates.shift()!(); await new Promise(resolve => setTimeout(resolve, 10)); });
   expect(body!.scrollTop).toBe(600);
 });
+
+it("shows a live progress row while an old message is located, then clears it", async () => {
+  await render();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  registerHistoryLocator({
+    threadId: "thread_1",
+    hasMore: () => true,
+    loadEarlier: async () => "loaded" as const,
+    loadUntil: async () => { await gate; return "missing" as const; },
+  });
+
+  await click("在聊天中定位");
+  expect(host.textContent).toContain("正在翻找更早的消息");
+  // The clicked row keeps its own pending label; the row does not shift because
+  // the label width is reserved.
+  expect(host.textContent).toContain("正在定位…");
+
+  release();
+  await waitForText("未在当前会话中找到这条消息");
+  expect(host.textContent).not.toContain("正在翻找更早的消息");
+  expect(host.textContent).not.toContain("正在定位…");
+});

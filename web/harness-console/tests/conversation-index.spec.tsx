@@ -3,6 +3,7 @@ import { act, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ConversationIndex } from "../src/components/conversation-index";
+import { beginLocate, resetLocatePhases, settleLocate } from "../src/lib/locate-signal";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLDivElement;
@@ -28,7 +29,7 @@ beforeEach(() => {
   vi.stubGlobal("matchMedia", () => ({ matches: false }));
   scroll = vi.fn(); turnRectReads = 0; host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
-afterEach(() => { act(() => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
+afterEach(() => { act(() => root.unmount()); host.remove(); resetLocatePhases(); vi.unstubAllGlobals(); });
 async function render(props: Parameters<typeof Harness>[0] = {}) { await act(async () => { root.render(<Harness {...props} />); await new Promise(resolve => setTimeout(resolve, 10)); }); }
 it("indexes each user turn, previews labels and scrolls only its viewport", async () => {
   await render();
@@ -101,4 +102,50 @@ it("tracks the active turn without measuring every turn on every scroll", async 
   // Scroll only compares cached offsets: no layout read per turn.
   expect(turnRectReads).toBe(0);
   expect(buttons[2].getAttribute("aria-current")).toBe("location");
+});
+
+it("skips the per-turn scan while a locate is landing, then measures once", async () => {
+  await render();
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 40)); });
+  turnRectReads = 0;
+
+  const generation = beginLocate("task-a");
+  // The re-import lands turns while the scroll is still settling; scanning them
+  // in those frames was the hitch the landing animation sat on top of.
+  await act(async () => {
+    const extra = document.createElement("article");
+    extra.setAttribute("data-turn-id", "task-a3");
+    extra.setAttribute("data-turn-label", "第四问");
+    host.querySelector(".aui-thread-viewport")!.append(extra);
+    await new Promise(resolve => setTimeout(resolve, 30));
+  });
+  expect(turnRectReads).toBe(0);
+
+  await act(async () => {
+    settleLocate("task-a", generation, true);
+    await new Promise(resolve => setTimeout(resolve, 420));
+  });
+  // One scan after the landing, not one per mutation frame.
+  expect(turnRectReads).toBeGreaterThanOrEqual(3);
+  expect(host.querySelectorAll("nav button")).toHaveLength(4);
+});
+
+it("pulses the turn that owns the landed message", async () => {
+  await render();
+  const turn = host.querySelector<HTMLElement>('[data-turn-id="task-a1"]')!;
+  // An assistant reply is the turn's following sibling, not its child.
+  const reply = document.createElement("div");
+  reply.setAttribute("data-message-id", "assistant-reply-1");
+  turn.after(reply);
+
+  await act(async () => {
+    window.dispatchEvent(new CustomEvent("harness:chat-located", { detail: { messageId: "assistant-reply-1" } }));
+    await new Promise(resolve => setTimeout(resolve, 0));
+  });
+
+  const buttons = host.querySelectorAll<HTMLButtonElement>("nav button");
+  // The reply belongs to the turn before it, not to the next prompt.
+  expect(buttons[1].getAttribute("data-located")).toBe("true");
+  expect(buttons[0].getAttribute("data-located")).toBeNull();
+  expect(buttons[2].getAttribute("data-located")).toBeNull();
 });

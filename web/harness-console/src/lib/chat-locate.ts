@@ -3,6 +3,9 @@
  * 历史面板能读到完整历史，但 assistant-ui 只挂载已导入的消息，
  * 老消息必须先通过会话自己的 loadEarlier 导入，滚动才有落点。
  */
+import {
+  beginLocate, LOCATE_LANDED_EVENT, settleLocate,
+} from "./locate-signal";
 import type { LoadEarlierResult, LocateLoadResult } from "./task-history";
 
 type Locator = {
@@ -44,6 +47,28 @@ const LOCATE_WAIT_MS = 1_200;
 /** Identical clicks share one walk instead of paging the thread twice. */
 const inFlightLocates = new Map<string, Promise<LocateOutcome>>();
 
+/** The ring stays on the landed message for the prototype's 1.8s. */
+const LOCATED_CLASS = "assistant-history-located";
+/**
+ * Two variants of the same bloom animation. Restarting a CSS animation
+ * normally needs a forced reflow (`void node.offsetWidth`), which on a
+ * 500-turn thread reads layout for the whole document right when the jump
+ * lands. Alternating the animation name restarts it without that read.
+ */
+const LOCATED_VARIANTS = [
+  "assistant-history-located-a",
+  "assistant-history-located-b",
+] as const;
+const LOCATED_MS = 1_800;
+/** A long jump is a cut; a short opacity fade keeps it from reading as a freeze. */
+const VIEWPORT_FADE_MS = 180;
+const NEARBY_DISTANCE_PX = 600;
+/** A fallback viewport height when the frame has not been laid out yet. */
+const FALLBACK_VIEWPORT_PX = 600;
+
+const locateTimers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
+let locateVariant = 0;
+
 export function registerHistoryLocator(value: Locator | null): void {
   locator = value;
 }
@@ -75,6 +100,32 @@ function findMessage(messageId: string, root: ParentNode): HTMLElement | null {
   return node instanceof HTMLElement ? node : null;
 }
 
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined"
+    && typeof window.matchMedia === "function"
+    && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/**
+ * Ring the landed message. The ring is a pseudo-element whose only animated
+ * properties are opacity and transform: the old version animated box-shadow
+ * and background on a whole message block, repainting it every frame for 1.8s
+ * and dropping frames on long threads.
+ */
+function markLocated(target: HTMLElement): void {
+  const previous = locateTimers.get(target);
+  if (previous) clearTimeout(previous);
+  target.classList.remove(LOCATED_CLASS, ...LOCATED_VARIANTS);
+  const variant = LOCATED_VARIANTS[locateVariant % LOCATED_VARIANTS.length];
+  locateVariant += 1;
+  target.classList.add(LOCATED_CLASS, variant);
+  const timer = setTimeout(() => {
+    target.classList.remove(LOCATED_CLASS, variant);
+    locateTimers.delete(target);
+  }, LOCATED_MS);
+  locateTimers.set(target, timer);
+}
+
 /** Scroll to the message and flash it, like the prototype's paLocateInChat. */
 export function flashMessage(messageId: string, root: ParentNode | null = typeof document === "undefined" ? null : document): boolean {
   if (!root) return false;
@@ -84,14 +135,24 @@ export function flashMessage(messageId: string, root: ParentNode | null = typeof
   const distance = Math.abs(
     target.getBoundingClientRect().top - (viewport?.getBoundingClientRect().top ?? 0),
   );
+  const reduced = prefersReducedMotion();
   // A long jump is laid out in one frame; smooth is for nearby hops only, where
   // the animation is the feedback rather than a slow crawl across the thread.
-  const nearby = distance <= Math.max(600, (viewport?.clientHeight ?? 600) * 2);
-  target.scrollIntoView?.({ block: "start", behavior: nearby ? "smooth" : "auto" });
-  target.classList.remove("assistant-history-located");
-  void target.offsetWidth;
-  target.classList.add("assistant-history-located");
-  window.setTimeout(() => target.classList.remove("assistant-history-located"), 1800);
+  const nearby = distance <= Math.max(NEARBY_DISTANCE_PX, (viewport?.clientHeight ?? FALLBACK_VIEWPORT_PX) * 2);
+  target.scrollIntoView?.({ block: "start", behavior: !reduced && nearby ? "smooth" : "auto" });
+  // The far jump has no spatial continuity; a short fade-in on the viewport
+  // softens the cut without delaying the landing. Opacity only, so the thread
+  // is not repainted message by message.
+  if (!reduced && !nearby && viewport && typeof viewport.animate === "function") {
+    viewport.animate(
+      [{ opacity: 0.55 }, { opacity: 1 }],
+      { duration: VIEWPORT_FADE_MS, easing: "ease-out" },
+    );
+  }
+  markLocated(target);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(LOCATE_LANDED_EVENT, { detail: { messageId } }));
+  }
   return true;
 }
 
@@ -178,7 +239,19 @@ export function locateInChat(
   const key = `${threadId ?? ""} ${messageId}`;
   const pending = inFlightLocates.get(key);
   if (pending) return pending;
-  const run = walkToMessage(messageId, threadId, options).finally(() => {
+  // The rail stops measuring turns while this walk imports and lands; it
+  // scans once afterwards instead of competing with the scroll.
+  const generation = beginLocate(threadId);
+  const run = walkToMessage(messageId, threadId, options).then(
+    (outcome) => {
+      settleLocate(threadId, generation, outcome === "located");
+      return outcome;
+    },
+    (cause: unknown) => {
+      settleLocate(threadId, generation, false);
+      throw cause;
+    },
+  ).finally(() => {
     if (inFlightLocates.get(key) === run) inFlightLocates.delete(key);
   });
   inFlightLocates.set(key, run);
