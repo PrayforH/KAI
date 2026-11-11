@@ -21,7 +21,10 @@ VERSION = b"RFB 003.008\n"
 HANDSHAKE = VERSION + b"\x01" + b"\x01"  # version reply, security choice, ClientInit
 UPDATE_REQUEST = b"\x03\x00\x00\x00\x00\x00\x00\x20\x00\x20"  # FramebufferUpdateRequest
 KEY_A_DOWN = b"\x04\x01\x00\x00\x00\x00\x00\x41"  # KeyEvent, keysym 'a'
+KEY_A_UP = b"\x04\x00\x00\x00\x00\x00\x00\x41"  # KeyEvent release for the same key
 POINTER_EVENT = b"\x05\x01\x00\x0a\x00\x14"  # PointerEvent, left button held
+POINTER_RELEASE = b"\x05\x00\x00\x0a\x00\x14"  # same point, no buttons held
+VIEWER_ID = "11111111-2222-3333-4444-555555555555"
 # A complete SetPixelFormat whose first bytes happen to collide with a
 # half-sent pointer event's tail: negotiation is read-only and passes.
 PIXEL_FORMAT_TAIL = bytes(20)
@@ -43,6 +46,9 @@ def gateway(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     def authenticate(request: httpx.Request) -> httpx.Response:
         if request.headers.get("authorization") != "Bearer fixture" or not state["active"]:
             return httpx.Response(401)
+        override = state.get("statuses", {}).get(request.url.path)
+        if override is not None:
+            return httpx.Response(override)
         if request.url.path == "/v1/studio/assistant/computer/desktop":
             state["desktop_calls"] = state.get("desktop_calls", 0) + 1
             if state.get("desktop_unavailable"):
@@ -314,9 +320,10 @@ def test_input_grant_never_survives_an_unobserved_generation(
         wait_for_control(client, "human")
         time.sleep(1.2)  # several of the connection's own poll ticks
         socket.send_bytes(KEY_A_DOWN + UPDATE_REQUEST)
-        # The key was dropped; the update request is read-only and still
-        # reaches the guest, proving the session was not closed.
-        drain(socket, UPDATE_REQUEST)
+        # The new key was dropped; the key held from the previous generation
+        # is released so the guest does not keep it down, and the read-only
+        # update request still reaches the guest, proving the session lives.
+        drain(socket, KEY_A_UP + UPDATE_REQUEST)
         assert status_json(client)["input_frames"]["keyboard"] == 1
         # Once control leaves human, a later takeover is a new observed
         # transition and the same socket may be granted again.
@@ -374,6 +381,277 @@ def test_a_transient_control_api_error_pauses_input_without_closing(
         assert status_json(client)["input_frames"]["keyboard"] == 0
         state["desktop_unavailable"] = False
         time.sleep(0.3)  # the next successful poll re-arms the grant
+        socket.send_bytes(KEY_A_DOWN)
+        drain(socket, KEY_A_DOWN)
+        assert status_json(client)["input_frames"]["keyboard"] == 1
+    state["active"] = False
+
+
+@pytest.mark.parametrize("status", [429, 500, 503])
+def test_a_login_server_error_pauses_input_without_closing(
+    gateway: tuple[TestClient, dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+) -> None:
+    client, state = gateway
+    state["script"] = ECHO_SCRIPT
+    state["control"] = "human"
+    monkeypatch.setattr(viewer, "AUTH_GRACE_SECONDS", 0.1)
+    with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}) as socket:
+        assert socket.receive_bytes() == VERSION
+        socket.send_bytes(HANDSHAKE)
+        drain(socket, HANDSHAKE)
+        time.sleep(0.1)  # the first poll confirms the human lease
+        state["statuses"] = {"/v1/auth/me": status}
+        time.sleep(0.3)  # the grace window lapses while the API errors
+        socket.send_bytes(KEY_A_DOWN + UPDATE_REQUEST)
+        drain(socket, UPDATE_REQUEST)  # input dropped, session still alive
+        state["statuses"] = {}
+        time.sleep(0.3)  # the next successful poll re-arms the grant
+        socket.send_bytes(KEY_A_DOWN)
+        drain(socket, KEY_A_DOWN)
+        assert status_json(client)["input_frames"]["keyboard"] == 1
+    state["active"] = False
+
+
+@pytest.mark.parametrize("status", [429, 500, 503])
+def test_a_desktop_server_error_pauses_input_without_closing(
+    gateway: tuple[TestClient, dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+) -> None:
+    client, state = gateway
+    state["script"] = ECHO_SCRIPT
+    state["control"] = "human"
+    monkeypatch.setattr(viewer, "AUTH_GRACE_SECONDS", 0.1)
+    with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}) as socket:
+        assert socket.receive_bytes() == VERSION
+        socket.send_bytes(HANDSHAKE)
+        drain(socket, HANDSHAKE)
+        time.sleep(0.1)
+        state["statuses"] = {"/v1/studio/assistant/computer/desktop": status}
+        time.sleep(0.3)
+        socket.send_bytes(KEY_A_DOWN + UPDATE_REQUEST)
+        drain(socket, UPDATE_REQUEST)  # input dropped, session still alive
+        state["statuses"] = {}
+        time.sleep(0.3)
+        socket.send_bytes(KEY_A_DOWN)
+        drain(socket, KEY_A_DOWN)
+        assert status_json(client)["input_frames"]["keyboard"] == 1
+    state["active"] = False
+
+
+def test_a_pause_releases_a_held_key_and_pointer(
+    gateway: tuple[TestClient, dict[str, Any]],
+) -> None:
+    """A held press must not stay down in the guest when input pauses."""
+
+    client, state = gateway
+    state["script"] = ECHO_SCRIPT
+    state["control"] = "human"
+    with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}) as socket:
+        assert socket.receive_bytes() == VERSION
+        socket.send_bytes(HANDSHAKE)
+        drain(socket, HANDSHAKE)
+        time.sleep(0.1)  # the first poll grants input
+        socket.send_bytes(KEY_A_DOWN + POINTER_EVENT)
+        drain(socket, KEY_A_DOWN + POINTER_EVENT)
+        state["control"] = "observe"
+        wait_for_control(client, "observe")
+        # This socket's own poll observes the change and lets go immediately:
+        # no further browser event is needed to avoid a stuck key or button.
+        drain(socket, KEY_A_UP + POINTER_RELEASE)
+        socket.send_bytes(UPDATE_REQUEST)
+        drain(socket, UPDATE_REQUEST)
+        assert status_json(client)["input_frames"] == {"keyboard": 1, "pointer": 1}
+    state["active"] = False
+
+
+def test_a_pause_synthesizes_releases_only_for_forwarded_presses() -> None:
+    policy = viewer.RfbClientFilter(VERSION)
+    forwarded = policy.feed(HANDSHAKE + KEY_A_DOWN + POINTER_EVENT, input_allowed=True)
+    assert [kind for kind, _ in forwarded] == ["negotiate"] * 3 + ["keyboard", "pointer"]
+    assert policy.feed(UPDATE_REQUEST, input_allowed=False) == [
+        (viewer.RFB_RELEASE, KEY_A_UP),
+        (viewer.RFB_RELEASE, POINTER_RELEASE),
+        (viewer.RFB_NEGOTIATE, UPDATE_REQUEST),
+    ]
+    # Releasing happens once; the pause keeps the stream aligned afterwards.
+    assert policy.feed(UPDATE_REQUEST, input_allowed=False) == [
+        (viewer.RFB_NEGOTIATE, UPDATE_REQUEST)
+    ]
+
+
+def test_a_dropped_press_is_never_released() -> None:
+    """The guest never saw it, so a release would press and let go for it."""
+
+    policy = viewer.RfbClientFilter(VERSION)
+    policy.feed(HANDSHAKE, input_allowed=False)
+    policy.feed(KEY_A_DOWN + POINTER_EVENT, input_allowed=False)
+    assert policy.feed(UPDATE_REQUEST, input_allowed=True) == [
+        (viewer.RFB_NEGOTIATE, UPDATE_REQUEST)
+    ]
+
+
+def test_a_pause_releases_a_qemu_extended_key() -> None:
+    # type 255, subtype 0, down-flag u16, keysym, keycode, padding.
+    qemu = b"\xff\x00\x00\x01" + b"\x00\x00\x00\x61" + b"\x00\x00\x00\x1e" + bytes(4)
+    policy = viewer.RfbClientFilter(VERSION)
+    policy.feed(HANDSHAKE, input_allowed=True)
+    assert policy.feed(qemu, input_allowed=True) == [("keyboard", qemu)]
+    assert policy.feed(b"", input_allowed=False) == [
+        (viewer.RFB_RELEASE, b"\xff\x00\x00\x00" + qemu[4:])
+    ]
+
+
+@pytest.mark.parametrize("status,expected", [(429, 503), (500, 503), (403, 403)])
+def test_status_separates_denial_from_an_unconfirmed_login(
+    gateway: tuple[TestClient, dict[str, Any]], status: int, expected: int
+) -> None:
+    client, state = gateway
+    state["statuses"] = {"/v1/auth/me": status}
+    assert client.get("/computer/status").status_code == expected
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_a_startup_server_error_asks_the_client_to_retry(
+    gateway: tuple[TestClient, dict[str, Any]], status: int
+) -> None:
+    client, state = gateway
+    state["statuses"] = {"/v1/auth/me": status}
+    with pytest.raises(WebSocketDisconnect) as rejected:
+        with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}):
+            pytest.fail("socket was accepted while login was unknown")
+    assert rejected.value.code == 1013
+    assert state["connections"] == 0
+
+
+def probe(
+    client: TestClient,
+    viewer_id: str = VIEWER_ID,
+    state: str | None = None,
+    epoch: int | None = None,
+    claim: bool = False,
+) -> dict[str, Any]:
+    query = f"probe=1&viewer_id={viewer_id}"
+    if state is not None:
+        query += f"&state={state}"
+    if epoch is not None:
+        query += f"&epoch={epoch}"
+    if claim:
+        query += "&claim=1"
+    payload = cast(Any, client).get(f"/computer/status?{query}").json()
+    return cast(dict[str, Any], payload)
+
+
+def test_the_input_probe_still_requires_a_login(
+    gateway: tuple[TestClient, dict[str, Any]],
+) -> None:
+    client, state = gateway
+    query = f"/computer/status?probe=1&viewer_id={VIEWER_ID}"
+    assert client.get(query).status_code == 200
+    client.cookies.clear()
+    assert client.get(query).status_code == 403
+
+
+def test_the_input_probe_reports_only_this_sockets_grant(
+    gateway: tuple[TestClient, dict[str, Any]],
+) -> None:
+    client, state = gateway
+    state["script"] = ECHO_SCRIPT
+    state.update(control="human", epoch=4)
+    with client.websocket_connect(
+        f"/computer/desktop?viewer_id={VIEWER_ID}", headers={"origin": ORIGIN}
+    ) as socket:
+        assert socket.receive_bytes() == VERSION
+        time.sleep(0.15)  # the immediate poll grants epoch 4
+        assert probe(client)["grant"] == {
+            "state": "human",
+            "epoch": 4,
+            "input_allowed": True,
+            "blocked": False,
+        }
+        # Another tab is never told it may type on this socket's grant.
+        assert probe(client, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")["grant"][
+            "input_allowed"
+        ] is False
+        # The answer is the last confirmed grant, not a fresh API read: an
+        # unreachable API leaves it intact.
+        state["desktop_unavailable"] = True
+        time.sleep(0.2)
+        assert probe(client)["grant"]["input_allowed"] is True
+        state["desktop_unavailable"] = False
+        # A generation this socket did not observe is reported as blocked.
+        state["epoch"] = 5
+        time.sleep(0.2)
+        grant = probe(client)["grant"]
+        assert grant["input_allowed"] is False
+        assert grant["blocked"] is True
+    state["active"] = False
+
+
+def test_a_control_probe_wakes_the_steady_poll_for_a_takeover(
+    gateway: tuple[TestClient, dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The browser reading control state must not wait out the 1s cadence."""
+
+    client, state = gateway
+    state["script"] = ECHO_SCRIPT
+    state.update(control="human", epoch=1)
+    monkeypatch.setattr(viewer, "AUTH_CHECK_SECONDS", 5.0)
+    with client.websocket_connect(
+        f"/computer/desktop?viewer_id={VIEWER_ID}", headers={"origin": ORIGIN}
+    ) as socket:
+        assert socket.receive_bytes() == VERSION
+        socket.send_bytes(HANDSHAKE)
+        drain(socket, HANDSHAKE)
+        time.sleep(0.1)  # the immediate poll confirms epoch 1
+        assert probe(client)["grant"]["input_allowed"] is True
+        time.sleep(0.05)  # let the wake rate limit pass
+        state["control"] = "takeover_pending"
+        # The browser asks while the handoff is in flight; the socket still
+        # believes it is human, so this is the hint that starts fast polling
+        # before the lease lands on a new generation.
+        probe(client, state="takeover_pending")
+        time.sleep(0.05)
+        state.update(control="human", epoch=2)
+        deadline = time.monotonic() + 2
+        while not probe(client)["grant"]["input_allowed"]:
+            assert time.monotonic() < deadline, "takeover waited for the steady cadence"
+            time.sleep(0.02)
+        socket.send_bytes(KEY_A_DOWN)
+        drain(socket, KEY_A_DOWN)
+    state["active"] = False
+
+
+def test_a_claimed_fast_drain_is_still_granted(
+    gateway: tuple[TestClient, dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A drain shorter than one poll must not block the tab that asked for it."""
+
+    client, state = gateway
+    state["script"] = ECHO_SCRIPT
+    state.update(control="human", epoch=1)
+    monkeypatch.setattr(viewer, "AUTH_CHECK_SECONDS", 5.0)
+    with client.websocket_connect(
+        f"/computer/desktop?viewer_id={VIEWER_ID}", headers={"origin": ORIGIN}
+    ) as socket:
+        assert socket.receive_bytes() == VERSION
+        socket.send_bytes(HANDSHAKE)
+        drain(socket, HANDSHAKE)
+        time.sleep(0.1)  # the immediate poll grants epoch 1
+        assert probe(client)["grant"]["input_allowed"] is True
+        time.sleep(0.05)  # let the wake rate limit pass
+        # The lease moves to epoch 2 with no observable pending phase: the tab
+        # that requested the takeover records its claim, so the socket it owns
+        # is granted instead of being treated as a bystander.
+        state["epoch"] = 2
+        probe(client, state="human", epoch=2, claim=True)
+        deadline = time.monotonic() + 2
+        while not probe(client)["grant"]["input_allowed"]:
+            assert time.monotonic() < deadline, "claimed generation was not granted"
+            assert probe(client)["grant"]["blocked"] is False
+            time.sleep(0.02)
         socket.send_bytes(KEY_A_DOWN)
         drain(socket, KEY_A_DOWN)
         assert status_json(client)["input_frames"]["keyboard"] == 1

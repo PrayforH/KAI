@@ -14,14 +14,21 @@ from harness.computer import viewer
 from harness.computer.ssh_transport import SshEndpoint
 
 ORIGIN = "https://kai.example.test"
+DESKTOP_ID = "desktop_" + "a" * 24
+VIEWER_ID = "11111111-2222-3333-4444-555555555555"
 
 
 @pytest.fixture
 def selected_viewer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    selected = {"target": "cloud"}
+    selected: dict = {"target": "cloud"}
     opened: list[str] = []
 
     def respond(request: httpx.Request) -> httpx.Response:
+        overrides = selected.get("statuses", {})
+        if request.url.path in overrides:
+            return httpx.Response(overrides[request.url.path])
+        if request.url.path.endswith("/desktops"):
+            return httpx.Response(200, json=[{"desktopId": selected.get("slot", DESKTOP_ID)}])
         if request.url.path.endswith("/targets"):
             return httpx.Response(
                 200,
@@ -48,7 +55,7 @@ def selected_viewer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
             200, json={"user": {"user_id": "owner"}, "membership": {"tenant_id": "tenant"}}
         )
 
-    async def connect(_self, endpoint: SshEndpoint | None = None):
+    async def connect(_self, endpoint: SshEndpoint | None = None, *, slot: str | None = None):
         assert endpoint is not None
         opened.append(endpoint.host)
         return await asyncio.create_subprocess_exec(
@@ -194,3 +201,56 @@ def test_a_stale_human_epoch_loses_input_at_the_next_poll(selected_viewer):
         socket.send_bytes(key + update)
         assert socket.receive_bytes() == update
         assert client.get("/computer/status").json()["input_frames"]["keyboard"] == 0
+
+
+@pytest.mark.parametrize("status", [429, 500])
+def test_target_server_errors_keep_the_session(selected_viewer, monkeypatch, status):
+    """A failed target list is unknown, not a reason to drop the viewer."""
+
+    client, selected, opened = selected_viewer
+    monkeypatch.setattr(viewer, "AUTH_GRACE_SECONDS", 0.1)
+    with client.websocket_connect(
+        "/computer/desktop?target=cloud", headers={"origin": ORIGIN}
+    ) as socket:
+        assert socket.receive_bytes() == b"RFB 003.008\n"
+        handshake = b"RFB 003.008\n" + b"\x01\x01"
+        socket.send_bytes(handshake)
+        assert socket.receive_bytes() == handshake
+        time.sleep(0.1)  # the first poll confirms the selection
+        selected["statuses"] = {"/v1/studio/assistant/computer/targets": status}
+        time.sleep(0.3)  # several polls fail
+        socket.send_bytes(b"\x03" + b"\x00" * 9)
+        assert socket.receive_bytes() == b"\x03" + b"\x00" * 9
+    assert opened == ["cloud"]
+
+
+@pytest.mark.parametrize("status", [429, 500])
+def test_ownership_server_errors_keep_the_slot_session(selected_viewer, monkeypatch, status):
+    """Losing the ownership answer for a while must not end the picture."""
+
+    client, selected, opened = selected_viewer
+    monkeypatch.setattr(viewer, "AUTH_GRACE_SECONDS", 0.1)
+    url = f"/computer/desktop?target=cloud&desktop={DESKTOP_ID}&viewer_id={VIEWER_ID}"
+    with client.websocket_connect(url, headers={"origin": ORIGIN}) as socket:
+        assert socket.receive_bytes() == b"RFB 003.008\n"
+        handshake = b"RFB 003.008\n" + b"\x01\x01"
+        socket.send_bytes(handshake)
+        assert socket.receive_bytes() == handshake
+        time.sleep(0.1)
+        selected["statuses"] = {"/v1/studio/assistant/computer/desktops": status}
+        time.sleep(0.3)
+        socket.send_bytes(b"\x03" + b"\x00" * 9)
+        assert socket.receive_bytes() == b"\x03" + b"\x00" * 9
+    assert opened == ["cloud"]
+
+
+def test_losing_ownership_still_ends_the_slot_session(selected_viewer):
+    """An explicit denial is different from a server-side failure."""
+
+    client, selected, opened = selected_viewer
+    url = f"/computer/desktop?target=cloud&desktop={DESKTOP_ID}&viewer_id={VIEWER_ID}"
+    with client.websocket_connect(url, headers={"origin": ORIGIN}) as socket:
+        assert socket.receive_bytes() == b"RFB 003.008\n"
+        time.sleep(0.1)
+        selected["statuses"] = {"/v1/studio/assistant/computer/desktops": 403}
+        assert socket.receive()["type"] == "websocket.close"

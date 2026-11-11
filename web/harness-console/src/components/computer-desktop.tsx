@@ -54,11 +54,18 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
   const [selectionError, setSelectionError] = useState("");
   const [authority, setAuthority] = useState<DesktopControl | null>(null);
   const [controlError, setControlError] = useState("");
+  const [grantBlocked, setGrantBlocked] = useState(false);
+  // The lease can be granted before this socket's watcher has observed the new
+  // generation. Input stays off until the viewer confirms it can forward it.
+  const grantAwaitUntil = useRef(0);
   const [actionError, setActionError] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
   const operationVersion = useRef(0);
   const actionInFlight = useRef(false);
   const refreshControl = useRef<() => Promise<void>>(async () => {});
+  // Records this tab's takeover intent with its own viewer socket, which is
+  // what lets a drain faster than one poll still grant it.
+  const claimControl = useRef<(epoch: number | undefined, state: ControlState) => void>(() => {});
   const viewingExecution = Boolean(selection && viewTarget === selection.active_target);
   const applyControl = (value: ControlState) => {
     controlRef.current = value;
@@ -85,6 +92,7 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
     desktopRef.current = null;
     setAuthority(null);
     setActionError("");
+    grantAwaitUntil.current = 0;
     applyControl("observe");
     setState("connecting");
     // Full navigations can enter bfcache without React unmounting this tree.
@@ -92,6 +100,35 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
     const restorePage = (event: PageTransitionEvent) => { if (event.persisted) setRevision(value => value + 1); };
     window.addEventListener("pagehide", leavePage);
     window.addEventListener("pageshow", restorePage);
+    // Which generation this tab's own socket may type at. The viewer answers
+    // from memory, so asking costs no database round trip during a handoff.
+    // "unknown" keeps the last decision: a failed probe is not a lost grant.
+    async function confirmInputGrant(epoch: number | undefined, state: ControlState, claim = false): Promise<{ allowed: boolean | null; blocked: boolean }> {
+      const params = new URLSearchParams({ probe: "1", state });
+      if (typeof epoch === "number") params.set("epoch", String(epoch));
+      if (claim) params.set("claim", "1");
+      if (desktopRef.current) params.set("desktop", desktopRef.current);
+      if (viewerRef.current) params.set("viewer_id", viewerRef.current);
+      try {
+        const response = await fetch(`/api/computer/status?${params}`, {
+          cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(4000)]),
+        });
+        if (!response.ok) return { allowed: null, blocked: false };
+        const value = await response.json() as {
+          grant?: { state?: string; epoch?: number; input_allowed?: boolean; blocked?: boolean };
+        };
+        const grant = value.grant;
+        if (!grant) return { allowed: null, blocked: false };
+        const epochMatches = typeof epoch !== "number" || grant.epoch === epoch;
+        return {
+          allowed: grant.input_allowed === true && grant.state === "human" && epochMatches,
+          blocked: grant.blocked === true,
+        };
+      } catch {
+        return { allowed: null, blocked: false };
+      }
+    }
+    claimControl.current = (epoch, state) => { void confirmInputGrant(epoch, state, true); };
     async function pollControl() {
       // The lease is the authority; the viewer only mirrors it for the UI and
       // stops asking noVNC to send input when the user does not own it.
@@ -120,7 +157,33 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
         if (!activeBinding || value.binding_key !== activeBinding || (desktopId && value.desktop_id !== desktopId)) throw new Error("电脑已切换，正在重新确认控制状态");
         setSelection(selected); setAuthority(value); setControlError("");
         const otherWindow = desktopId && (value.state === "human" || value.state === "takeover_pending") && value.owner !== viewerRef.current;
-        const next = selected.active_target === targetRef.current && !otherWindow ? value.state : "observe";
+        let next = selected.active_target === targetRef.current && !otherWindow ? value.state : "observe";
+        let blocked = false;
+        // Probing while pending is what lets the socket observe the handoff
+        // before the lease lands on a new generation; otherwise a fast drain
+        // looks like an unobserved generation change and input stays off.
+        if (next === "human" || next === "takeover_pending") {
+          const grant = await confirmInputGrant(value.epoch, next);
+          if (disposed || version !== operationVersion.current || desktopId !== desktopRef.current) return;
+          blocked = grant.blocked;
+          if (next === "human") {
+            if (grant.allowed === true) {
+              grantAwaitUntil.current = 0;
+            } else if (grant.allowed === false) {
+              // The API granted the lease but this socket has not observed the
+              // generation yet, so typing would be dropped. Keep the handoff
+              // state and poll fast until the watcher catches up; a socket that
+              // was already observing has no handoff to wait for.
+              if (controlRef.current === "takeover_pending" && grantAwaitUntil.current === 0) {
+                grantAwaitUntil.current = Date.now() + 10_000;
+              }
+              const awaiting = Date.now() < grantAwaitUntil.current;
+              if (!awaiting) grantAwaitUntil.current = 0;
+              next = awaiting && controlRef.current !== "observe" ? "takeover_pending" : "observe";
+            }
+          }
+        }
+        setGrantBlocked(blocked);
         if (next !== controlRef.current) applyControl(next);
       } catch (error) {
         if (!disposed && version === operationVersion.current) {
@@ -184,6 +247,11 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
         }
         const url = new URL("/computer/desktop", window.location.href);
         if (targetRef.current) url.searchParams.set("target", targetRef.current);
+        // Identifies this tab to the viewer's input gate. The socket has
+        // always accepted it; sending it for a personal desktop too lets the
+        // gate answer per tab instead of guessing by slot alone.
+        viewerRef.current ??= browserViewerId();
+        url.searchParams.set("viewer_id", viewerRef.current);
         slotPreview = botId !== undefined && targetRef.current === "cloud";
         if (slotPreview) {
           const query = botId ? `?${new URLSearchParams({ bot_id: botId })}` : "";
@@ -216,9 +284,7 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
           if (slot.state !== "busy" && slot.state !== "idle") { retryConnection(); return; }
           if (start) setState(wasConnected ? "reconnecting" : "connecting");
           desktopRef.current = slot.desktopId;
-          viewerRef.current ??= browserViewerId();
           url.searchParams.set("desktop", slot.desktopId);
-          url.searchParams.set("viewer_id", viewerRef.current);
           await pollControl();
         } else {
           desktopRef.current = null;
@@ -245,6 +311,9 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
           if (disposed || rfb !== connection) return;
           established = true; wasConnected = true; connectedAt = Date.now(); setState("connected");
           if (!embedded && controlRef.current === "human") connection.focus();
+          // The socket's watcher confirms its own grant right after it opens;
+          // re-read it so its owner does not wait for the steady poll.
+          void pollControl();
         });
         connection.addEventListener("disconnect", () => {
           if (disposed || rfb !== connection || securityFailed) return;
@@ -269,11 +338,12 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
     // after control was actually granted, which read as "takeover did
     // nothing". Poll quickly only while a hand-over is in flight.
     const pendingPoll = setInterval(() => {
-      if (controlRef.current === "takeover_pending") void pollControl();
+      if (controlRef.current === "takeover_pending" || Date.now() < grantAwaitUntil.current) void pollControl();
     }, FAST_CONTROL_POLL_MS);
     return () => {
       leavePage(); client.current = null; clearInterval(poll); clearInterval(pendingPoll); clearTimeout(retryTimer);
       refreshControl.current = async () => {};
+      claimControl.current = () => {};
       window.removeEventListener("pagehide", leavePage);
       window.removeEventListener("pageshow", restorePage);
     };
@@ -337,7 +407,18 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
       if (version !== operationVersion.current) return;
       setAuthority({ ...value, binding_key: binding });
       setControlError("");
-      applyControl(viewingExecution ? value.state : "observe");
+      // Record the intent with this tab's viewer before the watcher sees the
+      // new generation, in case the drain completes between two polls.
+      if (viewingExecution) claimControl.current(value.epoch, value.state);
+      if (viewingExecution && value.state === "human") {
+        // The lease may already be ours, but this socket has not observed the
+        // generation yet. Show the handoff and let the fast poll confirm it.
+        grantAwaitUntil.current = Date.now() + 10_000;
+        applyControl("takeover_pending");
+      } else {
+        grantAwaitUntil.current = 0;
+        applyControl(viewingExecution ? value.state : "observe");
+      }
     } catch (error) {
       if (version === operationVersion.current) setActionError(error instanceof Error && error.name === "Error"
         ? error.message : "控制权请求未完成，请重试控制状态后再操作");
@@ -387,7 +468,7 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
       <div className={styles.controlPill} data-pending={control === "takeover_pending"}>
         <span className={styles.viewState} role="status" title={controlError || undefined}>
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 10s3-5 8-5 8 5 8 5-3 5-8 5-8-5-8-5Z"/><circle cx="10" cy="10" r="2"/></svg>
-          {controlError ? "控制状态待确认" : otherWindow ? "另一个窗口已接管" : control === "human" ? "由你控制" : control === "takeover_pending" ? "正在交接" : control === "agent" ? "助理操作中" : "仅观看"}
+          {controlError ? "控制状态待确认" : otherWindow ? "另一个窗口已接管" : control === "human" ? "由你控制" : control === "takeover_pending" ? (grantBlocked ? "控制权已变更，等待确认" : "正在交接") : control === "agent" ? "助理操作中" : "仅观看"}
         </span>
         {!selection ? <button className={styles.primaryAction} disabled>正在确认控制权</button> : viewingExecution ? (returnable
           ? <button className={styles.primaryAction} disabled={actionBusy} onClick={() => void changeControl("return")}>{authority?.state === "takeover_pending" ? "取消接管" : "交还助理"}</button>

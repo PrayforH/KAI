@@ -19,6 +19,10 @@ vi.mock("@novnc/novnc", () => ({ default: class {
 const cloud = { active_target: "cloud", targets: [{ target_id: "cloud", label: "云电脑", binding_key: "c".repeat(64) }, { target_id: "local", label: "本地电脑", binding_key: "a".repeat(64) }] };
 let refused = false, current = "cloud";
 let controlState = "human", controlFailure = 0, readFailure = false, sessionStatus = 200;
+// Whether the viewer socket has observed the current generation yet.
+let grantAllowed = true;
+// Set when the lease moved under this socket to a generation it never saw.
+let grantBlocked = false;
 let delayedRead: Promise<Response> | null = null;
 let startFailure = false;
 let delayedStart: Promise<Response> | null = null;
@@ -30,13 +34,21 @@ beforeEach(() => {
   requests.length = 0; sockets.length = 0; frames.length = 0; startFailure = false; delayedStart = null;
   window.sessionStorage.clear();
   botControls.clear();
-  refused = false; current = "cloud"; controlState = "human"; controlFailure = 0; readFailure = false; sessionStatus = 200; delayedRead = null; disconnected.mockClear();
+  refused = false; current = "cloud"; controlState = "human"; controlFailure = 0; readFailure = false; sessionStatus = 200; delayedRead = null; grantAllowed = true; grantBlocked = false; disconnected.mockClear();
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     requests.push(url);
     const request = new URL(url, "https://kai.test");
     const desktopId = request.searchParams.get("desktop_id");
     if (url === "/api/auth/session") return Response.json({}, { status: sessionStatus });
+    // The viewer's own socket reports which generation it may type at. This
+    // is deliberately not the lease the API just returned.
+    if (url.startsWith("/api/computer/status") && request.searchParams.get("probe") === "1") {
+      const probeDesktop = request.searchParams.get("desktop");
+      const state = probeDesktop ? botControls.get(probeDesktop)?.state ?? "observe" : controlState;
+      const allowed = state === "human" && grantAllowed;
+      return Response.json({ enabled: true, grant: { state, epoch: 1, input_allowed: allowed, blocked: grantBlocked && state === "human" && !allowed } });
+    }
     if (url.includes("/desktops/start")) {
       expect(init?.method).toBe("POST");
       if (delayedStart) return delayedStart;
@@ -169,6 +181,36 @@ describe("desktop ownership feedback", () => {
     expect(host.textContent).toContain("由你控制");
     expect(frames.at(-1)!.viewOnly).toBe(false);
   });
+  it("keeps input off until the viewer socket confirms the same generation", async () => {
+    vi.useFakeTimers();
+    controlState = "observe";
+    await mount(); await click("取得控制权");
+    expect(host.textContent).toContain("正在交接");
+    // The lease is granted, but this tab's socket has not observed the new
+    // generation, so its input would be dropped. Do not claim control yet.
+    controlState = "human"; grantAllowed = false;
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); }); await flush();
+    expect(host.textContent).not.toContain("由你控制");
+    expect(host.textContent).toContain("正在交接");
+    expect(frames.at(-1)!.viewOnly).toBe(true);
+    // The watcher confirms on its fast poll; only now may the user type.
+    grantAllowed = true;
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); }); await flush();
+    expect(host.textContent).toContain("由你控制");
+    expect(frames.at(-1)!.viewOnly).toBe(false);
+  });
+  it("explains a generation change instead of claiming control", async () => {
+    vi.useFakeTimers();
+    controlState = "observe";
+    await mount(); await click("取得控制权");
+    // The lease moved to a generation this socket never observed (return and
+    // re-takeover elsewhere); the viewer says so and never enables input.
+    controlState = "human"; grantAllowed = false; grantBlocked = true;
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); }); await flush();
+    expect(host.textContent).toContain("控制权已变更，等待确认");
+    expect(host.textContent).not.toContain("由你控制");
+    expect(frames.at(-1)!.viewOnly).toBe(true);
+  });
   it("stops local input and explains when control status cannot be read", async () => {
     vi.useFakeTimers();
     await mount(); expect(frames.at(-1)!.viewOnly).toBe(false);
@@ -288,7 +330,9 @@ describe("Bot desktop preview", () => {
     await act(async () => root.render(<ComputerDesktop botId="specialist_b" />));
     await flush();
     expect(disconnected).toHaveBeenCalled();
-    expect(sockets.at(-1)).toContain(`target=cloud&desktop=desktop_${"b".repeat(24)}`);
+    const last = new URL(sockets.at(-1)!);
+    expect(last.searchParams.get("target")).toBe("cloud");
+    expect(last.searchParams.get("desktop")).toBe(`desktop_${"b".repeat(24)}`);
     expect(frames.at(-1)?.viewOnly).toBe(true);
     expect(requests).not.toContain("/api/studio/assistant/computer/desktop");
   });
