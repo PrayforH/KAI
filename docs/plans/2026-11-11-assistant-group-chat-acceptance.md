@@ -14,7 +14,8 @@
 5. 创建后自动进入该群；之后也可从左侧「群聊」分组点群名进入。
 6. 群内顶部可看花名册（创建者/主助理/子助理）和「未 @ 接话人」下拉。
 
-右上角独立群聊页仍保留，仅作次要入口。
+群聊不单独占页：点击左侧「群聊」分组里的群，直接在助理主界面聊天区打开；
+旧地址 `/assistant/groups?group=...` 只重定向回主界面并选中该群。
 
 ## 角色识别
 
@@ -227,3 +228,25 @@ F、G、H、K、L 保持通过。根因与改动如下，仅在 116 发布，79 
   （幂等键 `group-<msg>-retry`）拿到的，没有复用/迟到“已收到E”；
 - J：3/3 只有系统提示“@编码协同 不在本群（可能已被移出），这条消息没有
   发给 TA。”，主助理没有口头作答。
+
+## 群聊入口并入主界面（2026-11-12，本地，未发版）
+
+用户反馈「群聊为啥还是单独的页面」，改为和普通会话一样在助理主界面打开：
+
+- 左侧「群聊」分组的链接由 `/assistant/groups?group=…` 改为
+  `/assistant?group=…`；点击后主界面聊天区显示该群会话，左栏保持主界面侧栏。
+- 新建群聊后同样停在主界面并打开新群，不再跳独立页。
+- 群会话能力全部保留在主聊天区：发消息、@、未读清零、表情、花名册与
+  邀请/移出、未 @ 接话人（replyAs）；创建弹层仍走左侧「+」的既有流程。
+- 原独立页 `/assistant/groups` 只做重定向：带 `group` 时回
+  `/assistant?group=…`，否则回 `/assistant`，不再维护独立布局。
+- 群聊视图下隐藏只属于助理 1:1 的聊天记录、右侧 Bot 面板与 IM 通道状态，
+  页头显示群名。
+- 实现：新增 `web/harness-console/src/components/assistant-group-chat.tsx`
+  （对话区组件）与同名 CSS module，删除旧 `groups.module.css`；主页面按
+  `?group=` 条件渲染。
+- 自测：`npm test` 285 文件 / 1746 通过（新增 entry 回归测试
+  `tests/assistant-group-embed.spec.ts`）；`npx tsc --noEmit` 与
+  `npm run build` 通过；本地 `next start` 下访问
+  `/assistant/groups?group=group_abc` 会跳到 `/assistant?group=group_abc`。
+- 未发布 79/116；未改云电脑与点击延迟相关代码。

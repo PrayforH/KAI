@@ -35,6 +35,7 @@ import { botAppearanceVars } from "../lib/bot-appearance";
 import { DesktopOccupancyChip, occupancyHolding, useDesktopOccupancy } from "../components/desktop-occupancy-chip";
 import { AssistantComputerPane } from "../components/assistant-computer-pane";
 import { AssistantRuntimeShell } from "../components/assistant-runtime-shell";
+import { AssistantGroupChat } from "../components/assistant-group-chat";
 import { AssistantHistoryPanel } from "../components/assistant-history-panel";
 import { ProductivityCommandCenter } from "../components/productivity-command-center";
 import { RunTraceConsole } from "../components/run-trace-console";
@@ -206,6 +207,9 @@ function AuthenticatedHome() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const botParam = assistantEntry ? searchParams.get("bot") : null;
+  // 群聊和普通会话一样在主界面打开：?group=<id> 只切换聊天区，不再进独立页。
+  const groupParam = assistantEntry ? searchParams.get("group") : null;
+  const [groupTitle, setGroupTitle] = useState<string | null>(null);
   const routeRunId = searchParams.get("run");
   const routeTrace = searchParams.get("trace") === "1";
   const leaveAssistantForTask = useCallback((nextThreadId: string) => {
@@ -269,12 +273,12 @@ function AuthenticatedHome() {
   // 在助理路由下点侧栏的普通任务时，线程会被换成任务线程，但路由仍是 /assistant；
   // 这时必须切回任务面，否则旧任务会被套上助理头部与聊天气泡。
   const conversationSurface = assistantEntry &&
-    (!threadId || threadId === PERSONAL_ASSISTANT_THREAD || botParam !== null)
+    (groupParam !== null || !threadId || threadId === PERSONAL_ASSISTANT_THREAD || botParam !== null)
     ? "assistant" : "task";
   const assistantView = conversationSurface === "assistant";
   // 助理页盯共享桌面的真实执行状态：真的有人（职责执行）在用桌面时自动展开电脑；
   // 用户在本次执行里手动关掉后不再自动弹，换下一次执行才重新联动。
-  const occupancy = useDesktopOccupancy(assistantView && !computerOpen);
+  const occupancy = useDesktopOccupancy(assistantView && !groupParam && !computerOpen);
   const autoOpenedExecution = useRef<string | null>(null);
   const dismissedExecution = useRef<string | null>(null);
   const holdingExecution = occupancyHolding(occupancy);
@@ -412,7 +416,8 @@ function AuthenticatedHome() {
   const [taskSidebarOpen, setTaskSidebarOpen] = useState(true);
   const [taskRailOpen, setTaskRailOpen] = useState(false);
   const [botSideOpen, setBotSideOpen] = useState(false);
-  const assistantRailOpen = assistantView && botSideOpen && (!botParam || bot?.specialistId === botParam);
+  const assistantRailOpen = assistantView && !groupParam && botSideOpen &&
+    (!botParam || bot?.specialistId === botParam);
   const [railExpanded, setRailExpanded] = useState(false);
   const [railPreview, setRailPreview] = useState<(PreviewTarget & { nonce: number }) | null>(null);
   // The assistant opens previews in one centered dialog; task pages keep the rail.
@@ -953,6 +958,7 @@ function AuthenticatedHome() {
           activeNav={assistantView ? "assistant" : "tasks"}
           currentThreadId={threadId}
           activeBotId={botParam}
+          activeGroupId={groupParam}
           collapsed={!taskSidebarOpen}
           overlayOpen={compactTaskSidebar && taskSidebarOpen}
           onToggle={() => {
@@ -994,16 +1000,16 @@ function AuthenticatedHome() {
                 <button
                   type="button"
                   className="task-context-title task-context-bot-name"
-                  aria-label="编辑助理资料"
-                  title="编辑助理资料"
-                  disabled={!bot}
-                  onClick={() => bot && setBotSettingsId(bot.specialistId)}
+                  aria-label={groupParam ? "群聊" : "编辑助理资料"}
+                  title={groupParam ? undefined : "编辑助理资料"}
+                  disabled={!bot || Boolean(groupParam)}
+                  onClick={() => !groupParam && bot && setBotSettingsId(bot.specialistId)}
                 >
-                  {bot ? bot.name : "我的助理"}
+                  {groupParam ? (groupTitle ?? "群聊") : bot ? bot.name : "我的助理"}
                 </button>
                 {/* 主助理页头保留 IM 通道状态（飞书/微信）：它属于主助理的跨渠道会话，
-                    与资料记录在不在无关；只有进到某个子 Bot 会话（?bot=）才不显示。 */}
-                {!botParam && readyConversation === threadId && <AssistantChannelStatus />}
+                    与资料记录在不在无关；只进某个子 Bot 会话（?bot=）或群聊时不显示。 */}
+                {!botParam && !groupParam && readyConversation === threadId && <AssistantChannelStatus />}
               </div> : <TaskContextBar
                 taskTitle={currentTaskTitle}
                 onForked={switchTask}
@@ -1038,18 +1044,8 @@ function AuthenticatedHome() {
               />}
             </div>
             <div className="header-utilities">
-              {assistantView && computerOpen && <DesktopOccupancyChip />}
-              {assistantView && (
-                <Link
-                  href="/assistant/groups"
-                  className="header-icon-button"
-                  aria-label="群聊"
-                  title="群聊"
-                >
-                  <SidebarIcon name="spaces" />
-                </Link>
-              )}
-              {assistantView && (
+              {assistantView && !groupParam && computerOpen && <DesktopOccupancyChip />}
+              {assistantView && !groupParam && (
                 <button
                   type="button"
                   className="header-icon-button"
@@ -1061,7 +1057,7 @@ function AuthenticatedHome() {
                   <SidebarIcon name="history" />
                 </button>
               )}
-              <SidebarPanelToggle
+              {!groupParam && <SidebarPanelToggle
                 expanded={assistantView ? botSideOpen : taskRailOpen}
                 surface={assistantView ? (botParam ? "bot" : "primary") : "task"}
                 onToggle={() => {
@@ -1075,7 +1071,7 @@ function AuthenticatedHome() {
                   }
                   setRailExpanded(false);
                 }}
-              />
+              />}
             </div>
           </header>
           <AssistantComputerPane open={assistantView && computerOpen}
@@ -1084,9 +1080,17 @@ function AuthenticatedHome() {
             className="chat-stage"
             data-surface={conversationSurface}
             style={botAppearanceVars(bot?.appearance?.color ?? botAccent(bot?.specialistId ?? "")) as React.CSSProperties}
-            aria-label={personalAssistant ? "我的助理对话" : "Agent 任务对话"}
+            aria-label={groupParam ? "群聊对话" : personalAssistant ? "我的助理对话" : "Agent 任务对话"}
           >
-            {stageView === "trace" ? (
+            {groupParam ? (
+              <div className="chat-surface">
+                <AssistantGroupChat
+                  key={groupParam}
+                  groupId={groupParam}
+                  onGroupName={setGroupTitle}
+                />
+              </div>
+            ) : stageView === "trace" ? (
               <RunTraceConsole
                 threadId={threadId}
                 liveActivity={runActivity}
@@ -1195,7 +1199,7 @@ function AuthenticatedHome() {
             )}
           </section>
           </AssistantComputerPane>
-          {assistantView && (
+          {assistantView && !groupParam && (
             <AssistantHistoryPanel
               open={historyOpen}
               threadId={bot?.threadId ?? threadId}

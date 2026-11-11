@@ -101,14 +101,15 @@ export function BotRailAvatar({
  * 点击进入该助理的会话或职责面板——对话优先，配置其次。
  */
 type BotRailProps = {
-  currentThreadId: string; activeBotId?: string | null; userId?: string; tenantId?: string;
+  currentThreadId: string; activeBotId?: string | null; activeGroupId?: string | null;
+  userId?: string; tenantId?: string;
   liveRun?: RunViewModel;
   groupsState?: readonly [ReadonlySet<string>, (change: (current: ReadonlySet<string>) => ReadonlySet<string>) => void];
 };
 export function BotRail(props: BotRailProps) {
   return <BotDirectory key={`${props.tenantId ?? ""}:${props.userId ?? ""}`} {...props} />;
 }
-function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, groupsState, liveRun}: BotRailProps) {
+function BotDirectory({currentThreadId, activeBotId = null, activeGroupId = null, userId, tenantId, groupsState, liveRun}: BotRailProps) {
   const mounted = useRef(true);
   const requestVersion = useRef(0);
   const working = useRef(false);
@@ -332,9 +333,10 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
               <li key={group.groupId} className="bot-rail-row">
                 <Link
                   className="bot-rail-item"
-                  href={`/assistant/groups?group=${encodeURIComponent(group.groupId)}`}
+                  href={`/assistant?group=${encodeURIComponent(group.groupId)}`}
                   scroll={false}
                   title={group.name}
+                  data-active={activeGroupId === group.groupId ? "true" : undefined}
                 >
                   <span
                     className="bot-rail-avatar"
@@ -383,7 +385,7 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
           onCreated={(groupId) => {
             setCreatingGroup(false);
             window.dispatchEvent(new CustomEvent("kai:groups-changed"));
-            router.push(`/assistant/groups?group=${encodeURIComponent(groupId)}`);
+            router.push(`/assistant?group=${encodeURIComponent(groupId)}`, { scroll: false });
           }}
         />
       )}

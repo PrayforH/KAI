@@ -106,6 +106,7 @@ const activeStatuses = new Set(["queued", "running", "waiting_approval", "cancel
 export function TaskSidebar({
   currentThreadId,
   activeBotId = null,
+  activeGroupId = null,
   collapsed,
   overlayOpen = false,
   onToggle,
@@ -120,6 +121,7 @@ export function TaskSidebar({
 }: {
   currentThreadId: string;
   activeBotId?: string | null;
+  activeGroupId?: string | null;
   collapsed: boolean;
   overlayOpen?: boolean;
   onToggle: () => void;
@@ -573,6 +575,7 @@ export function TaskSidebar({
           <BotRail
             currentThreadId={currentThreadId}
             activeBotId={activeBotId}
+            activeGroupId={activeGroupId}
             userId={user.user_id}
             tenantId={membership?.tenant_id}
             liveRun={runView}

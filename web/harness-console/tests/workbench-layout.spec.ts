@@ -153,7 +153,7 @@ describe("full-page agent workbench", () => {
     expect(page).toContain('className="task-context-bar"');
     expect(page).toContain("<SidebarPanelToggle");
     expect(page).not.toContain("<HelpMenu");
-    expect(page).toContain("{assistantView && computerOpen && <DesktopOccupancyChip />}");
+    expect(page).toContain("{assistantView && !groupParam && computerOpen && <DesktopOccupancyChip />}");
     expect(page).toContain('surface={assistantView ? (botParam ? "bot" : "primary") : "task"}');
     expect(page).toContain("<BotSidePanel");
     expect(page).toContain("<WorkbenchRail");
