@@ -123,6 +123,32 @@
   （网页原句 DENY / 用户原句 ALLOW，审计保留 `context_trust=untrusted` 与
   `provenance_verified=true`，用户原话不出现在事件里）；`test_memory_mcp.py`、
   `test_memory_tools.py` 同步补 `evidence_quote`；卡片用例 5 项通过。
+- 两个入口同步：HTTP MCP（`memory_bank/workload.py`，跑在 api 容器）与
+  in-process SDK 工具（`runtime/memory_tools.py`，跑在 worker）都要求并持久化
+  `evidence_quote`，`test_memory_mcp.py` 断言 `source.evidence` 落库。
+- 部署：79 与 116 各自用「现网 api/worker 镜像 + 8 个补丁文件」增量构建，
+  标签 `kai/alignment-api|worker:memory-provenance-20261111-79|-116`；
+  compose 备份 `compose.before-memory-provenance.json`，递归 diff 仅 api/worker
+  的 image 字段。容器内探针确认：默认路由 `deepseek-flash`、schema 必填
+  `["content","evidence_quote"]`、用户原句命中 `True` / 网页句子 `False`；
+  79 `http://127.0.0.1:8000/health` 200、116 边缘 3543 200 与 api `/healthz` 200。
+- 未发布：web 卡片文案改动只在代码里，79（`79-82-83-20261111-v6`）与 116
+  （`desktop-pane5-20261111-116`）现网 web 仍是旧文案，等下次 web 发布一并带。
+
+## 顺带修复：新草稿默认路由仍指向已下线路由（2026-11-11）
+
+- 现象：`d950f5d9` 下线 V4/pro 路由后，`factory.create_draft_spec` 仍默认
+  `deepseek-v4-pro`，新建草稿一发布就报「模型路由未注册」；环境策略默认
+  `allowedModelRoutes` 也停在旧五条（含 `new-api-default` / `glm-5-3-flash`）。
+- 改法：默认路由改 `deepseek-flash`；`bundle_import` 缺省映射改
+  `deepseek-flash` / `minimax-m3-1-flash`；`EnvironmentResourcePolicy` 默认
+  允许清单收敛为现行两条；`tests/unit/assistant` 补 `__init__.py` 修同名测试
+  收集冲突（`test_memory_tools` / `test_service` / `test_lifecycle` 撞名）。
+- 安全说明：微信媒体引入 `padding.PKCS7` 后 cryptography VEX 回归测试开始失败；
+  VEX 文案改为说明 `padding.PKCS7` 是分组填充、不在 CVE-2026-69247 的
+  PKCS#7 消息解密路径，测试改为盯 `pkcs7_decrypt` / `pkcs7_load` / `smime`。
+- 单测：`tests/unit` 2521 通过 / 9 失败，失败均为环境缺口（deepagents 可选依赖、
+  langchain_core、本地 Postgres 未启动），与代码无关。
 
 ## 79 同步部署与「接管」问题（2026-11-11）
 
