@@ -9,7 +9,7 @@ vi.mock("../src/lib/client-auth", () => ({ requireAuthenticatedResponse: (value:
 import {
   AssistantHistoryPanel, fileGlyph, fileKindOf, filterFiles, historyEntries,
 } from "../src/components/assistant-history-panel";
-import { clearHistoryIndex } from "../src/lib/history-index";
+import { clearHistoryIndex, readHistoryIndex } from "../src/lib/history-index";
 import { flashMessage, registerHistoryLocator } from "../src/lib/chat-locate";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -171,6 +171,45 @@ it("reuses a fresh index when the drawer is reopened", async () => {
   });
   expect(history).toHaveBeenCalledTimes(loads);
   expect(host.textContent).toContain("帮我看下报告");
+});
+
+it("names a failed file list instead of blaming older history", async () => {
+  history.mockResolvedValue([{ id: "user-run_1", role: "user", content: "消息还在" }]);
+  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, json: async () => [] })));
+  await act(async () => {
+    root.render(<AssistantHistoryPanel open threadId="thread_1" assistantName="小树" onClose={() => {}} />);
+    await new Promise(resolve => setTimeout(resolve, 10));
+  });
+  expect(host.textContent).toContain("消息还在");
+  expect(host.textContent).toContain("文件列表暂时无法读取，聊天记录仍可查看");
+  expect(host.textContent).not.toContain("更早的记录暂时无法读取");
+  // A half index (no files) must not be cached for the next open.
+  expect(readHistoryIndex("thread_1")).toBeNull();
+});
+
+it("aborts an in-flight load when the drawer closes and caches nothing", async () => {
+  let signal: AbortSignal | undefined;
+  history.mockImplementation(((_threadId: string, options: { signal?: AbortSignal }) => {
+    signal = options.signal;
+    return new Promise((_resolve, reject) => {
+      options.signal?.addEventListener("abort", () => {
+        reject(new DOMException("aborted", "AbortError"));
+      });
+    });
+  }) as never);
+  stubFetch();
+  await act(async () => {
+    root.render(<AssistantHistoryPanel open threadId="thread_1" assistantName="小树" onClose={() => {}} />);
+    await Promise.resolve();
+  });
+  expect(signal?.aborted).toBe(false);
+
+  await act(async () => {
+    root.render(<AssistantHistoryPanel open={false} threadId="thread_1" assistantName="小树" onClose={() => {}} />);
+    await new Promise(resolve => setTimeout(resolve, 10));
+  });
+  expect(signal?.aborted).toBe(true);
+  expect(readHistoryIndex("thread_1")).toBeNull();
 });
 
 it("asks the reader to retry instead of claiming a message is missing while history loads", async () => {

@@ -117,6 +117,19 @@ it("waits for an in-flight page instead of reporting a missing message", async (
   expect(loadEarlier).toHaveBeenCalledTimes(2);
 });
 
+it("locates twice in a row without turning the second click into a miss", async () => {
+  let call = 0;
+  const loadEarlier = vi.fn(async () => {
+    call += 1;
+    addMessage(call === 1 ? "assistant-run_old_1" : "assistant-run_old_2");
+    return "loaded" as const;
+  });
+  registerHistoryLocator({ threadId: "thread_1", hasMore: () => true, loadEarlier });
+  await expect(locateInChat("assistant-run_old_1", "thread_1")).resolves.toBe("located");
+  await expect(locateInChat("assistant-run_old_2", "thread_1")).resolves.toBe("located");
+  expect(loadEarlier).toHaveBeenCalledTimes(2);
+});
+
 it("reports retry, not missing, when the page request stays busy", async () => {
   const loadEarlier = vi.fn(async () => "busy" as const);
   registerHistoryLocator({

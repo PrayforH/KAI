@@ -185,6 +185,23 @@ export function AssistantHistoryPanel({ open, threadId, assistantName = "助理"
     };
     setLoadingMore(true);
     const artifactsQuery = new URLSearchParams({ thread_id: threadId, limit: "200" });
+    // A failed file list is not a failed history read: keep the conversation on
+    // screen, say which half failed, and skip the cache write so a later open
+    // retries instead of reusing an index without files.
+    let artifactsFailed = false;
+    const artifactsRequest = fetch(`/api/harness/artifacts?${artifactsQuery}`, {
+      cache: "no-store", signal: controller.signal,
+    })
+      .then(requireAuthenticatedResponse)
+      .then(async response => {
+        if (!response.ok) throw new Error("文件暂时无法读取");
+        return await response.json() as ArtifactRecord[];
+      })
+      .then(list => { artifacts = list; publish(); })
+      .catch(cause => {
+        if (controller.signal.aborted) throw cause;
+        artifactsFailed = true;
+      });
     void Promise.all([
       loadFullThreadHistory(threadId, {
         signal: controller.signal,
@@ -197,23 +214,18 @@ export function AssistantHistoryPanel({ open, threadId, assistantName = "助理"
           publish();
         }
       }),
-      fetch(`/api/harness/artifacts?${artifactsQuery}`, { cache: "no-store", signal: controller.signal })
-        .then(requireAuthenticatedResponse)
-        .then(async response => {
-          if (!response.ok) throw new Error("文件暂时无法读取");
-          return await response.json() as ArtifactRecord[];
-        })
-        .then(list => { artifacts = list; publish(); }),
+      artifactsRequest,
     ]).then(() => {
       if (controller.signal.aborted) return;
       publish();
-      if (latestIndex) writeHistoryIndex(threadId, latestIndex);
+      if (artifactsFailed) setNotice("文件列表暂时无法读取，聊天记录仍可查看");
+      else if (latestIndex) writeHistoryIndex(threadId, latestIndex);
     }).catch(cause => {
       if (controller.signal.aborted) return;
       // The newest page may already be on screen; a failed older page should
       // not replace it with an error state.
       if (pages.length === 0) setError(errorText(cause));
-      else setNotice("更早的记录暂时无法读取");
+      else setNotice(artifactsFailed ? "更早的记录和文件列表暂时无法读取" : "更早的记录暂时无法读取");
     }).finally(() => {
       if (!controller.signal.aborted) setLoadingMore(false);
     });

@@ -27,7 +27,9 @@ const LOCATE_PAGE_BATCH = 3;
 const LOCATE_MAX_PAGES = 21;
 /**
  * How long one import may take to mount. Long threads render across several
- * frames, and jsdom-style fixed frame counts cannot judge that.
+ * frames, and jsdom-style fixed frame counts cannot judge that. Each wait is
+ * clamped to the remaining walk deadline below, so a slow page cannot push a
+ * locate past LOCATE_DEADLINE_MS and report a false "missing".
  */
 const LOCATE_WAIT_MS = 1_200;
 const LOCATE_DEADLINE_MS = 15_000;
@@ -80,8 +82,11 @@ export function flashMessage(messageId: string, root: ParentNode | null = typeof
  * After an import the DOM is not ready in a fixed number of frames: a big
  * merged repository can render across several. Poll for the node instead.
  */
-async function waitForMessage(messageId: string, root: () => ParentNode | null): Promise<boolean> {
-  const deadline = Date.now() + LOCATE_WAIT_MS;
+async function waitForMessage(
+  messageId: string,
+  root: () => ParentNode | null,
+  deadline = Date.now() + LOCATE_WAIT_MS,
+): Promise<boolean> {
   for (;;) {
     const target = root();
     if (target && findMessage(messageId, target)) return true;
@@ -122,6 +127,8 @@ export async function locateInChat(
 
   const maxPages = options.maxPages ?? LOCATE_MAX_PAGES;
   const deadline = Date.now() + LOCATE_DEADLINE_MS;
+  /** Wait for a fresh mount, but never overshoot the walk's own deadline. */
+  const mountDeadline = () => Math.min(Date.now() + LOCATE_WAIT_MS, deadline);
   let loadedPages = 0;
   let waitedForBusy = false;
   while (loadedPages < maxPages && Date.now() < deadline) {
@@ -138,7 +145,7 @@ export async function locateInChat(
       waitedForBusy = true;
       await active.waitForLoading?.();
       if (locator !== active) return "retry";
-      if (await waitForMessage(messageId, root)) {
+      if (await waitForMessage(messageId, root, mountDeadline())) {
         return flashMessage(messageId, root()) ? "located" : "retry";
       }
       continue;
@@ -151,7 +158,7 @@ export async function locateInChat(
     }
     loadedPages += LOCATE_PAGE_BATCH;
     options.onProgress?.();
-    if (await waitForMessage(messageId, root)) {
+    if (await waitForMessage(messageId, root, mountDeadline())) {
       return flashMessage(messageId, root()) ? "located" : "retry";
     }
   }
