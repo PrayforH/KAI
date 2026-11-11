@@ -13,6 +13,7 @@ import { latestHistoryRunActivity, type RunActivity } from "./activity-schema";
 import { activityStore } from "./activity-store";
 import { approvalStore } from "./approval-store";
 import { requireAuthenticatedResponse } from "./client-auth";
+import { clearHistoryIndex } from "./history-index";
 import { setThreadReplyReferences } from "./reply-references";
 
 export interface TaskSummary {
@@ -223,7 +224,12 @@ export const TRACE_HISTORY_MAX_PAGES = 20;
 
 export async function loadFullThreadHistory(
   threadId: string,
-  options: { onNotFound?: () => void } = {},
+  options: {
+    onNotFound?: () => void;
+    /** Lets a reader paint each page instead of waiting for the last one. */
+    onPage?: (page: ThreadHistoryResponse, index: number) => void;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<ThreadHistoryResponse["messages"]> {
   const messages: ThreadHistoryResponse["messages"] = [];
   let before: string | undefined;
@@ -233,7 +239,7 @@ export async function loadFullThreadHistory(
     const response = requireAuthenticatedResponse(
       await fetch(
         `/api/agui/threads/${encodeURIComponent(threadId)}/history?${query.toString()}`,
-        { cache: "no-store" },
+        { cache: "no-store", signal: options.signal },
       ),
     );
     if (response.status === 404) {
@@ -247,6 +253,7 @@ export async function loadFullThreadHistory(
     }
     const history = (await response.json()) as ThreadHistoryResponse;
     messages.push(...history.messages);
+    options.onPage?.(history, page);
     if (!history.has_more || !history.next_cursor) break;
     before = history.next_cursor;
   }
@@ -257,6 +264,9 @@ export function invalidateThreadHistory(threadId: string, options: { keepPages?:
   threadHistoryRequests.delete(threadId);
   threadHistorySnapshots.delete(threadId);
   historyValidators.delete(threadId);
+  // The drawer's cached index is derived from this history; a new turn or a
+  // branch switch must not keep showing the previous rows.
+  clearHistoryIndex(threadId);
   if (!options.keepPages) resetAccumulatedHistory(threadId);
 }
 
@@ -273,6 +283,14 @@ interface AccumulationEntry extends AccumulatedThreadHistory {
   expanded?: boolean;
 }
 
+/**
+ * Pagination outcome. `busy` means another reader already has a page in
+ * flight, so the caller must wait — it is not the end of the thread.
+ */
+export type LoadEarlierResult = "loaded" | "busy" | "exhausted" | "failed";
+/** Boolean is the legacy shape; true/false still read as loaded/exhausted. */
+export type LoadEarlierFn = (pages?: number) => Promise<LoadEarlierResult | boolean>;
+
 /** Fresh page copies win, without duplicating messages at a moving page boundary. */
 function mergeHistoryMessages(earlier: ThreadHistoryResponse["messages"], latest: ThreadHistoryResponse["messages"]) {
   const current = new Set(latest.map(message => message.id));
@@ -281,6 +299,18 @@ function mergeHistoryMessages(earlier: ThreadHistoryResponse["messages"], latest
 
 const accumulatedHistory = new Map<string, AccumulationEntry>();
 const accumulationListeners = new Map<string, Set<() => void>>();
+/** In-flight page requests, so locate can wait instead of declaring "missing". */
+const earlierLoads = new Map<string, Promise<LoadEarlierResult>>();
+
+/** Resolves when any in-flight earlier-page request for the thread settles. */
+export function waitForThreadHistoryLoad(threadId: string, timeoutMs = 2_000): Promise<void> {
+  const pending = earlierLoads.get(threadId);
+  if (!pending) return Promise.resolve();
+  return Promise.race([
+    pending.then(() => undefined, () => undefined),
+    new Promise<void>(resolve => globalThis.setTimeout(resolve, timeoutMs)),
+  ]);
+}
 
 function publishAccumulatedHistory(threadId: string): void {
   accumulationListeners.get(threadId)?.forEach((listener) => listener());
@@ -326,7 +356,15 @@ export function useThreadHistoryPagination(
       repository: ReturnType<typeof ExportedMessageRepository.fromArray>,
     ) => void;
   },
-): { hasMore: boolean; loading: boolean; total: number; loadEarlier: () => Promise<void> } {
+): {
+  hasMore: boolean;
+  /** False until the thread's first page has seeded the window. */
+  ready: boolean;
+  loading: boolean;
+  total: number;
+  loadEarlier: LoadEarlierFn;
+  waitForLoading: () => Promise<void>;
+} {
   const [snapshot, setSnapshot] = useState<AccumulationEntry | null>(() =>
     accumulatedHistory.get(threadId) ?? null,
   );
@@ -348,51 +386,78 @@ export function useThreadHistoryPagination(
     };
   }, [threadId]);
 
-  const loadEarlier = useCallback(async () => {
+  const loadEarlier = useCallback(async (pages = 1): Promise<LoadEarlierResult> => {
     const entry = accumulatedHistory.get(threadId);
-    if (!entry || entry.loading || !entry.nextCursor) return;
+    // "Busy" and "nothing older" used to share `false`, which made a locate
+    // jump report a missing message while a page was simply still in flight.
+    if (!entry || !entry.nextCursor) return "exhausted";
+    if (entry.loading) return "busy";
     const pending = { ...entry, loading: true };
     accumulatedHistory.set(threadId, pending);
     publishAccumulatedHistory(threadId);
+    // A locate jump can need several pages. Fetching them in one gesture means
+    // one merge and one repository import instead of re-rendering the whole
+    // imported thread once per page.
+    let cursor: string | null = entry.nextCursor;
+    let hasMore = entry.hasMore;
+    let earlier: ThreadHistoryResponse["messages"] = [];
+    const request = (async (): Promise<LoadEarlierResult> => {
+      try {
+        for (let index = 0; index < Math.max(1, pages) && cursor; index += 1) {
+          const page = await loadThreadHistory(threadId, undefined, cursor);
+          if (!page) throw new Error("Earlier history is unavailable");
+          earlier = mergeHistoryMessages(page.messages, earlier);
+          hasMore = page.has_more ?? false;
+          cursor = hasMore ? page.next_cursor ?? null : null;
+          if (!hasMore) break;
+        }
+        // Another reader may have seeded newer messages while these pages were in
+        // flight: prepend to the current list rather than to the pre-request
+        // snapshot, or those messages are dropped and a stale list is imported.
+        const latest = accumulatedHistory.get(threadId) ?? entry;
+        accumulatedHistory.set(threadId, {
+          messages: mergeHistoryMessages(earlier, latest.messages),
+          nextCursor: cursor,
+          hasMore,
+          total: latest.total,
+          loading: false,
+          expanded: true,
+        });
+        publishAccumulatedHistory(threadId);
+        if (activeThread.current !== threadId) return "loaded";
+        importRepositoryRef.current(
+          ExportedMessageRepository.fromArray(
+            fromAgUiMessages(accumulatedHistory.get(threadId)?.messages ?? [], {
+              showThinking: true,
+            }),
+          ),
+        );
+        return "loaded";
+      } catch (error) {
+        accumulatedHistory.set(threadId, {
+          ...(accumulatedHistory.get(threadId) ?? entry),
+          loading: false,
+        });
+        publishAccumulatedHistory(threadId);
+        console.error("[Harness Console] Failed to load earlier messages", error);
+        return "failed";
+      }
+    })();
+    earlierLoads.set(threadId, request);
     try {
-      const page = await loadThreadHistory(threadId, undefined, entry.nextCursor);
-      if (!page) throw new Error("Earlier history is unavailable");
-      // Another reader may have seeded newer messages while this page was in flight:
-      // prepend to the current list rather than to the pre-request snapshot, or those
-      // messages are dropped and a stale list is imported back into the runtime.
-      const latest = accumulatedHistory.get(threadId) ?? entry;
-      accumulatedHistory.set(threadId, {
-        messages: mergeHistoryMessages(page.messages, latest.messages),
-        nextCursor: page.next_cursor ?? null,
-        hasMore: page.has_more ?? false,
-        total: page.total ?? latest.total,
-        loading: false,
-        expanded: true,
-      });
-      publishAccumulatedHistory(threadId);
-      if (activeThread.current !== threadId) return;
-      importRepositoryRef.current(
-        ExportedMessageRepository.fromArray(
-          fromAgUiMessages(accumulatedHistory.get(threadId)?.messages ?? [], {
-            showThinking: true,
-          }),
-        ),
-      );
-    } catch (error) {
-      accumulatedHistory.set(threadId, {
-        ...(accumulatedHistory.get(threadId) ?? entry),
-        loading: false,
-      });
-      publishAccumulatedHistory(threadId);
-      console.error("[Harness Console] Failed to load earlier messages", error);
+      return await request;
+    } finally {
+      if (earlierLoads.get(threadId) === request) earlierLoads.delete(threadId);
     }
   }, [threadId]);
 
   return {
     hasMore: snapshot?.hasMore ?? false,
+    ready: snapshot !== null,
     loading: snapshot?.loading ?? false,
     total: snapshot?.total ?? 0,
     loadEarlier,
+    waitForLoading: useCallback(() => waitForThreadHistoryLoad(threadId), [threadId]),
   };
 }
 
@@ -697,7 +762,7 @@ export const LOAD_EARLIER_THRESHOLD_PX = 160;
 interface EarlierPagination {
   hasMore: boolean;
   loading: boolean;
-  loadEarlier: () => Promise<void>;
+  loadEarlier: LoadEarlierFn;
 }
 
 /**

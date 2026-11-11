@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
+import type { LoadEarlierFn } from "../lib/task-history";
 
 type Entry = { id: string; label: string; answer: string; node: HTMLElement };
 
@@ -15,7 +16,7 @@ const NEIGHBOUR_LINE_WIDTHS = [19, 14, 10, 7, 6];
 export function ConversationIndex({ frame, threadId, pagination }: {
   frame: RefObject<HTMLDivElement | null>;
   threadId: string;
-  pagination?: { total: number; hasMore: boolean; loadEarlier: () => Promise<void> };
+  pagination?: { total: number; hasMore: boolean; loadEarlier: LoadEarlierFn };
 }) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [active, setActive] = useState("");
@@ -38,13 +39,20 @@ export function ConversationIndex({ frame, threadId, pagination }: {
       }
       setActive(selected);
     }
+    // Scroll fires far faster than the rail needs to update; measuring every
+    // tick reads layout for every turn and makes a long thread feel stuck.
+    let trackRaf = 0;
+    function queueTrack() {
+      if (trackRaf) return;
+      trackRaf = requestAnimationFrame(() => { trackRaf = 0; track(); });
+    }
     function refresh() {
       raf = 0;
       const nextViewport = root!.querySelector<HTMLElement>(".aui-thread-viewport");
       if (nextViewport !== viewport) {
-        viewport?.removeEventListener("scroll", track);
+        viewport?.removeEventListener("scroll", queueTrack);
         viewport = nextViewport;
-        viewport?.addEventListener("scroll", track, { passive: true });
+        viewport?.addEventListener("scroll", queueTrack, { passive: true });
       }
       const next: Entry[] = [];
       for (const node of root!.querySelectorAll<HTMLElement>("[data-turn-id], [data-turn-answer]")) {
@@ -66,7 +74,7 @@ export function ConversationIndex({ frame, threadId, pagination }: {
     const resize = new ResizeObserver(schedule);
     resize.observe(root);
     refresh();
-    return () => { mutation.disconnect(); resize.disconnect(); viewport?.removeEventListener("scroll", track); if (raf) cancelAnimationFrame(raf); };
+    return () => { mutation.disconnect(); resize.disconnect(); viewport?.removeEventListener("scroll", queueTrack); if (raf) cancelAnimationFrame(raf); if (trackRaf) cancelAnimationFrame(trackRaf); };
   }, [frame, threadId]);
   useEffect(() => {
     const button = buttons.current.get(active);
@@ -95,7 +103,7 @@ export function ConversationIndex({ frame, threadId, pagination }: {
   // ticks so the rail reflects the whole conversation instead of one page.
   async function revealPending(globalIndex: number) {
     if (!pagination) return;
-    for (let attempt = 0; attempt < 12 && pagination.hasMore; attempt += 1) {
+    for (let attempt = 0; attempt < 8 && pagination.hasMore; attempt += 1) {
       const visible = frame.current?.querySelectorAll("[data-turn-id]").length ?? 0;
       const offset = Math.max(0, pagination.total - visible);
       if (globalIndex >= offset) {
@@ -104,7 +112,7 @@ export function ConversationIndex({ frame, threadId, pagination }: {
         setHovered("");
         return;
       }
-      await pagination.loadEarlier();
+      await pagination.loadEarlier(3);
       await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
     }
   }
@@ -112,10 +120,14 @@ export function ConversationIndex({ frame, threadId, pagination }: {
   function scrollToTurn(node: HTMLElement) {
     const viewport = frame.current?.querySelector<HTMLElement>(".aui-thread-viewport");
     if (!viewport) return;
-    const top = node.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop - 32;
+    const distance = node.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
+    const top = distance + viewport.scrollTop - 32;
+    // Smooth is feedback for a nearby hop; across a long thread it is just a
+    // slow crawl, so far jumps land immediately and highlight the turn.
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     viewport.scrollTo({
       top: Math.max(0, top),
-      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+      behavior: !reduced && Math.abs(distance) <= Math.max(600, viewport.clientHeight * 2) ? "smooth" : "auto",
     });
     node.focus({ preventScroll: true });
   }
