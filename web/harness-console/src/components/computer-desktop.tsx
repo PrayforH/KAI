@@ -18,6 +18,9 @@ const VIEWER_KEY = "kai.desktop.viewer";
 // A connection that dies sooner than this is treated as a failed attempt, so a
 // server that keeps closing new sessions cannot spin the retry loop forever.
 const STABLE_CONNECTION_MS = 10_000;
+// While a takeover is pending the server confirms within a few hundred ms;
+// polling at this rate turns that confirmation into input almost at once.
+const FAST_CONTROL_POLL_MS = 250;
 function browserViewerId(): string {
   try {
     const saved = window.sessionStorage.getItem(VIEWER_KEY);
@@ -261,8 +264,15 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
     }
     void connect();
     const poll = setInterval(() => { void pollControl(); }, 2000);
+    // The lease publishes pending first and human only after the node drains.
+    // At the steady cadence noVNC kept viewOnly on for up to two more seconds
+    // after control was actually granted, which read as "takeover did
+    // nothing". Poll quickly only while a hand-over is in flight.
+    const pendingPoll = setInterval(() => {
+      if (controlRef.current === "takeover_pending") void pollControl();
+    }, FAST_CONTROL_POLL_MS);
     return () => {
-      leavePage(); client.current = null; clearInterval(poll); clearTimeout(retryTimer);
+      leavePage(); client.current = null; clearInterval(poll); clearInterval(pendingPoll); clearTimeout(retryTimer);
       refreshControl.current = async () => {};
       window.removeEventListener("pagehide", leavePage);
       window.removeEventListener("pageshow", restorePage);

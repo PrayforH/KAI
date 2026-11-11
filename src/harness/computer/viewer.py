@@ -27,6 +27,13 @@ from harness.computer.ssh_transport import SshEndpoint
 from harness.computer.vm_keys import VmSeedStore
 
 AUTH_CHECK_SECONDS = 1
+# A takeover is published in two steps (pending -> human). Polling at the
+# steady rate would add up to a full second after the node confirms the drain,
+# so a desktop in a transient state is watched more closely. This is bounded
+# to the pending window; an ordinary session still costs one poll per second.
+AUTH_PENDING_CHECK_SECONDS = 0.2
+# How long input may keep flowing on the last confirmed poll. A slow or failed
+# poll pauses input instead of closing the session; viewing continues.
 AUTH_GRACE_SECONDS = 3
 RFB_FRAME_LIMIT = 65536
 
@@ -373,7 +380,14 @@ def create_viewer_app(
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
-    async def authorized(token: str | None) -> bool:
+    async def authorized(token: str | None) -> bool | None:
+        """True, False, or None when the answer could not be obtained.
+
+        A transport error is not a logout. Callers that police a live session
+        treat None as "unknown" and keep the last confirmed state; only an
+        explicit denial ends the session.
+        """
+
         if not token:
             return False
         try:
@@ -386,10 +400,10 @@ def create_viewer_app(
                 and value.get("membership", {}).get("tenant_id") == settings.tenant_id
             )
         except (httpx.HTTPError, ValueError, AttributeError):
-            return False
+            return None
 
 
-    async def owns_desktop(token: str | None, slot: str) -> bool:
+    async def owns_desktop(token: str | None, slot: str) -> bool | None:
         if not token or re.fullmatch(r"desktop_[a-f0-9]{24}", slot) is None:
             return False
         try:
@@ -398,20 +412,24 @@ def create_viewer_app(
                 headers={"Authorization": "Bearer " + token},
                 timeout=3,
             )
-            rows = response.json() if response.status_code == 200 else None
+            if response.status_code == 200:
+                rows = response.json()
+                return isinstance(rows, list) and any(
+                    isinstance(row, dict) and row.get("desktopId") == slot for row in rows
+                )
+            # A server-side failure says nothing about ownership; an explicit
+            # 4xx does.
+            return None if response.status_code >= 500 else False
         except (httpx.HTTPError, ValueError):
-            return False
-        return isinstance(rows, list) and any(
-            isinstance(row, dict) and row.get("desktopId") == slot for row in rows
-        )
+            return None
 
     async def status(request: Request) -> dict[str, object]:
         token = request.cookies.get(settings.cookie_name)
         if not token and request.headers.get("authorization", "").startswith("Bearer "):
             token = request.headers["authorization"][7:]
-        if not await authorized(token):
+        if await authorized(token) is not True:
             raise HTTPException(403, "Desktop access requires its owner login")
-        control = await desktop_state(token)
+        control = await desktop_state(token) or {"state": "observe", "epoch": 0}
         return {
             "enabled": True,
             "mode": "preview",
@@ -426,8 +444,13 @@ def create_viewer_app(
     async def desktop_state(
         token: str | None, *, refresh: bool = True, binding: str | None = None,
         slot: str | None = None, viewer_id: str | None = None,
-    ) -> dict[str, str | int]:
-        """The current desktop lease decides who may type or click."""
+    ) -> dict[str, str | int] | None:
+        """The current desktop lease decides who may type or click.
+
+        None means the answer could not be obtained right now. A live session
+        keeps its last confirmed grant until the grace window lapses instead
+        of treating a transient failure as "observe".
+        """
 
         observe: dict[str, str | int] = {"state": "observe", "epoch": 0}
         if not token or (slot is not None and viewer_id is None):
@@ -440,6 +463,8 @@ def create_viewer_app(
                 headers={"Authorization": "Bearer " + token},
                 timeout=3,
             )
+            if response.status_code >= 500:
+                return None
             if response.status_code != 200:
                 return observe
             value: dict[str, Any] = response.json()
@@ -466,7 +491,7 @@ def create_viewer_app(
                     )
             return {"state": state, "epoch": int(value.get("epoch") or 0)}
         except (httpx.HTTPError, ValueError, TypeError):
-            return observe
+            return None
 
     async def active_endpoint(
         token: str | None, requested: str | None = None
@@ -503,7 +528,7 @@ def create_viewer_app(
             logging.getLogger(__name__).warning("desktop connection refused: untrusted origin")
             await websocket.close(code=1008)
             return
-        if not await authorized(token):
+        if await authorized(token) is not True:
             logging.getLogger(__name__).warning("desktop connection refused: owner login required")
             await websocket.close(code=1008)
             return
@@ -526,6 +551,9 @@ def create_viewer_app(
             # connection never inherits input rights across a takeover,
             # return or expiry it did not observe itself.
             granted_epoch: int | None = None
+            # Set when the lease moved to a generation this socket did not
+            # observe; cleared once control leaves human again.
+            grant_blocked = False
             process: asyncio.subprocess.Process | None = None
             tasks: list[asyncio.Task[None]] = []
             slot = websocket.query_params.get("desktop")
@@ -574,32 +602,25 @@ def create_viewer_app(
                         data = message.get("bytes")
                         if not isinstance(data, bytes) or len(data) > RFB_FRAME_LIMIT:
                             raise ValueError("desktop input exceeds frame size")
-                        # Check immediately before forwarding anything.
-                        if time.monotonic() >= valid_until:
-                            logging.getLogger(__name__).warning(
-                                "desktop input closed: authorization was not refreshed"
-                            )
-                            return
+                        # Authorization is mirrored from the watcher's last
+                        # successful poll. The input data plane must never wait
+                        # on an HTTP/DB round trip: under a drag that turned
+                        # every pointer sample into a transaction, so the
+                        # cursor kept moving after the hand stopped. Once the
+                        # grace window lapses without a confirmed poll, input
+                        # is dropped (the stream stays aligned) until the next
+                        # poll succeeds; the session is not closed.
+                        fresh = time.monotonic() < valid_until
                         for kind, chunk in policy.feed(
                             data,
                             input_allowed=(
-                                control["state"] == "human"
+                                fresh
+                                and control["state"] == "human"
                                 and granted_epoch == control["epoch"]
                             ),
                         ):
                             if kind == RFB_DISCARD:
                                 continue
-                            if kind in {RFB_KEYBOARD, RFB_POINTER, RFB_CUT}:
-                                # Observation polls are cached, but an input must
-                                # prove its current epoch before reaching a PC.
-                                # Returning or switching elsewhere invalidates a
-                                # previously granted socket immediately.
-                                latest = await desktop_state(
-                                    token, refresh=False, binding=binding, slot=slot,
-                                    viewer_id=viewer_id,
-                                )
-                                if latest["state"] != "human" or latest["epoch"] != granted_epoch:
-                                    raise ValueError("desktop input ownership changed")
                             if kind == RFB_KEYBOARD:
                                 input_frames["keyboard"] += 1
                             elif kind == RFB_POINTER:
@@ -616,17 +637,34 @@ def create_viewer_app(
                             raise ValueError("desktop input crossed a control change")
 
                 async def watch_authorization() -> None:
-                    nonlocal valid_until, granted_epoch
+                    nonlocal valid_until, granted_epoch, grant_blocked
                     log = logging.getLogger(__name__)
+                    delay = 0.0
                     while True:
-                        await asyncio.sleep(AUTH_CHECK_SECONDS)
+                        if delay:
+                            await asyncio.sleep(delay)
+                        # The steady cadence is re-applied every tick and only
+                        # shortened while a takeover is being confirmed.
+                        delay = AUTH_CHECK_SECONDS
                         began = time.monotonic()
-                        if not await authorized(token):
+                        login = await authorized(token)
+                        if login is False:
                             log.info("desktop session ended: login is no longer valid")
                             return
-                        selected, current_endpoint, current_binding = await active_endpoint(
-                            token, requested
-                        )
+                        if login is None:
+                            # Unknown, not denied: keep the last confirmed
+                            # control. The grace window pauses input by itself
+                            # if the API stays unreachable.
+                            continue
+                        try:
+                            selected, current_endpoint, current_binding = await active_endpoint(
+                                token, requested
+                            )
+                        except httpx.HTTPError:
+                            continue
+                        except (RuntimeError, ValueError):
+                            log.info("desktop session ended: the selected desktop changed")
+                            return
                         if (selected, current_endpoint, current_binding) != (
                             target_id,
                             endpoint,
@@ -635,15 +673,21 @@ def create_viewer_app(
                             log.info("desktop session ended: the selected desktop changed")
                             return
                         if slot is not None:
-                            if not await owns_desktop(token, slot):
+                            owned = await owns_desktop(token, slot)
+                            if owned is False:
                                 log.info("desktop session ended: the viewer no longer owns it")
                                 return
+                            if owned is None:
+                                continue
                         may_refresh = slot is None or input_connections.get(slot) is websocket
-                        previous = (control["state"], control["epoch"])
-                        control.update(await desktop_state(
+                        latest = await desktop_state(
                             token, binding=binding, slot=slot, viewer_id=viewer_id,
                             refresh=may_refresh,
-                        ))
+                        )
+                        if latest is None:
+                            continue
+                        previous = (control["state"], control["epoch"])
+                        control.update(latest)
                         if (control["state"], control["epoch"]) != previous:
                             log.info(
                                 "desktop control: %s -> %s (epoch %s)",
@@ -654,24 +698,42 @@ def create_viewer_app(
                                 slot is not None
                                 and input_connections.setdefault(slot, websocket) is not websocket
                             ):
+                                # Another window holds this desktop's input.
                                 granted_epoch = None
-                                valid_until = time.monotonic() + AUTH_GRACE_SECONDS
-                                continue
-                            epoch = int(control.get("epoch") or 0)
-                            if granted_epoch is None:
-                                granted_epoch = epoch
-                            elif granted_epoch != epoch:
-                                # The generation moved under this connection
-                                # (return and re-takeover elsewhere); its
-                                # grant is stale, so reconnect to re-bind.
-                                raise ValueError("desktop input generation changed")
+                            else:
+                                epoch = int(control.get("epoch") or 0)
+                                if granted_epoch is None:
+                                    if not grant_blocked:
+                                        granted_epoch = epoch
+                                elif granted_epoch != epoch:
+                                    # The generation moved under this connection
+                                    # (return and re-takeover elsewhere). Its
+                                    # grant is stale: pause input but keep the
+                                    # socket open so the picture keeps flowing.
+                                    # It is re-armed only after control leaves
+                                    # human, so this connection never inherits
+                                    # a generation it did not observe.
+                                    granted_epoch = None
+                                    grant_blocked = True
+                                    if (
+                                        slot is not None
+                                        and input_connections.get(slot) is websocket
+                                    ):
+                                        input_connections.pop(slot)
+                                    log.warning(
+                                        "desktop input paused: control generation changed"
+                                    )
                         else:
                             if slot is not None and input_connections.get(slot) is websocket:
                                 input_connections.pop(slot)
                             granted_epoch = None
+                            # A later takeover is a new, observed transition.
+                            grant_blocked = False
                         valid_until = time.monotonic() + AUTH_GRACE_SECONDS
+                        if control["state"] == "takeover_pending":
+                            delay = AUTH_PENDING_CHECK_SECONDS
                         # The grace window is three seconds; a poll that takes
-                        # longer than that can close a session under the owner.
+                        # longer than that leaves input paused, not closed.
                         elapsed = time.monotonic() - began
                         if elapsed >= AUTH_GRACE_SECONDS:
                             log.warning(

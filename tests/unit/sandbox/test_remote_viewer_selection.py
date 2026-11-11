@@ -167,19 +167,30 @@ def test_capacity_is_independent_for_each_authorized_target(selected_viewer):
     assert opened == ["cloud", "local"]
 
 
-def test_old_human_epoch_cannot_send_input_while_observation_poll_is_waiting(
-    selected_viewer, monkeypatch
-):
+def test_a_stale_human_epoch_loses_input_at_the_next_poll(selected_viewer):
+    """Input is gated by the cached lease, not by a per-event API call.
+
+    Revocation therefore lands on the next poll (one second in production,
+    faster in this fixture) instead of mid-keystroke. The stale generation
+    must not send anything once that poll has seen it, and the session keeps
+    running in observation rather than dropping the picture.
+    """
+
     client, selected, _ = selected_viewer
     selected["control"] = "human"
     with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}) as socket:
         assert socket.receive_bytes() == b"RFB 003.008\n"
         time.sleep(0.05)
-        monkeypatch.setattr(viewer, "AUTH_CHECK_SECONDS", 100)
-        time.sleep(0.05)
         handshake = b"RFB 003.008\n" + b"\x01\x01"
         socket.send_bytes(handshake)
         assert socket.receive_bytes() == handshake
+        # The generation moves while the socket stays on the old grant.
         selected["epoch"] = 2
-        socket.send_bytes(b"\x04\x01\x00\x00\x00\x00\x00\x41")
-        assert socket.receive()["type"] == "websocket.close"
+        time.sleep(0.2)  # several of the connection's own poll ticks
+        key = b"\x04\x01\x00\x00\x00\x00\x00\x41"
+        update = b"\x03\x00\x00\x00\x00\x00\x00\x20\x00\x20"
+        # The key is dropped; the read-only request still reaches the guest,
+        # proving the viewer did not close the session.
+        socket.send_bytes(key + update)
+        assert socket.receive_bytes() == update
+        assert client.get("/computer/status").json()["input_frames"]["keyboard"] == 0

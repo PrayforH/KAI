@@ -156,6 +156,19 @@ describe("desktop ownership feedback", () => {
     await click("取消接管");
     expect(controlState).toBe("observe");
   });
+  it("enables input as soon as a pending takeover is confirmed", async () => {
+    vi.useFakeTimers();
+    controlState = "observe";
+    await mount(); await click("取得控制权");
+    expect(host.textContent).toContain("正在交接");
+    expect(frames.at(-1)!.viewOnly).toBe(true);
+    // The node confirms the drain shortly after the request returns. The
+    // steady two-second poll would leave the user typing into nothing.
+    controlState = "human";
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); }); await flush();
+    expect(host.textContent).toContain("由你控制");
+    expect(frames.at(-1)!.viewOnly).toBe(false);
+  });
   it("stops local input and explains when control status cannot be read", async () => {
     vi.useFakeTimers();
     await mount(); expect(frames.at(-1)!.viewOnly).toBe(false);

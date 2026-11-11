@@ -1076,6 +1076,17 @@ function AuthenticatedHome() {
             style={botAppearanceVars(bot?.appearance?.color ?? botAccent(bot?.specialistId ?? "")) as React.CSSProperties}
             aria-label={personalAssistant ? "我的助理对话" : "Agent 任务对话"}
           >
+            {/* The drawer belongs to the conversation column. Keeping it in
+                this stacking/clipping box means it can never cover the desktop
+                pane that shares the split view. */}
+            {assistantView && (
+              <AssistantHistoryPanel
+                open={historyOpen}
+                threadId={bot?.threadId ?? threadId}
+                assistantName={bot?.name ?? "主助理"}
+                onClose={() => setHistoryOpen(false)}
+              />
+            )}
             {stageView === "trace" ? (
               <RunTraceConsole
                 threadId={threadId}
@@ -1185,14 +1196,6 @@ function AuthenticatedHome() {
             )}
           </section>
           </AssistantComputerPane>
-          {assistantView && (
-            <AssistantHistoryPanel
-              open={historyOpen}
-              threadId={bot?.threadId ?? threadId}
-              assistantName={bot?.name ?? "主助理"}
-              onClose={() => setHistoryOpen(false)}
-            />
-          )}
           {assistantRailOpen && (
             <BotSidePanel
               key={botParam ?? PERSONAL_ASSISTANT_THREAD}

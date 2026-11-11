@@ -44,6 +44,9 @@ def gateway(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         if request.headers.get("authorization") != "Bearer fixture" or not state["active"]:
             return httpx.Response(401)
         if request.url.path == "/v1/studio/assistant/computer/desktop":
+            state["desktop_calls"] = state.get("desktop_calls", 0) + 1
+            if state.get("desktop_unavailable"):
+                raise httpx.ConnectError("desktop API is unreachable")
             return httpx.Response(
                 200,
                 json={"state": state.get("control", "human"), "epoch": state.get("epoch", 1)},
@@ -75,6 +78,7 @@ def gateway(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(viewer.DesktopSsh, "connect", connect)
     monkeypatch.setattr(viewer, "AUTH_CHECK_SECONDS", 0.02)
+    monkeypatch.setattr(viewer, "AUTH_PENDING_CHECK_SECONDS", 0.02)
     settings = viewer.ViewerSettings(
         api_url="http://api",
         tenant_id="private",
@@ -304,19 +308,96 @@ def test_input_grant_never_survives_an_unobserved_generation(
         socket.send_bytes(KEY_A_DOWN)
         drain(socket, KEY_A_DOWN)
         # The lease moves under the connection (re-takeover elsewhere landed
-        # on epoch 7): input stops and the connection closes instead of
-        # inheriting the new generation.
+        # on epoch 7): input pauses instead of inheriting the new generation,
+        # but the socket stays open so the picture keeps flowing.
         state["epoch"] = 7
         wait_for_control(client, "human")
         time.sleep(1.2)  # several of the connection's own poll ticks
-        socket.send_bytes(KEY_A_DOWN)
-        try:
-            closed = socket.receive()
-            assert closed["type"] in {"websocket.close", "websocket.disconnect"}
-        except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError):
-            pass  # the test client surfaces the teardown in several shapes
+        socket.send_bytes(KEY_A_DOWN + UPDATE_REQUEST)
+        # The key was dropped; the update request is read-only and still
+        # reaches the guest, proving the session was not closed.
+        drain(socket, UPDATE_REQUEST)
         assert status_json(client)["input_frames"]["keyboard"] == 1
+        # Once control leaves human, a later takeover is a new observed
+        # transition and the same socket may be granted again.
+        state["control"] = "observe"
+        time.sleep(0.2)
+        state.update(control="human", epoch=9)
+        wait_for_control(client, "human")
+        time.sleep(0.3)
+        socket.send_bytes(KEY_A_DOWN)
+        drain(socket, KEY_A_DOWN)
+        assert status_json(client)["input_frames"]["keyboard"] == 2
         state["active"] = False
+
+
+def test_input_forwarding_never_round_trips_to_the_api(
+    gateway: tuple[TestClient, dict[str, Any]], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A drag emits many events; none of them may wait on authorization I/O."""
+
+    client, state = gateway
+    state["script"] = ECHO_SCRIPT
+    state["control"] = "human"
+    # A slow watcher isolates the input path: any per-event HTTP call would
+    # show up as extra desktop requests within the burst below.
+    monkeypatch.setattr(viewer, "AUTH_CHECK_SECONDS", 5.0)
+    with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}) as socket:
+        assert socket.receive_bytes() == VERSION
+        # The first poll is immediate, so the grant does not wait five seconds.
+        time.sleep(0.1)
+        before = state["desktop_calls"]
+        burst = POINTER_EVENT * 30
+        socket.send_bytes(HANDSHAKE + burst)
+        drain(socket, HANDSHAKE + burst)
+        assert state["desktop_calls"] - before <= 0
+        assert status_json(client)["input_frames"]["pointer"] == 30
+    state["active"] = False
+
+
+def test_a_transient_control_api_error_pauses_input_without_closing(
+    gateway: tuple[TestClient, dict[str, Any]], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, state = gateway
+    state["script"] = ECHO_SCRIPT
+    state["control"] = "human"
+    monkeypatch.setattr(viewer, "AUTH_GRACE_SECONDS", 0.1)
+    with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}) as socket:
+        assert socket.receive_bytes() == VERSION
+        socket.send_bytes(HANDSHAKE)
+        drain(socket, HANDSHAKE)
+        time.sleep(0.1)
+        state["desktop_unavailable"] = True
+        time.sleep(0.3)  # the grace window lapses while the API is down
+        socket.send_bytes(KEY_A_DOWN + UPDATE_REQUEST)
+        drain(socket, UPDATE_REQUEST)  # input dropped, session still alive
+        assert status_json(client)["input_frames"]["keyboard"] == 0
+        state["desktop_unavailable"] = False
+        time.sleep(0.3)  # the next successful poll re-arms the grant
+        socket.send_bytes(KEY_A_DOWN)
+        drain(socket, KEY_A_DOWN)
+        assert status_json(client)["input_frames"]["keyboard"] == 1
+    state["active"] = False
+
+
+def test_a_pending_takeover_is_confirmed_on_the_fast_cadence(
+    gateway: tuple[TestClient, dict[str, Any]], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, state = gateway
+    state["script"] = ECHO_SCRIPT
+    state.update(control="takeover_pending", epoch=1)
+    # Five seconds is the ordinary cadence; only the pending state may poll
+    # faster, otherwise this grant would take five seconds.
+    monkeypatch.setattr(viewer, "AUTH_CHECK_SECONDS", 5.0)
+    with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}) as socket:
+        assert socket.receive_bytes() == VERSION
+        time.sleep(0.1)  # the immediate poll observed pending
+        state.update(control="human", epoch=2)
+        time.sleep(0.3)
+        socket.send_bytes(HANDSHAKE + KEY_A_DOWN)
+        drain(socket, HANDSHAKE + KEY_A_DOWN)
+        assert status_json(client)["input_frames"]["keyboard"] == 1
+    state["active"] = False
 
 
 def test_client_extensions_are_aligned_but_never_forwarded():

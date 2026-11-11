@@ -1,12 +1,11 @@
-/* 聊天记录抽屉：右侧浮层，聊天在左侧仍可滚动定位。 */
+/* 聊天记录抽屉：对话列内的右侧浮层。
+   它不 fixed 到视口，因此分屏打开电脑时只会盖住对话，不会压到电脑窗口。 */
 .drawer {
-  position: fixed;
+  position: absolute;
+  box-sizing: border-box;
   z-index: 55;
-  /* 顶栏（z-index 60）留在抽屉上方，标题与关闭按钮不被遮住。 */
-  top: var(--shell-header-height, 46px);
-  right: 0;
-  bottom: 0;
-  width: min(400px, calc(100vw - 32px));
+  inset: 0 0 0 auto;
+  width: min(400px, 100%);
   display: flex;
   flex-direction: column;
   gap: 12px;
