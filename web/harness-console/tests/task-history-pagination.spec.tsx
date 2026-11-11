@@ -252,6 +252,78 @@ describe("thread history pagination", () => {
     await act(async () => { resolvePage(page([message("user-1", "user", "first")])); await pending; });
     expect(importRepositoryMock).not.toHaveBeenCalled();
   });
+
+  // The locate flow reads these four outcomes to tell "loaded", "still
+  // loading" and "not found" apart; they must be asserted at the source, not
+  // only through a hand-written mock in the locator spec.
+  it("reports loaded once an earlier page merged", async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(page([message("user-2", "user", "second")], { next_cursor: "cursor-1", has_more: true }))
+      .mockResolvedValueOnce(page([message("user-1", "user", "first")], { next_cursor: null, has_more: false }));
+    vi.stubGlobal("fetch", fetcher);
+
+    await render();
+    await bootstrapLatestPage();
+    await settle();
+    let result: Awaited<ReturnType<typeof state.loadEarlier>> | undefined;
+    await act(async () => { result = await state.loadEarlier(); });
+
+    expect(result).toBe("loaded");
+  });
+
+  it("reports exhausted when the window has no earlier cursor", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      page([message("user-1", "user", "only")], { has_more: false }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+
+    await render();
+    await bootstrapLatestPage();
+    await settle();
+    let result: Awaited<ReturnType<typeof state.loadEarlier>> | undefined;
+    await act(async () => { result = await state.loadEarlier(); });
+
+    expect(result).toBe("exhausted");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports failed when the earlier page request errors", async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(page([message("user-2", "user", "second")], { next_cursor: "cursor-1", has_more: true }))
+      .mockResolvedValueOnce(new Response("boom", { status: 500 }));
+    vi.stubGlobal("fetch", fetcher);
+
+    await render();
+    await bootstrapLatestPage();
+    await settle();
+    let result: Awaited<ReturnType<typeof state.loadEarlier>> | undefined;
+    await act(async () => { result = await state.loadEarlier(); });
+
+    expect(result).toBe("failed");
+    expect(state.loading).toBe(false);
+  });
+
+  it("reports busy while another reader already has a page in flight", async () => {
+    let resolvePage!: (response: Response) => void;
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(page([message("user-2", "user", "second")], { next_cursor: "cursor-1", has_more: true }))
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolvePage = resolve; }));
+    vi.stubGlobal("fetch", fetcher);
+
+    await render();
+    await bootstrapLatestPage();
+    await settle();
+    let pending!: Promise<unknown>;
+    await act(async () => { pending = state.loadEarlier(); });
+    let result: Awaited<ReturnType<typeof state.loadEarlier>> | undefined;
+    await act(async () => { result = await state.loadEarlier(); });
+
+    expect(result).toBe("busy");
+    await act(async () => {
+      resolvePage(page([message("user-1", "user", "first")], { next_cursor: null, has_more: false }));
+      await pending;
+    });
+  });
 });
 
 describe("auto load earlier on scroll", () => {

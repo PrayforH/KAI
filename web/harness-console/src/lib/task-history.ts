@@ -356,7 +356,15 @@ export function useThreadHistoryPagination(
       repository: ReturnType<typeof ExportedMessageRepository.fromArray>,
     ) => void;
   },
-): { hasMore: boolean; loading: boolean; total: number; loadEarlier: LoadEarlierFn; waitForLoading: () => Promise<void> } {
+): {
+  hasMore: boolean;
+  /** False until the thread's first page has seeded the window. */
+  ready: boolean;
+  loading: boolean;
+  total: number;
+  loadEarlier: LoadEarlierFn;
+  waitForLoading: () => Promise<void>;
+} {
   const [snapshot, setSnapshot] = useState<AccumulationEntry | null>(() =>
     accumulatedHistory.get(threadId) ?? null,
   );
@@ -445,6 +453,7 @@ export function useThreadHistoryPagination(
 
   return {
     hasMore: snapshot?.hasMore ?? false,
+    ready: snapshot !== null,
     loading: snapshot?.loading ?? false,
     total: snapshot?.total ?? 0,
     loadEarlier,

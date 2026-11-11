@@ -2170,6 +2170,7 @@ export function AgentThread({
   useEffect(() => {
     registerHistoryLocator({
       threadId,
+      ready: () => historyPagination.ready,
       hasMore: () => historyPagination.hasMore,
       loadEarlier: historyPagination.loadEarlier,
       waitForLoading: historyPagination.waitForLoading,
@@ -2177,8 +2178,8 @@ export function AgentThread({
     });
     return () => registerHistoryLocator(null);
   }, [
-    threadId, historyPagination.hasMore, historyPagination.loadEarlier,
-    historyPagination.waitForLoading,
+    threadId, historyPagination.ready, historyPagination.hasMore,
+    historyPagination.loadEarlier, historyPagination.waitForLoading,
   ]);
   const composerDraftScope = useMemo(
     () => ({ userId, threadId }),

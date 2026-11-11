@@ -167,6 +167,61 @@ it("reports retry, not missing, when an earlier page fails to load", async () =>
   await expect(locateInChat("assistant-run_old", "thread_1")).resolves.toBe("retry");
 });
 
+it("reports retry, not missing, when the page budget runs out", async () => {
+  // The message may sit past the budget; a callback guard-rail that ran out
+  // is ignorance, not proof the message is absent.
+  const loadEarlier = vi.fn(async () => "loaded" as const);
+  registerHistoryLocator({ threadId: "thread_1", hasMore: () => true, loadEarlier });
+  await expect(locateInChat("assistant-run_old", "thread_1", { maxPages: 3 }))
+    .resolves.toBe("retry");
+  expect(loadEarlier).toHaveBeenCalledTimes(1);
+}, 10_000);
+
+it("waits for the first page instead of calling a cold open a miss", async () => {
+  // Before the thread's first page seeds `hasMore`, false means "unknown".
+  let seeded = false;
+  const loadEarlier = vi.fn(async () => { addMessage("assistant-run_old"); return "loaded" as const; });
+  registerHistoryLocator({
+    threadId: "thread_1", ready: () => seeded, hasMore: () => false, loadEarlier,
+  });
+  setTimeout(() => {
+    seeded = true;
+    registerHistoryLocator({
+      threadId: "thread_1", ready: () => true, hasMore: () => true, loadEarlier,
+    });
+  }, 20);
+  await expect(locateInChat("assistant-run_old", "thread_1")).resolves.toBe("located");
+  expect(loadEarlier).toHaveBeenCalledTimes(1);
+});
+
+it("reports retry, not missing, when the thread never seeds its first page", async () => {
+  const loadEarlier = vi.fn(async () => "loaded" as const);
+  registerHistoryLocator({
+    threadId: "thread_1", ready: () => false, hasMore: () => false, loadEarlier,
+  });
+  await expect(locateInChat("assistant-run_old", "thread_1")).resolves.toBe("retry");
+  expect(loadEarlier).not.toHaveBeenCalled();
+}, 10_000);
+
+it("reports retry when no conversation is registered to page", async () => {
+  await expect(locateInChat("assistant-run_old")).resolves.toBe("retry");
+});
+
+it("looks immediately once an in-flight page settles", async () => {
+  const loadEarlier = vi.fn(async () => "busy" as const);
+  registerHistoryLocator({
+    threadId: "thread_1",
+    hasMore: () => true,
+    loadEarlier,
+    waitForLoading: async () => { addMessage("assistant-run_old"); },
+  });
+  const started = Date.now();
+  await expect(locateInChat("assistant-run_old", "thread_1")).resolves.toBe("located");
+  // No full mount window between the settle and the check.
+  expect(Date.now() - started).toBeLessThan(500);
+  expect(loadEarlier).toHaveBeenCalledTimes(1);
+});
+
 it("stops paging the old thread when the locator is replaced mid-locate", async () => {
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });

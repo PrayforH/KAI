@@ -7,6 +7,11 @@ import type { LoadEarlierResult } from "./task-history";
 
 type Locator = {
   threadId: string;
+  /**
+   * False while the thread's first page has not seeded the pagination window.
+   * Until then `hasMore` is ignorance, not "the thread ends here".
+   */
+  ready?: () => boolean;
   hasMore: () => boolean;
   /** Loads up to `pages` earlier pages and imports them once. */
   loadEarlier: (pages?: number) => Promise<LoadEarlierResult | boolean>;
@@ -41,6 +46,13 @@ export function registerHistoryLocator(value: Locator | null): void {
 function raf(): Promise<void> {
   if (typeof requestAnimationFrame !== "function") return Promise.resolve();
   return new Promise(resolve => requestAnimationFrame(() => resolve()));
+}
+
+/** Flash the message when it is already mounted in this locator's frame. */
+function flashMounted(active: Locator | null, messageId: string): LocateOutcome | null {
+  const target = rootFor(active);
+  if (!target || !findMessage(messageId, target)) return null;
+  return flashMessage(messageId, target) ? "located" : "retry";
 }
 
 function selectorFor(messageId: string): string {
@@ -124,25 +136,73 @@ function normalizeResult(value: LoadEarlierResult | boolean): LoadEarlierResult 
   return value;
 }
 
+/**
+ * A locate can start before the thread's first page has seeded `hasMore`.
+ * Wait for a seeded locator for the same thread; a reading that never arrives
+ * is a retry, never proof the message is absent.
+ */
+async function waitForSeededLocator(
+  threadId: string | undefined,
+  deadline: number,
+): Promise<Locator | null> {
+  const waitUntil = Math.min(Date.now() + LOCATE_WAIT_MS, deadline);
+  for (;;) {
+    const candidate = locator;
+    // A newer locator re-registers between renders; keep watching through the
+    // brief window where the effect has torn the old one down.
+    if (candidate && threadId && candidate.threadId !== threadId) return null;
+    if (candidate && (!candidate.ready || candidate.ready())) return candidate;
+    if (Date.now() >= waitUntil) return null;
+    await raf();
+  }
+}
+
+/** Wait for another reader's page, but never past the walk's own deadline. */
+async function waitForBusyLoad(active: Locator, deadline: number): Promise<void> {
+  if (!active.waitForLoading) return;
+  const budget = Math.max(0, Math.min(LOCATE_WAIT_MS, deadline - Date.now()));
+  await new Promise<void>((resolve) => {
+    const timer = globalThis.setTimeout(resolve, budget);
+    const settle = () => {
+      globalThis.clearTimeout(timer);
+      resolve();
+    };
+    active.waitForLoading!().then(settle, settle);
+  });
+}
+
 export async function locateInChat(
   messageId: string,
   threadId?: string,
   options: { onProgress?: () => void; maxPages?: number } = {},
 ): Promise<LocateOutcome> {
+  const deadline = Date.now() + LOCATE_DEADLINE_MS;
+  // A message that is already on screen needs no paging and no seeded window.
+  const alreadyMounted = flashMounted(locator, messageId);
+  if (alreadyMounted) return alreadyMounted;
+
   // Capture the locator for the whole walk: switching threads mid-locate must
   // not keep paging the new thread on behalf of the old one.
-  const active = locator;
-  const root = () => rootFor(active);
-  const deadline = Date.now() + LOCATE_DEADLINE_MS;
-  const current = root();
-  if (current && findMessage(messageId, current)) {
-    return flashMessage(messageId, current) ? "located" : "missing";
+  let active = locator;
+  // Without a registered thread nothing can be paged, and absence is unproven.
+  if (!active) return "retry";
+  if (threadId && active.threadId !== threadId) return "missing";
+  if (active.ready && !active.ready()) {
+    // Cold open: the first page has not seeded `hasMore` yet. Treating that as
+    // "no earlier pages" reported a false miss within a millisecond.
+    const seeded = await waitForSeededLocator(threadId, deadline);
+    if (!seeded) return "retry";
+    active = seeded;
+    const adopted = flashMounted(active, messageId);
+    if (adopted) return adopted;
   }
-  if (!active || (threadId && active.threadId !== threadId)) return "missing";
-  if (!current) {
+
+  const root = () => rootFor(active);
+  if (!root()) {
     // The registered frame is remounting. Wait briefly for it instead of
     // paging a thread the view cannot show yet; still never scan the document.
-    const appeared = await waitForRoot(root, Math.min(LOCATE_WAIT_MS, LOCATE_DEADLINE_MS));
+    const budget = Math.max(0, Math.min(LOCATE_WAIT_MS, deadline - Date.now()));
+    const appeared = await waitForRoot(root, budget);
     if (!appeared) return "retry";
     if (findMessage(messageId, appeared)) {
       return flashMessage(messageId, appeared) ? "located" : "retry";
@@ -154,39 +214,41 @@ export async function locateInChat(
   const mountDeadline = () => Math.min(Date.now() + LOCATE_WAIT_MS, deadline);
   let loadedPages = 0;
   let waitedForBusy = false;
+  /** True only when the thread itself said there are no earlier pages. */
+  let reachedEnd = false;
   while (loadedPages < maxPages && Date.now() < deadline) {
     if (locator !== active) return "retry";
-    if (!active.hasMore()) break;
+    if (!active.hasMore()) { reachedEnd = true; break; }
     const outcome = normalizeResult(
       await active.loadEarlier(Math.min(LOCATE_PAGE_BATCH, maxPages - loadedPages)),
     );
     if (locator !== active) return "retry";
     if (outcome === "busy") {
       // Another reader (scroll-to-top, the index rail) already has a page in
-      // flight. Wait for it, then retry once; never report "missing" for busy.
+      // flight. Wait for it, then look immediately — waiting a full mount
+      // window before asking again was the stall readers felt.
       if (waitedForBusy) return "retry";
       waitedForBusy = true;
-      await active.waitForLoading?.();
+      await waitForBusyLoad(active, deadline);
       if (locator !== active) return "retry";
-      if (await waitForMessage(messageId, root, mountDeadline())) {
-        return flashMessage(messageId, root()) ? "located" : "retry";
-      }
+      const mountedNow = flashMounted(active, messageId);
+      if (mountedNow) return mountedNow;
       continue;
     }
-    if (outcome === "exhausted") break;
+    if (outcome === "exhausted") { reachedEnd = true; break; }
     if (outcome === "failed") {
       // A transport error says nothing about whether the message exists.
-      const target = root();
-      return target && findMessage(messageId, target) ? "located" : "retry";
+      return flashMounted(active, messageId) ?? "retry";
     }
     loadedPages += LOCATE_PAGE_BATCH;
     options.onProgress?.();
     if (await waitForMessage(messageId, root, mountDeadline())) {
-      return flashMessage(messageId, root()) ? "located" : "retry";
+      return flashMounted(active, messageId) ?? "retry";
     }
   }
   if (locator !== active) return "retry";
-  const target = root();
-  if (!target) return "retry";
-  return flashMessage(messageId, target) ? "located" : "missing";
+  // A page budget or walk deadline that ran out is ignorance, not absence:
+  // only a confirmed end of the thread may report "missing".
+  if (!reachedEnd) return "retry";
+  return flashMounted(active, messageId) ?? "missing";
 }
