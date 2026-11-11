@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { memoryClient, type MemoryEntry } from "../lib/memory-client";
 import styles from "./memory-proposal-card.module.css";
 
@@ -86,7 +86,7 @@ const BADGE: Record<Phase, { label: string; tone: Tone }> = {
   rejecting: { label: "正在拒绝", tone: "accent" },
   done: { label: "已生效", tone: "success" },
   rejected: { label: "已拒绝", tone: "muted" },
-  "not-found": { label: "未写入", tone: "warning" },
+  "not-found": { label: "未找到", tone: "warning" },
   error: { label: "读取失败", tone: "danger" },
 };
 
@@ -97,7 +97,13 @@ const SENSITIVITY_COPY: Record<MemoryEntry["sensitivity"], string> = {
 };
 
 function describeSource(source: MemoryEntry["source"]): string {
-  const kind = source.kind === "user" ? "你提供" : source.kind === "agent" ? "助理整理" : "导入内容";
+  const kind = source.kind === "user"
+    ? "你提供"
+    : source.kind === "agent"
+      ? "助理整理"
+      : source.kind === "import"
+        ? "导入内容"
+        : "未知来源";
   const label = source.label?.trim();
   return label && label !== kind ? `${kind} · ${label}` : kind;
 }
@@ -107,19 +113,97 @@ function describeScope(entry: MemoryEntry): string {
   return entry.projectId ? `${agent} · 项目 ${entry.projectId}` : `${agent} · 全部对话`;
 }
 
+/** The memory API answers 409 for optimistic-concurrency conflicts, but the
+ *  client flattens the response body to an Error message. These are the
+ *  ConflictError copies confirm/reject can raise, so they identify a stale
+ *  version without leaking the English text into the card. */
+const CONFLICT_MESSAGES = ["memory entry changed", "replacement target changed"] as const;
+
+const CONFLICT_NOTICE = "这条记忆已被更新，已为你刷新，请重新确认。";
+
+function isConflict(cause: unknown): boolean {
+  const message = cause instanceof Error ? cause.message : "";
+  return CONFLICT_MESSAGES.some(fragment => message.includes(fragment));
+}
+
+/** Domain errors arrive in English; show our own copy instead of the raw
+ *  server message. Messages that are already Chinese pass through. */
 function errorMessage(cause: unknown, fallback: string): string {
-  return cause instanceof Error && cause.message ? cause.message : fallback;
+  const message = cause instanceof Error ? cause.message.trim() : "";
+  if (!message) return fallback;
+  return /[一-鿿]/.test(message) ? message : fallback;
+}
+
+/** One card exists per proposal, and every card knows only its entry id.
+ *  Cards on screen share a single entries request, and repeated mounts of the
+ *  same entry reuse the resolved value instead of fetching the whole list
+ *  again. `force` bypasses the cache after a conflict or a failed read.
+ *  The cache is bounded: a long SPA session must not keep one promise per
+ *  entry id forever, so inserting past the limit evicts the oldest entry. */
+export const MEMORY_PROPOSAL_CACHE_LIMIT = 128;
+
+let entriesInFlight: Promise<MemoryEntry[]> | null = null;
+const entryLoads = new Map<string, Promise<MemoryEntry | null>>();
+
+function trimEntryCache(): void {
+  while (entryLoads.size > MEMORY_PROPOSAL_CACHE_LIMIT) {
+    const oldest = entryLoads.keys().next();
+    if (oldest.done) return;
+    entryLoads.delete(oldest.value);
+  }
+}
+
+function listEntriesOnce(): Promise<MemoryEntry[]> {
+  if (!entriesInFlight) {
+    const request = memoryClient.list();
+    entriesInFlight = request;
+    const clear = () => {
+      if (entriesInFlight === request) entriesInFlight = null;
+    };
+    request.then(clear, clear);
+  }
+  return entriesInFlight;
+}
+
+function loadEntryOnce(entryId: string, force: boolean): Promise<MemoryEntry | null> {
+  if (force) entryLoads.delete(entryId);
+  const cached = entryLoads.get(entryId);
+  if (cached) return cached;
+  const request: Promise<MemoryEntry | null> = listEntriesOnce()
+    .then(items => items.find(item => item.entryId === entryId) ?? null)
+    .catch(cause => {
+      entryLoads.delete(entryId);
+      throw cause;
+    });
+  entryLoads.set(entryId, request);
+  trimEntryCache();
+  return request;
+}
+
+/** Cached read count, bounded by MEMORY_PROPOSAL_CACHE_LIMIT. */
+export function memoryProposalCacheSize(): number {
+  return entryLoads.size;
+}
+
+/** Drop cached reads; used by tests and after an out-of-band memory change. */
+export function clearMemoryProposalCache(): void {
+  entryLoads.clear();
+  entriesInFlight = null;
 }
 
 export function MemoryProposalCard({ proposal }: { proposal: MemoryProposal }) {
   const [phase, setPhase] = useState<Phase>(proposal.status === "active" ? "done" : "loading");
   const [entry, setEntry] = useState<MemoryEntry | null>(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [failedAction, setFailedAction] = useState<FailedAction | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
   const contentRef = useRef<HTMLParagraphElement>(null);
+  const statusRef = useRef<HTMLElement | null>(null);
+  const focusStatusRef = useRef(false);
   const mountedRef = useRef(true);
+  const contentId = useId();
 
   useEffect(() => {
     mountedRef.current = true;
@@ -130,19 +214,22 @@ export function MemoryProposalCard({ proposal }: { proposal: MemoryProposal }) {
 
   /** The tool result only carries the entry id. Read the entry the same way
    *  confirm does, so the card can show exactly what is being approved. */
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     if (proposal.status === "active") {
       setPhase("done");
       return;
     }
     setPhase("loading");
+    setEntry(null);
+    setExpanded(false);
+    setOverflowing(false);
     setError("");
+    setNotice("");
     setFailedAction(null);
     try {
-      const found = (await memoryClient.list()).find(item => item.entryId === proposal.entryId) ?? null;
+      const found = await loadEntryOnce(proposal.entryId, force);
       if (!mountedRef.current) return;
       if (!found) {
-        setEntry(null);
         setPhase("not-found");
         return;
       }
@@ -151,16 +238,9 @@ export function MemoryProposalCard({ proposal }: { proposal: MemoryProposal }) {
         setPhase("done");
         return;
       }
-      if (found.status === "rejected") {
-        setEntry(found);
-        setPhase("rejected");
-        return;
-      }
-      if (found.status !== "pending") {
-        setEntry(null);
-        setPhase("not-found");
-        return;
-      }
+      // list_entries defaults to include_terminal=False, so it only returns
+      // PENDING or ACTIVE. A rejected/expired/deleted entry arrives as
+      // not-found above; do not assert a state the API never sends.
       setEntry(found);
       setPhase("pending");
     } catch (cause) {
@@ -181,10 +261,19 @@ export function MemoryProposalCard({ proposal }: { proposal: MemoryProposal }) {
     if (node && node.scrollHeight > node.clientHeight + 1) setOverflowing(true);
   }, [entry, phase]);
 
+  useEffect(() => {
+    if (!focusStatusRef.current) return;
+    if (phase !== "done" && phase !== "rejected" && phase !== "error") return;
+    focusStatusRef.current = false;
+    statusRef.current?.focus();
+  }, [phase]);
+
   async function resolve(action: "confirm" | "reject") {
     if (!entry || phase === "confirming" || phase === "rejecting") return;
+    focusStatusRef.current = true;
     setPhase(action === "confirm" ? "confirming" : "rejecting");
     setError("");
+    setNotice("");
     setFailedAction(null);
     try {
       if (action === "confirm") {
@@ -198,10 +287,17 @@ export function MemoryProposalCard({ proposal }: { proposal: MemoryProposal }) {
       }
     } catch (cause) {
       if (!mountedRef.current) return;
-      setError(errorMessage(
-        cause,
-        action === "confirm" ? "保存失败，请稍后重试。" : "拒绝失败，请稍后重试。",
-      ));
+      if (isConflict(cause)) {
+        // Optimistic-concurrency conflict: the version on this card is stale.
+        // Re-read the latest entry and let the user decide again with fresh
+        // data instead of retrying the same version into another 409.
+        focusStatusRef.current = false;
+        await load(true);
+        if (!mountedRef.current) return;
+        setNotice(CONFLICT_NOTICE);
+        return;
+      }
+      setError(errorMessage(cause, "请稍后重试。"));
       setFailedAction(action);
       setPhase("error");
     }
@@ -220,6 +316,7 @@ export function MemoryProposalCard({ proposal }: { proposal: MemoryProposal }) {
     <section
       className={styles.card}
       data-state={phase}
+      role="group"
       aria-label="长期记忆提案"
       aria-busy={isBusy}
     >
@@ -238,6 +335,7 @@ export function MemoryProposalCard({ proposal }: { proposal: MemoryProposal }) {
         <div className={styles.entry}>
           <p
             ref={contentRef}
+            id={contentId}
             className={styles.content}
             data-expanded={expanded || !overflowing}
           >
@@ -248,6 +346,7 @@ export function MemoryProposalCard({ proposal }: { proposal: MemoryProposal }) {
               type="button"
               className={styles.expand}
               aria-expanded={expanded}
+              aria-controls={contentId}
               onClick={() => setExpanded(value => !value)}
             >
               {expanded ? "收起" : "展开全文"}
@@ -282,23 +381,72 @@ export function MemoryProposalCard({ proposal }: { proposal: MemoryProposal }) {
 
       {phase === "done" && (
         <>
-          <strong className={styles.stateTitle}>已写入长期记忆</strong>
+          <strong
+            className={styles.stateTitle}
+            tabIndex={-1}
+            ref={node => { statusRef.current = node; }}
+          >
+            已写入长期记忆
+          </strong>
           <p className={styles.hint}>这条信息已生效，后续对话可以直接检索到。</p>
         </>
       )}
 
       {phase === "rejected" && (
         <>
-          <strong className={styles.stateTitle}>已拒绝这条记忆</strong>
+          <strong
+            className={styles.stateTitle}
+            tabIndex={-1}
+            ref={node => { statusRef.current = node; }}
+          >
+            已拒绝这条记忆
+          </strong>
           <p className={styles.hint}>没有写入长期记忆，后续对话不会检索到。助理可以重新提议。</p>
         </>
       )}
 
-      {(phase === "not-found" || (phase === "error" && !entry)) && (
+      {phase === "not-found" && (
         <>
-          <strong className={styles.stateTitle}>内容暂时取不到</strong>
-          <p className={styles.hint}>这条记忆可能已被处理或删除，去记忆设置查看当前状态。</p>
+          <strong
+            className={styles.stateTitle}
+            tabIndex={-1}
+            ref={node => { statusRef.current = node; }}
+          >
+            没有找到这条记忆
+          </strong>
+          <p className={styles.hint}>
+            没有取到这条记忆的内容，可能已处理、已删除，或不在当前列表中。
+          </p>
         </>
+      )}
+
+      {phase === "error" && !entry && (
+        <>
+          <strong
+            className={styles.stateTitle}
+            tabIndex={-1}
+            ref={node => { statusRef.current = node; }}
+          >
+            内容没有读到
+          </strong>
+          <p className={styles.hint}>
+            记忆服务暂时不可用，内容没有读到。这不代表没有写入，可以重试或去记忆设置确认。
+          </p>
+        </>
+      )}
+
+      {phase === "error" && entry && (
+        <strong
+          className={styles.stateTitle}
+          tabIndex={-1}
+          ref={node => { statusRef.current = node; }}
+        >
+          {failedAction === "reject" ? "没有拒绝成功" : "没有保存成功"}
+        </strong>
+      )}
+
+      {notice && phase === "pending" && (
+        <p className={styles.notice} role="status">{notice}</p>
       )}
 
       {error && (
@@ -357,7 +505,7 @@ export function MemoryProposalCard({ proposal }: { proposal: MemoryProposal }) {
 
       {phase === "error" && !entry && (
         <div className={styles.actions}>
-          <button type="button" className={styles.secondary} onClick={() => void load()}>
+          <button type="button" className={styles.secondary} onClick={() => void load(true)}>
             重试读取
           </button>
           <a className={styles.link} href="/settings#memory">去记忆设置查看</a>
@@ -366,7 +514,7 @@ export function MemoryProposalCard({ proposal }: { proposal: MemoryProposal }) {
 
       {phase === "not-found" && (
         <div className={styles.actions}>
-          <button type="button" className={styles.secondary} onClick={() => void load()}>
+          <button type="button" className={styles.secondary} onClick={() => void load(true)}>
             重试读取
           </button>
           <a className={styles.link} href="/settings#memory">去记忆设置查看</a>
@@ -394,7 +542,7 @@ export function MemoryToolNotice({ reason }: { reason: "untrusted" | "invalid" }
   const copy = reason === "untrusted"
     ? "这次记忆没有写入：本会话读过网页等外部内容后，平台默认不再接受未经核对的写入。助理提交时需要附上你的原话作出处，网页内容不算数；也可以新开一个会话再让助理记住。"
     : "这次记忆没有送达：助理生成的提交内容不完整。可以让助理再试一次。";
-  return <section className={styles.card} data-state="blocked" aria-label="长期记忆未写入">
+  return <section className={styles.card} data-state="blocked" role="group" aria-label="长期记忆未写入">
     <div className={styles.header}>
       <span className={styles.badge} data-tone="danger">未写入</span>
       <span className={styles.kicker}>长期记忆</span>

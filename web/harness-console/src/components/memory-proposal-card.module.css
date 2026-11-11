@@ -203,6 +203,18 @@
   overflow-wrap: anywhere;
 }
 
+.notice {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--codex-warning) 36%, transparent);
+  border-radius: 8px;
+  background: var(--codex-warning-soft);
+  color: var(--codex-warning);
+  font-size: 12.5px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -227,10 +239,6 @@
   transition: background-color 140ms ease, border-color 140ms ease, opacity 140ms ease;
 }
 
-.actions button:hover:not(:disabled) {
-  transform: none;
-}
-
 .actions button:focus-visible {
   outline: 2px solid var(--codex-accent);
   outline-offset: 2px;
@@ -250,24 +258,24 @@
   background: var(--codex-accent-hover);
 }
 
-.reject {
+.actions .reject {
   color: var(--codex-danger);
   background: transparent;
-  border-color: var(--codex-line-strong) !important;
+  border-color: var(--codex-line-strong);
 }
 
-.reject:hover:not(:disabled) {
+.actions .reject:hover:not(:disabled) {
   background: var(--codex-danger-soft);
-  border-color: color-mix(in srgb, var(--codex-danger) 42%, var(--codex-line-strong)) !important;
+  border-color: color-mix(in srgb, var(--codex-danger) 42%, var(--codex-line-strong));
 }
 
-.secondary {
+.actions .secondary {
   color: var(--codex-ink-soft);
   background: transparent;
-  border-color: var(--codex-line-strong) !important;
+  border-color: var(--codex-line-strong);
 }
 
-.secondary:hover:not(:disabled) {
+.actions .secondary:hover:not(:disabled) {
   background: var(--codex-surface-hover);
 }
 
