@@ -295,3 +295,90 @@ it("stops paging the old thread when the locator is replaced mid-locate", async 
   await expect(pending).resolves.toBe("retry");
   expect(newLoad).not.toHaveBeenCalled();
 });
+
+it("locates through the id walk with one loadUntil call", async () => {
+  const loadUntil = vi.fn(async () => {
+    addMessage("assistant-run_old");
+    return "found" as const;
+  });
+  const loadEarlier = vi.fn(async () => "loaded" as const);
+  registerHistoryLocator({ threadId: "thread_1", hasMore: () => true, loadEarlier, loadUntil });
+  await expect(locateInChat("assistant-run_old", "thread_1")).resolves.toBe("located");
+  expect(loadUntil).toHaveBeenCalledTimes(1);
+  expect(loadEarlier).not.toHaveBeenCalled();
+});
+
+it("reports missing when the id walk reaches the thread's real end", async () => {
+  const loadUntil = vi.fn(async () => "missing" as const);
+  const loadEarlier = vi.fn(async () => false);
+  registerHistoryLocator({ threadId: "thread_1", hasMore: () => true, loadEarlier, loadUntil });
+  await expect(locateInChat("assistant-run_absent", "thread_1")).resolves.toBe("missing");
+  expect(loadEarlier).not.toHaveBeenCalled();
+});
+
+it("keeps a failed id walk as retry, not missing", async () => {
+  const loadUntil = vi.fn(async () => "failed" as const);
+  registerHistoryLocator({
+    threadId: "thread_1", hasMore: () => true,
+    loadEarlier: async () => "loaded" as const, loadUntil,
+  });
+  await expect(locateInChat("assistant-run_old", "thread_1")).resolves.toBe("retry");
+});
+
+it("waits for a busy reader and resumes the id walk", async () => {
+  let busy = true;
+  const loadUntil = vi.fn(async () => {
+    if (busy) return "busy" as const;
+    addMessage("assistant-run_old");
+    return "found" as const;
+  });
+  registerHistoryLocator({
+    threadId: "thread_1",
+    hasMore: () => true,
+    loadEarlier: async () => "loaded" as const,
+    loadUntil,
+    waitForLoading: async () => { busy = false; },
+  });
+  await expect(locateInChat("assistant-run_old", "thread_1")).resolves.toBe("located");
+  expect(loadUntil).toHaveBeenCalledTimes(2);
+});
+
+it("shares one id walk between a double click", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const loadUntil = vi.fn(async () => {
+    await gate;
+    addMessage("assistant-run_old");
+    return "found" as const;
+  });
+  registerHistoryLocator({
+    threadId: "thread_1", hasMore: () => true,
+    loadEarlier: async () => "loaded" as const, loadUntil,
+  });
+  const first = locateInChat("assistant-run_old", "thread_1");
+  const second = locateInChat("assistant-run_old", "thread_1");
+  expect(first).toBe(second);
+  release();
+  await expect(first).resolves.toBe("located");
+  expect(loadUntil).toHaveBeenCalledTimes(1);
+});
+
+it("legacy batch walk pays a full mount window for a page that misses (改前基线)", async () => {
+  // One batch that does not contain the target waits the whole LOCATE_WAIT_MS
+  // mount window before asking for the next page. The id walk does not.
+  let calls = 0;
+  registerHistoryLocator({
+    threadId: "thread_1",
+    hasMore: () => calls < 2,
+    loadEarlier: async () => {
+      calls += 1;
+      if (calls === 2) addMessage("assistant-run_old");
+      return "loaded" as const;
+    },
+  });
+  const started = Date.now();
+  await expect(locateInChat("assistant-run_old", "thread_1")).resolves.toBe("located");
+  const elapsed = Date.now() - started;
+  console.info(`[locate bench] legacy batch page without target waited ${elapsed}ms`);
+  expect(elapsed).toBeGreaterThanOrEqual(1_000);
+}, 10_000);

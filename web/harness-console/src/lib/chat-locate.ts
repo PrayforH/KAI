@@ -3,7 +3,7 @@
  * 历史面板能读到完整历史，但 assistant-ui 只挂载已导入的消息，
  * 老消息必须先通过会话自己的 loadEarlier 导入，滚动才有落点。
  */
-import type { LoadEarlierResult } from "./task-history";
+import type { LoadEarlierResult, LocateLoadResult } from "./task-history";
 
 type Locator = {
   threadId: string;
@@ -15,6 +15,12 @@ type Locator = {
   hasMore: () => boolean;
   /** Loads up to `pages` earlier pages and imports them once. */
   loadEarlier: (pages?: number) => Promise<LoadEarlierResult | boolean>;
+  /**
+   * Id-driven walk: pages back until the target id is seen, then imports once.
+   * Real conversation locators provide this; the batch path below stays for
+   * callers (and tests) that only have `loadEarlier`.
+   */
+  loadUntil?: (messageId: string, options?: { onProgress?: () => void }) => Promise<LocateLoadResult>;
   /** Resolves when another reader's in-flight page request settles. */
   waitForLoading?: () => Promise<void>;
   /** The conversation frame, so 定位 never matches another thread's DOM. */
@@ -26,18 +32,17 @@ export type LocateOutcome = "located" | "missing" | "retry";
 
 let locator: Locator | null = null;
 
-/** pages per locate step; one step is one full repository import. */
+/** pages per legacy locate step; one step is one full repository import. */
 const LOCATE_PAGE_BATCH = 3;
-/** A guard-rail, not the old 5-page ceiling: the thread itself ends earlier. */
-const LOCATE_MAX_PAGES = 21;
 /**
- * How long one import may take to mount. Long threads render across several
- * frames, and jsdom-style fixed frame counts cannot judge that. Each wait is
- * clamped to the remaining walk deadline below, so a slow page cannot push a
- * locate past LOCATE_DEADLINE_MS and report a false "missing".
+ * How long one import may take to mount, or one seed/busy reader may take to
+ * settle. This is a render wait after a known hit, never a blind wait after a
+ * page that did not contain the target.
  */
 const LOCATE_WAIT_MS = 1_200;
-const LOCATE_DEADLINE_MS = 15_000;
+
+/** Identical clicks share one walk instead of paging the thread twice. */
+const inFlightLocates = new Map<string, Promise<LocateOutcome>>();
 
 export function registerHistoryLocator(value: Locator | null): void {
   locator = value;
@@ -108,11 +113,8 @@ async function waitForMessage(
 }
 
 /** Wait for a registered frame to exist again; null means it stayed gone. */
-async function waitForRoot(
-  root: () => ParentNode | null,
-  budgetMs = LOCATE_WAIT_MS,
-): Promise<ParentNode | null> {
-  const deadline = Date.now() + budgetMs;
+async function waitForRoot(root: () => ParentNode | null): Promise<ParentNode | null> {
+  const deadline = Date.now() + LOCATE_WAIT_MS;
   for (;;) {
     const node = root();
     if (node) return node;
@@ -141,11 +143,8 @@ function normalizeResult(value: LoadEarlierResult | boolean): LoadEarlierResult 
  * Wait for a seeded locator for the same thread; a reading that never arrives
  * is a retry, never proof the message is absent.
  */
-async function waitForSeededLocator(
-  threadId: string | undefined,
-  deadline: number,
-): Promise<Locator | null> {
-  const waitUntil = Math.min(Date.now() + LOCATE_WAIT_MS, deadline);
+async function waitForSeededLocator(threadId: string | undefined): Promise<Locator | null> {
+  const waitUntil = Date.now() + LOCATE_WAIT_MS;
   for (;;) {
     const candidate = locator;
     // A newer locator re-registers between renders; keep watching through the
@@ -157,12 +156,11 @@ async function waitForSeededLocator(
   }
 }
 
-/** Wait for another reader's page, but never past the walk's own deadline. */
-async function waitForBusyLoad(active: Locator, deadline: number): Promise<void> {
+/** Wait for another reader's page, but never longer than one mount window. */
+async function waitForBusyLoad(active: Locator): Promise<void> {
   if (!active.waitForLoading) return;
-  const budget = Math.max(0, Math.min(LOCATE_WAIT_MS, deadline - Date.now()));
   await new Promise<void>((resolve) => {
-    const timer = globalThis.setTimeout(resolve, budget);
+    const timer = globalThis.setTimeout(resolve, LOCATE_WAIT_MS);
     const settle = () => {
       globalThis.clearTimeout(timer);
       resolve();
@@ -171,12 +169,27 @@ async function waitForBusyLoad(active: Locator, deadline: number): Promise<void>
   });
 }
 
-export async function locateInChat(
+export function locateInChat(
   messageId: string,
   threadId?: string,
   options: { onProgress?: () => void; maxPages?: number } = {},
 ): Promise<LocateOutcome> {
-  const deadline = Date.now() + LOCATE_DEADLINE_MS;
+  // Double-clicking 在聊天中定位 must not start two walks over the same thread.
+  const key = `${threadId ?? ""} ${messageId}`;
+  const pending = inFlightLocates.get(key);
+  if (pending) return pending;
+  const run = walkToMessage(messageId, threadId, options).finally(() => {
+    if (inFlightLocates.get(key) === run) inFlightLocates.delete(key);
+  });
+  inFlightLocates.set(key, run);
+  return run;
+}
+
+async function walkToMessage(
+  messageId: string,
+  threadId: string | undefined,
+  options: { onProgress?: () => void; maxPages?: number },
+): Promise<LocateOutcome> {
   // Check the thread before touching the DOM: a locator for another thread can
   // only expose a stranger's frame, and its "not here" is not "not anywhere".
   if (locator && threadId && locator.threadId !== threadId) return "retry";
@@ -193,7 +206,7 @@ export async function locateInChat(
   if (active.ready && !active.ready()) {
     // Cold open: the first page has not seeded `hasMore` yet. Treating that as
     // "no earlier pages" reported a false miss within a millisecond.
-    const seeded = await waitForSeededLocator(threadId, deadline);
+    const seeded = await waitForSeededLocator(threadId);
     if (!seeded) return "retry";
     active = seeded;
     const adopted = flashMounted(active, messageId);
@@ -204,22 +217,69 @@ export async function locateInChat(
   if (!root()) {
     // The registered frame is remounting. Wait briefly for it instead of
     // paging a thread the view cannot show yet; still never scan the document.
-    const budget = Math.max(0, Math.min(LOCATE_WAIT_MS, deadline - Date.now()));
-    const appeared = await waitForRoot(root, budget);
+    const appeared = await waitForRoot(root);
     if (!appeared) return "retry";
     if (findMessage(messageId, appeared)) {
       return flashMessage(messageId, appeared) ? "located" : "retry";
     }
   }
 
-  const maxPages = options.maxPages ?? LOCATE_MAX_PAGES;
-  /** Wait for a fresh mount, but never overshoot the walk's own deadline. */
-  const mountDeadline = () => Math.min(Date.now() + LOCATE_WAIT_MS, deadline);
+  if (active.loadUntil) return locateById(active, messageId, root, options);
+  return locateByBatches(active, messageId, root, options);
+}
+
+/**
+ * Id-driven walk: no fixed page budget and no timer between pages. Absence is
+ * only reported after the thread itself says there are no earlier pages.
+ */
+async function locateById(
+  active: Locator,
+  messageId: string,
+  root: () => ParentNode | null,
+  options: { onProgress?: () => void },
+): Promise<LocateOutcome> {
+  let outcome = await active.loadUntil!(messageId, { onProgress: options.onProgress });
+  if (locator !== active) return "retry";
+  if (outcome === "busy") {
+    // Another reader (scroll-to-top, the index rail) already has a page in
+    // flight. Wait for it, then look immediately and resume the walk.
+    await waitForBusyLoad(active);
+    if (locator !== active) return "retry";
+    const mountedNow = flashMounted(active, messageId);
+    if (mountedNow) return mountedNow;
+    outcome = await active.loadUntil!(messageId, { onProgress: options.onProgress });
+    if (locator !== active) return "retry";
+  }
+  if (outcome === "missing") return "missing";
+  if (outcome === "found") {
+    // The import lands on a later frame; this wait starts after a known hit.
+    if (await waitForMessage(messageId, root, Date.now() + LOCATE_WAIT_MS)) {
+      return flashMounted(active, messageId) ?? "retry";
+    }
+    return "retry";
+  }
+  // "failed" (or busy twice) says nothing about whether the message exists.
+  return "retry";
+}
+
+/**
+ * Legacy batch walk for locators without `loadUntil`. Keeps `maxPages` only as
+ * an explicit caller guard-rail; running out is ignorance, not absence.
+ */
+async function locateByBatches(
+  active: Locator,
+  messageId: string,
+  root: () => ParentNode | null,
+  options: { onProgress?: () => void; maxPages?: number },
+): Promise<LocateOutcome> {
+  const maxPages = options.maxPages ?? Number.POSITIVE_INFINITY;
+  /** Wait for a fresh mount after a page that may contain the target. */
+  const mountDeadline = () => Date.now() + LOCATE_WAIT_MS;
   let loadedPages = 0;
   let waitedForBusy = false;
   /** True only when the thread itself said there are no earlier pages. */
   let reachedEnd = false;
-  while (loadedPages < maxPages && Date.now() < deadline) {
+  while (loadedPages < maxPages) {
     if (locator !== active) return "retry";
     if (!active.hasMore()) { reachedEnd = true; break; }
     const outcome = normalizeResult(
@@ -227,19 +287,18 @@ export async function locateInChat(
     );
     if (locator !== active) return "retry";
     if (outcome === "busy") {
-      // Another reader (scroll-to-top, the index rail) already has a page in
-      // flight. Wait for it, then look immediately — waiting a full mount
-      // window before asking again was the stall readers felt.
+      // Another reader already has a page in flight. Wait for it, then look
+      // immediately — waiting a full mount window before asking again was the
+      // stall readers felt.
       if (waitedForBusy) return "retry";
       waitedForBusy = true;
-      await waitForBusyLoad(active, deadline);
+      await waitForBusyLoad(active);
       if (locator !== active) return "retry";
       const mountedNow = flashMounted(active, messageId);
       if (mountedNow) return mountedNow;
       // That settle may have been the thread's last page, and assistant-ui only
       // renders a freshly imported repository on later frames. Read `hasMore`
-      // right away and the message looks absent before it is ever drawn. Give
-      // the final page one mount window, clamped to the walk's own deadline.
+      // right away and the message looks absent before it is ever drawn.
       if (!active.hasMore() && await waitForMessage(messageId, root, mountDeadline())) {
         return flashMounted(active, messageId) ?? "retry";
       }
@@ -257,8 +316,8 @@ export async function locateInChat(
     }
   }
   if (locator !== active) return "retry";
-  // A page budget or walk deadline that ran out is ignorance, not absence:
-  // only a confirmed end of the thread may report "missing".
+  // A caller guard-rail that ran out is ignorance, not absence: only a
+  // confirmed end of the thread may report "missing".
   if (!reachedEnd) return "retry";
   return flashMounted(active, messageId) ?? "missing";
 }

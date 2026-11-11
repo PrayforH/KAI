@@ -2153,13 +2153,15 @@ export function AgentThread({
       ready: () => historyPagination.ready,
       hasMore: () => historyPagination.hasMore,
       loadEarlier: historyPagination.loadEarlier,
+      loadUntil: historyPagination.loadUntil,
       waitForLoading: historyPagination.waitForLoading,
       frame: () => frame.current,
     });
     return () => registerHistoryLocator(null);
   }, [
     threadId, historyPagination.ready, historyPagination.hasMore,
-    historyPagination.loadEarlier, historyPagination.waitForLoading,
+    historyPagination.loadEarlier, historyPagination.loadUntil,
+    historyPagination.waitForLoading,
   ]);
   const composerDraftScope = useMemo(
     () => ({ userId, threadId }),

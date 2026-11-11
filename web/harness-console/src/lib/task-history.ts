@@ -14,6 +14,7 @@ import { activityStore } from "./activity-store";
 import { approvalStore } from "./approval-store";
 import { requireAuthenticatedResponse } from "./client-auth";
 import { clearHistoryIndex } from "./history-index";
+import { clearLocatedMessages, readLocatedMessages, rememberThreadMessages } from "./locate-cache";
 import { setThreadReplyReferences } from "./reply-references";
 
 export interface TaskSummary {
@@ -46,6 +47,10 @@ const THREAD_HISTORY_PAGE_RUNS = 10;
 /** Earlier pages trade payload for far fewer round trips while paging back;
  * the latest page keeps its small size so thread open stays fast. */
 export const THREAD_HISTORY_EARLIER_PAGE_RUNS = 30;
+/** A locate jump is a background walk, not a visible page: ask for the largest
+ * page the endpoint serves so 500 runs back costs five round trips, not
+ * seventeen. */
+export const THREAD_HISTORY_LOCATE_PAGE_RUNS = 100;
 const threadHistoryAccumulatedMax = 8;
 
 export interface ThreadHistoryResponse {
@@ -125,10 +130,10 @@ function waitForHistoryPoll(signal: AbortSignal, milliseconds = 500) {
   });
 }
 
-function historyUrl(threadId: string, before?: string) {
+function historyUrl(threadId: string, before?: string, limit?: number) {
   const base = `/api/agui/threads/${encodeURIComponent(threadId)}/history`;
   const query = new URLSearchParams({
-    limit: String(before ? THREAD_HISTORY_EARLIER_PAGE_RUNS : THREAD_HISTORY_PAGE_RUNS),
+    limit: String(limit ?? (before ? THREAD_HISTORY_EARLIER_PAGE_RUNS : THREAD_HISTORY_PAGE_RUNS)),
   });
   if (before) query.set("before", before);
   return `${base}?${query.toString()}`;
@@ -138,6 +143,7 @@ async function loadThreadHistory(
   threadId: string,
   signal?: AbortSignal,
   before?: string,
+  limit?: number,
 ): Promise<ThreadHistoryResponse | null> {
   const isLatestPage = before === undefined;
   if (isLatestPage) {
@@ -152,7 +158,7 @@ async function loadThreadHistory(
 
   function createRequest(): Promise<ThreadHistoryResponse | null> {
     const validator = isLatestPage ? historyValidators.get(threadId) : undefined;
-    return fetch(historyUrl(threadId, before), { cache: "no-store",
+    return fetch(historyUrl(threadId, before, limit), { cache: "no-store",
       ...(validator ? { headers: { "If-None-Match": validator.etag } } : {}),
     })
       .then(requireAuthenticatedResponse)
@@ -252,6 +258,9 @@ export async function loadFullThreadHistory(
       throw new Error((await response.text()) || `HTTP ${response.status}`);
     }
     const history = (await response.json()) as ThreadHistoryResponse;
+    // The drawer has these pages on screen already; remembering them lets a
+    // later 在聊天中定位 jump straight to a message without re-paging.
+    rememberThreadMessages(threadId, history.messages);
     messages.push(...history.messages);
     options.onPage?.(history, page);
     if (!history.has_more || !history.next_cursor) break;
@@ -265,8 +274,10 @@ export function invalidateThreadHistory(threadId: string, options: { keepPages?:
   threadHistorySnapshots.delete(threadId);
   historyValidators.delete(threadId);
   // The drawer's cached index is derived from this history; a new turn or a
-  // branch switch must not keep showing the previous rows.
+  // branch switch must not keep showing the previous rows. The remembered
+  // message pages go with it.
   clearHistoryIndex(threadId);
+  clearLocatedMessages(threadId);
   if (!options.keepPages) resetAccumulatedHistory(threadId);
 }
 
@@ -291,6 +302,13 @@ export type LoadEarlierResult = "loaded" | "busy" | "exhausted" | "failed";
 /** Boolean is the legacy shape; true/false still read as loaded/exhausted. */
 export type LoadEarlierFn = (pages?: number) => Promise<LoadEarlierResult | boolean>;
 
+/**
+ * Outcome of a locate-specific walk. `found` means the message id was seen in
+ * a fetched page (and imported exactly once); `missing` means the walk reached
+ * the thread's real end, not that a budget ran out.
+ */
+export type LocateLoadResult = "found" | "missing" | "busy" | "failed" | "retry";
+
 /** Fresh page copies win, without duplicating messages at a moving page boundary. */
 function mergeHistoryMessages(earlier: ThreadHistoryResponse["messages"], latest: ThreadHistoryResponse["messages"]) {
   const current = new Set(latest.map(message => message.id));
@@ -300,7 +318,7 @@ function mergeHistoryMessages(earlier: ThreadHistoryResponse["messages"], latest
 const accumulatedHistory = new Map<string, AccumulationEntry>();
 const accumulationListeners = new Map<string, Set<() => void>>();
 /** In-flight page requests, so locate can wait instead of declaring "missing". */
-const earlierLoads = new Map<string, Promise<LoadEarlierResult>>();
+const earlierLoads = new Map<string, Promise<LoadEarlierResult | LocateLoadResult>>();
 
 /** Resolves when any in-flight earlier-page request for the thread settles. */
 export function waitForThreadHistoryLoad(threadId: string, timeoutMs = 2_000): Promise<void> {
@@ -363,6 +381,8 @@ export function useThreadHistoryPagination(
   loading: boolean;
   total: number;
   loadEarlier: LoadEarlierFn;
+  /** Walk back by message id instead of blind page batches. */
+  loadUntil: (messageId: string, options?: { onProgress?: () => void }) => Promise<LocateLoadResult>;
   waitForLoading: () => Promise<void>;
 } {
   const [snapshot, setSnapshot] = useState<AccumulationEntry | null>(() =>
@@ -451,12 +471,108 @@ export function useThreadHistoryPagination(
     }
   }, [threadId]);
 
+  /**
+   * 在聊天中定位's walk. Unlike `loadEarlier`, it reads the fetched page's
+   * message ids immediately: when the target is not in that page it keeps
+   * paging with no mount wait at all, and the whole walk imports the thread
+   * exactly once — either on the page that contains the target, or not at all
+   * when the thread really ends. No page budget: the cursor is the only stop.
+   */
+  const loadUntil = useCallback(async (
+    messageId: string,
+    options: { onProgress?: () => void } = {},
+  ): Promise<LocateLoadResult> => {
+    const entry = accumulatedHistory.get(threadId);
+    // No seeded first page yet: absence is unproven.
+    if (!entry) return "retry";
+    if (entry.loading) return "busy";
+
+    // The drawer already has these pages; a cache hit costs one import and no
+    // network at all.
+    const cached = readLocatedMessages<ThreadHistoryResponse["messages"][number]>(threadId, messageId);
+    if (cached) {
+      const latest = accumulatedHistory.get(threadId) ?? entry;
+      accumulatedHistory.set(threadId, {
+        messages: mergeHistoryMessages(cached, latest.messages),
+        nextCursor: latest.nextCursor,
+        hasMore: latest.hasMore,
+        total: Math.max(latest.total, cached.length),
+        loading: false,
+        expanded: true,
+      });
+      publishAccumulatedHistory(threadId);
+      if (activeThread.current !== threadId) return "retry";
+      importRepositoryRef.current(ExportedMessageRepository.fromArray(
+        fromAgUiMessages(accumulatedHistory.get(threadId)?.messages ?? [], { showThinking: true }),
+      ));
+      return "found";
+    }
+
+    if (!entry.nextCursor) return "missing";
+    accumulatedHistory.set(threadId, { ...entry, loading: true });
+    publishAccumulatedHistory(threadId);
+    const request = (async (): Promise<LocateLoadResult> => {
+      let cursor: string | null = entry.nextCursor ?? null;
+      let hasMore = entry.hasMore;
+      let earlier: ThreadHistoryResponse["messages"] = [];
+      let found = false;
+      try {
+        while (cursor) {
+          // A thread switch must not keep paging someone else's history.
+          if (activeThread.current !== threadId) break;
+          const page = await loadThreadHistory(
+            threadId, undefined, cursor, THREAD_HISTORY_LOCATE_PAGE_RUNS,
+          );
+          if (!page) throw new Error("Earlier history is unavailable");
+          earlier = mergeHistoryMessages(page.messages, earlier);
+          found = page.messages.some(message => message.id === messageId);
+          hasMore = page.has_more ?? false;
+          cursor = hasMore ? page.next_cursor ?? null : null;
+          options.onProgress?.();
+          if (found) break;
+        }
+        const latest = accumulatedHistory.get(threadId) ?? entry;
+        accumulatedHistory.set(threadId, {
+          messages: mergeHistoryMessages(earlier, latest.messages),
+          nextCursor: cursor,
+          hasMore,
+          total: latest.total,
+          loading: false,
+          expanded: true,
+        });
+        publishAccumulatedHistory(threadId);
+        // A switched thread is a retry, never a miss: the walk stopped early.
+        if (activeThread.current !== threadId) return "retry";
+        if (!found) return "missing";
+        importRepositoryRef.current(ExportedMessageRepository.fromArray(
+          fromAgUiMessages(accumulatedHistory.get(threadId)?.messages ?? [], { showThinking: true }),
+        ));
+        return "found";
+      } catch (error) {
+        accumulatedHistory.set(threadId, {
+          ...(accumulatedHistory.get(threadId) ?? entry),
+          loading: false,
+        });
+        publishAccumulatedHistory(threadId);
+        console.error("[Harness Console] Failed to walk back to the located message", error);
+        return "failed";
+      }
+    })();
+    earlierLoads.set(threadId, request);
+    try {
+      return await request;
+    } finally {
+      if (earlierLoads.get(threadId) === request) earlierLoads.delete(threadId);
+    }
+  }, [threadId]);
+
   return {
     hasMore: snapshot?.hasMore ?? false,
     ready: snapshot !== null,
     loading: snapshot?.loading ?? false,
     total: snapshot?.total ?? 0,
     loadEarlier,
+    loadUntil,
     waitForLoading: useCallback(() => waitForThreadHistoryLoad(threadId), [threadId]),
   };
 }

@@ -8,6 +8,7 @@ import { ConversationIndex } from "../src/components/conversation-index";
 let host: HTMLDivElement;
 let root: Root;
 let scroll: ReturnType<typeof vi.fn>;
+let turnRectReads = 0;
 function Harness({ id = "task-a", prompts = ["第一问", "第二问", "第三问"], total, loadEarlier = async () => false }: {
   id?: string; prompts?: string[]; total?: number; loadEarlier?: (pages?: number) => Promise<boolean>;
 }) {
@@ -17,7 +18,7 @@ function Harness({ id = "task-a", prompts = ["第一问", "第二问", "第三�
     node.scrollTo = scroll as unknown as HTMLElement["scrollTo"];
     node.getBoundingClientRect = () => ({ top: 10 } as DOMRect);
   }}>{prompts.map((prompt, i) => <article key={id + i} data-turn-id={id + i} data-turn-label={prompt} tabIndex={-1} ref={node => {
-    if (node) node.getBoundingClientRect = () => ({ top: 10 + i * 300 - (node.parentElement?.scrollTop ?? 0) } as DOMRect);
+    if (node) node.getBoundingClientRect = () => { turnRectReads += 1; return { top: 10 + i * 300 - (node.parentElement?.scrollTop ?? 0) } as DOMRect; };
   }}>{prompt}<div data-turn-answer={`关于${prompt}的回答摘要`} /></article>)}</div><ConversationIndex frame={frame} threadId={id} pagination={total === undefined ? undefined : { total, hasMore: total > prompts.length, loadEarlier }} /></div>;
 }
 beforeEach(() => {
@@ -25,7 +26,7 @@ beforeEach(() => {
   vi.stubGlobal("requestAnimationFrame", (fn: FrameRequestCallback) => setTimeout(fn, 0));
   vi.stubGlobal("cancelAnimationFrame", clearTimeout);
   vi.stubGlobal("matchMedia", () => ({ matches: false }));
-  scroll = vi.fn(); host = document.createElement("div"); document.body.append(host); root = createRoot(host);
+  scroll = vi.fn(); turnRectReads = 0; host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
 async function render(props: Parameters<typeof Harness>[0] = {}) { await act(async () => { root.render(<Harness {...props} />); await new Promise(resolve => setTimeout(resolve, 10)); }); }
@@ -79,4 +80,25 @@ it("waits for the turn count and renders every tick at once", async () => {
   expect(host.querySelectorAll("nav button")).toHaveLength(5);
   await render({ prompts: [], total: 0 });
   expect(host.querySelectorAll("nav button")).toHaveLength(5);
+});
+
+it("tracks the active turn without measuring every turn on every scroll", async () => {
+  await render();
+  const viewport = host.querySelector<HTMLElement>(".aui-thread-viewport")!;
+  const buttons = host.querySelectorAll<HTMLButtonElement>("nav button");
+  // Let the mount-time scan (effect + one coalesced mutation frame) settle.
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 40)); });
+  // Offsets were measured once when the turn list was scanned.
+  expect(turnRectReads).toBeGreaterThanOrEqual(3);
+  turnRectReads = 0;
+
+  await act(async () => {
+    viewport.scrollTop = 620;
+    viewport.dispatchEvent(new Event("scroll"));
+    await new Promise(resolve => setTimeout(resolve, 10));
+  });
+
+  // Scroll only compares cached offsets: no layout read per turn.
+  expect(turnRectReads).toBe(0);
+  expect(buttons[2].getAttribute("aria-current")).toBe("location");
 });
