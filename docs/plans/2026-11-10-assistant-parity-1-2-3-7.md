@@ -101,6 +101,27 @@
   `/studio/automation` 均 200，新 chunk 含「记忆待确认 / 确认保存」标记。
 - 提交：`55aa5d86`。
 
+## 79 同步部署与「接管」问题（2026-11-11）
+
+- 镜像按 79 现网基线增量构建，不跨环境复用：
+  `kai/alignment-web:assistant-recall-20261110-v4-79`（FROM 现网 web 镜像 +
+  v4 app）、`kai/alignment-api/worker:memory-fix-20261111-v2-79`
+  （FROM 79 现网 api/worker + 新版 `extraction.py`）。
+- 备份 `compose.before-recall-v4-79.json`；递归 diff 仅 5 处：web/api/worker 的
+  image，以及 api/worker 的 `HARNESS_ASSISTANT_COMPUTER_TARGETS`。
+- 验证：三个容器 healthy；`/`、`/assistant`、`/settings`、`/studio/automation`
+  均 200；线上 chunk 含「记忆待确认 / 确认保存」。79 的提取环境本来已带 `/v1`、
+  自动保存为 true；重排 5 个失败任务后 3 个 completed，剩余 1 个 ValidationError
+  继续退避，历史 45 条 ValidationError / 8 条 AttributeError 未全量回填。
+- 「能看不能接管」根因：`HARNESS_ASSISTANT_COMPUTER_TARGETS` 里 cloud 目标的
+  image 仍是 `c50f2f…`，而注册表当前 `HARNESS_ASSISTANT_COMPUTER_VM_IMAGE`
+  是 `498e0e…`。`ComputerTargetService.view` 用
+  `(provider, image, volume_ref)` 全等匹配 `active_target`，image 不一致导致
+  `active_target=null`；前端拿不到 `binding_key`，轮询抛
+  「电脑已切换，正在重新确认控制状态」，`controlError` 置位后接管按钮禁用。
+  两处 targets 的 cloud image 已改成 `498e0e…`，与注册表一致；当前没有活跃
+  execution lease，接管应恢复，用户需硬刷新加载新 chunk。
+
 ## 待办
 
 - P1b 新建任务仍缺 `POST /objectives` 的 `specialistId` 透传。
