@@ -26,7 +26,7 @@ const routes: TaskModelRoute[] = [
 ];
 
 describe("TaskModelControl", () => {
-  it("shows the Agent default model only once", () => {
+  it("shows 自动 without naming the Agent default model", () => {
     const html = renderToStaticMarkup(
       <TaskModelProvider
         routes={routes}
@@ -38,8 +38,25 @@ describe("TaskModelControl", () => {
       </TaskModelProvider>,
     );
 
-    expect(html.match(/DeepSeek V4 Flash/g)).toHaveLength(1);
+    expect(html).toContain('<option value="" selected="">自动</option>');
+    expect(html).not.toContain("DeepSeek V4 Flash");
     expect(html).toContain("DeepSeek V4 Pro");
+  });
+
+  it("keeps the 自动 label when the Agent default route is unavailable", () => {
+    const html = renderToStaticMarkup(
+      <TaskModelProvider
+        routes={routes}
+        agentDefaultRouteId={null}
+        overrideRouteId={null}
+        onOverrideChange={() => undefined}
+      >
+        <TaskModelControl disabled={false} />
+      </TaskModelProvider>,
+    );
+
+    expect(html).toContain('<option value="" selected="">自动</option>');
+    expect(html).not.toContain("自动 · ");
   });
 
   it("normalizes a stored override that matches the Agent default", () => {
@@ -54,8 +71,8 @@ describe("TaskModelControl", () => {
       </TaskModelProvider>,
     );
 
-    expect(html).toContain('<option value="" selected="">自动 · DeepSeek V4 Flash</option>');
-    // 自动 resolves to the Agent default and says so; the rules live in the title.
+    expect(html).toContain('<option value="" selected="">自动</option>');
+    // The label is just 自动; the rules live in the title.
     expect(html).toContain(">自动<");
     expect(html).toContain("需要读图时切到支持视觉的路由");
     expect(html).not.toContain("仅本次任务");
