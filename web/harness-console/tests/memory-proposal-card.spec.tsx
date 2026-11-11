@@ -3,7 +3,8 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import {
-  MemoryProposalCard, MemoryToolNotice, memoryToolFailure, parseMemoryProposal,
+  MemoryProposalCard, MemoryToolNotice, clearMemoryProposalCache,
+  memoryToolFailure, parseMemoryProposal,
 } from "../src/components/memory-proposal-card";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -14,6 +15,7 @@ afterEach(() => {
   act(() => root.unmount());
   host.replaceChildren();
   root = createRoot(host);
+  clearMemoryProposalCache();
   vi.unstubAllGlobals();
 });
 
@@ -31,14 +33,24 @@ const pendingProposal = {
 
 type Handler = () => Promise<unknown>;
 
+class ApiFailure {
+  constructor(readonly status: number, readonly code: string, readonly message: string) {}
+}
+
+function apiFailure(status: number, code: string, message: string) {
+  return new ApiFailure(status, code, message);
+}
+
 function stubMemoryApi(overrides: { list?: Handler; confirm?: Handler; reject?: Handler } = {}) {
+  const bodies: unknown[] = [];
   const calls = {
     list: vi.fn(overrides.list ?? (async () => [entry])),
     confirm: vi.fn(overrides.confirm ?? (async () => ({ ...entry, status: "active", version: 3 }))),
     reject: vi.fn(overrides.reject ?? (async () => ({ ...entry, status: "rejected", version: 3 }))),
   };
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    if (init?.body) bodies.push(JSON.parse(String(init.body)));
     const handler = url.includes("/confirm")
       ? calls.confirm
       : url.includes("/reject")
@@ -48,6 +60,13 @@ function stubMemoryApi(overrides: { list?: Handler; confirm?: Handler; reject?: 
       const payload = await handler();
       return { ok: true, status: 200, json: async () => payload };
     } catch (cause) {
+      if (cause instanceof ApiFailure) {
+        return {
+          ok: false,
+          status: cause.status,
+          json: async () => ({ error: { code: cause.code, message: cause.message } }),
+        };
+      }
       return {
         ok: false,
         status: 500,
@@ -57,7 +76,7 @@ function stubMemoryApi(overrides: { list?: Handler; confirm?: Handler; reject?: 
       };
     }
   }));
-  return calls;
+  return { ...calls, bodies };
 }
 
 function deferred<T>() {
@@ -223,7 +242,8 @@ it("state error: keeps an unreadable entry actionable with a retry and settings 
 
   expect(host.querySelector('[role="alert"]')?.textContent).toContain("记忆服务不可用");
   expect(host.textContent).toContain("读取失败");
-  expect(host.textContent).toContain("内容暂时取不到");
+  expect(host.textContent).toContain("内容没有读到");
+  expect(host.textContent).toContain("这不代表没有写入");
   expect(button("重试读取")).toBeTruthy();
   expect(host.textContent).toContain("去记忆设置查看");
 });
@@ -232,8 +252,9 @@ it("state not-found: explains a missing entry without leaving the card blank", a
   stubMemoryApi({ list: async () => [] });
   await render(<MemoryProposalCard proposal={pendingProposal} />);
 
-  expect(host.textContent).toContain("未写入");
-  expect(host.textContent).toContain("内容暂时取不到");
+  expect(host.textContent).toContain("未找到");
+  expect(host.textContent).toContain("没有找到这条记忆");
+  expect(host.textContent).toContain("不在当前列表中");
   expect(host.textContent).toContain("去记忆设置查看");
   expect(button("重试读取")).toBeTruthy();
 });
@@ -262,6 +283,132 @@ it("shows an active proposal as already saved", async () => {
 
   expect(host.textContent).toContain("已写入长期记忆");
   expect(host.querySelector("button")).toBeNull();
+});
+
+it("state loading: keeps the reading state while the entry request is in flight", async () => {
+  const pending = deferred<unknown>();
+  stubMemoryApi({ list: () => pending.promise });
+  await act(async () => {
+    root.render(<MemoryProposalCard proposal={pendingProposal} />);
+  });
+
+  expect(host.textContent).toContain("读取中");
+  expect(host.textContent).toContain("正在读取这条记忆的内容…");
+  expect(host.querySelectorAll("button")).toHaveLength(0);
+
+  await act(async () => {
+    pending.resolve([entry]);
+    await pending.promise;
+  });
+  await flush();
+  expect(host.textContent).toContain("待确认");
+});
+
+it("state error: retries a failed refusal instead of dropping it", async () => {
+  let attempt = 0;
+  const api = stubMemoryApi({
+    reject: async () => {
+      attempt += 1;
+      if (attempt === 1) throw new Error("拒绝请求失败");
+      return { ...entry, status: "rejected", version: 3 };
+    },
+  });
+  await render(<MemoryProposalCard proposal={pendingProposal} />);
+
+  await click("不保存");
+  await flush();
+
+  expect(host.textContent).toContain("拒绝失败");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("拒绝失败：拒绝请求失败");
+  expect(button("重试拒绝")).toBeTruthy();
+
+  await click("重试拒绝");
+  await flush();
+
+  expect(api.reject).toHaveBeenCalledTimes(2);
+  expect(host.textContent).toContain("已拒绝这条记忆");
+});
+
+it("state conflict: re-reads the latest version after a 409 and confirms with fresh data", async () => {
+  let listCalls = 0;
+  let confirmCalls = 0;
+  const api = stubMemoryApi({
+    list: async () => {
+      listCalls += 1;
+      return listCalls === 1 ? [entry] : [{ ...entry, version: 3 }];
+    },
+    confirm: async () => {
+      confirmCalls += 1;
+      if (confirmCalls === 1) {
+        throw apiFailure(409, "conflict", "memory entry changed or is not pending");
+      }
+      return { ...entry, status: "active", version: 4 };
+    },
+  });
+  await render(<MemoryProposalCard proposal={pendingProposal} />);
+
+  await click("确认保存");
+  await flush();
+  await flush();
+
+  expect(api.confirm).toHaveBeenCalledTimes(1);
+  expect(listCalls).toBe(2);
+  expect(host.textContent).toContain("已为你刷新");
+  expect(host.textContent).not.toContain("memory entry changed");
+  expect(host.textContent).toContain("待确认");
+  expect(button("确认保存")).toBeTruthy();
+
+  await click("确认保存");
+  await flush();
+
+  expect(api.confirm).toHaveBeenCalledTimes(2);
+  const versions = api.bodies.map(body => (body as { expectedVersion?: number }).expectedVersion);
+  expect(versions).toEqual([2, 3]);
+  expect(host.textContent).toContain("已写入长期记忆");
+});
+
+it("state error: drops the previous entry when a replaced proposal cannot be read", async () => {
+  let failing = false;
+  stubMemoryApi({
+    list: async () => {
+      if (failing) throw new Error("记忆服务不可用");
+      return [entry];
+    },
+  });
+  await render(<MemoryProposalCard proposal={pendingProposal} />);
+  expect(host.textContent).toContain("团队名单：张三、李四、王五");
+
+  failing = true;
+  await act(async () => {
+    root.render(<MemoryProposalCard proposal={{
+      entryId: "memory_2", status: "pending", requiresConfirmation: true,
+    }} />);
+  });
+  await flush();
+
+  expect(host.textContent).not.toContain("团队名单：张三、李四、王五");
+  expect(host.textContent).toContain("内容没有读到");
+  expect(button("重试读取")).toBeTruthy();
+});
+
+it("shares one entries read across cards mounted together", async () => {
+  const second = { ...entry, entryId: "memory_2", content: "第二条记忆" };
+  const api = stubMemoryApi({ list: async () => [entry, second] });
+  await act(async () => {
+    root.render(
+      <div>
+        <MemoryProposalCard proposal={pendingProposal} />
+        <MemoryProposalCard proposal={{
+          entryId: "memory_2", status: "pending", requiresConfirmation: true,
+        }} />
+      </div>,
+    );
+  });
+  await flush();
+
+  expect(api.list).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain("团队名单：张三、李四、王五");
+  expect(host.textContent).toContain("第二条记忆");
 });
 
 it("tells the user why an untrusted run wrote nothing", async () => {
