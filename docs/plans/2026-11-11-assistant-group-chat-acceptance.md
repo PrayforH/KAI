@@ -107,3 +107,26 @@ P0 判定：A–L 全部达到预期。
   与 `kai/alignment-web:groupchat-20261111-116`，bundle 在
   `/data/kai-assistant-116-20261109/bundle-groupchat-20261111`；DB 仍为 `0072`，
   compose 未改、未发布。
+
+## 116 预发布（2026-11-12）
+
+- 入口：`https://172.20.109.116:3543/assistant`。
+- API：`kai/alignment-api:groupchat-p0-20261112-116`（revision=`ade80304`）。
+  复用 116 本机已构建、已确认含 `_group_history_text` 与 0073/0074 迁移的
+  `groupchat-20261111-116` 并打新标签，未重造；构建/启动均为离线
+  （FROM 116 本机基线镜像，`pull_policy: never`）。
+- Web：`kai/alignment-web:groupchat-rail-20261112-116`（revision=`f3f84e6c`）。
+  bundle 在 `/data/kai-assistant-116-20261109/bundle-groupchat-20261112`，
+  FROM `kai/alignment-web:116-v10-20261111`，`docker build --pull=false
+  --network=none` 离线构建。
+- Worker：未改，仍为 `kai/alignment-worker:116-v10-20261111`。对照 79 群聊线
+  实际只滚 api/web（79 现场 api=`groupchat-p1h-20261111-79`、
+  web=`groupchat-rail-20261112-79`、worker=`memory-provenance-20261111-79`
+  未改），116 同样只滚 api/web。
+- DB：`0072` → `0074`（0073 群表、0074 未读/表情），alembic upgrade 成功；
+  升级前备份 `before-groupchat-p0-20261112.dump`（116 本机，不在仓库）。
+- Compose 备份：`compose.private.before-groupchat-p0-20261112.json`
+  （116 本机，不在仓库）。
+- 冒烟：`/assistant` 200、`/api/auth/config` 200、api `/healthz` 200；页面 JS
+  含「创建群聊」「创建 Bot」「正在加载子助理」「子助理加载失败」；
+  api/web healthy，worker/https 及云电脑服务未改。
