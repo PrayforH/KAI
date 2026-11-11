@@ -956,26 +956,6 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
           </button>
         </div>
       ) : null}
-      {runView?.phase === "queued" && runView.queueReason ? (
-        <div className="composer-queue-notice" role="status">
-          <span>
-            <strong>{runView.queueReason}</strong>
-            {runView.blockedByRunId ? ` · ${runView.blockedByRunId}` : ""}
-          </span>
-          {pendingApproval.visible && pendingApproval.details ? (
-            <button
-              type="button"
-              onClick={() =>
-                document
-                  .querySelector<HTMLElement>(".composer-approval-slot")
-                  ?.scrollIntoView({ behavior: "smooth", block: "center" })
-              }
-            >
-              直达审批
-            </button>
-          ) : null}
-        </div>
-      ) : null}
       {pendingApproval.visible && pendingApproval.details ? (
         <div className="composer-approval-slot">
           <ApprovalCard
