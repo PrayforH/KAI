@@ -441,6 +441,35 @@ def test_a_desktop_server_error_pauses_input_without_closing(
     state["active"] = False
 
 
+@pytest.mark.parametrize("status", [401, 403])
+def test_a_desktop_denial_keeps_the_session_and_pauses_input(
+    gateway: tuple[TestClient, dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+) -> None:
+    """An explicit 4xx is no control, not a broken session: keep the picture."""
+
+    client, state = gateway
+    state["script"] = ECHO_SCRIPT
+    state["control"] = "human"
+    monkeypatch.setattr(viewer, "AUTH_GRACE_SECONDS", 0.1)
+    with client.websocket_connect("/computer/desktop", headers={"origin": ORIGIN}) as socket:
+        assert socket.receive_bytes() == VERSION
+        socket.send_bytes(HANDSHAKE)
+        drain(socket, HANDSHAKE)
+        time.sleep(0.1)
+        state["statuses"] = {"/v1/studio/assistant/computer/desktop": status}
+        time.sleep(0.3)
+        socket.send_bytes(KEY_A_DOWN + UPDATE_REQUEST)
+        drain(socket, UPDATE_REQUEST)  # input dropped, session still alive
+        state["statuses"] = {}
+        time.sleep(0.3)
+        socket.send_bytes(KEY_A_DOWN)
+        drain(socket, KEY_A_DOWN)
+        assert status_json(client)["input_frames"]["keyboard"] == 1
+    state["active"] = False
+
+
 def test_a_pause_releases_a_held_key_and_pointer(
     gateway: tuple[TestClient, dict[str, Any]],
 ) -> None:
@@ -504,7 +533,9 @@ def test_a_pause_releases_a_qemu_extended_key() -> None:
     ]
 
 
-@pytest.mark.parametrize("status,expected", [(429, 503), (500, 503), (403, 403)])
+@pytest.mark.parametrize(
+    "status,expected", [(429, 503), (500, 503), (401, 403), (403, 403)]
+)
 def test_status_separates_denial_from_an_unconfirmed_login(
     gateway: tuple[TestClient, dict[str, Any]], status: int, expected: int
 ) -> None:
@@ -551,6 +582,44 @@ def test_the_input_probe_still_requires_a_login(
     query = f"/computer/status?probe=1&viewer_id={VIEWER_ID}"
     assert client.get(query).status_code == 200
     client.cookies.clear()
+    assert client.get(query).status_code == 403
+
+
+def test_the_input_probe_rejects_a_cookie_it_never_verified(
+    gateway: tuple[TestClient, dict[str, Any]],
+) -> None:
+    """A cookie that exists is not a login: the probe must ask the API."""
+
+    client, state = gateway
+    query = f"/computer/status?probe=1&viewer_id={VIEWER_ID}"
+    assert client.get(query).status_code == 200
+    client.cookies.set("harness_access_token", "not-a-session")
+    assert client.get(query).status_code == 403
+
+
+def test_the_input_probe_separates_unconfirmed_from_denied(
+    gateway: tuple[TestClient, dict[str, Any]],
+) -> None:
+    client, state = gateway
+    query = f"/computer/status?probe=1&viewer_id={VIEWER_ID}"
+    # Nothing was checked yet, so this asks the API, which cannot answer.
+    state["statuses"] = {"/v1/auth/me": 503}
+    assert client.get(query).status_code == 503
+    state["statuses"] = {"/v1/auth/me": 401}
+    assert client.get(query).status_code == 403
+
+
+def test_a_probe_login_answer_expires(
+    gateway: tuple[TestClient, dict[str, Any]], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reusing a login answer is bounded; a revoked session is noticed again."""
+
+    client, state = gateway
+    monkeypatch.setattr(viewer, "AUTH_PROBE_CACHE_SECONDS", 0.05)
+    query = f"/computer/status?probe=1&viewer_id={VIEWER_ID}"
+    assert client.get(query).status_code == 200
+    state["active"] = False
+    time.sleep(0.1)
     assert client.get(query).status_code == 403
 
 
@@ -658,6 +727,41 @@ def test_a_claimed_fast_drain_is_still_granted(
     state["active"] = False
 
 
+def test_a_claim_arms_only_the_generation_it_named(
+    gateway: tuple[TestClient, dict[str, Any]], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A claim is a licence for the epoch it asked for, not "the next one"."""
+
+    client, state = gateway
+    state["script"] = ECHO_SCRIPT
+    state.update(control="human", epoch=1)
+    monkeypatch.setattr(viewer, "AUTH_CHECK_SECONDS", 5.0)
+    with client.websocket_connect(
+        f"/computer/desktop?viewer_id={VIEWER_ID}", headers={"origin": ORIGIN}
+    ) as socket:
+        assert socket.receive_bytes() == VERSION
+        socket.send_bytes(HANDSHAKE)
+        drain(socket, HANDSHAKE)
+        time.sleep(0.1)  # the immediate poll grants epoch 1
+        assert probe(client)["grant"]["input_allowed"] is True
+        time.sleep(0.05)
+        # This tab claims the takeover it asked for at epoch 2, but the lease
+        # lands on epoch 3: the stale claim must not hand it epoch 3.
+        state["epoch"] = 2
+        probe(client, state="human", epoch=2, claim=True)
+        state["epoch"] = 3
+        deadline = time.monotonic() + 2
+        while True:
+            grant = probe(client, state="human", epoch=3)["grant"]
+            if grant["epoch"] == 3:
+                break
+            assert time.monotonic() < deadline, "the socket never observed epoch 3"
+            time.sleep(0.02)
+        assert grant["input_allowed"] is False
+        assert grant["blocked"] is True
+    state["active"] = False
+
+
 def test_a_pending_takeover_is_confirmed_on_the_fast_cadence(
     gateway: tuple[TestClient, dict[str, Any]], monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -676,6 +780,55 @@ def test_a_pending_takeover_is_confirmed_on_the_fast_cadence(
         drain(socket, HANDSHAKE + KEY_A_DOWN)
         assert status_json(client)["input_frames"]["keyboard"] == 1
     state["active"] = False
+
+
+def test_a_registry_claim_is_bound_to_its_epoch() -> None:
+    registry = viewer.GrantRegistry()
+    assert registry.claim("slot|tab", 3) is True
+    # Another generation moves past it: the claim is dropped, not banked.
+    assert registry.take_claim("slot|tab", 4) is False
+    assert registry.take_claim("slot|tab", 3) is False
+    # A claim without a generation would be a licence for whichever arrived.
+    assert registry.claim("slot|tab", None) is False
+    assert registry.take_claim("slot|tab", 0) is False
+
+
+def test_a_registry_claim_expires() -> None:
+    registry = viewer.GrantRegistry(claim_ttl=0.01)
+    assert registry.claim("slot|tab", 3) is True
+    time.sleep(0.02)
+    assert registry.take_claim("slot|tab", 3) is False
+
+
+def test_a_registry_prunes_abandoned_claims_and_grants() -> None:
+    """A tab that vanished must not grow the map without bound."""
+
+    registry = viewer.GrantRegistry(claim_ttl=0.01)
+    assert registry.claim("slot|tab", 3) is True
+    registry.observe(
+        "slot|gone",
+        state="human",
+        epoch=1,
+        input_allowed=True,
+        blocked=False,
+        valid_until=time.monotonic() + 0.01,
+    )
+    assert len(registry) == 2
+    time.sleep(0.02)
+    assert len(registry) == 0
+    # A live socket is never pruned by idleness: its watcher writes each poll.
+    registry.observe(
+        "slot|live",
+        state="human",
+        epoch=1,
+        input_allowed=True,
+        blocked=False,
+        valid_until=time.monotonic() + 0.01,
+        connection=object(),
+    )
+    time.sleep(0.02)
+    assert len(registry) == 1
+    assert registry.peek("slot|live").epoch == 1
 
 
 def test_client_extensions_are_aligned_but_never_forwarded():

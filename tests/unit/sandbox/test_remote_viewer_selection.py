@@ -224,6 +224,24 @@ def test_target_server_errors_keep_the_session(selected_viewer, monkeypatch, sta
     assert opened == ["cloud"]
 
 
+@pytest.mark.parametrize("status", [401, 403])
+def test_a_target_denial_ends_the_session(selected_viewer, status):
+    """An explicit denial of the target list is a logout, not a retry."""
+
+    client, selected, opened = selected_viewer
+    with client.websocket_connect(
+        "/computer/desktop?target=cloud", headers={"origin": ORIGIN}
+    ) as socket:
+        assert socket.receive_bytes() == b"RFB 003.008\n"
+        handshake = b"RFB 003.008\n" + b"\x01\x01"
+        socket.send_bytes(handshake)
+        assert socket.receive_bytes() == handshake
+        time.sleep(0.1)  # the first poll confirms the selection
+        selected["statuses"] = {"/v1/studio/assistant/computer/targets": status}
+        assert socket.receive()["type"] == "websocket.close"
+    assert opened == ["cloud"]
+
+
 @pytest.mark.parametrize("status", [429, 500])
 def test_ownership_server_errors_keep_the_slot_session(selected_viewer, monkeypatch, status):
     """Losing the ownership answer for a while must not end the picture."""
@@ -244,7 +262,8 @@ def test_ownership_server_errors_keep_the_slot_session(selected_viewer, monkeypa
     assert opened == ["cloud"]
 
 
-def test_losing_ownership_still_ends_the_slot_session(selected_viewer):
+@pytest.mark.parametrize("status", [401, 403])
+def test_losing_ownership_still_ends_the_slot_session(selected_viewer, status):
     """An explicit denial is different from a server-side failure."""
 
     client, selected, opened = selected_viewer
@@ -252,5 +271,5 @@ def test_losing_ownership_still_ends_the_slot_session(selected_viewer):
     with client.websocket_connect(url, headers={"origin": ORIGIN}) as socket:
         assert socket.receive_bytes() == b"RFB 003.008\n"
         time.sleep(0.1)
-        selected["statuses"] = {"/v1/studio/assistant/computer/desktops": 403}
+        selected["statuses"] = {"/v1/studio/assistant/computer/desktops": status}
         assert socket.receive()["type"] == "websocket.close"

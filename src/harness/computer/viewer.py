@@ -7,6 +7,7 @@ and membership; browser input never selects a host, key, user, or command.
 
 import asyncio
 import contextlib
+import hashlib
 import ipaddress
 import logging
 import os
@@ -14,6 +15,7 @@ import re
 import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -35,6 +37,14 @@ AUTH_PENDING_CHECK_SECONDS = 0.2
 # How long input may keep flowing on the last confirmed poll. A slow or failed
 # poll pauses input instead of closing the session; viewing continues.
 AUTH_GRACE_SECONDS = 3
+# The input probe is read on every frame while a takeover is confirmed, so it
+# cannot call the API each time. A login answer is reused for this long — and
+# only after it was actually obtained, never from the mere presence of a cookie.
+AUTH_PROBE_CACHE_SECONDS = 5
+# A takeover claim races a drain that is normally one or two polls long. It
+# arms exactly the generation its tab asked for, and only for this window: a
+# tab that went away must not leave a licence behind.
+CLAIM_TTL_SECONDS = 5
 RFB_FRAME_LIMIT = 65536
 
 # Client message kinds. "negotiate" traffic (handshake, pixel format,
@@ -59,6 +69,133 @@ class ControlUnknownError(RuntimeError):
     A live session treats it as unknown, keeps viewing, and lets the grace
     window pause input; only an explicit denial ends the session.
     """
+
+
+@dataclass
+class Grant:
+    """What one browser tab's socket was last allowed to send."""
+
+    state: str = "observe"
+    epoch: int = 0
+    input_allowed: bool = False
+    blocked: bool = False
+    valid_until: float = 0.0
+    connection: Any = None
+    # The generation this tab asked to take over, if it did. A claim is a
+    # licence for that one epoch only.
+    claim_epoch: int | None = None
+    claim_until: float = 0.0
+
+
+class GrantRegistry:
+    """Per-tab input grants and takeover claims, in one place.
+
+    A claim only means anything next to the grant it arms, so they share an
+    entry: kept apart, a claim outlived the generation it was made for and
+    would hand the tab whichever epoch came next, while tab keys accumulated
+    without bound. Claims expire, entries with no live socket and no future
+    claim are pruned on every mutation, and a claim names the epoch its tab
+    observed. All callers run on the event loop, so no lock is needed.
+    """
+
+    def __init__(self, *, claim_ttl: float = CLAIM_TTL_SECONDS) -> None:
+        self._grants: dict[str, Grant] = {}
+        self._claim_ttl = claim_ttl
+
+    def __len__(self) -> int:
+        self._prune(time.monotonic())
+        return len(self._grants)
+
+    def observe(
+        self,
+        key: str,
+        *,
+        state: str,
+        epoch: int,
+        input_allowed: bool,
+        blocked: bool,
+        valid_until: float,
+        connection: Any = None,
+    ) -> None:
+        """Record what the watcher last confirmed for this tab."""
+
+        now = time.monotonic()
+        self._prune(now)
+        grant = self._grants.setdefault(key, Grant())
+        grant.state = state
+        grant.epoch = epoch
+        grant.input_allowed = input_allowed
+        grant.blocked = blocked
+        grant.valid_until = valid_until
+        grant.connection = connection
+
+    def peek(self, key: str) -> Grant:
+        """The tab's last confirmed grant, without creating one for a stranger."""
+
+        self._prune(time.monotonic())
+        return self._grants.get(key) or Grant()
+
+    def claim(self, key: str, epoch: int | None) -> bool:
+        """Remember that this tab asked for the takeover at `epoch`."""
+
+        if epoch is None:
+            # Without the generation it observed there is nothing to arm; a
+            # blanket "the next one" is exactly the licence this removes.
+            return False
+        now = time.monotonic()
+        self._prune(now)
+        grant = self._grants.setdefault(key, Grant())
+        grant.claim_epoch = epoch
+        grant.claim_until = now + self._claim_ttl
+        return True
+
+    def take_claim(self, key: str, epoch: int) -> bool:
+        """Consume the claim if, and only if, it names this generation."""
+
+        grant = self._grants.get(key)
+        if grant is None or grant.claim_epoch is None:
+            return False
+        if grant.claim_epoch != epoch or grant.claim_until <= time.monotonic():
+            # A claim for another (or an expired) generation is stale: it is
+            # dropped rather than kept to arm something later.
+            self.discard_claim(key)
+            return False
+        self.discard_claim(key)
+        return True
+
+    def discard_claim(self, key: str) -> None:
+        grant = self._grants.get(key)
+        if grant is not None:
+            grant.claim_epoch = None
+            grant.claim_until = 0.0
+
+    def drop(self, key: str, *, connection: Any = None) -> None:
+        """Forget a tab's grant, unless the key already belongs to another socket."""
+
+        grant = self._grants.get(key)
+        if grant is None or (connection is not None and grant.connection is not connection):
+            return
+        self._grants.pop(key, None)
+
+    def _prune(self, now: float) -> None:
+        for key, grant in list(self._grants.items()):
+            if (
+                grant.connection is None
+                and grant.valid_until <= now
+                and grant.claim_until <= now
+            ):
+                del self._grants[key]
+
+
+def _epoch_param(raw: str | None) -> int | None:
+    """The lease generation a browser says it observed, when it is a number."""
+
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
 
 
 # Fixed client message spans after the handshake, by RFB type. Besides the
@@ -414,12 +551,13 @@ def create_viewer_app(
     input_connections: dict[str, WebSocket] = {}
     # What each live connection last confirmed, so a browser asking whether its
     # own socket can type gets an answer that matches the input gate instead of
-    # the server's lease. Keyed by slot and browser tab.
-    grants: dict[str, dict[str, Any]] = {}
-    # Tabs that asked for a takeover. A drain short enough to skip the pending
-    # state otherwise looks like a generation this socket never observed, and
-    # the tab that requested it would be refused its own new grant.
-    claims: set[str] = set()
+    # the server's lease. Keyed by slot and browser tab; also carries that
+    # tab's takeover claim so a drain short enough to skip the pending state
+    # still grants the generation it asked for.
+    grants = GrantRegistry()
+    # A login answer obtained for the probe, keyed by a digest of the session
+    # token. Never populated from the presence of a cookie.
+    sessions_checked: dict[str, tuple[bool, float]] = {}
     # A browser reading control state while a takeover is in flight is a hint
     # to re-read the lease now instead of waiting for the steady cadence.
     hurry: set[asyncio.Event] = set()
@@ -495,6 +633,34 @@ def create_viewer_app(
         except (httpx.HTTPError, ValueError, AttributeError):
             return None
 
+    def session_token(request: Request) -> str | None:
+        token = request.cookies.get(settings.cookie_name)
+        if not token and request.headers.get("authorization", "").startswith("Bearer "):
+            token = request.headers["authorization"][7:].strip()
+        return token
+
+    async def probe_login(token: str | None) -> bool | None:
+        """The login answer the input probe may use.
+
+        The probe runs while a takeover is being confirmed, so it cannot make
+        an API call on every read. It reuses a recent answer, but only one
+        that was actually obtained from the API: a cookie the session never
+        verified is a denial, never a login.
+        """
+
+        if not token:
+            return False
+        now = time.monotonic()
+        digest = hashlib.sha256(token.encode()).hexdigest()
+        cached = sessions_checked.get(digest)
+        if cached is not None and cached[1] > now:
+            return cached[0]
+        verified = await authorized(token)
+        if verified is not None:
+            for stale in [key for key, (_, until) in sessions_checked.items() if until <= now]:
+                sessions_checked.pop(stale, None)
+            sessions_checked[digest] = (verified, now + AUTH_PROBE_CACHE_SECONDS)
+        return verified
 
     async def owns_desktop(token: str | None, slot: str) -> bool | None:
         if not token or re.fullmatch(r"desktop_[a-f0-9]{24}", slot) is None:
@@ -522,24 +688,25 @@ def create_viewer_app(
 
     async def status(request: Request) -> dict[str, object]:
         if request.query_params.get("probe") == "1":
-            # A cheap, process-local answer for the browser's input gate: it
-            # must not touch the API, because it is read while a takeover is
-            # being confirmed. It reports what this particular socket was
-            # allowed to send, not what the lease says.
-            if not (
-                request.cookies.get(settings.cookie_name)
-                or request.headers.get("authorization", "").startswith("Bearer ")
-            ):
+            # A cheap answer for the browser's input gate: it reports what
+            # this particular socket was allowed to send, not what the lease
+            # says. The login behind it is still checked for real; only the
+            # most recent answer is reused, so the hot path stays off the API
+            # without accepting an unverified cookie.
+            verified = await probe_login(session_token(request))
+            if verified is False:
                 raise HTTPException(403, "Desktop access requires its owner login")
+            if verified is None:
+                raise HTTPException(503, "Desktop access cannot be confirmed right now")
             key = grant_key(
                 request.query_params.get("desktop"),
                 request.query_params.get("viewer_id"),
             )
-            grant = grants.get(key) or {"state": "observe", "epoch": 0}
+            grant = grants.peek(key)
             if request.query_params.get("claim") == "1":
-                # This tab asked for the takeover; remember that so a drain
-                # faster than one poll still grants it.
-                claims.add(key)
+                # This tab asked for the takeover; bind it to the generation
+                # it observed so a drain faster than one poll still grants it.
+                grants.claim(key, _epoch_param(request.query_params.get("epoch")))
             # The browser just read the lease; if it names a state or
             # generation this socket has not observed, wake the watcher so it
             # sees the handoff (or an already-landed generation) immediately
@@ -547,27 +714,23 @@ def create_viewer_app(
             expected_state = request.query_params.get("state")
             expected_epoch = request.query_params.get("epoch")
             if (
-                (expected_state is not None and expected_state != str(grant["state"]))
-                or (expected_epoch is not None and expected_epoch != str(grant["epoch"]))
+                (expected_state is not None and expected_state != grant.state)
+                or (expected_epoch is not None and expected_epoch != str(grant.epoch))
             ):
                 hurry_polls()
-            valid = bool(grant.get("input_allowed")) and time.monotonic() < float(
-                grant.get("valid_until", 0)
-            )
+            valid = grant.input_allowed and time.monotonic() < grant.valid_until
             return {
                 "enabled": True,
                 "mode": "preview",
-                "control": {"state": grant["state"], "epoch": grant["epoch"]},
+                "control": {"state": grant.state, "epoch": grant.epoch},
                 "grant": {
-                    "state": grant["state"],
-                    "epoch": grant["epoch"],
+                    "state": grant.state,
+                    "epoch": grant.epoch,
                     "input_allowed": valid,
-                    "blocked": bool(grant.get("blocked")),
+                    "blocked": grant.blocked,
                 },
             }
-        token = request.cookies.get(settings.cookie_name)
-        if not token and request.headers.get("authorization", "").startswith("Bearer "):
-            token = request.headers["authorization"][7:]
+        token = session_token(request)
         verified = await authorized(token)
         if verified is False:
             raise HTTPException(403, "Desktop access requires its owner login")
@@ -903,25 +1066,26 @@ def create_viewer_app(
                                     granted_epoch = None
                                 else:
                                     epoch = int(control.get("epoch") or 0)
+                                    # A claim only arms the generation its tab
+                                    # named: a stale one cannot hand it a
+                                    # later takeover it never asked for.
                                     if granted_epoch is None:
-                                        if key in claims:
+                                        if grants.take_claim(key, epoch):
                                             # A takeover this tab requested:
                                             # it may arrive while the socket is
                                             # still blocked by an earlier one.
-                                            claims.discard(key)
                                             granted_epoch = epoch
                                             grant_blocked = False
                                         elif not grant_blocked:
                                             granted_epoch = epoch
                                     elif granted_epoch != epoch:
                                         granted_epoch = None
-                                        if key in claims:
+                                        if grants.take_claim(key, epoch):
                                             # This tab asked for the handoff
                                             # and the drain was too quick to
                                             # observe pending; grant the
                                             # generation it requested instead
                                             # of treating it as someone else's.
-                                            claims.discard(key)
                                             granted_epoch = epoch
                                         else:
                                             # The generation moved under this
@@ -950,7 +1114,7 @@ def create_viewer_app(
                                 # A later takeover is a new, observed transition.
                                 grant_blocked = False
                                 if control["state"] != "takeover_pending":
-                                    claims.discard(key)
+                                    grants.discard_claim(key)
                             valid_until = time.monotonic() + AUTH_GRACE_SECONDS
                             is_open = (
                                 control["state"] == "human"
@@ -966,14 +1130,15 @@ def create_viewer_app(
                             # What this socket may actually send, for the
                             # browser's input gate. Unknown answers keep the
                             # previous entry, exactly like `control`.
-                            grants[key] = {
-                                "state": control["state"],
-                                "epoch": int(control["epoch"]),
-                                "input_allowed": is_open,
-                                "blocked": grant_blocked,
-                                "valid_until": valid_until,
-                                "connection": websocket,
-                            }
+                            grants.observe(
+                                key,
+                                state=str(control["state"]),
+                                epoch=int(control["epoch"]),
+                                input_allowed=is_open,
+                                blocked=grant_blocked,
+                                valid_until=valid_until,
+                                connection=websocket,
+                            )
                             if control["state"] == "takeover_pending":
                                 delay = AUTH_PENDING_CHECK_SECONDS
                             # The grace window is three seconds; a poll that
@@ -987,9 +1152,8 @@ def create_viewer_app(
                                 )
                     finally:
                         hurry.discard(hurry_event)
-                        claims.discard(key)
-                        if (grants.get(key) or {}).get("connection") is websocket:
-                            grants.pop(key, None)
+                        grants.discard_claim(key)
+                        grants.drop(key, connection=websocket)
 
                 tasks = [
                     asyncio.create_task(job(), name=job.__name__)
