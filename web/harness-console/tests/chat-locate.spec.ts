@@ -117,6 +117,25 @@ it("waits for an in-flight page instead of reporting a missing message", async (
   expect(loadEarlier).toHaveBeenCalledTimes(2);
 });
 
+it("waits for a remounting frame instead of paging a hidden thread", async () => {
+  const frame = document.createElement("div");
+  const message = document.createElement("div");
+  message.setAttribute("data-message-id", "assistant-run_old");
+  message.scrollIntoView = vi.fn();
+  frame.append(message);
+  let attached = false;
+  const loadEarlier = vi.fn(async () => "loaded" as const);
+  registerHistoryLocator({
+    threadId: "thread_1",
+    hasMore: () => true,
+    loadEarlier,
+    frame: () => (attached ? frame : null),
+  });
+  setTimeout(() => { attached = true; }, 20);
+  await expect(locateInChat("assistant-run_old", "thread_1")).resolves.toBe("located");
+  expect(loadEarlier).not.toHaveBeenCalled();
+});
+
 it("locates twice in a row without turning the second click into a miss", async () => {
   let call = 0;
   const loadEarlier = vi.fn(async () => {

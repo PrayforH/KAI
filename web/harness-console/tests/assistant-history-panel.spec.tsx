@@ -46,6 +46,14 @@ async function render() {
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
 }
 
+async function waitForText(text: string, timeoutMs = 3_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!host.textContent?.includes(text)) {
+    if (Date.now() >= deadline) throw new Error(`did not render: ${text}`);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+  }
+}
+
 async function click(text: string) {
   await act(async () => {
     const button = [...host.querySelectorAll("button")].find(item => item.textContent === text);
@@ -222,7 +230,8 @@ it("asks the reader to retry instead of claiming a message is missing while hist
     frame: () => null,
   });
   await click("在聊天中定位");
-  expect(host.textContent).toContain("聊天记录仍在加载，请稍后重试");
+  // A remounting frame is waited for briefly, so the notice lands asynchronously.
+  await waitForText("聊天记录仍在加载，请稍后重试");
   expect(host.textContent).not.toContain("未在当前会话中找到这条消息");
 });
 

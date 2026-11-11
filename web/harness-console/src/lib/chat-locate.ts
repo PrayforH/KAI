@@ -95,6 +95,20 @@ async function waitForMessage(
   }
 }
 
+/** Wait for a registered frame to exist again; null means it stayed gone. */
+async function waitForRoot(
+  root: () => ParentNode | null,
+  budgetMs = LOCATE_WAIT_MS,
+): Promise<ParentNode | null> {
+  const deadline = Date.now() + budgetMs;
+  for (;;) {
+    const node = root();
+    if (node) return node;
+    if (Date.now() >= deadline) return null;
+    await raf();
+  }
+}
+
 /** The frame that actually rendered this locator's thread. */
 function rootFor(registered: Locator | null): ParentNode | null {
   if (typeof document === "undefined") return null;
@@ -119,14 +133,23 @@ export async function locateInChat(
   // not keep paging the new thread on behalf of the old one.
   const active = locator;
   const root = () => rootFor(active);
+  const deadline = Date.now() + LOCATE_DEADLINE_MS;
   const current = root();
   if (current && findMessage(messageId, current)) {
     return flashMessage(messageId, current) ? "located" : "missing";
   }
   if (!active || (threadId && active.threadId !== threadId)) return "missing";
+  if (!current) {
+    // The registered frame is remounting. Wait briefly for it instead of
+    // paging a thread the view cannot show yet; still never scan the document.
+    const appeared = await waitForRoot(root, Math.min(LOCATE_WAIT_MS, LOCATE_DEADLINE_MS));
+    if (!appeared) return "retry";
+    if (findMessage(messageId, appeared)) {
+      return flashMessage(messageId, appeared) ? "located" : "retry";
+    }
+  }
 
   const maxPages = options.maxPages ?? LOCATE_MAX_PAGES;
-  const deadline = Date.now() + LOCATE_DEADLINE_MS;
   /** Wait for a fresh mount, but never overshoot the walk's own deadline. */
   const mountDeadline = () => Math.min(Date.now() + LOCATE_WAIT_MS, deadline);
   let loadedPages = 0;
