@@ -54,5 +54,18 @@ P0 判定：A–L 全部达到预期。
   `kai/alignment-api:groupchat-p2-20261111-79` / `kai/alignment-web:groupchat-p2-20261111-79`，
   DB 迁移至 0074。自验：建群后未读 0；未进入群时收到主助理回复，未读 1；
   进入（调用 read）后清零；对消息加 🎉 后刷新仍在；非白名单 emoji 返回 409。
+- 回归脚本：`5f4b7ed0`，新增 `scripts/verify_group_chat_79.py`，按 A–L 主路径
+  可重复执行；读取已有 Cookie 罐，不含账号密码。本机运行通过。
+- 入群前历史：`ade80304`，群回复会把最近 20 条群记录带入本次运行，新成员由此
+  看到入群前上下文。79 现场为 API
+  `kai/alignment-api:groupchat-p1h-20261111-79`（revision=`ade80304`，healthy），
+  Web 仍为 `kai/alignment-web:groupchat-p2-20261111-79`（revision=`5d45987e`，
+  healthy；这两笔无需重滚前端）。用“紫罗兰”暗号实测：先发消息，再 @编码协同
+  追问，回复“紫罗兰”；部署后再次跑 A–L 回归，全部通过。
 - Compose 备份：`compose.private.before-groupchat-20261111.json`、
-  `compose.private.before-groupchat-p2-20261111.json`（79 本机，不在仓库）。
+  `compose.private.before-groupchat-p2-20261111.json`、
+  `compose.private.before-groupchat-p1history-20261111.json`（79 本机，不在仓库）。
+- 116：仅用 116 现有镜像离线构建 `kai/alignment-api:groupchat-20261111-116`
+  与 `kai/alignment-web:groupchat-20261111-116`，bundle 在
+  `/data/kai-assistant-116-20261109/bundle-groupchat-20261111`；DB 仍为 `0072`，
+  compose 未改、未发布。
