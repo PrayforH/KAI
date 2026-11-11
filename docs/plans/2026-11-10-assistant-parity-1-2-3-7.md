@@ -203,6 +203,28 @@
   「当前画面仅观看」。116 的 viewer 仍跑旧 api 镜像，接管租约 TTL 仍是 300s；
   若要和 79 一致（90s + 排障日志），下次连同 api/viewer 一起重建。
 
+## MiniMax H3 视频与 H3-Image 接入 79 / 116（2026-11-11）
+
+- 目标：把已在 79 配置的 3 个视频路由（MiniMax-Hailuo-2.3 / H3 / H3-Max）与最新的
+  `MiniMax-H3-Image` 图像模型接入两个环境。
+- 方式：走模型控制面 `PUT /v1/studio/models/{route_id}`（服务令牌 + `expectedRevision`），
+  密钥沿用环境里的 `HARNESS_MINIMAX_M3_API_KEY`——与 79 现网视频路由是同一把
+  `sk-cp-` 套餐 Key（逐路由密文摘要一致），没有新增明文配置。
+- 79：3 个视频路由原本就在；新增 `minimax-h3-image`
+  （`image_generation` / `openai_images` / bearer / `https://api.minimaxi.com/v1` /
+  `MiniMax-H3-Image`），catalog revision 58 → 59。
+- 116：原本没有视频或图像路由；新增 `minimax-hailuo-video`、`minimax-h3-official`、
+  `minimax-h3-max-official`、`minimax-h3-image`，catalog revision 2 → 6。
+- 验证：`POST /models/{route_id}/test` 全部 200。79：视频额度 3/3、H3 / H3-Max
+  「服务已就绪」、图像 8.1s。116：H3 / H3-Max 约 0.5s、视频额度 4.2s
+  （首次查询遇到一次 409，立即重试即成功，判定为上游瞬时错误）、图像 7.6s。
+  `POST /models/minimax-h3-image/images` 在 79 / 116 各生成 1 张，均返回 OSS URL
+  （7.1s / 10.9s）。
+- 口径：图像路由的 `/test` 本身就是一次真实生成（1024×1024 一张）；视频未提交付费任务，
+  仍以读取任务列表判定连通。两个环境的 `GET /v1/studio/catalog` 均已列出新路由。
+  116 没有既有 `deployment_environments`，未改动任何 Agent 环境策略；79 的历史策略里
+  的旧路由清单也未动。
+
 ## 待办
 
 - P1b 新建任务仍缺 `POST /objectives` 的 `specialistId` 透传。

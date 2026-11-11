@@ -20,7 +20,18 @@
 使用模拟响应验证生成、查询、下载和参数错误；真实接口仅做读取任务列表的连接检查。
 H3 / H3-Max 官方要求按量付费 API，任务列表可读取不代表余额或所有生成权限已确认。
 
+## 图像模型 MiniMax-H3-Image（2026-11-11 接入）
+
+| 路由 | 模型 | 接口 |
+| --- | --- | --- |
+| `minimax-h3-image` | MiniMax-H3-Image | `POST /v1/images/generations`（OpenAI 兼容，Bearer） |
+
+请求字段 `model`、`prompt`、`size`、`n`、`response_format`，响应取 `data[].url`。
+模型管理里按 `image_generation` 类型展示，不参与对话路由；连接测试会真实生成一张
+1024×1024 图片。79 与 116 均已配置，密钥沿用套餐 Key。
+
 官方依据：
 - https://platform.minimax.io/docs/api-reference/video-generation-v2-create
 - https://platform.minimax.io/docs/api-reference/video-generation-v2-query
 - https://platform.minimax.io/docs/api-reference/video-generation-t2v
+- https://platform.minimax.io/docs/api-reference/image-generation-h3-generations
