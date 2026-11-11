@@ -148,9 +148,14 @@
   `kai/computer-viewer:session-log-20261111`（备份 `compose.before-desktop-pane5.json`），
   容器 healthy，`/`、`/assistant`、`/settings`、`/studio/automation`、
   `/assistant/computer` 均 200，线上 chunk 含「当前画面仅观看」与 `kai.desktop.viewer`。
+- 116 同步：web 升到 `kai/alignment-web:desktop-pane5-20261111-116`
+  （备份 `skill-loop/compose.before-desktop-pane5.json`，递归 diff 仅 web image），
+  api/worker 镜像不变；五条路由 200，BUILD_ID 与本地构建一致，chunk 含
+  「当前画面仅观看」。116 的 viewer 仍跑旧 api 镜像，接管租约 TTL 仍是 300s；
+  若要和 79 一致（90s + 排障日志），下次连同 api/viewer 一起重建。
 
 ## 待办
 
 - P1b 新建任务仍缺 `POST /objectives` 的 `specialistId` 透传。
 - 能力 4/5/6（主动提炼 Skill、群聊 @ 后代办、项目资产打通）需要后端事件或上下文注入。
-- 79 Web 部署仍缺可用 SSH 凭据。
+- 116 的 api/viewer 仍未带 90s 接管租约与 viewer 排障日志（当前只有 web 修复）。
