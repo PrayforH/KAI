@@ -401,3 +401,25 @@ async def test_mark_group_read_clears_unread() -> None:
     )
     cleared = await service.mark_assistant_group_read("t", "u", group.group_id)
     assert cleared.unread_count == 0
+
+
+@pytest.mark.asyncio
+async def test_group_history_includes_messages_from_before_join() -> None:
+    service, repo, _ = _service()
+    group = await service.create_assistant_group("t", "u", name="历史群")
+    now = datetime(2026, 11, 11, tzinfo=UTC)
+    repo.messages[group.group_id].append(
+        AssistantGroupMessage(
+            messageId="gmsg_old",
+            groupId=group.group_id,
+            author=AssistantGroupMessageAuthor.USER,
+            authorName="我",
+            text="入群前的约定",
+            status="completed",
+            createdAt=now,
+        )
+    )
+    history = await service._group_history_text(
+        "t", "u", group.group_id, "gmsg_new"
+    )
+    assert "入群前的约定" in history

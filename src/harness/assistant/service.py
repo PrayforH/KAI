@@ -2824,10 +2824,14 @@ class AssistantService:
             for item in group.members
             if item.kind is not GroupMemberKind.CREATOR
         )
+        history = await self._group_history_text(
+            tenant_id, user_id, group.group_id, user_message.message_id
+        )
         body = (
             f"【群聊「{group.name}」】成员：{roster}。"
             f"你在群里以「{member.name}」的身份回复；只回复这条消息，不要冒充其他成员。\n"
-            f"{prompt}"
+            + (f"入群前的群聊记录（供参考）：\n{history}\n" if history else "")
+            + prompt
         )
         creation = await self._agui.create_run_with_result(
             tenant_id=tenant_id,
@@ -2862,6 +2866,35 @@ class AssistantService:
             thread_id=thread_id,
             reply_to_message_id=user_message.message_id,
         )
+
+    async def _group_history_text(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        current_message_id: str,
+    ) -> str:
+        """把最近群记录带进每次群内运行；新成员由此看到入群前上下文。"""
+        rows = await self.repository.list_group_messages(
+            tenant_id, user_id, group_id, limit=20
+        )
+        previous = [
+            row
+            for row in rows
+            if row.message_id != current_message_id
+            and row.author is not AssistantGroupMessageAuthor.SYSTEM
+        ]
+        if not previous:
+            return ""
+        hydrated = await asyncio.gather(
+            *(self._hydrate_group_message(tenant_id, row) for row in previous)
+        )
+        lines = [
+            f"{message.author_name}：{message.text.strip()[:300]}"
+            for message in hydrated
+            if message.text.strip()
+        ]
+        return "\n".join(lines)[-4_000:]
 
     async def _append_group_notice(
         self,
