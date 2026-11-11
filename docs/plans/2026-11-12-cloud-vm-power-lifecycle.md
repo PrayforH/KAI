@@ -78,6 +78,10 @@
   - 清扫只为 `vm-computer` 发请求，远程电脑被跳过，0 表示关闭。
 - 控制面：`/v1/computer/vm/suspend` 未带 secret 返回 403；未声明 VM 时
   带 secret 返回 404。
+- 集成（`tests/integration/storage/test_computer_vm_host_postgres.py`，
+  真实数据库行锁与租约）：空闲停机成功并标记 `suspended`、容器仍在；
+  未够闲、执行中、人工接管、桌面 `starting` 均拒绝停机；下一次执行从
+  `suspended` 唤醒成功。
 - 手工（部署后）：
   1. 把空闲阈值临时调小（如 120s），启动一个 VM 并让它空转；
   2. 观察日志/DB：状态转 `suspended`，`docker inspect` 显示容器存在但

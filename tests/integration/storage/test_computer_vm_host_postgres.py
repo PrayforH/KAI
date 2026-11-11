@@ -6,16 +6,22 @@ lease purposes and host-operation locking are real.
 """
 
 import json
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
 import pytest
 
 from harness.computer.control_server import ControllerSettings
-from harness.computer.models import ComputerLease
+from harness.computer.models import ComputerLease, ComputerState
 from harness.computer.registry import ComputerRegistry
+from harness.computer.storage import (
+    AssistantComputerRow,
+    ComputerDesktopLeaseRow,
+    ComputerDesktopRow,
+)
 from harness.computer.vm_host import VmComputerLifecycle, VmComputerSpec
+from harness.core.errors import ConflictError
 from tests.integration.storage.conftest import DatabaseFixture
 
 BASE = "sha256:" + "b" * 64
@@ -54,6 +60,7 @@ def docker_mock(state: dict[str, Any]) -> httpx.AsyncClient:
             state["inspect"]["State"]["Running"] = True
             return httpx.Response(204)
         if request.method == "POST" and path == f"/containers/{NAME}/stop":
+            state["inspect"]["State"]["Running"] = False
             return httpx.Response(204)
         if request.method == "DELETE" and path == f"/containers/{NAME}":
             state["exists"] = False
@@ -194,6 +201,153 @@ async def test_reset_stops_the_vm_when_the_guest_is_unreachable(
     reference = await host.lifecycle(token, "reset")
     assert reference is None  # physically stopped, disks untouched
     assert state["exists"] is False
+
+
+async def started_computer(database: DatabaseFixture, state: dict[str, Any]) -> VmComputerLifecycle:
+    """An adopted VM whose first start is confirmed: idle and attached."""
+
+    host = await lifecycle(database, state)
+    token = await host.registry.claim_start("tenant-a", "user-a", owner="worker-fixture")
+    await host.registry.complete_start(token, provider_ref=CONTAINER)
+    return host
+
+
+async def backdate_activity(database: DatabaseFixture, idle_seconds: float) -> None:
+    """Make the configured idle window already elapsed for the fixture VM."""
+
+    from sqlalchemy import update
+
+    moment = datetime.now(UTC) - timedelta(seconds=idle_seconds + 60)
+    async with database[1].begin() as db:
+        await db.execute(
+            update(AssistantComputerRow)
+            .where(
+                AssistantComputerRow.tenant_id == "tenant-a",
+                AssistantComputerRow.user_id == "user-a",
+            )
+            .values(last_active_at=moment)
+        )
+
+
+@pytest.mark.asyncio
+async def test_idle_vm_is_halted_in_place_and_marked_suspended(
+    database: DatabaseFixture, gate_stub: type[FakeGate]
+) -> None:
+    state: dict[str, Any] = {"exists": True, "inspect": inspect_payload(running=True)}
+    host = await started_computer(database, state)
+    await backdate_activity(database, 1800)
+    reference = await host.suspend_idle("tenant-a", "user-a", idle_seconds=1800)
+    assert reference == CONTAINER
+    assert state["inspect"]["State"]["Running"] is False
+    assert state["exists"] is True  # a DELETE would have removed the container
+    assert (await host.registry.get("tenant-a", "user-a")).state is ComputerState.SUSPENDED
+
+
+@pytest.mark.asyncio
+async def test_recently_used_vm_is_not_halted(
+    database: DatabaseFixture, gate_stub: type[FakeGate]
+) -> None:
+    state: dict[str, Any] = {"exists": True, "inspect": inspect_payload(running=True)}
+    host = await started_computer(database, state)
+    with pytest.raises(ConflictError, match="not idle long enough"):
+        await host.suspend_idle("tenant-a", "user-a", idle_seconds=1800)
+    assert state["inspect"]["State"]["Running"] is True
+    assert (await host.registry.get("tenant-a", "user-a")).state is ComputerState.IDLE
+
+
+@pytest.mark.asyncio
+async def test_a_busy_execution_keeps_the_vm_running(
+    database: DatabaseFixture, gate_stub: type[FakeGate]
+) -> None:
+    state: dict[str, Any] = {"exists": True, "inspect": inspect_payload(running=True)}
+    host = await started_computer(database, state)
+    await host.registry.claim_execution(
+        "tenant-a", "user-a", owner="run-fixture", run_id="run-a", session_id="session-a"
+    )
+    with pytest.raises(ConflictError, match="not idle"):
+        await host.suspend_idle("tenant-a", "user-a", idle_seconds=0.1)
+    assert state["inspect"]["State"]["Running"] is True
+
+
+@pytest.mark.asyncio
+async def test_an_active_takeover_keeps_the_vm_running(
+    database: DatabaseFixture, gate_stub: type[FakeGate]
+) -> None:
+    state: dict[str, Any] = {"exists": True, "inspect": inspect_payload(running=True)}
+    host = await started_computer(database, state)
+    await backdate_activity(database, 1800)
+    moment = datetime.now(UTC)
+    async with database[1].begin() as db:
+        db.add(
+            ComputerDesktopLeaseRow(
+                tenant_id="tenant-a",
+                user_id="user-a",
+                desktop_id="vm",
+                computer_id="computer_" + "c" * 32,
+                state="human",
+                owner="user-a",
+                epoch=1,
+                revision=1,
+                expires_at=moment + timedelta(minutes=5),
+                created_at=moment,
+                updated_at=moment,
+            )
+        )
+    with pytest.raises(ConflictError, match="desktop control is active"):
+        await host.suspend_idle("tenant-a", "user-a", idle_seconds=1800)
+    assert state["inspect"]["State"]["Running"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_starting_desktop_keeps_the_vm_running(
+    database: DatabaseFixture, gate_stub: type[FakeGate]
+) -> None:
+    state: dict[str, Any] = {"exists": True, "inspect": inspect_payload(running=True)}
+    host = await started_computer(database, state)
+    await backdate_activity(database, 1800)
+    moment = datetime.now(UTC)
+    async with database[1].begin() as db:
+        db.add(
+            ComputerDesktopRow(
+                tenant_id="tenant-a",
+                user_id="user-a",
+                specialist_id="specialist-a",
+                desktop_id="desktop_" + "e" * 24,
+                computer_id="computer_" + "c" * 32,
+                state="starting",
+                display=None,
+                unix_user=None,
+                vnc_socket=None,
+                profile_ref=None,
+                workspace_ref=None,
+                image=None,
+                epoch=1,
+                revision=1,
+                last_active_at=moment,
+                created_at=moment,
+                updated_at=moment,
+            )
+        )
+    with pytest.raises(ConflictError, match="starting or busy"):
+        await host.suspend_idle("tenant-a", "user-a", idle_seconds=1800)
+    assert state["inspect"]["State"]["Running"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_suspended_vm_is_woken_by_the_next_execution(
+    database: DatabaseFixture, gate_stub: type[FakeGate]
+) -> None:
+    state: dict[str, Any] = {"exists": True, "inspect": inspect_payload(running=True)}
+    host = await started_computer(database, state)
+    await backdate_activity(database, 1800)
+    await host.suspend_idle("tenant-a", "user-a", idle_seconds=1800)
+    token = await host.registry.claim_execution(
+        "tenant-a", "user-a", owner="run-fixture", run_id="run-a", session_id="session-a"
+    )
+    reference = await host.lifecycle(token, "wake")
+    assert reference == CONTAINER
+    assert state["inspect"]["State"]["Running"] is True
+    assert state["exists"] is True
 
 
 async def start_execution(sessions: Any, registry: ComputerRegistry) -> ComputerLease:
