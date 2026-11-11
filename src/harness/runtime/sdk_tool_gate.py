@@ -76,6 +76,9 @@ _TRUST_PRECEDENCE = {
 }
 
 
+_MIN_USER_QUOTE_CHARS = 4
+
+
 def _user_quote_matches(arguments: object, prompt: object) -> bool:
     """True when a memory proposal quotes the user's own message verbatim.
 
@@ -83,6 +86,8 @@ def _user_quote_matches(arguments: object, prompt: object) -> bool:
     turn untrusted, including preferences the user typed themselves. Requiring
     a verbatim quote from the user restores the provenance the tool call would
     otherwise lack; text from a web page or tool output still fails to match.
+    Quotes shorter than ``_MIN_USER_QUOTE_CHARS`` are ignored so an injected
+    page cannot satisfy the check with a single common character.
     """
 
     if not isinstance(arguments, dict) or not isinstance(prompt, str) or not prompt.strip():
@@ -91,7 +96,7 @@ def _user_quote_matches(arguments: object, prompt: object) -> bool:
     if not isinstance(quote, str):
         return False
     quote = quote.strip()
-    if not quote:
+    if len(quote) < _MIN_USER_QUOTE_CHARS:
         return False
     for candidate in (quote, quote.strip("\"'“”‘’「」『』")):
         if candidate and candidate in prompt:

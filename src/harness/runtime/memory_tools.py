@@ -44,12 +44,15 @@ async def _propose_memory(arguments: dict[str, Any]) -> dict[str, Any]:
     # only when this is a verbatim copy of the user's own words. Record it with
     # the entry so later readers can see where the memory came from.
     evidence = arguments.get("evidence_quote")
-    if not isinstance(evidence, str) or not evidence.strip():
+    if not isinstance(evidence, str) or len(evidence.strip()) < 4:
         return {
             "content": [
                 {
                     "type": "text",
-                    "text": "evidence_quote must quote the user's own words",
+                    "text": (
+                        "evidence_quote must quote at least 4 characters of the "
+                        "user's own words"
+                    ),
                 }
             ],
             "isError": True,
@@ -177,7 +180,7 @@ propose_memory_tool = SdkMcpTool(
         "type": "object",
         "properties": {
             "content": {"type": "string", "minLength": 1, "maxLength": 4000},
-            "evidence_quote": {"type": "string", "minLength": 1, "maxLength": 500},
+            "evidence_quote": {"type": "string", "minLength": 4, "maxLength": 500},
             "memory_type": {"type": "string", "enum": ["preference", "fact", "entity", "decision"]},
             "conditions": {"type": "string", "maxLength": 500},
             "supersedes": {"type": "string"},

@@ -109,7 +109,7 @@
   同会话里只要发生过一次 `WebSearch` / `WebFetch`，后续所有工具都按 UNTRUSTED 处理；
   策略层拿不到「这句话是谁说的」，只能整段拒绝。
 - 改法（出处校验）：
-  - `propose_memory` 新增必填 `evidence_quote`（1–500 字），描述里写明必须是用户原话、
+  - `propose_memory` 新增必填 `evidence_quote`（4–500 字；单字引文不判定为出处），描述里写明必须是用户原话、
     不得取自网页或工具输出；`memory_tools` 校验后随提案写入 `evidence`。
   - `SdkToolGate.pre_tool_use` 在判定前做逐字比对：`evidence_quote` 是
     `run.input["prompt"]`（用户本轮输入）的子串时才把**策略视角**的

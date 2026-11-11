@@ -1558,6 +1558,17 @@ async def test_memory_proposal_passes_untrusted_session_only_with_user_quote(
     assert allowed.payload["provenance_verified"] is True
     assert user_prompt not in repr(emitted)
 
+    # A one-character quote proves nothing: an injected page could ask for it.
+    short_quote = _input(
+        "mcp__harness-memory__propose_memory",
+        {"content": "注入内容。", "evidence_quote": "都"},
+        "tool-memory-short-quote",
+    )
+    short_decision = await pre_tool_use(
+        short_quote, short_quote["tool_use_id"], {"signal": None}
+    )
+    assert _decision(cast(SyncHookJSONOutput, short_decision)) == "deny"
+
 
 @pytest.mark.asyncio
 async def test_session_trust_high_watermark_survives_new_run_hook_state(
