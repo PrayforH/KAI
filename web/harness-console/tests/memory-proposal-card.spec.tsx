@@ -3,8 +3,8 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import {
-  MemoryProposalCard, MemoryToolNotice, clearMemoryProposalCache,
-  memoryToolFailure, parseMemoryProposal,
+  MEMORY_PROPOSAL_CACHE_LIMIT, MemoryProposalCard, MemoryToolNotice,
+  clearMemoryProposalCache, memoryProposalCacheSize, memoryToolFailure, parseMemoryProposal,
 } from "../src/components/memory-proposal-card";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -409,6 +409,51 @@ it("shares one entries read across cards mounted together", async () => {
   expect(api.list).toHaveBeenCalledTimes(1);
   expect(host.textContent).toContain("团队名单：张三、李四、王五");
   expect(host.textContent).toContain("第二条记忆");
+});
+
+it("bounds the entry cache and re-reads an evicted entry", async () => {
+  const entries = Array.from({ length: MEMORY_PROPOSAL_CACHE_LIMIT + 2 }, (_, index) => ({
+    ...entry,
+    entryId: `memory_${index}`,
+    content: `记忆 ${index}`,
+  }));
+  const api = stubMemoryApi({ list: async () => entries });
+  const proposalFor = (entryId: string) => ({
+    entryId, status: "pending" as const, requiresConfirmation: true,
+  });
+
+  await act(async () => {
+    root.render(
+      <div>
+        {entries.map(item => (
+          <MemoryProposalCard key={item.entryId} proposal={proposalFor(item.entryId)} />
+        ))}
+      </div>,
+    );
+  });
+  await flush();
+
+  expect(memoryProposalCacheSize()).toBe(MEMORY_PROPOSAL_CACHE_LIMIT);
+  expect(api.list).toHaveBeenCalledTimes(1);
+
+  // The two oldest ids were evicted, so revisiting one reads the list again.
+  act(() => root.render(<div />));
+  await flush();
+  await act(async () => {
+    root.render(<MemoryProposalCard proposal={proposalFor(entries[0].entryId)} />);
+  });
+  await flush();
+  expect(api.list).toHaveBeenCalledTimes(2);
+  expect(memoryProposalCacheSize()).toBe(MEMORY_PROPOSAL_CACHE_LIMIT);
+
+  // The newest id is still cached, so revisiting it makes no new request.
+  act(() => root.render(<div />));
+  await flush();
+  await act(async () => {
+    root.render(<MemoryProposalCard proposal={proposalFor(entries[entries.length - 1].entryId)} />);
+  });
+  await flush();
+  expect(api.list).toHaveBeenCalledTimes(2);
 });
 
 it("tells the user why an untrusted run wrote nothing", async () => {

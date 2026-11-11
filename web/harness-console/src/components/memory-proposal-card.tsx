@@ -137,9 +137,21 @@ function errorMessage(cause: unknown, fallback: string): string {
 /** One card exists per proposal, and every card knows only its entry id.
  *  Cards on screen share a single entries request, and repeated mounts of the
  *  same entry reuse the resolved value instead of fetching the whole list
- *  again. `force` bypasses the cache after a conflict or a failed read. */
+ *  again. `force` bypasses the cache after a conflict or a failed read.
+ *  The cache is bounded: a long SPA session must not keep one promise per
+ *  entry id forever, so inserting past the limit evicts the oldest entry. */
+export const MEMORY_PROPOSAL_CACHE_LIMIT = 128;
+
 let entriesInFlight: Promise<MemoryEntry[]> | null = null;
 const entryLoads = new Map<string, Promise<MemoryEntry | null>>();
+
+function trimEntryCache(): void {
+  while (entryLoads.size > MEMORY_PROPOSAL_CACHE_LIMIT) {
+    const oldest = entryLoads.keys().next();
+    if (oldest.done) return;
+    entryLoads.delete(oldest.value);
+  }
+}
 
 function listEntriesOnce(): Promise<MemoryEntry[]> {
   if (!entriesInFlight) {
@@ -164,7 +176,13 @@ function loadEntryOnce(entryId: string, force: boolean): Promise<MemoryEntry | n
       throw cause;
     });
   entryLoads.set(entryId, request);
+  trimEntryCache();
   return request;
+}
+
+/** Cached read count, bounded by MEMORY_PROPOSAL_CACHE_LIMIT. */
+export function memoryProposalCacheSize(): number {
+  return entryLoads.size;
 }
 
 /** Drop cached reads; used by tests and after an out-of-band memory change. */
