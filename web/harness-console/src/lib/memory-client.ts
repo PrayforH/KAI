@@ -57,6 +57,21 @@ export interface MemoryPolicy {
   retention: MemoryRetention | null;
 }
 
+/** An API failure keeps the HTTP status and machine code, so callers can tell
+ *  an optimistic-concurrency conflict from any other failed request. The
+ *  message is still the server's own and must not be shown as-is. */
+export class MemoryApiError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+
+  constructor(message: string, status: number, code: string | null = null) {
+    super(message);
+    this.name = "MemoryApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
 function errorMessage(payload: unknown, fallback: string) {
   if (payload && typeof payload === "object" && "error" in payload) {
     const error = payload.error;
@@ -65,6 +80,16 @@ function errorMessage(payload: unknown, fallback: string) {
     }
   }
   return fallback;
+}
+
+function errorCode(payload: unknown): string | null {
+  if (payload && typeof payload === "object" && "error" in payload) {
+    const error = payload.error;
+    if (error && typeof error === "object" && "code" in error && typeof error.code === "string") {
+      return error.code;
+    }
+  }
+  return null;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -76,7 +101,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     let payload: unknown;
     try { payload = await response.json(); } catch { payload = null; }
-    throw new Error(errorMessage(payload, `记忆服务请求失败（${response.status}）`));
+    throw new MemoryApiError(
+      errorMessage(payload, `记忆服务请求失败（${response.status}）`),
+      response.status,
+      errorCode(payload),
+    );
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
