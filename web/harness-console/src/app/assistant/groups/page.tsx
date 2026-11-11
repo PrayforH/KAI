@@ -10,9 +10,11 @@ import {
   createAssistantGroup,
   listAssistantGroupMessages,
   listAssistantGroups,
+  markAssistantGroupRead,
   postAssistantGroupMessage,
   removeAssistantGroupMember,
   setAssistantGroupReplyAs,
+  toggleAssistantGroupReaction,
   type AssistantGroup,
   type GroupMessage,
   type Specialist,
@@ -21,6 +23,7 @@ import styles from "./groups.module.css";
 
 const PRIMARY_MEMBER_ID = "primary";
 const PERSONAL_THREAD = "kai-personal-assistant-v1";
+const REACTION_EMOJIS = ["👍", "❤️", "😂", "🎉", "👀"];
 
 function timeLabel(value: string): string {
   const date = new Date(value);
@@ -45,8 +48,10 @@ export default function AssistantGroupsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [memberToAdd, setMemberToAdd] = useState("");
+  const [pickerFor, setPickerFor] = useState<string | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const seenCounts = useRef<Record<string, number>>({});
 
   const selected = useMemo(
     () => groups.find((group) => group.groupId === selectedId) ?? null,
@@ -112,8 +117,16 @@ export default function AssistantGroupsPage() {
         if (!cancelled) setLoading(false);
       }
     })();
+    const timer = window.setInterval(() => {
+      void listAssistantGroups()
+        .then((list) => {
+          if (!cancelled) setGroups(list);
+        })
+        .catch(() => undefined);
+    }, 5000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, []);
 
@@ -129,6 +142,22 @@ export default function AssistantGroupsPage() {
         if (!cancelled) {
           setMessages(list);
           setError(null);
+          const seen = seenCounts.current[selectedId];
+          // 首次进入或群里有新消息时清未读；轮询无变化不写库。
+          if (seen === undefined || list.length > seen) {
+            seenCounts.current[selectedId] = list.length;
+            void markAssistantGroupRead(selectedId)
+              .then(() => {
+                setGroups((current) =>
+                  current.map((group) =>
+                    group.groupId === selectedId
+                      ? { ...group, unreadCount: 0 }
+                      : group,
+                  ),
+                );
+              })
+              .catch(() => undefined);
+          }
         }
       } catch (reason) {
         if (!cancelled) {
@@ -247,6 +276,35 @@ export default function AssistantGroupsPage() {
     composerRef.current?.focus();
   };
 
+  const handleReaction = async (message: GroupMessage, emoji: string) => {
+    setPickerFor(null);
+    const next = message.reactions.includes(emoji)
+      ? message.reactions.filter((item) => item !== emoji)
+      : [...message.reactions, emoji];
+    setMessages((current) =>
+      current.map((item) =>
+        item.messageId === message.messageId ? { ...item, reactions: next } : item,
+      ),
+    );
+    try {
+      const result = await toggleAssistantGroupReaction(
+        message.groupId,
+        message.messageId,
+        emoji,
+      );
+      setMessages((current) =>
+        current.map((item) =>
+          item.messageId === message.messageId
+            ? { ...item, reactions: result.reactions }
+            : item,
+        ),
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "表情操作失败");
+      void refreshMessages(message.groupId);
+    }
+  };
+
   const mentionTargets = useMemo(
     () => [
       ...(primaryMember ? [primaryMember] : []),
@@ -298,7 +356,14 @@ export default function AssistantGroupsPage() {
                 }`}
                 onClick={() => setSelectedId(group.groupId)}
               >
-                <strong>{group.name}</strong>
+                <strong>
+                  {group.name}
+                  {group.unreadCount > 0 && (
+                    <span className={styles.unreadBadge}>
+                      {group.unreadCount > 99 ? "99+" : group.unreadCount}
+                    </span>
+                  )}
+                </strong>
                 <span>
                   {group.members.length} 位成员
                   {!group.primaryPresent ? " · 主助理已移出" : ""}
@@ -438,6 +503,49 @@ export default function AssistantGroupsPage() {
                           </span>
                         )}
                       </div>
+                      {!system && (
+                        <div className={styles.reactionRow}>
+                          {message.reactions.map((emoji) => (
+                            <button
+                              key={emoji}
+                              type="button"
+                              className={`${styles.reactionChip} ${styles.reactionChipOn}`}
+                              title="取消这个表情"
+                              onClick={() => void handleReaction(message, emoji)}
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                          <button
+                            type="button"
+                            className={styles.reactionAdd}
+                            aria-label="添加表情"
+                            title="添加表情"
+                            onClick={() =>
+                              setPickerFor((current) =>
+                                current === message.messageId
+                                  ? null
+                                  : message.messageId,
+                              )
+                            }
+                          >
+                            ☺
+                          </button>
+                          {pickerFor === message.messageId && (
+                            <span className={styles.reactionPicker}>
+                              {REACTION_EMOJIS.map((emoji) => (
+                                <button
+                                  key={emoji}
+                                  type="button"
+                                  onClick={() => void handleReaction(message, emoji)}
+                                >
+                                  {emoji}
+                                </button>
+                              ))}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

@@ -174,6 +174,8 @@ export type AssistantGroup = {
   creatorUserId: string;
   primaryPresent: boolean;
   replyAs: string | null;
+  lastReadAt: string | null;
+  unreadCount: number;
   members: GroupMember[];
   createdAt: string;
   updatedAt: string;
@@ -187,6 +189,7 @@ export type GroupMessage = {
   text: string;
   runId: string | null;
   replyToMessageId: string | null;
+  reactions: string[];
   status: "running" | "waiting" | "completed" | "failed" | "stopped";
   createdAt: string;
 };
@@ -247,5 +250,25 @@ export async function postAssistantGroupMessage(
     `groups/${encodeURIComponent(groupId)}/messages`,
     "POST",
     { text, clientMessageId },
+  );
+}
+export async function markAssistantGroupRead(
+  groupId: string,
+): Promise<AssistantGroup> {
+  return assistantRequest<AssistantGroup>(
+    `groups/${encodeURIComponent(groupId)}/read`,
+    "POST",
+    {},
+  );
+}
+export async function toggleAssistantGroupReaction(
+  groupId: string,
+  messageId: string,
+  emoji: string,
+): Promise<{ reactions: string[] }> {
+  return assistantRequest<{ reactions: string[] }>(
+    `groups/${encodeURIComponent(groupId)}/messages/${encodeURIComponent(messageId)}/reactions`,
+    "POST",
+    { emoji },
   );
 }

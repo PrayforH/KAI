@@ -895,6 +895,10 @@ class GroupMessageRequest(StudioModel):
     )
 
 
+class GroupReactionRequest(StudioModel):
+    emoji: str = Field(min_length=1, max_length=16)
+
+
 @router.get("/groups")
 async def list_assistant_groups(identity: Reader, assistant: Service) -> list[AssistantGroup]:
     return await assistant.list_assistant_groups(identity.tenant_id, identity.user_id)
@@ -925,6 +929,33 @@ async def update_assistant_group(
     return await assistant.set_assistant_group_reply_as(
         identity.tenant_id, identity.user_id, group_id, reply_as=body.reply_as
     )
+
+
+@router.post("/groups/{group_id}/read")
+async def mark_assistant_group_read(
+    group_id: str, identity: Writer, assistant: Service
+) -> AssistantGroup:
+    return await assistant.mark_assistant_group_read(
+        identity.tenant_id, identity.user_id, group_id
+    )
+
+
+@router.post("/groups/{group_id}/messages/{message_id}/reactions")
+async def toggle_assistant_group_reaction(
+    group_id: str,
+    message_id: str,
+    body: GroupReactionRequest,
+    identity: Writer,
+    assistant: Service,
+) -> dict[str, list[str]]:
+    reactions = await assistant.toggle_assistant_group_reaction(
+        identity.tenant_id,
+        identity.user_id,
+        group_id,
+        message_id,
+        emoji=body.emoji,
+    )
+    return {"reactions": list(reactions)}
 
 
 @router.post("/groups/{group_id}/members", status_code=201)

@@ -445,6 +445,8 @@ class AssistantGroup(StudioModel):
     creator_user_id: str = Field(alias="creatorUserId")
     primary_present: bool = Field(alias="primaryPresent")
     reply_as: str | None = Field(default=None, alias="replyAs")
+    last_read_at: AwareDatetime | None = Field(default=None, alias="lastReadAt")
+    unread_count: int = Field(default=0, alias="unreadCount")
     members: tuple[AssistantGroupMember, ...] = ()
     created_at: AwareDatetime = Field(alias="createdAt")
     updated_at: AwareDatetime = Field(alias="updatedAt")
@@ -468,6 +470,7 @@ class AssistantGroupMessage(StudioModel):
     text: str = ""
     run_id: str | None = Field(default=None, alias="runId")
     reply_to_message_id: str | None = Field(default=None, alias="replyToMessageId")
+    reactions: tuple[str, ...] = ()
     status: str = "completed"
     created_at: AwareDatetime = Field(alias="createdAt")
 

@@ -355,6 +355,22 @@ class AssistantGroupMemberRow(Base):
     removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class AssistantGroupReactionRow(Base):
+    """当前用户对一条群消息的表情；只在本群内可见。"""
+
+    __tablename__ = "assistant_group_reactions"
+    __table_args__ = (
+        Index("ix_assistant_group_reactions_message", "group_id", "message_id"),
+    )
+
+    group_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    message_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    emoji: Mapped[str] = mapped_column(String(16), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class AssistantGroupMessageRow(Base):
     """群消息时间线；回复行先占位，正文在 Run 结束后从事件里补。"""
 

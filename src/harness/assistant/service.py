@@ -40,6 +40,7 @@ from harness.assistant.appearance import (
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD, primary_specialist_id
 
 GROUP_PRIMARY_MEMBER_ID = "primary"
+GROUP_REACTION_EMOJIS = ("👍", "❤️", "😂", "🎉", "👀")
 GROUP_THREAD_PREFIX = "assistant_group_"
 
 
@@ -2457,6 +2458,31 @@ class AssistantService:
     ) -> AssistantGroup:
         group = await self.repository.get_group(tenant_id, user_id, group_id)
         return _group_view(group, user_id)
+
+    async def mark_assistant_group_read(
+        self, tenant_id: str, user_id: str, group_id: str
+    ) -> AssistantGroup:
+        """进入群即清未读；只记本人本群的阅读水位。"""
+        group = await self.repository.mark_group_read(tenant_id, user_id, group_id)
+        return _group_view(group, user_id)
+
+    async def toggle_assistant_group_reaction(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        message_id: str,
+        *,
+        emoji: str,
+    ) -> tuple[str, ...]:
+        """只允许固定表情；同一用户再点一次即取消。"""
+        value = unicodedata.normalize("NFKC", emoji or "").strip()
+        if value not in GROUP_REACTION_EMOJIS:
+            raise ConflictError("不支持这个表情")
+        reactions = await self.repository.toggle_group_reaction(
+            tenant_id, user_id, group_id, message_id, value
+        )
+        return tuple(reactions)
 
     async def add_assistant_group_member(
         self,

@@ -43,6 +43,7 @@ from harness.assistant.skill_models import PersonalSkill, SkillProposal
 from harness.assistant.storage import (
     AssistantGroupMemberRow,
     AssistantGroupMessageRow,
+    AssistantGroupReactionRow,
     AssistantGroupRow,
     AssistantInboxRow,
     AssistantSkillProposalRow,
@@ -2476,6 +2477,7 @@ class PostgresAssistantRepository:
             creatorUserId=row.user_id,
             primaryPresent=bool(payload.get("primaryPresent", True)),
             replyAs=type_cast(str | None, payload.get("replyAs")),
+            lastReadAt=type_cast(str | None, payload.get("lastReadAt")),
             members=(),
             createdAt=row.created_at,
             updatedAt=row.updated_at,
@@ -2514,6 +2516,7 @@ class PostgresAssistantRepository:
                     payload={
                         "primaryPresent": group.primary_present,
                         "replyAs": group.reply_as,
+                        "lastReadAt": now.isoformat(),
                     },
                 )
             )
@@ -2575,10 +2578,21 @@ class PostgresAssistantRepository:
             .order_by(AssistantGroupMemberRow.joined_at, AssistantGroupMemberRow.member_id)
         )
         members = tuple(self._group_member(row) for row in rows)
+        unread = await session.scalar(
+            select(func.count())
+            .select_from(AssistantGroupMessageRow)
+            .where(
+                AssistantGroupMessageRow.group_id == group.group_id,
+                AssistantGroupMessageRow.author != "user",
+                AssistantGroupMessageRow.created_at
+                > (group.last_read_at or group.created_at),
+            )
+        )
         return group.model_copy(
             update={
                 "members": members,
                 "primary_present": any(member.kind == "primary" for member in members),
+                "unread_count": int(unread or 0),
             }
         )
 
@@ -2690,6 +2704,90 @@ class PostgresAssistantRepository:
             group = self._group(group_row)
             return await self._group_with_members(session, group)
 
+    async def mark_group_read(
+        self, tenant_id: str, user_id: str, group_id: str
+    ) -> AssistantGroup:
+        now = datetime.now(UTC)
+        async with self._context(write=True) as session:
+            group_row = await self._require_group(
+                session, tenant_id, user_id, group_id, lock=True
+            )
+            payload = dict(type_cast(dict[str, object], group_row.payload or {}))
+            payload["lastReadAt"] = now.isoformat()
+            group_row.payload = payload
+            group = self._group(group_row)
+            return await self._group_with_members(session, group)
+
+    async def group_reactions(
+        self, tenant_id: str, user_id: str, group_id: str, message_ids: Sequence[str]
+    ) -> dict[str, list[str]]:
+        if not message_ids:
+            return {}
+        async with self._context() as session:
+            rows = await session.scalars(
+                select(AssistantGroupReactionRow)
+                .where(
+                    AssistantGroupReactionRow.group_id == group_id,
+                    AssistantGroupReactionRow.tenant_id == tenant_id,
+                    AssistantGroupReactionRow.user_id == user_id,
+                    AssistantGroupReactionRow.message_id.in_(list(message_ids)),
+                )
+                .order_by(
+                    AssistantGroupReactionRow.created_at,
+                    AssistantGroupReactionRow.emoji,
+                )
+            )
+            result: dict[str, list[str]] = {}
+            for row in rows:
+                result.setdefault(row.message_id, []).append(row.emoji)
+            return result
+
+    async def toggle_group_reaction(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        message_id: str,
+        emoji: str,
+    ) -> list[str]:
+        now = datetime.now(UTC)
+        async with self._context(write=True) as session:
+            await self._require_group(session, tenant_id, user_id, group_id)
+            message = await session.scalar(
+                select(AssistantGroupMessageRow).where(
+                    AssistantGroupMessageRow.group_id == group_id,
+                    AssistantGroupMessageRow.message_id == message_id,
+                    AssistantGroupMessageRow.tenant_id == tenant_id,
+                    AssistantGroupMessageRow.user_id == user_id,
+                )
+            )
+            if message is None:
+                raise NotFoundError("Group message not found")
+            existing = await session.scalar(
+                select(AssistantGroupReactionRow).where(
+                    AssistantGroupReactionRow.group_id == group_id,
+                    AssistantGroupReactionRow.message_id == message_id,
+                    AssistantGroupReactionRow.user_id == user_id,
+                    AssistantGroupReactionRow.emoji == emoji,
+                )
+            )
+            if existing is None:
+                session.add(
+                    AssistantGroupReactionRow(
+                        group_id=group_id,
+                        message_id=message_id,
+                        user_id=user_id,
+                        emoji=emoji,
+                        tenant_id=tenant_id,
+                        created_at=now,
+                    )
+                )
+            else:
+                await session.delete(existing)
+        return (await self.group_reactions(
+            tenant_id, user_id, group_id, [message_id]
+        )).get(message_id, [])
+
     async def add_group_message(
         self,
         tenant_id: str,
@@ -2746,6 +2844,9 @@ class PostgresAssistantRepository:
                 .limit(limit)
             ))
             rows.reverse()
+            reactions = await self.group_reactions(
+                tenant_id, user_id, group_id, [row.message_id for row in rows]
+            )
             return [
                 AssistantGroupMessage(
                     messageId=row.message_id,
@@ -2756,6 +2857,7 @@ class PostgresAssistantRepository:
                     text=row.text,
                     runId=row.run_id,
                     replyToMessageId=row.reply_to_message_id,
+                    reactions=tuple(reactions.get(row.message_id, ())),
                     status=row.status,
                     createdAt=row.created_at,
                 )
@@ -2777,6 +2879,9 @@ class PostgresAssistantRepository:
             )
             if row is None:
                 raise NotFoundError("Group message not found")
+            reactions = await self.group_reactions(
+                tenant_id, user_id, group_id, [message_id]
+            )
             return AssistantGroupMessage(
                 messageId=row.message_id,
                 groupId=row.group_id,
@@ -2786,6 +2891,7 @@ class PostgresAssistantRepository:
                 text=row.text,
                 runId=row.run_id,
                 replyToMessageId=row.reply_to_message_id,
+                reactions=tuple(reactions.get(message_id, ())),
                 status=row.status,
                 createdAt=row.created_at,
             )

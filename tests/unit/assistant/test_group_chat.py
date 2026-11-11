@@ -43,6 +43,7 @@ class FakeGroupRepository:
         self.members: dict[str, list[AssistantGroupMember]] = {}
         self.messages: dict[str, list[AssistantGroupMessage]] = {}
         self.client_ids: dict[tuple[str, str], str] = {}
+        self.reactions: dict[tuple[str, str], list[str]] = {}
         self._specialists = {item.specialist_id: item for item in specialists}
 
     async def create_group(self, tenant_id, user_id, group, members):
@@ -101,6 +102,22 @@ class FakeGroupRepository:
         group = self.groups[group_id]
         self.groups[group_id] = group.model_copy(update={"reply_as": reply_as})
         return await self.get_group(tenant_id, user_id, group_id)
+
+    async def mark_group_read(self, tenant_id, user_id, group_id):
+        group = self.groups[group_id]
+        self.groups[group_id] = group.model_copy(update={"unread_count": 0})
+        return await self.get_group(tenant_id, user_id, group_id)
+
+    async def toggle_group_reaction(
+        self, tenant_id, user_id, group_id, message_id, emoji
+    ):
+        key = (message_id, emoji)
+        current = self.reactions.setdefault(key, [])
+        if emoji in current:
+            current.remove(emoji)
+        else:
+            current.append(emoji)
+        return list(current)
 
     async def add_group_message(
         self, tenant_id, user_id, message, *, thread_id=None,
@@ -353,3 +370,34 @@ async def test_reply_as_must_be_a_current_member() -> None:
         await service.set_assistant_group_reply_as(
             "t", "u", group.group_id, reply_as="specialist_missing"
         )
+
+
+@pytest.mark.asyncio
+async def test_group_reaction_toggles_and_rejects_unknown_emoji() -> None:
+    service, repo, _ = _service()
+    group = await service.create_assistant_group("t", "u", name="演示群")
+    result = await service.post_assistant_group_message("t", "u", group.group_id, text="你好")
+    message_id = result.message.message_id
+
+    assert await service.toggle_assistant_group_reaction(
+        "t", "u", group.group_id, message_id, emoji="👍"
+    ) == ("👍",)
+    assert repo.reactions[(message_id, "👍")] == ["👍"]
+    assert await service.toggle_assistant_group_reaction(
+        "t", "u", group.group_id, message_id, emoji="👍"
+    ) == ()
+    with pytest.raises(ConflictError):
+        await service.toggle_assistant_group_reaction(
+            "t", "u", group.group_id, message_id, emoji="🚀"
+        )
+
+
+@pytest.mark.asyncio
+async def test_mark_group_read_clears_unread() -> None:
+    service, repo, _ = _service()
+    group = await service.create_assistant_group("t", "u", name="演示群")
+    repo.groups[group.group_id] = repo.groups[group.group_id].model_copy(
+        update={"unread_count": 3}
+    )
+    cleared = await service.mark_assistant_group_read("t", "u", group.group_id)
+    assert cleared.unread_count == 0

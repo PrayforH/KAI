@@ -211,3 +211,48 @@
 .inputRow { display: flex; gap: 8px; align-items: flex-end; }
 .inputRow textarea { flex: 1; min-height: 44px; max-height: 180px; resize: vertical; }
 .hint { font-size: 11px; color: var(--codex-muted, #8a8a8a); }
+
+.unreadBadge {
+  margin-left: 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--codex-accent, #3b82f6);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+}
+
+.reactionRow { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.messageUser .reactionRow { justify-content: flex-end; }
+.reactionChip,
+.reactionAdd,
+.reactionPicker button {
+  border: 1px solid var(--codex-line, #3a3a3a);
+  background: transparent;
+  color: inherit;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1;
+  padding: 3px 7px;
+  cursor: pointer;
+}
+.reactionChipOn { background: rgba(59, 130, 246, 0.16); border-color: rgba(59, 130, 246, 0.45); }
+.reactionAdd { opacity: 0.55; }
+.reactionRow:hover .reactionAdd,
+.reactionAdd:focus-visible { opacity: 1; }
+.reactionPicker {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid var(--codex-line, #3a3a3a);
+  background: var(--codex-surface, #1c1c1c);
+}
+.reactionPicker button { border: none; font-size: 14px; padding: 2px 4px; }
+.reactionPicker button:hover { background: var(--codex-surface-hover, rgba(255, 255, 255, 0.08)); border-radius: 999px; }
