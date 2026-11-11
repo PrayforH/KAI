@@ -17,7 +17,7 @@
       ],
       "status": "not_affected",
       "justification": "vulnerable_code_not_in_execute_path",
-      "impact_statement": "Agent Studio imports only InvalidTag and AESGCM for tenant-scoped MCP credential encryption. It does not import or invoke pkcs7_decrypt_der, pkcs7_decrypt_pem, pkcs7_decrypt_smime, or any PKCS#7 decryption API required to expose CVE-2026-69247. The security regression test fails if a new cryptography import or PKCS#7 reference is added under src/."
+      "impact_statement": "Agent Studio uses InvalidTag and AESGCM for tenant-scoped MCP credential encryption, symmetric padding/Cipher for Weixin media decryption, and serialization/Ed25519 for computer VM seeding. It does not import or invoke pkcs7_decrypt_der, pkcs7_decrypt_pem, pkcs7_decrypt_smime, or any PKCS#7 message decryption API required to expose CVE-2026-69247; padding.PKCS7 is block padding, not that path. The security regression test fails if a new cryptography import or any pkcs7_decrypt/pkcs7_load/smime reference is added under src/."
     }
   ]
 }

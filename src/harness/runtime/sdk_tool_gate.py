@@ -76,6 +76,29 @@ _TRUST_PRECEDENCE = {
 }
 
 
+def _user_quote_matches(arguments: object, prompt: object) -> bool:
+    """True when a memory proposal quotes the user's own message verbatim.
+
+    Session trust is a coarse watermark: one fetched page marks every later
+    turn untrusted, including preferences the user typed themselves. Requiring
+    a verbatim quote from the user restores the provenance the tool call would
+    otherwise lack; text from a web page or tool output still fails to match.
+    """
+
+    if not isinstance(arguments, dict) or not isinstance(prompt, str) or not prompt.strip():
+        return False
+    quote = arguments.get("evidence_quote")
+    if not isinstance(quote, str):
+        return False
+    quote = quote.strip()
+    if not quote:
+        return False
+    for candidate in (quote, quote.strip("\"'“”‘’「」『』")):
+        if candidate and candidate in prompt:
+            return True
+    return False
+
+
 def _hook_output(
     decision: str | None,
     reason: str,
@@ -403,6 +426,18 @@ class SdkToolGate:
                 )
                 return _hook_output("deny", PREFACE_NUDGE_REASON)
             context_trust = await load_context_trust()
+            # A user-authored memory proposal is allowed through an untrusted
+            # session only when it quotes the user's message verbatim. Keep the
+            # session watermark for audit; use the verified trust for the rule.
+            policy_trust = (
+                ContextTrust.SAFE
+                if context_trust is ContextTrust.UNTRUSTED
+                and canonical_name == "mcp__harness-memory__propose_memory"
+                and _user_quote_matches(
+                    typed_input.get("tool_input"), context.run.input.get("prompt")
+                )
+                else context_trust
+            )
             output = await self._authorize(
                 context,
                 typed_input,
@@ -413,6 +448,7 @@ class SdkToolGate:
                 allowed_skill_names=child_skills.get(key, frozenset()) if key else lead_skills,
                 declared_tools=frozenset(declared_result_trust),
                 context_trust=context_trust,
+                policy_trust=policy_trust,
                 delegate_allowed_to_sdk_permissions=delegate_allowed_to_sdk_permissions,
             )
             specific = cast(dict[str, Any], output).get("hookSpecificOutput", {})
@@ -585,6 +621,7 @@ class SdkToolGate:
         allowed_skill_names: frozenset[str] = frozenset(),
         declared_tools: frozenset[str] = frozenset(),
         context_trust: ContextTrust = ContextTrust.SAFE,
+        policy_trust: ContextTrust | None = None,
         delegate_allowed_to_sdk_permissions: bool = False,
     ) -> SyncHookJSONOutput:
         raw_tool_name = hook_input["tool_name"]
@@ -612,6 +649,8 @@ class SdkToolGate:
                 "isolation": context.sandbox_isolation.value,
             },
         }
+        if policy_trust is not None and policy_trust is not context_trust:
+            request_payload["provenance_verified"] = True
         relative_input_path = staged_read_path(
             request_payload,
             workspace=context.workspace,
@@ -677,7 +716,7 @@ class SdkToolGate:
             tool_name=tool_name,
             arguments=arguments,
             sandbox_isolation=context.sandbox_isolation,
-            context_trust=context_trust,
+            context_trust=policy_trust if policy_trust is not None else context_trust,
         )
         result = policy.evaluate(policy_context)
         if (

@@ -44,7 +44,11 @@ async def test_remote_memory_mcp_uses_workload_identity_and_creates_proposal() -
                     await session.initialize()
                     tools = await session.list_tools()
                     result = await session.call_tool(
-                        "propose_memory", {"content": "用户偏好使用中文"}
+                        "propose_memory",
+                        {
+                            "content": "用户偏好使用中文",
+                            "evidence_quote": "请记住：我偏好使用中文",
+                        },
                     )
 
     assert [tool.name for tool in tools.tools] == ["propose_memory", "search_memory", "read_memory"]
@@ -52,6 +56,7 @@ async def test_remote_memory_mcp_uses_workload_identity_and_creates_proposal() -
     entries = await container.memory_bank.list_entries("tenant-a", "user-a")
     assert len(entries) == 1
     assert entries[0].source.run_id == "run-a"
+    assert entries[0].source.evidence == "请记住：我偏好使用中文"
     assert entries[0].status.value == "pending"
 
 

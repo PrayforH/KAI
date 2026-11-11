@@ -32,11 +32,21 @@ def test_cryptography_vex_is_limited_to_the_unreachable_pkcs7_path() -> None:
             if line.startswith(("import cryptography", "from cryptography")):
                 source_imports.add(line)
 
+    # Every cryptography import is reviewed here. Adding one fails this test
+    # until the VEX impact statement is re-checked.
     assert source_imports == {
         "from cryptography.exceptions import InvalidTag",
         "from cryptography.hazmat.primitives.ciphers.aead import AESGCM",
+        "from cryptography.hazmat.primitives import padding",
+        "from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes",
+        "from cryptography.hazmat.primitives import serialization",
+        "from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey",
     }
-    assert "pkcs7" not in source_text.lower()
+    # CVE-2026-69247 is in the PKCS#7 message decryption APIs. Padding modes
+    # (padding.PKCS7) are a different module and stay out of that path.
+    lowered = source_text.lower()
+    for vulnerable_api in ("pkcs7_decrypt", "pkcs7_load", "smime"):
+        assert vulnerable_api not in lowered
 
     vex = json.loads(
         Path("security/vex/cryptography-49.0.0.openvex.json").read_text(

@@ -29,7 +29,7 @@ async def test_proposal_tool_uses_task_local_identity_and_resets_it() -> None:
 
     with memory_execution_context(service, identity()):
         result = await update_user_memory_tool.handler(
-            {"content": "Prefer Chinese."}
+            {"content": "Prefer Chinese.", "evidence_quote": "I prefer Chinese."}
         )
 
     assert '"requiresConfirmation":true' in result["content"][0]["text"]

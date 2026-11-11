@@ -88,11 +88,8 @@ class EnvironmentResourcePolicy(StudioModel):
     )
     allowed_model_routes: tuple[str, ...] = Field(
         default=(
-            "deepseek-v4-flash",
-            "deepseek-v4-pro",
-            "new-api-default",
-            "minimax-m3",
-            "glm-5-3-flash",
+            "deepseek-flash",
+            "minimax-m3-1-flash",
         ),
         alias="allowedModelRoutes",
     )

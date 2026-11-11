@@ -167,9 +167,9 @@ async def test_production_container_uses_durable_event_and_queue_adapters() -> N
         assert vars(runtime)["_route_configs"] == ()
         assert vars(runtime)["_model_configurations"] is container.model_configurations
         imported = vars(container.model_configurations)["_server_routes"]
-        assert set(imported) == {"deepseek-v4-flash", "deepseek-v4-pro"}
-        assert imported["deepseek-v4-flash"].compatibility.value == "degraded"
-        assert imported["deepseek-v4-flash"].capabilities == frozenset({"streaming"})
+        assert set(imported) == {"deepseek-flash"}
+        assert imported["deepseek-flash"].compatibility.value == "degraded"
+        assert imported["deepseek-flash"].capabilities == frozenset({"streaming"})
     finally:
         assert container.close is not None
         await container.close()
@@ -260,7 +260,7 @@ async def test_production_container_imports_empty_gateway_capabilities() -> None
     )
     try:
         imported = vars(container.model_configurations)["_server_routes"]
-        assert imported["deepseek-v4-flash"].capabilities == frozenset()
+        assert imported["deepseek-flash"].capabilities == frozenset()
     finally:
         assert container.close is not None
         await container.close()
@@ -381,8 +381,8 @@ async def test_production_composition_imports_minimax_into_model_control_plane()
         assert vars(runtime)["_fallback_config"] is None
         assert vars(runtime)["_route_configs"] == ()
         imported = vars(container.model_configurations)["_server_routes"]
-        assert imported["minimax-m3"].base_url == "https://api.minimaxi.com/anthropic"
-        assert imported["minimax-m3"].model == "MiniMax-M3"
+        assert imported["minimax-m3-1-flash"].base_url == "https://api.minimaxi.com/anthropic"
+        assert imported["minimax-m3-1-flash"].model == "MiniMax-M3"
     finally:
         assert container.close is not None
         await container.close()

@@ -22,7 +22,7 @@ _CONTENT_FIELDS_BY_TOOL = {
     "Write": {"content"},
     "Edit": {"old_string", "new_string"},
     "mcp__harness-memory__update_user_memory": {"content"},
-    "mcp__harness-memory__propose_memory": {"content"},
+    "mcp__harness-memory__propose_memory": {"content", "evidence_quote"},
 }
 
 

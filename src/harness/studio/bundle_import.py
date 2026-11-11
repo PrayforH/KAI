@@ -595,9 +595,9 @@ def _parse_nexau_bundle(content: bytes) -> ParsedAgentBundle:
         model = (
             raw_model
             if raw_model and "${" not in raw_model
-            else ("MiniMax-M3" if has_visual_input else "deepseek-v4-pro")
+            else ("MiniMax-M3.1-flash" if has_visual_input else "deepseek-flash")
         )
-        route_id = "minimax-m3" if has_visual_input else "deepseek-v4-pro"
+        route_id = "minimax-m3-1-flash" if has_visual_input else "deepseek-flash"
         if model != raw_model:
             route_label = "MiniMax 视觉" if has_visual_input else "DeepSeek"
             warnings.append(f"环境变量模型已替换为平台 {route_label} 默认路由；凭据未导入")
