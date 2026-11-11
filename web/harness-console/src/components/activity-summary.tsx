@@ -812,7 +812,7 @@ export function ActivitySummary({
         <span className="execution-phase">{heading}</span>
         <span className="execution-duration">· {elapsedCopy}</span>
         {view.phase === "queued" && view.queueReasonCode === "predecessor_waiting_approval" ? (
-          <span className="execution-queue-hint">· 前序任务等待审批，通过后自动开始</span>
+          <span className="execution-queue-hint">前序任务等待审批，通过后自动开始</span>
         ) : null}
         {hasContent && <span className="execution-chevron"><CodexResponseIcon name="chevronDown" /></span>}
       </Disclosure>

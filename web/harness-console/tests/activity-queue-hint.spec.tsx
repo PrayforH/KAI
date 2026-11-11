@@ -47,6 +47,9 @@ it("shows a single inline hint while a predecessor waits for approval", async ()
   await act(async () => root!.render(<ActivitySummary activity={activity} />));
   const hint = host.querySelector(".execution-queue-hint");
   expect(hint?.textContent).toContain("前序任务等待审批");
+  // The duration next to it already carries the separator; a second "·" would
+  // render as "· 2m · 前序任务…".
+  expect(hint?.textContent?.startsWith("·")).toBe(false);
   expect(host.querySelector(".composer-queue-notice")).toBeNull();
 });
 
