@@ -9,6 +9,7 @@ vi.mock("../src/lib/client-auth", () => ({ requireAuthenticatedResponse: (value:
 import {
   AssistantHistoryPanel, fileGlyph, fileKindOf, filterFiles, historyEntries,
 } from "../src/components/assistant-history-panel";
+import { clearHistoryIndex } from "../src/lib/history-index";
 import { flashMessage } from "../src/lib/chat-locate";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -25,6 +26,7 @@ afterEach(() => {
   host.replaceChildren();
   root = createRoot(host);
   history.mockReset();
+  clearHistoryIndex();
   document.querySelectorAll("[data-message-id]").forEach(node => node.remove());
   vi.unstubAllGlobals();
 });
@@ -40,7 +42,7 @@ async function render() {
   ]);
   stubFetch();
   await act(async () => { root.render(<AssistantHistoryPanel open threadId="thread_1" assistantName="小树" onClose={() => {}} />); });
-  await act(async () => { await Promise.resolve(); });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
 }
 
 async function click(text: string) {
@@ -125,4 +127,47 @@ it("searches file names and keeps media search disabled", async () => {
 
 it("returns false when the message is not in the chat", () => {
   expect(flashMessage("missing-run")).toBe(false);
+});
+
+it("skips tool traces the conversation never mounts", () => {
+  const { entries } = historyEntries([
+    { id: "user-run_1", role: "user", content: "问题" },
+    { id: "assistant-run_1", role: "assistant", content: "回答" },
+    { id: "source-result-run_1", role: "tool", content: '{"status":"ready"}' },
+  ], []);
+  expect(entries.map(entry => entry.id)).toEqual(["user-run_1", "assistant-run_1"]);
+});
+
+it("paints the newest page before earlier pages finish, oldest first", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  history.mockImplementation(async (_threadId: string, options: { onPage?: (page: unknown) => void }) => {
+    options.onPage?.({ messages: [{ id: "user-run_new", role: "user", content: "最新消息" }] });
+    await gate;
+    options.onPage?.({ messages: [{ id: "user-run_old", role: "user", content: "更早消息" }] });
+    return [];
+  });
+  stubFetch();
+  await act(async () => { root.render(<AssistantHistoryPanel open threadId="thread_1" assistantName="小树" onClose={() => {}} />); });
+  await act(async () => { await Promise.resolve(); });
+  expect(host.textContent).toContain("最新消息");
+  expect(host.textContent).not.toContain("更早消息");
+
+  await act(async () => { release(); await new Promise(resolve => setTimeout(resolve, 10)); });
+  expect(host.textContent).toContain("更早消息");
+  expect(host.textContent!.indexOf("更早消息")).toBeLessThan(host.textContent!.indexOf("最新消息"));
+});
+
+it("reuses a fresh index when the drawer is reopened", async () => {
+  await render();
+  const loads = history.mock.calls.length;
+
+  act(() => root.unmount());
+  root = createRoot(host);
+  await act(async () => {
+    root.render(<AssistantHistoryPanel open threadId="thread_1" assistantName="小树" onClose={() => {}} />);
+    await new Promise(resolve => setTimeout(resolve, 10));
+  });
+  expect(history).toHaveBeenCalledTimes(loads);
+  expect(host.textContent).toContain("帮我看下报告");
 });

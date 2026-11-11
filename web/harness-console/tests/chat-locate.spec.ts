@@ -4,7 +4,7 @@ import { flashMessage, locateInChat, registerHistoryLocator } from "../src/lib/c
 
 afterEach(() => {
   registerHistoryLocator(null);
-  document.querySelectorAll("[data-message-id]").forEach(node => node.remove());
+  document.body.replaceChildren();
 });
 
 function addMessage(id: string) {
@@ -24,22 +24,60 @@ it("flashes a message that is already mounted", async () => {
 });
 
 it("pages earlier history in before locating an old message", async () => {
-  const loadEarlier = vi.fn(async () => { addMessage("assistant-run_old"); });
+  const loadEarlier = vi.fn(async (_pages = 1) => { addMessage("assistant-run_old"); return true; });
   let hasMore = true;
   registerHistoryLocator({
     threadId: "thread_1",
     hasMore: () => hasMore,
-    loadEarlier: async () => { await loadEarlier(); hasMore = false; },
+    loadEarlier: async (pages = 1) => {
+      await loadEarlier(pages);
+      hasMore = false;
+      return true;
+    },
   });
   await expect(locateInChat("assistant-run_old", "thread_1")).resolves.toBe(true);
   expect(loadEarlier).toHaveBeenCalledTimes(1);
+  expect(loadEarlier).toHaveBeenCalledWith(3);
 });
 
+it("keeps paging past the old five-page ceiling", async () => {
+  let remaining = 7;
+  const loadEarlier = vi.fn(async () => {
+    remaining -= 1;
+    if (remaining === 0) addMessage("assistant-run_oldest");
+    return true;
+  });
+  registerHistoryLocator({
+    threadId: "thread_1",
+    hasMore: () => remaining > 0,
+    loadEarlier,
+  });
+  // 7 batches × 3 pages = 21 pages of 30 runs, beyond the old fixed 5.
+  await expect(locateInChat("assistant-run_oldest", "thread_1")).resolves.toBe(true);
+  expect(loadEarlier).toHaveBeenCalledTimes(7);
+}, 15_000);
+
 it("stops when the thread has no earlier pages or belongs to another thread", async () => {
-  const loadEarlier = vi.fn(async () => undefined);
+  const loadEarlier = vi.fn(async () => false);
   registerHistoryLocator({ threadId: "thread_1", hasMore: () => false, loadEarlier });
   await expect(locateInChat("missing", "thread_1")).resolves.toBe(false);
   registerHistoryLocator({ threadId: "thread_1", hasMore: () => true, loadEarlier });
   await expect(locateInChat("missing", "thread_2")).resolves.toBe(false);
   expect(loadEarlier).not.toHaveBeenCalled();
+});
+
+it("does not match a message outside the registered conversation frame", async () => {
+  const frame = document.createElement("div");
+  const viewport = document.createElement("div");
+  viewport.className = "aui-thread-viewport";
+  frame.append(viewport);
+  document.body.append(frame);
+  addMessage("assistant-other");
+  registerHistoryLocator({
+    threadId: "thread_1",
+    hasMore: () => false,
+    loadEarlier: async () => false,
+    frame: () => frame,
+  });
+  await expect(locateInChat("assistant-other", "thread_1")).resolves.toBe(false);
 });

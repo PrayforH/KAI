@@ -139,6 +139,47 @@ describe("thread history pagination", () => {
     expect(state.hasMore).toBe(false);
   });
 
+  it("loads several earlier pages in one import when a locate jump asks for them", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        page([message("user-4", "user", "fourth")], { next_cursor: "cursor-1", has_more: true }),
+      )
+      .mockResolvedValueOnce(
+        page([message("user-3", "user", "third")], { next_cursor: "cursor-2", has_more: true }),
+      )
+      .mockResolvedValueOnce(
+        page([message("user-2", "user", "second")], { next_cursor: "cursor-3", has_more: true }),
+      )
+      .mockResolvedValueOnce(
+        page([message("user-1", "user", "first")], { next_cursor: null, has_more: false }),
+      );
+    vi.stubGlobal("fetch", fetcher);
+
+    await render();
+    await bootstrapLatestPage();
+    await settle();
+    await act(async () => {
+      await state.loadEarlier(3);
+    });
+
+    // One gesture, one import — not one repository re-import per page.
+    expect(fetcher).toHaveBeenCalledTimes(4);
+    expect(importRepositoryMock).toHaveBeenCalledTimes(1);
+    const repository = importRepositoryMock.mock.calls[0][0] as {
+      messages: Array<{ message: { content: unknown } }>;
+    };
+    const textOf = (content: unknown): string =>
+      typeof content === "string"
+        ? content
+        : Array.isArray(content)
+          ? content.map((part: { text?: string }) => part.text ?? "").join("")
+          : "";
+    expect(repository.messages.map(item => textOf(item.message.content)))
+      .toEqual(["first", "second", "third", "fourth"]);
+    expect(state.hasMore).toBe(false);
+  });
+
   it("keeps the earlier page fetch out of the page-1 request dedupe", async () => {
     const fetcher = vi
       .fn()
@@ -205,7 +246,7 @@ describe("thread history pagination", () => {
       .mockImplementationOnce(() => new Promise<Response>(resolve => { resolvePage = resolve; })));
     await render();
     await bootstrapLatestPage();
-    let pending!: Promise<void>;
+    let pending!: Promise<boolean>;
     await act(async () => { pending = state.loadEarlier(); });
     await render("other-assistant");
     await act(async () => { resolvePage(page([message("user-1", "user", "first")])); await pending; });
@@ -238,7 +279,7 @@ describe("auto load earlier on scroll", () => {
 
   it("loads the previous page when the reader reaches the top", async () => {
     const { frame, viewport, setHeight } = viewportWithMetrics(2000, 600);
-    const loadEarlier = vi.fn(async () => { setHeight(3000); });
+    const loadEarlier = vi.fn(async () => { setHeight(3000); return true; });
     const pagination = { hasMore: true, loading: false, loadEarlier };
     const frameRef = { current: frame };
     await act(async () => {
@@ -260,7 +301,7 @@ describe("auto load earlier on scroll", () => {
 
   it("keeps the reader's place by the height that was prepended", async () => {
     const { frame, viewport, setHeight } = viewportWithMetrics(2000, 600);
-    const loadEarlier = vi.fn(async () => { setHeight(2600); });
+    const loadEarlier = vi.fn(async () => { setHeight(2600); return true; });
     const pagination = { hasMore: true, loading: false, loadEarlier };
     await act(async () => {
       root.render(<Harness frameRef={{ current: frame }} pagination={pagination} />);
@@ -276,7 +317,7 @@ describe("auto load earlier on scroll", () => {
 
   it("stops when the thread has no earlier runs", async () => {
     const { frame, viewport } = viewportWithMetrics(2000, 600);
-    const loadEarlier = vi.fn(async () => undefined);
+    const loadEarlier = vi.fn(async () => false);
     await act(async () => {
       root.render(<Harness frameRef={{ current: frame }}
         pagination={{ hasMore: false, loading: false, loadEarlier }} />);
@@ -292,7 +333,7 @@ describe("auto load earlier on scroll", () => {
 
   it("fills a viewport that is shorter than the first page", async () => {
     const { frame, setHeight } = viewportWithMetrics(300, 600);
-    const loadEarlier = vi.fn(async () => { setHeight(1200); });
+    const loadEarlier = vi.fn(async () => { setHeight(1200); return true; });
     await act(async () => {
       root.render(<Harness frameRef={{ current: frame }}
         pagination={{ hasMore: true, loading: false, loadEarlier }} />);
@@ -304,7 +345,7 @@ describe("auto load earlier on scroll", () => {
 
   it("opens an assistant without auto-filling or reacting to programmatic scrolls", async () => {
     const { frame, viewport } = viewportWithMetrics(300, 600);
-    const loadEarlier = vi.fn(async () => undefined);
+    const loadEarlier = vi.fn(async () => false);
     await act(async () => root.render(<Harness frameRef={{ current: frame }} readerDriven
       pagination={{ hasMore: true, loading: false, loadEarlier }} />));
     await act(async () => { viewport.dispatchEvent(new Event("scroll")); });

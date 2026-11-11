@@ -2172,6 +2172,7 @@ export function AgentThread({
       threadId,
       hasMore: () => historyPagination.hasMore,
       loadEarlier: historyPagination.loadEarlier,
+      frame: () => frame.current,
     });
     return () => registerHistoryLocator(null);
   }, [threadId, historyPagination.hasMore, historyPagination.loadEarlier]);

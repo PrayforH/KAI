@@ -8,8 +8,8 @@ import { ConversationIndex } from "../src/components/conversation-index";
 let host: HTMLDivElement;
 let root: Root;
 let scroll: ReturnType<typeof vi.fn>;
-function Harness({ id = "task-a", prompts = ["第一问", "第二问", "第三问"], total, loadEarlier = async () => {} }: {
-  id?: string; prompts?: string[]; total?: number; loadEarlier?: () => Promise<void>;
+function Harness({ id = "task-a", prompts = ["第一问", "第二问", "第三问"], total, loadEarlier = async () => false }: {
+  id?: string; prompts?: string[]; total?: number; loadEarlier?: (pages?: number) => Promise<boolean>;
 }) {
   const frame = useRef<HTMLDivElement>(null);
   return <div ref={frame}><div className="aui-thread-viewport" ref={node => {
@@ -44,7 +44,12 @@ it("indexes each user turn, previews labels and scrolls only its viewport", asyn
   expect(scroll).toHaveBeenCalledWith({ top: 568, behavior: "smooth" });
   expect(document.activeElement?.getAttribute("data-turn-id")).toBe("task-a2");
   const viewport = host.querySelector<HTMLElement>(".aui-thread-viewport")!;
-  act(() => { viewport.scrollTop = 320; viewport.dispatchEvent(new Event("scroll")); });
+  await act(async () => {
+    viewport.scrollTop = 320;
+    viewport.dispatchEvent(new Event("scroll"));
+    // Scroll tracking is coalesced into one animation frame.
+    await new Promise(resolve => setTimeout(resolve, 10));
+  });
   expect(buttons[1].getAttribute("aria-current")).toBe("location");
 });
 it("supports keyboard navigation, updates branches and clears empty conversations", async () => {

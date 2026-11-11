@@ -1,172 +1,51 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
+} from "react";
 import { requireAuthenticatedResponse } from "../lib/client-auth";
 import { locateInChat as locateMessage } from "../lib/chat-locate";
+import {
+  clearHistoryIndex,
+  dayOf,
+  fileGlyph,
+  fileKindOf,
+  filterEntries,
+  filterFiles,
+  historyEntries,
+  isMedia,
+  readHistoryIndex,
+  writeHistoryIndex,
+  type ArtifactRecord,
+  type HistoryEntry,
+  type HistoryFile,
+  type HistoryIndex,
+  type HistoryMessage,
+  type HistoryTab,
+} from "../lib/history-index";
 import { loadFullThreadHistory } from "../lib/task-history";
 import { formatBytes } from "./artifact-list";
 import styles from "./assistant-history-panel.module.css";
 
-export type HistoryTab = "all" | "files" | "media";
-type ContentPart = { type?: string; text?: string; source?: { value?: string }; metadata?: { filename?: string } };
-export type HistoryMessage = { id: string; role: string; content: string | ContentPart[] };
-/** One file the conversation produced, or one attachment the user sent. */
-export type HistoryFile = {
-  id: string;
-  name: string;
-  mediaType: string;
-  sizeBytes: number | null;
-  /** Artifacts carry the run's time; attachments have none in history. */
-  createdAt: string | null;
-  origin: "assistant" | "user";
-  /** The message the file belongs to, so 在聊天中定位 can land on it. */
-  messageId: string | null;
-  /** Harness artifact id (output files) — opens in the shared preview dialog. */
-  artifactId: string | null;
-  /** Inline URL for input attachments (user-uploaded files). */
-  inlineHref: string | null;
-  downloadHref: string | null;
-};
-export type HistoryEntry = { id: string; role: string; text: string; files: HistoryFile[] };
+// The pure index lives in lib/history-index so it can be cached and tested
+// without React. Re-exported here because this component is its public face.
+export {
+  dayOf, fileGlyph, fileKindOf, filterEntries, filterFiles, historyEntries, isMedia,
+} from "../lib/history-index";
+export type { HistoryEntry, HistoryFile, HistoryMessage, HistoryTab } from "../lib/history-index";
 
-type ArtifactRecord = {
-  artifact_id: string; run_id: string; thread_id?: string | null;
-  name?: string | null; media_type?: string | null;
-  size_bytes?: number | null; created_at?: string | null;
-};
+const SEARCH_DEBOUNCE_MS = 120;
+const STICK_TO_BOTTOM_PX = 48;
 
-/** Same convention agent-thread uses to attach a live run to its message. */
-export function messageOwnsArtifact(messageId: string, runId: string) {
-  const prefix = `assistant-${runId}`;
-  return messageId === prefix || messageId.startsWith(`${prefix}-`);
+/** Keep a filter box responsive without dropping the last keystroke. */
+function useDebouncedValue<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
 }
-
-function messageText(content: HistoryMessage["content"]): string {
-  if (typeof content === "string") return content;
-  return content.filter(part => part.type === "text" || typeof part.text === "string")
-    .map(part => part.text ?? "").join("\n");
-}
-
-function messageAttachments(content: HistoryMessage["content"]): ContentPart[] {
-  if (typeof content === "string") return [];
-  return content.filter(part => part.type !== "text" && part.source?.value);
-}
-
-const IMAGE_EXT = /\.(png|jpe?g|gif|webp|avif|svg|bmp)$/i;
-const VIDEO_EXT = /\.(mp4|mov|webm|m4v|avi|mkv)$/i;
-
-export function fileKindOf(name: string, mediaType = ""): "image" | "video" | "pdf" | "html" | "zip" | "other" {
-  const type = mediaType.toLowerCase();
-  if (type.startsWith("image/") || IMAGE_EXT.test(name)) return "image";
-  if (type.startsWith("video/") || VIDEO_EXT.test(name)) return "video";
-  if (type === "application/pdf" || /\.pdf$/i.test(name)) return "pdf";
-  if (type === "text/html" || /\.html?$/i.test(name)) return "html";
-  if (type.includes("zip") || /\.(zip|tar|gz|tgz|7z)$/i.test(name)) return "zip";
-  return "other";
-}
-
-/** Short badge text drawn on the prototype's colored file glyph. */
-export function fileGlyph(name: string, mediaType = ""): string {
-  const kind = fileKindOf(name, mediaType);
-  if (kind === "image") return "IMG";
-  if (kind === "video") return "VID";
-  if (kind === "pdf") return "PDF";
-  if (kind === "html") return "HTML";
-  if (kind === "zip") return "ZIP";
-  const extension = /\.([a-z0-9]{1,4})$/i.exec(name)?.[1];
-  return extension ? extension.toUpperCase() : "FILE";
-}
-
-/**
- * Merge the thread's messages with the files it produced. Artifacts carry the
- * run id, so they attach to the assistant message that answered that run and
- * 在聊天中定位 can jump straight back to the reply that delivered the file.
- */
-export function historyEntries(messages: HistoryMessage[], artifacts: ArtifactRecord[]): {
-  entries: HistoryEntry[]; files: HistoryFile[];
-} {
-  const entries: HistoryEntry[] = [];
-  for (const message of messages) {
-    const files: HistoryFile[] = messageAttachments(message.content).flatMap(part => {
-      const inputId = part.source?.value;
-      if (!inputId) return [];
-      const name = part.metadata?.filename ?? "附件";
-      return [{
-        id: `input:${inputId}`,
-        name,
-        mediaType: "",
-        sizeBytes: null,
-        createdAt: null,
-        origin: "user" as const,
-        messageId: message.id,
-        artifactId: null,
-        inlineHref: `/api/input-artifacts/${encodeURIComponent(inputId)}/content?inline=1`,
-        downloadHref: `/api/input-artifacts/${encodeURIComponent(inputId)}/content`,
-      }];
-    });
-    const text = messageText(message.content);
-    if (!text.trim() && files.length === 0) continue;
-    entries.push({ id: message.id, role: message.role, text, files });
-  }
-  const ownerIds = new Map(entries.map(entry => [entry.id, entry]));
-  for (const artifact of artifacts) {
-    const owner = messages.find(message => messageOwnsArtifact(message.id, artifact.run_id));
-    const file: HistoryFile = {
-      id: `artifact:${artifact.artifact_id}`,
-      name: artifact.name || "未命名文件",
-      mediaType: artifact.media_type || "application/octet-stream",
-      sizeBytes: artifact.size_bytes ?? null,
-      createdAt: artifact.created_at ?? null,
-      origin: "assistant",
-      messageId: owner?.id ?? null,
-      artifactId: artifact.artifact_id,
-      inlineHref: null,
-      downloadHref: `/api/harness/artifacts/${encodeURIComponent(artifact.artifact_id)}`,
-    };
-    const entry = owner ? ownerIds.get(owner.id) : undefined;
-    if (entry) entry.files.push(file);
-    else entries.push({ id: `artifact:${artifact.artifact_id}`, role: "assistant", text: "", files: [file] });
-  }
-  const files = entries.flatMap(entry => entry.files).sort((a, b) => {
-    const left = a.createdAt ? Date.parse(a.createdAt) : 0;
-    const right = b.createdAt ? Date.parse(b.createdAt) : 0;
-    return right - left;
-  });
-  return { entries, files };
-}
-
-export function senderOf(role: string): "user" | "assistant" {
-  return role === "user" ? "user" : "assistant";
-}
-
-export function filterEntries(entries: HistoryEntry[], { query, sender }: { query: string; sender: string }) {
-  const needle = query.trim().toLowerCase();
-  return entries.filter(entry => (sender === "all" || senderOf(entry.role) === sender)
-    && (!needle || `${entry.text}\n${entry.files.map(file => file.name).join("\n")}`.toLowerCase().includes(needle)));
-}
-
-export function filterFiles(files: HistoryFile[], { query, sender, kind, date }: {
-  query: string; sender: string; kind?: string; date?: string;
-}) {
-  const needle = query.trim().toLowerCase();
-  return files.filter(file => (sender === "all" || file.origin === sender)
-    && (!kind || kind === "all" || fileKindOf(file.name, file.mediaType) === kind)
-    && (!date || date === "all" || dayOf(file.createdAt) === date)
-    && (!needle || file.name.toLowerCase().includes(needle)));
-}
-
-export function isMedia(file: HistoryFile) {
-  const kind = fileKindOf(file.name, file.mediaType);
-  return kind === "image" || kind === "video";
-}
-
-export function dayOf(value?: string | null): string {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}`;
-}
-
 
 function fileHref(file: HistoryFile, threadId: string): string {
   if (file.inlineHref) return file.inlineHref;
@@ -187,11 +66,84 @@ function openFile(file: HistoryFile) {
   }));
 }
 
+function errorText(cause: unknown): string {
+  return cause instanceof Error && cause.message ? cause.message : "聊天记录暂时无法读取";
+}
+
+const MessageRow = memo(function MessageRow({ entry, assistantName, locating, onLocate }: {
+  entry: HistoryEntry; assistantName: string; locating: boolean;
+  onLocate: (messageId: string | null) => void;
+}) {
+  // A file whose run fell outside the loaded history has no message to land
+  // on; only offer 定位 when the row really points at one.
+  const targetId = entry.id.startsWith("artifact:")
+    ? entry.files.find(file => file.messageId)?.messageId ?? null
+    : entry.id;
+  return <article className={styles.msg}>
+    <div className={styles.meta}>
+      <span className={styles.sender}>{entry.role === "user" ? "我" : assistantName}</span>
+      <button type="button" className={styles.locate} disabled={!targetId || locating}
+        onClick={() => onLocate(targetId)}>{locating ? "正在定位…" : "在聊天中定位"}</button>
+    </div>
+    {entry.text && <p className={styles.text}>{entry.text}</p>}
+    {entry.files.length > 0 && <div className={styles.chips}>
+      {entry.files.map(file => <button type="button" key={file.id} className={styles.chip}
+        title={file.name} onClick={() => onLocate(file.messageId)}>
+        <span className={styles.glyph} data-kind={fileKindOf(file.name, file.mediaType)}>{fileGlyph(file.name, file.mediaType)}</span>
+        <span className={styles.chipName}>{file.name}</span>
+      </button>)}
+    </div>}
+  </article>;
+});
+
+const FileRow = memo(function FileRow({ file, threadId, assistantName, locating, onLocate }: {
+  file: HistoryFile; threadId: string; assistantName: string; locating: boolean;
+  onLocate: (messageId: string | null) => void;
+}) {
+  return <article className={styles.fileRow}>
+    <span className={styles.glyph} data-kind={fileKindOf(file.name, file.mediaType)}>{fileGlyph(file.name, file.mediaType)}</span>
+    <span className={styles.fileMain}>
+      <button type="button" className={styles.fileName} title={file.name}
+        onClick={() => file.artifactId ? openFile(file) : undefined}>{file.name}</button>
+      <span className={styles.fileMeta}>
+        {file.origin === "user" ? "我上传" : assistantName}
+        {file.sizeBytes ? ` · ${formatBytes(file.sizeBytes)}` : ""}
+        {file.createdAt ? ` · ${dayOf(file.createdAt)}` : ""}
+      </span>
+    </span>
+    <span className={styles.fileActions}>
+      <button type="button" className={styles.locate} disabled={!file.messageId || locating}
+        onClick={() => onLocate(file.messageId)}>{locating ? "正在定位…" : "在聊天中定位"}</button>
+      <a className={styles.link} href={fileHref(file, threadId)} target="_blank" rel="noreferrer">打开</a>
+    </span>
+  </article>;
+});
+
+const MediaItem = memo(function MediaItem({ file, threadId, locating, onLocate }: {
+  file: HistoryFile; threadId: string; locating: boolean;
+  onLocate: (messageId: string | null) => void;
+}) {
+  const kind = fileKindOf(file.name, file.mediaType);
+  return <figure className={styles.mediaItem}>
+    <button type="button" className={styles.mediaButton} title={file.name}
+      onClick={() => file.artifactId ? openFile(file) : undefined}>
+      {kind === "image"
+        ? <img src={fileHref(file, threadId)} alt={file.name} loading="lazy" />
+        : <span className={styles.video} aria-hidden="true">▶</span>}
+    </button>
+    <figcaption>
+      <span className={styles.chipName}>{file.name}</span>
+      <button type="button" className={styles.locate} disabled={!file.messageId || locating}
+        onClick={() => onLocate(file.messageId)}>{locating ? "正在定位…" : "在聊天中定位"}</button>
+    </figcaption>
+  </figure>;
+});
+
 /** 聊天记录抽屉：tabs、搜索、发送人/类型/日期筛选，每条记录都能回到原消息。 */
 export function AssistantHistoryPanel({ open, threadId, assistantName = "助理", onClose }: {
   open: boolean; threadId: string; assistantName?: string; onClose: () => void;
 }) {
-  const [data, setData] = useState<{ entries: HistoryEntry[]; files: HistoryFile[] } | null>(null);
+  const [data, setData] = useState<HistoryIndex | null>(null);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<HistoryTab>("all");
   const [query, setQuery] = useState("");
@@ -199,28 +151,71 @@ export function AssistantHistoryPanel({ open, threadId, assistantName = "助理"
   const [kind, setKind] = useState("all");
   const [date, setDate] = useState("all");
   const [notice, setNotice] = useState("");
+  const [loadingMore, setLoadingMore] = useState(false);
   const [reload, setReload] = useState(0);
+  const [locatingId, setLocatingId] = useState<string | null>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
+  const lastScrollHeight = useRef(0);
+  const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS);
 
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
-    setData(null); setError("");
-    const query = new URLSearchParams({ thread_id: threadId, limit: "200" });
+    setError(""); setNotice("");
+    // A thread read moments ago is reused as-is; opening the drawer is a state
+    // toggle, not a reason to page the whole thread in again.
+    const cached = readHistoryIndex(threadId);
+    setData(cached);
+    setLoadingMore(false);
+    if (cached) return () => controller.abort();
+
+    const pages: HistoryMessage[][] = [];
+    let artifacts: ArtifactRecord[] = [];
+    let latestIndex: HistoryIndex | null = null;
+    const publish = () => {
+      // Wait for the first page: artifacts alone would flash "no history".
+      if (controller.signal.aborted || pages.length === 0) return;
+      // Pages arrive newest-first; render the thread in reading order so an
+      // older page prepends instead of landing after the newest message.
+      const messages = pages.slice().reverse().flat();
+      latestIndex = historyEntries(messages, artifacts.filter(item => item.thread_id === threadId));
+      startTransition(() => setData(latestIndex));
+    };
+    setLoadingMore(true);
+    const artifactsQuery = new URLSearchParams({ thread_id: threadId, limit: "200" });
     void Promise.all([
-      loadFullThreadHistory(threadId),
-      fetch(`/api/harness/artifacts?${query}`, { cache: "no-store", signal: controller.signal })
+      loadFullThreadHistory(threadId, {
+        signal: controller.signal,
+        onPage: page => { pages.push(page.messages as HistoryMessage[]); publish(); },
+      }).then(messages => {
+        // Callers that only hand back the final list (older readers, mocks)
+        // still get an index; paged callers already published every page.
+        if (pages.length === 0) {
+          pages.push(messages as HistoryMessage[]);
+          publish();
+        }
+      }),
+      fetch(`/api/harness/artifacts?${artifactsQuery}`, { cache: "no-store", signal: controller.signal })
         .then(requireAuthenticatedResponse)
         .then(async response => {
           if (!response.ok) throw new Error("文件暂时无法读取");
           return await response.json() as ArtifactRecord[];
-        }),
-    ]).then(([messages, artifacts]) => {
+        })
+        .then(list => { artifacts = list; publish(); }),
+    ]).then(() => {
       if (controller.signal.aborted) return;
-      setData(historyEntries(messages as HistoryMessage[], artifacts.filter(item => item.thread_id === threadId)));
+      publish();
+      if (latestIndex) writeHistoryIndex(threadId, latestIndex);
     }).catch(cause => {
       if (controller.signal.aborted) return;
-      setError(cause instanceof Error && cause.message ? cause.message : "聊天记录暂时无法读取");
+      // The newest page may already be on screen; a failed older page should
+      // not replace it with an error state.
+      if (pages.length === 0) setError(errorText(cause));
+      else setNotice("更早的记录暂时无法读取");
+    }).finally(() => {
+      if (!controller.signal.aborted) setLoadingMore(false);
     });
     return () => controller.abort();
   }, [open, threadId, reload]);
@@ -233,22 +228,66 @@ export function AssistantHistoryPanel({ open, threadId, assistantName = "助理"
     return () => document.removeEventListener("keydown", escape);
   }, [open, onClose]);
 
-  const entries = useMemo(() => data ? filterEntries(data.entries, { query, sender }) : [], [data, query, sender]);
-  const files = useMemo(() => data ? filterFiles(data.files, { query, sender, kind, date }) : [], [data, query, sender, kind, date]);
+  useEffect(() => {
+    // A new thread (or reopening the drawer) starts at the newest message.
+    lastScrollHeight.current = 0;
+    stickToBottom.current = true;
+  }, [open, threadId]);
+
+  // Keep the reader's place while older pages prepend above the list, and stay
+  // pinned to the newest message when that is where they were.
+  useLayoutEffect(() => {
+    const element = body.current;
+    if (!element) return;
+    if (lastScrollHeight.current === 0 || stickToBottom.current) {
+      element.scrollTop = element.scrollHeight;
+    } else {
+      const grew = element.scrollHeight - lastScrollHeight.current;
+      if (grew > 0) element.scrollTop += grew;
+    }
+    lastScrollHeight.current = element.scrollHeight;
+  }, [data]);
+
+  const entries = useMemo(
+    () => data && tab === "all" ? filterEntries(data.entries, { query: debouncedQuery, sender }) : [],
+    [data, tab, debouncedQuery, sender],
+  );
+  const files = useMemo(
+    () => data && tab !== "all" ? filterFiles(data.files, { query: debouncedQuery, sender, kind, date }) : [],
+    [data, tab, debouncedQuery, sender, kind, date],
+  );
   const media = useMemo(() => files.filter(isMedia), [files]);
   const days = useMemo(() => [...new Set((data?.files ?? []).map(file => dayOf(file.createdAt)).filter(Boolean))], [data]);
+  const locate = useCallback(async (messageId: string | null) => {
+    if (!messageId) { setNotice("这条记录没有关联消息"); return; }
+    setNotice("正在加载更早的消息…");
+    setLocatingId(messageId);
+    try {
+      const found = await locateMessage(messageId, threadId, {
+        onProgress: () => setNotice("正在加载更早的消息…"),
+      });
+      setNotice(found ? "" : "未在当前会话中找到这条消息");
+    } catch {
+      setNotice("未能加载更早的消息，请重试");
+    } finally {
+      setLocatingId(null);
+    }
+  }, [threadId]);
   if (!open) return null;
 
   function switchTab(next: HistoryTab) {
     setTab(next); setQuery(""); setSender("all"); setKind("all"); setDate("all"); setNotice("");
   }
 
-  function locate(messageId: string | null) {
-    if (!messageId) { setNotice("这条记录没有关联消息"); return; }
-    setNotice("");
-    void locateMessage(messageId, threadId).then(found => {
-      if (!found) setNotice("未在当前会话中找到这条消息");
-    }).catch(() => setNotice("未能加载更早的消息，请重试"));
+  function retry() {
+    clearHistoryIndex(threadId);
+    setReload(value => value + 1);
+  }
+
+  function onBodyScroll() {
+    const element = body.current;
+    if (!element) return;
+    stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < STICK_TO_BOTTOM_PX;
   }
 
   const list = tab === "all" ? entries : tab === "files" ? files : media;
@@ -296,63 +335,23 @@ export function AssistantHistoryPanel({ open, threadId, assistantName = "助理"
         {days.map(day => <option key={day} value={day}>{day}</option>)}
       </select>}
     </div>
-    <div className={styles.body}>
+    <div ref={body} className={styles.body} onScroll={onBodyScroll}>
+      {loadingMore && data && <p className={styles.hint}>正在读取更早的记录…</p>}
       {error && <p role="alert" className={styles.error}>{error}
-        <button type="button" className={styles.link} onClick={() => setReload(value => value + 1)}>重试</button></p>}
+        <button type="button" className={styles.link} onClick={retry}>重试</button></p>}
       {!error && data === null && <p className={styles.hint}>正在读取聊天记录…</p>}
       {empty && <p className={styles.hint}>{empty}</p>}
       {notice && <p role="status" className={styles.notice}>{notice}</p>}
 
-      {tab === "all" && entries.map(entry => <article key={entry.id} className={styles.msg}>
-        <div className={styles.meta}>
-          <span className={styles.sender}>{entry.role === "user" ? "我" : assistantName}</span>
-          <button type="button" className={styles.locate} onClick={() => locate(entry.id)}>在聊天中定位</button>
-        </div>
-        {entry.text && <p className={styles.text}>{entry.text}</p>}
-        {entry.files.length > 0 && <div className={styles.chips}>
-          {entry.files.map(file => <button type="button" key={file.id} className={styles.chip}
-            title={file.name} onClick={() => locate(file.messageId)}>
-            <span className={styles.glyph} data-kind={fileKindOf(file.name, file.mediaType)}>{fileGlyph(file.name, file.mediaType)}</span>
-            <span className={styles.chipName}>{file.name}</span>
-          </button>)}
-        </div>}
-      </article>)}
+      {tab === "all" && entries.map(entry => <MessageRow key={entry.id} entry={entry}
+        assistantName={assistantName} locating={locatingId === entry.id} onLocate={locate} />)}
 
-      {tab === "files" && files.map(file => <article key={file.id} className={styles.fileRow}>
-        <span className={styles.glyph} data-kind={fileKindOf(file.name, file.mediaType)}>{fileGlyph(file.name, file.mediaType)}</span>
-        <span className={styles.fileMain}>
-          <button type="button" className={styles.fileName} title={file.name}
-            onClick={() => file.artifactId ? openFile(file) : undefined}>{file.name}</button>
-          <span className={styles.fileMeta}>
-            {file.origin === "user" ? "我上传" : assistantName}
-            {file.sizeBytes ? ` · ${formatBytes(file.sizeBytes)}` : ""}
-            {file.createdAt ? ` · ${dayOf(file.createdAt)}` : ""}
-          </span>
-        </span>
-        <span className={styles.fileActions}>
-          <button type="button" className={styles.locate} disabled={!file.messageId}
-            onClick={() => locate(file.messageId)}>在聊天中定位</button>
-          <a className={styles.link} href={fileHref(file, threadId)} target="_blank" rel="noreferrer">打开</a>
-        </span>
-      </article>)}
+      {tab === "files" && files.map(file => <FileRow key={file.id} file={file} threadId={threadId}
+        assistantName={assistantName} locating={locatingId === file.messageId} onLocate={locate} />)}
 
       {tab === "media" && <div className={styles.grid}>
-        {media.map(file => {
-          const kind = fileKindOf(file.name, file.mediaType);
-          return <figure key={file.id} className={styles.mediaItem}>
-            <button type="button" className={styles.mediaButton} title={file.name}
-              onClick={() => file.artifactId ? openFile(file) : undefined}>
-              {kind === "image"
-                ? <img src={fileHref(file, threadId)} alt={file.name} loading="lazy" />
-                : <span className={styles.video} aria-hidden="true">▶</span>}
-            </button>
-            <figcaption>
-              <span className={styles.chipName}>{file.name}</span>
-              <button type="button" className={styles.locate} disabled={!file.messageId}
-                onClick={() => locate(file.messageId)}>在聊天中定位</button>
-            </figcaption>
-          </figure>;
-        })}
+        {media.map(file => <MediaItem key={file.id} file={file} threadId={threadId}
+          locating={locatingId === file.messageId} onLocate={locate} />)}
       </div>}
     </div>
   </aside>;
