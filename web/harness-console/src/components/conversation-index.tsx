@@ -3,7 +3,14 @@
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import type { LoadEarlierFn } from "../lib/task-history";
 
-type Entry = { id: string; label: string; answer: string; node: HTMLElement };
+type Entry = {
+  id: string;
+  label: string;
+  answer: string;
+  node: HTMLElement;
+  /** Content-space top, measured once per DOM refresh instead of per scroll. */
+  offset: number;
+};
 
 // The rail is the thread's time journey. Ticks stay readable when a task runs
 // for many turns, so they are sized from a shared scale instead of magic
@@ -31,10 +38,14 @@ export function ConversationIndex({ frame, threadId, pagination }: {
     let raf = 0;
     function track() {
       if (!viewport || !current.length) return;
-      const threshold = viewport.getBoundingClientRect().top + 72;
+      // Scroll only moves the viewport; each turn's position inside the content
+      // does not change. Reading a rect per turn per scroll was the layout
+      // thrash that made a long thread feel stuck, so measure on refresh and
+      // compare the cached offsets here.
+      const threshold = viewport.scrollTop + 72;
       let selected = current[0].id;
       for (const entry of current) {
-        if (entry.node.getBoundingClientRect().top > threshold) break;
+        if (entry.offset > threshold) break;
         selected = entry.id;
       }
       setActive(selected);
@@ -55,8 +66,14 @@ export function ConversationIndex({ frame, threadId, pagination }: {
         viewport?.addEventListener("scroll", queueTrack, { passive: true });
       }
       const next: Entry[] = [];
+      // Measured while the DOM is already being scanned: this runs on mutation
+      // and resize, not on every scroll frame.
+      const viewportTop = viewport?.getBoundingClientRect().top ?? 0;
+      const scrollTop = viewport?.scrollTop ?? 0;
+      const offsetOf = (node: HTMLElement) =>
+        node.getBoundingClientRect().top - viewportTop + scrollTop;
       for (const node of root!.querySelectorAll<HTMLElement>("[data-turn-id], [data-turn-answer]")) {
-        if (node.dataset.turnId) next.push({ id: node.dataset.turnId, label: node.dataset.turnLabel || "附件消息", answer: "", node });
+        if (node.dataset.turnId) next.push({ id: node.dataset.turnId, label: node.dataset.turnLabel || "附件消息", answer: "", node, offset: offsetOf(node) });
         else if (next.length && node.dataset.turnAnswer) next[next.length - 1].answer = node.dataset.turnAnswer.replace(/!?(\[([^\]]+)\])\([^)]*\)/g, "$2").replace(/[#*_`>]/g, "").trim();
       }
       // A thread re-import wipes the message DOM for a frame; publishing an
