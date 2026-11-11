@@ -74,7 +74,6 @@ export function TaskModelControl({
   const effectiveOverrideRouteId =
     !independent && overrideRouteId === agentDefaultRouteId ? null : overrideRouteId;
   const selected = routes.find((route) => route.id === effectiveOverrideRouteId);
-  const agentDefault = routes.find((route) => route.id === agentDefaultRouteId);
   const overrideRoutes = routes.filter(
     (route) => independent || route.id !== agentDefaultRouteId,
   );
@@ -97,7 +96,7 @@ export function TaskModelControl({
           onChange={(event) => setOverrideRouteId(event.target.value || null)}
         >
           {(!independent || !selected) && <option value="" disabled={independent}>
-            {independent ? "选择模型" : `自动 · ${agentDefault?.label ?? "Agent 默认模型"}`}
+            {independent ? "选择模型" : "自动"}
           </option>}
           {overrideRoutes.map((route) => (
             <option key={route.id} value={route.id}>
