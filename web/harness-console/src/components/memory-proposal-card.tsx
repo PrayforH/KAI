@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { memoryClient, type MemoryEntry } from "../lib/memory-client";
+import { MemoryApiError, memoryClient, type MemoryEntry } from "../lib/memory-client";
 import styles from "./memory-proposal-card.module.css";
 
 export type MemoryProposal = {
@@ -68,6 +68,7 @@ type Phase =
   | "done"
   | "rejected"
   | "not-found"
+  | "blocked"
   | "error";
 
 type FailedAction = "load" | "confirm" | "reject";
@@ -87,6 +88,7 @@ const BADGE: Record<Phase, { label: string; tone: Tone }> = {
   done: { label: "已生效", tone: "success" },
   rejected: { label: "已拒绝", tone: "muted" },
   "not-found": { label: "未找到", tone: "warning" },
+  blocked: { label: "无法保存", tone: "danger" },
   error: { label: "读取失败", tone: "danger" },
 };
 
@@ -113,17 +115,28 @@ function describeScope(entry: MemoryEntry): string {
   return entry.projectId ? `${agent} · 项目 ${entry.projectId}` : `${agent} · 全部对话`;
 }
 
-/** The memory API answers 409 for optimistic-concurrency conflicts, but the
- *  client flattens the response body to an Error message. These are the
- *  ConflictError copies confirm/reject can raise, so they identify a stale
- *  version without leaking the English text into the card. */
-const CONFLICT_MESSAGES = ["memory entry changed", "replacement target changed"] as const;
+/** confirm/reject answer 409 for optimistic-concurrency failures. The HTTP
+ *  status identifies the conflict; the server copy then tells apart two very
+ *  different cases:
+ *  - a stale entry version, where re-reading and deciding again works;
+ *  - a changed replacement target, where this proposal's own version never
+ *    advances, so re-reading and confirming would 409 forever. That one needs
+ *    a terminal state instead of the self-healing path.
+ *  English only chooses the branch and never reaches the card. */
+const CONFLICT_STATUS = 409;
+const STALE_ENTRY_MESSAGE = "memory entry changed";
+const REPLACEMENT_CHANGED_MESSAGE = "replacement target changed";
 
-const CONFLICT_NOTICE = "这条记忆已被更新，已为你刷新，请重新确认。";
+const STALE_CONFLICT_NOTICE = "这条记忆已被更新，已为你刷新，请重新确认。";
+const REJECT_CONFLICT_NOTICE = "这条记忆已被更新，已为你刷新，请重新选择。";
 
-function isConflict(cause: unknown): boolean {
-  const message = cause instanceof Error ? cause.message : "";
-  return CONFLICT_MESSAGES.some(fragment => message.includes(fragment));
+type ConflictKind = "stale" | "replacement";
+
+function conflictKind(cause: unknown): ConflictKind | null {
+  if (!(cause instanceof MemoryApiError) || cause.status !== CONFLICT_STATUS) return null;
+  if (cause.message.includes(REPLACEMENT_CHANGED_MESSAGE)) return "replacement";
+  if (cause.message.includes(STALE_ENTRY_MESSAGE)) return "stale";
+  return null;
 }
 
 /** Domain errors arrive in English; show our own copy instead of the raw
@@ -188,6 +201,15 @@ export function memoryProposalCacheSize(): number {
 /** Drop cached reads; used by tests and after an out-of-band memory change. */
 export function clearMemoryProposalCache(): void {
   entryLoads.clear();
+  entriesInFlight = null;
+}
+
+/** After a successful confirm or reject the server holds a newer state for
+ *  this one entry, so its cached read (and a list request that started before
+ *  the write) must not be replayed to a remounted card. Other entry ids stay
+ *  cached: only this proposal changed. */
+function invalidateEntryLoad(entryId: string): void {
+  entryLoads.delete(entryId);
   entriesInFlight = null;
 }
 
@@ -263,7 +285,7 @@ export function MemoryProposalCard({ proposal }: { proposal: MemoryProposal }) {
 
   useEffect(() => {
     if (!focusStatusRef.current) return;
-    if (phase !== "done" && phase !== "rejected" && phase !== "error") return;
+    if (phase !== "done" && phase !== "rejected" && phase !== "blocked" && phase !== "error") return;
     focusStatusRef.current = false;
     statusRef.current?.focus();
   }, [phase]);
@@ -279,22 +301,33 @@ export function MemoryProposalCard({ proposal }: { proposal: MemoryProposal }) {
       if (action === "confirm") {
         if (entry.status !== "active") await memoryClient.confirm(entry);
         if (!mountedRef.current) return;
+        invalidateEntryLoad(entry.entryId);
         setPhase("done");
       } else {
         await memoryClient.reject(entry);
         if (!mountedRef.current) return;
+        invalidateEntryLoad(entry.entryId);
         setPhase("rejected");
       }
     } catch (cause) {
       if (!mountedRef.current) return;
-      if (isConflict(cause)) {
-        // Optimistic-concurrency conflict: the version on this card is stale.
-        // Re-read the latest entry and let the user decide again with fresh
-        // data instead of retrying the same version into another 409.
+      const conflict = conflictKind(cause);
+      if (action === "confirm" && conflict === "replacement") {
+        // The replacement target changed, not this proposal's version: a
+        // re-read returns the same version, so confirming again would 409
+        // forever. Stop with a terminal exit; rejecting still works and is
+        // the way to start over.
+        setPhase("blocked");
+        return;
+      }
+      if (conflict === "stale") {
+        // The version on this card is stale. Re-read the latest entry and let
+        // the user decide again with fresh data instead of retrying the same
+        // version into another 409.
         focusStatusRef.current = false;
         await load(true);
         if (!mountedRef.current) return;
-        setNotice(CONFLICT_NOTICE);
+        setNotice(action === "confirm" ? STALE_CONFLICT_NOTICE : REJECT_CONFLICT_NOTICE);
         return;
       }
       setError(errorMessage(cause, "请稍后重试。"));
@@ -310,7 +343,12 @@ export function MemoryProposalCard({ proposal }: { proposal: MemoryProposal }) {
         tone: "danger" as const,
       }
     : BADGE[phase];
-  const showEntry = entry !== null && (phase === "pending" || isBusy || (phase === "error" && failedAction !== "load"));
+  const showEntry = entry !== null && (
+    phase === "pending"
+    || phase === "blocked"
+    || isBusy
+    || (phase === "error" && failedAction !== "load")
+  );
 
   return (
     <section
@@ -445,6 +483,21 @@ export function MemoryProposalCard({ proposal }: { proposal: MemoryProposal }) {
         </strong>
       )}
 
+      {phase === "blocked" && entry && (
+        <>
+          <strong
+            className={styles.stateTitle}
+            tabIndex={-1}
+            ref={node => { statusRef.current = node; }}
+          >
+            替换目标已变更
+          </strong>
+          <p className={styles.hint}>
+            这条提案要替换的那条记忆已经变化，无法保存。可以先不保存这条提案，再让助理按当前记忆重新发起。
+          </p>
+        </>
+      )}
+
       {notice && phase === "pending" && (
         <p className={styles.notice} role="status">{notice}</p>
       )}
@@ -503,6 +556,14 @@ export function MemoryProposalCard({ proposal }: { proposal: MemoryProposal }) {
         </div>
       )}
 
+      {phase === "blocked" && entry && (
+        <div className={styles.actions}>
+          <button type="button" className={styles.reject} onClick={() => void resolve("reject")}>
+            不保存
+          </button>
+        </div>
+      )}
+
       {phase === "error" && !entry && (
         <div className={styles.actions}>
           <button type="button" className={styles.secondary} onClick={() => void load(true)}>
@@ -521,7 +582,7 @@ export function MemoryProposalCard({ proposal }: { proposal: MemoryProposal }) {
         </div>
       )}
 
-      {(phase === "pending" || isBusy) && (
+      {(phase === "pending" || phase === "blocked" || isBusy) && (
         <div className={styles.footer}>
           <a className={styles.link} href="/settings#memory">去记忆设置查看</a>
         </div>

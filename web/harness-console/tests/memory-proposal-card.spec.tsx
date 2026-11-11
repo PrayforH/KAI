@@ -6,6 +6,7 @@ import {
   MEMORY_PROPOSAL_CACHE_LIMIT, MemoryProposalCard, MemoryToolNotice,
   clearMemoryProposalCache, memoryProposalCacheSize, memoryToolFailure, parseMemoryProposal,
 } from "../src/components/memory-proposal-card";
+import { MemoryApiError, memoryClient, type MemoryEntry } from "../src/lib/memory-client";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 const host = document.createElement("div");
@@ -365,6 +366,121 @@ it("state conflict: re-reads the latest version after a 409 and confirms with fr
   const versions = api.bodies.map(body => (body as { expectedVersion?: number }).expectedVersion);
   expect(versions).toEqual([2, 3]);
   expect(host.textContent).toContain("已写入长期记忆");
+});
+
+it("state done: invalidates the cached read so a remount shows the saved state", async () => {
+  let confirmed = false;
+  const api = stubMemoryApi({
+    list: async () => [confirmed ? { ...entry, status: "active", version: 3 } : entry],
+    confirm: async () => {
+      confirmed = true;
+      return { ...entry, status: "active", version: 3 };
+    },
+  });
+  await render(<MemoryProposalCard proposal={pendingProposal} />);
+  expect(host.textContent).toContain("待确认");
+
+  await click("确认保存");
+  await flush();
+  expect(host.textContent).toContain("已写入长期记忆");
+
+  await act(async () => { root.render(<div />); });
+  await render(<MemoryProposalCard proposal={pendingProposal} />);
+
+  expect(api.list).toHaveBeenCalledTimes(2);
+  expect(host.textContent).toContain("已写入长期记忆");
+  expect(host.textContent).not.toContain("待确认");
+});
+
+it("state blocked: a changed replacement target stops instead of retrying the same version", async () => {
+  const api = stubMemoryApi({
+    confirm: async () => {
+      throw apiFailure(409, "conflict", "replacement target changed; review the suggestion again");
+    },
+  });
+  await render(<MemoryProposalCard proposal={pendingProposal} />);
+
+  await click("确认保存");
+  await flush();
+  await flush();
+
+  expect(api.confirm).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain("替换目标已变更");
+  expect(host.textContent).toContain("无法保存");
+  expect(host.textContent).not.toContain("已为你刷新");
+  expect(host.textContent).not.toContain("replacement target changed");
+  expect(button("确认保存")).toBeUndefined();
+  expect(button("不保存")).toBeTruthy();
+  expect(api.bodies.map(body => (body as { expectedVersion?: number }).expectedVersion))
+    .toEqual([2]);
+
+  // No re-read turns this back into a pending retry with the same version.
+  await flush();
+  expect(api.list).toHaveBeenCalledTimes(1);
+  expect(button("确认保存")).toBeUndefined();
+
+  // Rejecting is the terminal exit, and it is still allowed.
+  await click("不保存");
+  await flush();
+  expect(api.reject).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain("已拒绝这条记忆");
+});
+
+it("state conflict: re-reads after a 409 while rejecting and retries with the fresh version", async () => {
+  let listCalls = 0;
+  let rejectCalls = 0;
+  const api = stubMemoryApi({
+    list: async () => {
+      listCalls += 1;
+      return listCalls === 1 ? [entry] : [{ ...entry, version: 3 }];
+    },
+    reject: async () => {
+      rejectCalls += 1;
+      if (rejectCalls === 1) {
+        throw apiFailure(409, "conflict", "memory entry changed or is not pending");
+      }
+      return { ...entry, status: "rejected", version: 4 };
+    },
+  });
+  await render(<MemoryProposalCard proposal={pendingProposal} />);
+
+  await click("不保存");
+  await flush();
+  await flush();
+
+  expect(api.reject).toHaveBeenCalledTimes(1);
+  expect(listCalls).toBe(2);
+  expect(host.textContent).toContain("已为你刷新");
+  expect(host.textContent).toContain("请重新选择");
+  expect(host.textContent).not.toContain("memory entry changed");
+  expect(button("不保存")).toBeTruthy();
+
+  await click("不保存");
+  await flush();
+
+  expect(api.reject).toHaveBeenCalledTimes(2);
+  const versions = api.bodies.map(body => (body as { expectedVersion?: number }).expectedVersion);
+  expect(versions).toEqual([2, 3]);
+  expect(host.textContent).toContain("已拒绝这条记忆");
+});
+
+it("keeps the HTTP status and error code on a failed request", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => ({
+    ok: false,
+    status: 409,
+    json: async () => ({
+      error: { code: "conflict", message: "memory entry changed or is not pending" },
+    }),
+  })));
+
+  const failure = await memoryClient
+    .confirm(entry as unknown as MemoryEntry)
+    .catch((cause: unknown) => cause);
+
+  expect(failure).toBeInstanceOf(MemoryApiError);
+  expect((failure as MemoryApiError).status).toBe(409);
+  expect((failure as MemoryApiError).code).toBe("conflict");
+  expect((failure as MemoryApiError).message).toBe("memory entry changed or is not pending");
 });
 
 it("state error: drops the previous entry when a replaced proposal cannot be read", async () => {
