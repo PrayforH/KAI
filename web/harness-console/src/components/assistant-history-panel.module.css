@@ -98,7 +98,10 @@
 }
 .link:hover { color: inherit; text-decoration: underline; }
 
-.msg { display: grid; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--codex-line, #2a2a2a); }
+/* 长线程可以有几百行：跳过屏外行的布局与绘制，滚动和搜索不再被整列表拖住。
+   contain-intrinsic-size 用 auto，浏览器会记住实测高度，滚动条不会反复跳。 */
+.msg, .fileRow, .mediaItem { content-visibility: auto; }
+.msg { contain-intrinsic-size: auto 88px; display: grid; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--codex-line, #2a2a2a); }
 .msg:last-child { border-bottom: 0; }
 .meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .sender { color: var(--codex-muted, #8a8a8a); font-size: 12px; }
@@ -167,6 +170,7 @@
 .glyph[data-kind="zip"] { background: #8a8f99; }
 
 .fileRow {
+  contain-intrinsic-size: auto 56px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -194,7 +198,7 @@
 .fileActions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
-.mediaItem { margin: 0; display: grid; gap: 6px; min-width: 0; }
+.mediaItem { contain-intrinsic-size: auto 180px; margin: 0; display: grid; gap: 6px; min-width: 0; }
 .mediaButton {
   display: grid;
   place-items: center;

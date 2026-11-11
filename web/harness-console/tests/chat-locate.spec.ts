@@ -4,7 +4,8 @@ import { flashMessage, locateInChat, registerHistoryLocator } from "../src/lib/c
 
 afterEach(() => {
   registerHistoryLocator(null);
-  document.querySelectorAll("[data-message-id]").forEach(node => node.remove());
+  document.body.replaceChildren();
+  vi.useRealTimers();
 });
 
 function addMessage(id: string) {
@@ -20,26 +21,216 @@ it("flashes a message that is already mounted", async () => {
   expect(flashMessage("user-run_1")).toBe(true);
   expect(node.classList.contains("assistant-history-located")).toBe(true);
   expect(node.scrollIntoView).toHaveBeenCalled();
-  await expect(locateInChat("user-run_1")).resolves.toBe(true);
+  await expect(locateInChat("user-run_1")).resolves.toBe("located");
 });
 
 it("pages earlier history in before locating an old message", async () => {
-  const loadEarlier = vi.fn(async () => { addMessage("assistant-run_old"); });
+  const loadEarlier = vi.fn(async (_pages = 1) => { addMessage("assistant-run_old"); return true; });
   let hasMore = true;
   registerHistoryLocator({
     threadId: "thread_1",
     hasMore: () => hasMore,
-    loadEarlier: async () => { await loadEarlier(); hasMore = false; },
+    loadEarlier: async (pages = 1) => {
+      await loadEarlier(pages);
+      hasMore = false;
+      return true;
+    },
   });
-  await expect(locateInChat("assistant-run_old", "thread_1")).resolves.toBe(true);
+  await expect(locateInChat("assistant-run_old", "thread_1")).resolves.toBe("located");
+  expect(loadEarlier).toHaveBeenCalledTimes(1);
+  expect(loadEarlier).toHaveBeenCalledWith(3);
+});
+
+it("keeps paging past the old five-page ceiling", async () => {
+  let remaining = 7;
+  const loadEarlier = vi.fn(async () => {
+    remaining -= 1;
+    if (remaining === 0) addMessage("assistant-run_oldest");
+    return true;
+  });
+  registerHistoryLocator({
+    threadId: "thread_1",
+    hasMore: () => remaining > 0,
+    loadEarlier,
+  });
+  // 7 batches × 3 pages = 21 pages of 30 runs, beyond the old fixed 5.
+  await expect(locateInChat("assistant-run_oldest", "thread_1")).resolves.toBe("located");
+  expect(loadEarlier).toHaveBeenCalledTimes(7);
+}, 15_000);
+
+it("stops when the thread has no earlier pages or belongs to another thread", async () => {
+  const loadEarlier = vi.fn(async () => false);
+  registerHistoryLocator({ threadId: "thread_1", hasMore: () => false, loadEarlier });
+  await expect(locateInChat("missing", "thread_1")).resolves.toBe("missing");
+  registerHistoryLocator({ threadId: "thread_1", hasMore: () => true, loadEarlier });
+  await expect(locateInChat("missing", "thread_2")).resolves.toBe("missing");
+  expect(loadEarlier).not.toHaveBeenCalled();
+});
+
+it("does not match a message outside the registered conversation frame", async () => {
+  const frame = document.createElement("div");
+  const viewport = document.createElement("div");
+  viewport.className = "aui-thread-viewport";
+  frame.append(viewport);
+  document.body.append(frame);
+  addMessage("assistant-other");
+  registerHistoryLocator({
+    threadId: "thread_1",
+    hasMore: () => false,
+    loadEarlier: async () => false,
+    frame: () => frame,
+  });
+  await expect(locateInChat("assistant-other", "thread_1")).resolves.toBe("missing");
+});
+
+it("does not fall back to the document when the registered frame is gone", async () => {
+  addMessage("assistant-other");
+  registerHistoryLocator({
+    threadId: "thread_1",
+    hasMore: () => false,
+    loadEarlier: async () => false,
+    // The conversation frame unmounted; the message node elsewhere on the
+    // page must not be treated as a match.
+    frame: () => null,
+  });
+  await expect(locateInChat("assistant-other", "thread_1")).resolves.toBe("retry");
+});
+
+it("waits for an in-flight page instead of reporting a missing message", async () => {
+  let finish!: () => void;
+  const inFlight = new Promise<void>(resolve => { finish = resolve; });
+  let busy = true;
+  const loadEarlier = vi.fn(async () => {
+    if (busy) return "busy" as const;
+    addMessage("assistant-run_old");
+    return "loaded" as const;
+  });
+  registerHistoryLocator({
+    threadId: "thread_1",
+    hasMore: () => true,
+    loadEarlier,
+    waitForLoading: async () => { busy = false; await inFlight; },
+  });
+  const located = locateInChat("assistant-run_old", "thread_1");
+  setTimeout(() => finish(), 0);
+  await expect(located).resolves.toBe("located");
+  expect(loadEarlier).toHaveBeenCalledTimes(2);
+});
+
+it("waits for a remounting frame instead of paging a hidden thread", async () => {
+  const frame = document.createElement("div");
+  const message = document.createElement("div");
+  message.setAttribute("data-message-id", "assistant-run_old");
+  message.scrollIntoView = vi.fn();
+  frame.append(message);
+  let attached = false;
+  const loadEarlier = vi.fn(async () => "loaded" as const);
+  registerHistoryLocator({
+    threadId: "thread_1",
+    hasMore: () => true,
+    loadEarlier,
+    frame: () => (attached ? frame : null),
+  });
+  setTimeout(() => { attached = true; }, 20);
+  await expect(locateInChat("assistant-run_old", "thread_1")).resolves.toBe("located");
+  expect(loadEarlier).not.toHaveBeenCalled();
+});
+
+it("locates twice in a row without turning the second click into a miss", async () => {
+  let call = 0;
+  const loadEarlier = vi.fn(async () => {
+    call += 1;
+    addMessage(call === 1 ? "assistant-run_old_1" : "assistant-run_old_2");
+    return "loaded" as const;
+  });
+  registerHistoryLocator({ threadId: "thread_1", hasMore: () => true, loadEarlier });
+  await expect(locateInChat("assistant-run_old_1", "thread_1")).resolves.toBe("located");
+  await expect(locateInChat("assistant-run_old_2", "thread_1")).resolves.toBe("located");
+  expect(loadEarlier).toHaveBeenCalledTimes(2);
+});
+
+it("reports retry, not missing, when the page request stays busy", async () => {
+  const loadEarlier = vi.fn(async () => "busy" as const);
+  registerHistoryLocator({
+    threadId: "thread_1",
+    hasMore: () => true,
+    loadEarlier,
+    waitForLoading: async () => undefined,
+  });
+  await expect(locateInChat("assistant-run_old", "thread_1")).resolves.toBe("retry");
+  expect(loadEarlier).toHaveBeenCalledTimes(2);
+});
+
+it("reports retry, not missing, when an earlier page fails to load", async () => {
+  const loadEarlier = vi.fn(async () => "failed" as const);
+  registerHistoryLocator({ threadId: "thread_1", hasMore: () => true, loadEarlier });
+  await expect(locateInChat("assistant-run_old", "thread_1")).resolves.toBe("retry");
+});
+
+it("reports retry, not missing, when the page budget runs out", async () => {
+  // The message may sit past the budget; a callback guard-rail that ran out
+  // is ignorance, not proof the message is absent.
+  const loadEarlier = vi.fn(async () => "loaded" as const);
+  registerHistoryLocator({ threadId: "thread_1", hasMore: () => true, loadEarlier });
+  await expect(locateInChat("assistant-run_old", "thread_1", { maxPages: 3 }))
+    .resolves.toBe("retry");
+  expect(loadEarlier).toHaveBeenCalledTimes(1);
+}, 10_000);
+
+it("waits for the first page instead of calling a cold open a miss", async () => {
+  // Before the thread's first page seeds `hasMore`, false means "unknown".
+  let seeded = false;
+  const loadEarlier = vi.fn(async () => { addMessage("assistant-run_old"); return "loaded" as const; });
+  registerHistoryLocator({
+    threadId: "thread_1", ready: () => seeded, hasMore: () => false, loadEarlier,
+  });
+  setTimeout(() => {
+    seeded = true;
+    registerHistoryLocator({
+      threadId: "thread_1", ready: () => true, hasMore: () => true, loadEarlier,
+    });
+  }, 20);
+  await expect(locateInChat("assistant-run_old", "thread_1")).resolves.toBe("located");
   expect(loadEarlier).toHaveBeenCalledTimes(1);
 });
 
-it("stops when the thread has no earlier pages or belongs to another thread", async () => {
-  const loadEarlier = vi.fn(async () => undefined);
-  registerHistoryLocator({ threadId: "thread_1", hasMore: () => false, loadEarlier });
-  await expect(locateInChat("missing", "thread_1")).resolves.toBe(false);
-  registerHistoryLocator({ threadId: "thread_1", hasMore: () => true, loadEarlier });
-  await expect(locateInChat("missing", "thread_2")).resolves.toBe(false);
+it("reports retry, not missing, when the thread never seeds its first page", async () => {
+  const loadEarlier = vi.fn(async () => "loaded" as const);
+  registerHistoryLocator({
+    threadId: "thread_1", ready: () => false, hasMore: () => false, loadEarlier,
+  });
+  await expect(locateInChat("assistant-run_old", "thread_1")).resolves.toBe("retry");
   expect(loadEarlier).not.toHaveBeenCalled();
+}, 10_000);
+
+it("reports retry when no conversation is registered to page", async () => {
+  await expect(locateInChat("assistant-run_old")).resolves.toBe("retry");
+});
+
+it("looks immediately once an in-flight page settles", async () => {
+  const loadEarlier = vi.fn(async () => "busy" as const);
+  registerHistoryLocator({
+    threadId: "thread_1",
+    hasMore: () => true,
+    loadEarlier,
+    waitForLoading: async () => { addMessage("assistant-run_old"); },
+  });
+  const started = Date.now();
+  await expect(locateInChat("assistant-run_old", "thread_1")).resolves.toBe("located");
+  // No full mount window between the settle and the check.
+  expect(Date.now() - started).toBeLessThan(500);
+  expect(loadEarlier).toHaveBeenCalledTimes(1);
+});
+
+it("stops paging the old thread when the locator is replaced mid-locate", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const oldLoad = vi.fn(async () => { await gate; return "loaded" as const; });
+  registerHistoryLocator({ threadId: "thread_1", hasMore: () => true, loadEarlier: oldLoad });
+  const pending = locateInChat("assistant-run_old", "thread_1");
+  const newLoad = vi.fn(async () => "loaded" as const);
+  registerHistoryLocator({ threadId: "thread_1", hasMore: () => true, loadEarlier: newLoad });
+  release();
+  await expect(pending).resolves.toBe("retry");
+  expect(newLoad).not.toHaveBeenCalled();
 });
