@@ -1,64 +1,40 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 
 import {
   addAssistantGroupMember,
-  assistantRequest,
   createAssistantGroup,
   type Specialist,
 } from "../lib/assistant-client";
 import styles from "./create-group-dialog.module.css";
 
-const PERSONAL_THREAD = "kai-personal-assistant-v1";
-
 type Props = {
+  /** 侧栏已加载并按同一规则过滤好的子助理（排除已归档与个人主线程）。 */
+  specialists: Specialist[];
+  /** 侧栏名单是否已就绪；未就绪前不展示空态、禁止创建。 */
+  ready: boolean;
+  /** 侧栏名单加载失败时的明确错误。 */
+  error: string | null;
+  onRetry: () => void;
   onClose: () => void;
   onCreated: (groupId: string) => void;
 };
 
 /** 从助理主界面发起建群：名称必填，勾选的子助理随创建一起入群。 */
-export function CreateGroupDialog({ onClose, onCreated }: Props) {
+export function CreateGroupDialog({
+  specialists,
+  ready,
+  error,
+  onRetry,
+  onClose,
+  onCreated,
+}: Props) {
   const titleId = useId();
   const [name, setName] = useState("");
-  const [specialists, setSpecialists] = useState<Specialist[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [ready, setReady] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setReady(false);
-    setLoadError(null);
-    void assistantRequest<Specialist[]>("specialists")
-      .then((list) => {
-        if (cancelled) return;
-        setSpecialists(
-          list.filter(
-            (item) =>
-              item.status !== "archived" &&
-              item.config?.conversation_thread_id !== PERSONAL_THREAD,
-          ),
-        );
-        setReady(true);
-      })
-      .catch((reason) => {
-        if (!cancelled) {
-          setLoadError(reason instanceof Error ? reason.message : "子助理加载失败");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [reloadKey]);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const toggle = (specialistId: string) => {
     setSelected((current) => {
@@ -72,7 +48,7 @@ export function CreateGroupDialog({ onClose, onCreated }: Props) {
   const submit = async () => {
     if (!name.trim() || busy || !ready) return;
     setBusy(true);
-    setError(null);
+    setSubmitError(null);
     try {
       const group = await createAssistantGroup(name.trim());
       for (const specialistId of selected) {
@@ -80,7 +56,7 @@ export function CreateGroupDialog({ onClose, onCreated }: Props) {
       }
       onCreated(group.groupId);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "创建群聊失败");
+      setSubmitError(reason instanceof Error ? reason.message : "创建群聊失败");
     } finally {
       setBusy(false);
     }
@@ -111,10 +87,10 @@ export function CreateGroupDialog({ onClose, onCreated }: Props) {
         </label>
         <fieldset className={styles.members}>
           <legend>拉入子助理（可多选）</legend>
-          {loading ? (
-            <span className={styles.empty}>正在加载子助理…</span>
-          ) : !ready ? (
-            <span className={styles.empty}>子助理加载失败，请点下方“重试”。</span>
+          {!ready ? (
+            <span className={styles.empty}>
+              {error ? "子助理加载失败，请点下方“重试”。" : "正在加载子助理…"}
+            </span>
           ) : specialists.length === 0 ? (
             <span className={styles.empty}>还没有可拉入的子助理，可先只建创建者+主助理的群。</span>
           ) : (
@@ -130,19 +106,15 @@ export function CreateGroupDialog({ onClose, onCreated }: Props) {
             ))
           )}
         </fieldset>
-        {loadError && (
+        {!ready && error && (
           <p className={styles.error} role="alert">
-            子助理加载失败：{loadError}
+            子助理加载失败：{error}
           </p>
         )}
-        {error && <p className={styles.error} role="alert">{error}</p>}
+        {submitError && <p className={styles.error} role="alert">{submitError}</p>}
         <div className={styles.actions}>
-          {!loading && !ready && (
-            <button
-              type="button"
-              className={styles.secondary}
-              onClick={() => setReloadKey((key) => key + 1)}
-            >
+          {!ready && error && (
+            <button type="button" className={styles.secondary} onClick={onRetry}>
               重试
             </button>
           )}
@@ -155,7 +127,7 @@ export function CreateGroupDialog({ onClose, onCreated }: Props) {
             disabled={!name.trim() || busy || !ready}
             onClick={() => void submit()}
           >
-            {busy ? "正在创建…" : loading ? "加载中…" : "创建群聊"}
+            {busy ? "正在创建…" : ready ? "创建群聊" : "加载中…"}
           </button>
         </div>
       </div>

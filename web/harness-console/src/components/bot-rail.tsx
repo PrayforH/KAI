@@ -118,6 +118,11 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
   const activeBot = activeBotId;
   const cacheKey = userId ? `bot-directory:${tenantId ?? ""}:${userId}` : null;
   const [specialists, setSpecialists] = useState<Specialist[]>(() => cacheKey ? peekClientRead<Specialist[]>(cacheKey) ?? [] : []);
+  // 侧栏名单是否已可用：有缓存即刻视为就绪，否则等首次拉取成功。
+  const [directoryReady, setDirectoryReady] = useState<boolean>(
+    () => Boolean(cacheKey && Array.isArray(peekClientRead<Specialist[]>(cacheKey))),
+  );
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [localGroups, setLocalGroups] = useState<ReadonlySet<string>>(new Set());
   const [groupsView, setGroupsView] = groupsState ?? [localGroups, setLocalGroups];
   const collapsed = groupsView.has("section:bots:collapsed");
@@ -165,10 +170,15 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
       const ordered = stableBotOrder(list);
       working.current = ordered.some(bot => botIsWorking(bot.activity));
       setSpecialists(ordered);
+      setDirectoryError(null);
+      setDirectoryReady(true);
       if (cacheKey) rememberClientRead(cacheKey, ordered);
       if (initialized) window.dispatchEvent(new CustomEvent("kai:specialists-changed"));
-    } catch {
-      // 机器人列表是导航增强；读不到时保留主助理入口即可。
+    } catch (reason) {
+      // 机器人列表是导航增强；读不到时保留主助理入口，并把失败交给建群弹层提示。
+      if (mounted.current) {
+        setDirectoryError(reason instanceof Error ? reason.message : "子助理加载失败");
+      }
     }
   }, [cacheKey, userId, tenantId]);
 
@@ -211,6 +221,10 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
     await load(); window.dispatchEvent(new CustomEvent("kai:specialists-changed"));
   }
   const ordered = stableBotOrder(specialists);
+  // 建群可选的子助理：与侧栏同一份数据，按同一规则过滤（排除已归档与个人主线程）。
+  const groupCandidates = ordered.filter(
+    item => item.status !== "archived" && item.config?.conversation_thread_id !== PERSONAL_ASSISTANT_THREAD,
+  );
   const primary = ordered.find(isPrimaryBot);
   const available = ordered.filter(item => item.status !== "archived" && !botSidebar(item).hidden);
   const pinned = available.filter(item => botSidebar(item).pinned);
@@ -361,6 +375,10 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
       )}
       {creatingGroup && (
         <CreateGroupDialog
+          specialists={groupCandidates}
+          ready={directoryReady}
+          error={directoryError}
+          onRetry={() => void load()}
           onClose={() => setCreatingGroup(false)}
           onCreated={(groupId) => {
             setCreatingGroup(false);
