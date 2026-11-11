@@ -212,6 +212,32 @@ class ComputerRuntime:
 
         return await self.desktops.start(computer, row.desktop_id, ensure_guest)
 
+    async def suspend_idle_computers(self, *, idle_seconds: float) -> int:
+        """Halt idle cloud VMs in place; disks and identity stay for the wake.
+
+        Remote computers are explicitly out of scope. The node re-validates
+        every candidate under the computer row lock, so a Run that claimed it
+        between this listing and the request keeps the VM running.
+        """
+
+        if idle_seconds <= 0 or self.client is None:
+            return 0
+        control = HttpComputerControl(self.client)
+        stopped = 0
+        for computer in await self.registry.vm_idle_candidates(idle_seconds=idle_seconds):
+            if computer.provider != VM_PROVIDER:
+                # Defense in depth: a remote computer never sleeps this round.
+                continue
+            try:
+                await control.suspend_vm(
+                    computer.tenant_id, computer.user_id, idle_seconds=idle_seconds
+                )
+                stopped += 1
+            except (RuntimeError, NotFoundError, httpx.HTTPError):
+                # Busy or uncertain: leave it running for a later retry.
+                continue
+        return stopped
+
     async def reclaim_desktops(self, *, idle_seconds: float) -> int:
         """Stop guest sessions for stopped or idle slots; never touches active work."""
 

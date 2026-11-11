@@ -19,6 +19,9 @@ class ComputerState(StrEnum):
     RUNNING = "running"
     RECOVERING = "recovering"
     FAILED = "failed"
+    # Cloud VM halted to save capacity: the provider instance and its work
+    # disks/identity are preserved; the next Computer Use wakes the same VM.
+    SUSPENDED = "suspended"
 
 
 class LeasePurpose(StrEnum):

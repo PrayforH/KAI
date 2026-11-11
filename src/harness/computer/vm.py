@@ -26,6 +26,9 @@ class VmComputerDriver(DockerComputerDriver):
 
     async def connect(self, computer: AssistantComputer, token: ComputerLease) -> None:
         self._validate(computer, token, LeasePurpose.EXECUTE)
+        # A halted VM keeps its instance; waking is idempotent and is a no-op
+        # probe when it is already running. Never creates disks or containers.
+        await self.host.lifecycle(token, "wake")
         if token.desktop_id != "vm":
             # BUSY describes the execution lease. Only the guest can confirm
             # whether the desktop survived a reboot or needs to be started.

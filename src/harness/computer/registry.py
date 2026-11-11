@@ -12,7 +12,7 @@ provider endpoint, volume path or computer id as an access grant.
 import re
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from sqlalchemy import func, select, update
@@ -33,6 +33,7 @@ from harness.computer.models import (
     LeaseState,
 )
 from harness.computer.storage import AssistantComputerRow as Computer
+from harness.computer.storage import ComputerDesktopLeaseRow as DesktopLease
 from harness.computer.storage import ComputerDesktopRow as Desktop
 from harness.computer.storage import ComputerLeaseRow as Lease
 from harness.core.errors import ConflictError, NotFoundError
@@ -382,6 +383,9 @@ class ComputerRegistry:
                 if computer.provider_ref is None or computer.state not in {
                     ComputerState.IDLE,
                     ComputerState.RUNNING,
+                    # A halted VM keeps its instance; the driver wakes it before
+                    # the guest gate is asked for execution.
+                    ComputerState.SUSPENDED,
                 }:
                     raise ComputerRecoveryRequiredError("computer is not ready for execution")
                 if desktop is None:
@@ -505,6 +509,95 @@ class ComputerRegistry:
                 )
             )
             yield await self._view(session, token)
+
+    async def vm_idle_candidates(self, *, idle_seconds: float) -> tuple[AssistantComputer, ...]:
+        """VMs that look idle long enough; the node re-validates before stopping."""
+
+        if idle_seconds <= 0:
+            return ()
+        cutoff = datetime.now(UTC) - timedelta(seconds=idle_seconds)
+        async with self._sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(Computer)
+                    .where(
+                        Computer.provider == "vm-computer",
+                        Computer.state == ComputerState.IDLE.value,
+                        Computer.provider_ref.is_not(None),
+                        func.coalesce(Computer.last_active_at, Computer.updated_at) <= cutoff,
+                    )
+                    .order_by(func.coalesce(Computer.last_active_at, Computer.updated_at))
+                )
+            ).all()
+        return tuple(AssistantComputer.model_validate(row) for row in rows)
+
+    @asynccontextmanager
+    async def suspend_gate(
+        self, tenant: str, user: str, *, provider: str, idle_seconds: float
+    ) -> AsyncGenerator[tuple[Computer, datetime]]:
+        """Exclusive idle window for halting one computer under its row lock.
+
+        The lock is held until the caller confirms the physical stop, so an
+        execution claim cannot slip in between validation and shutdown. Only
+        the registry row is touched here; the caller preserves the instance
+        and its work disks.
+        """
+
+        if idle_seconds <= 0:
+            raise ValueError("computer idle window must be positive")
+        async with self._sessions.begin() as session:
+            computer = await self._get(session, tenant, user, lock=True)
+            moment = await _now(session)
+            if computer.provider != provider:
+                raise ConflictError("computer is not managed by this host")
+            if computer.state != ComputerState.IDLE.value or computer.provider_ref is None:
+                raise ConflictError("computer is not idle")
+            live = await session.scalar(
+                select(Lease).where(
+                    Lease.tenant_id == tenant,
+                    Lease.user_id == user,
+                    Lease.state == LeaseState.ACTIVE.value,
+                    Lease.expires_at > moment,
+                )
+            )
+            if live is not None:
+                raise ConflictError("computer has a live lease")
+            control = await session.scalar(
+                select(func.count())
+                .select_from(DesktopLease)
+                .where(
+                    DesktopLease.tenant_id == tenant,
+                    DesktopLease.user_id == user,
+                    DesktopLease.state.in_(("agent", "human", "takeover_pending")),
+                    DesktopLease.expires_at.is_not(None),
+                    DesktopLease.expires_at > moment,
+                )
+            )
+            if control:
+                raise ConflictError("desktop control is active")
+            # A slot that is starting or busy is imminent occupancy even before
+            # its execution lease row lands.
+            starting = await session.scalar(
+                select(func.count())
+                .select_from(Desktop)
+                .where(
+                    Desktop.tenant_id == tenant,
+                    Desktop.user_id == user,
+                    Desktop.state.in_(("created", "starting", "busy")),
+                )
+            )
+            if starting:
+                raise ConflictError("desktop is starting or busy")
+            last_active = computer.last_active_at or computer.updated_at
+            if last_active > moment - timedelta(seconds=idle_seconds):
+                raise ConflictError("computer is not idle long enough")
+            yield computer, moment
+
+    @staticmethod
+    def mark_suspended(computer: Computer, moment: datetime) -> None:
+        """Commit the halted state for the row yielded by ``suspend_gate``."""
+
+        _touch(computer, moment, ComputerState.SUSPENDED)
 
     @staticmethod
     async def _view(

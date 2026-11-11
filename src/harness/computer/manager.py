@@ -90,7 +90,7 @@ class ComputerManager:
         for _ in range(3):
             # A desktop-scoped caller must not treat another Bot's running
             # desktop as an unfinished VM; legacy whole-VM callers still do.
-            if computer.state is ComputerState.IDLE or (
+            if computer.state in {ComputerState.IDLE, ComputerState.SUSPENDED} or (
                 allow_running
                 and computer.state is ComputerState.RUNNING
                 and computer.provider_ref is not None

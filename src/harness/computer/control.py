@@ -139,6 +139,27 @@ class HttpComputerControl:
             raise RuntimeError("computer desktop slot acknowledgement is invalid")
         return cast(dict[str, object], value)
 
+    async def suspend_vm(
+        self, tenant_id: str, user_id: str, *, idle_seconds: float
+    ) -> dict[str, object]:
+        """Node-side maintenance: halt one idle cloud VM, keeping its disks."""
+
+        response = await self.client.post(
+            "/v1/computer/vm/suspend",
+            json={
+                "tenant_id": tenant_id,
+                "user_id": user_id,
+                "idle_seconds": idle_seconds,
+            },
+            timeout=httpx.Timeout(120, connect=10),
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(f"computer VM suspend unavailable: HTTP {response.status_code}")
+        value: object = response.json()
+        if not isinstance(value, dict) or cast(dict[str, object], value).get("state") != "stopped":
+            raise RuntimeError("computer VM suspend acknowledgement is invalid")
+        return cast(dict[str, object], value)
+
     async def lifecycle(
         self, token: ComputerLease, operation: str, *, image: str | None = None
     ) -> str | None:

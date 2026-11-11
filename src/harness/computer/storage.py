@@ -26,11 +26,12 @@ class AssistantComputerRow(Base):
         Index("uq_assistant_computer_provider_ref", "provider", "provider_ref", unique=True),
         CheckConstraint("epoch >= 0 AND revision >= 1", name="ck_assistant_computer_version"),
         CheckConstraint(
-            "state IN ('registered','starting','idle','running','recovering','failed')",
+            "state IN ('registered','starting','idle','running','recovering','failed',"
+            "'suspended')",
             name="ck_assistant_computer_state",
         ),
         CheckConstraint(
-            "state NOT IN ('idle','running') OR provider_ref IS NOT NULL",
+            "state NOT IN ('idle','running','suspended') OR provider_ref IS NOT NULL",
             name="ck_assistant_computer_attached",
         ),
     )

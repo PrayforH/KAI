@@ -357,6 +357,12 @@ async def serve(settings: Settings) -> None:
                 await container.computer_runtime.reclaim_desktops(
                     idle_seconds=settings.assistant_computer_desktop_idle_seconds
                 )
+                # Halts idle cloud VMs in place; their disks and identity stay
+                # for the next Computer Use to wake. Remote computers never
+                # sleep. The node re-validates idleness under its row lock.
+                await container.computer_runtime.suspend_idle_computers(
+                    idle_seconds=settings.assistant_computer_vm_idle_seconds
+                )
 
         control_tasks = [
             asyncio.create_task(

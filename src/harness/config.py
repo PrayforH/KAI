@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     # inside the owner's VM instead of holding the whole-machine lease.
     assistant_computer_per_bot_desktop: bool = False
     assistant_computer_desktop_idle_seconds: float = Field(default=900, ge=60, le=86400)
+    # Cloud VM power saving: halt an idle VM in place (container stopped, work
+    # disks and identity kept) after this window; 0 disables. Remote computers
+    # never sleep.
+    assistant_computer_vm_idle_seconds: float = Field(default=1800, ge=0, le=86400)
     sandbox_provider: Literal[
         "local", "daytona", "e2b", "kubernetes", "cubesandbox", "opensandbox"
     ] = "local"

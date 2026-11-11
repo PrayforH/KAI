@@ -400,6 +400,10 @@ class VmComputerLifecycle:
             spec = self._spec(computer)
             if operation == "ensure" and current.purpose is LeasePurpose.START:
                 return await self._ensure(spec)
+            if operation == "wake" and current.purpose is LeasePurpose.EXECUTE:
+                # First Computer Use after a suspend: idempotently start the
+                # already-declared runner; disks are never created here.
+                return await self._ensure(spec)
             if operation == "reset" and current.purpose is LeasePurpose.RECOVER:
                 return await self._reset(spec, token)
             raise ComputerLeaseLostError("computer lifecycle purpose does not match")
@@ -421,8 +425,57 @@ class VmComputerLifecycle:
         if info.get("State", {}).get("Running") is not True:
             started = await self.docker.post(f"/containers/{identifier}/start")
             started.raise_for_status()
-        await wait_for_ssh(spec, float(spec.wait_ssh_seconds))
+            # Only a fresh start needs the readiness probe; an already running
+            # instance was confirmed when its provider reference was recorded.
+            await wait_for_ssh(spec, float(spec.wait_ssh_seconds))
         return identifier
+
+    async def suspend_idle(
+        self, tenant: str, user: str, *, idle_seconds: float
+    ) -> str | None:
+        """Halt one idle VM in place: container stopped, disks and identity kept.
+
+        The registry row lock is held across the Docker stop, so no execution
+        claim can interleave with the shutdown; an active execution lease,
+        manual desktop takeover or imminent slot keeps the VM running.
+        """
+
+        async with self.registry.suspend_gate(
+            tenant, user, provider=PROVIDER, idle_seconds=idle_seconds
+        ) as (computer, moment):
+            spec = self._spec(cast(AssistantComputer, computer))
+            await self._halt(spec)
+            reference = computer.provider_ref
+            self.registry.mark_suspended(computer, moment)
+        return reference
+
+    async def _halt(self, spec: VmComputerSpec) -> None:
+        """Stop the declared runner without removing it or touching its disks."""
+
+        found = await self.docker.get(f"/containers/{spec.container_name}/json")
+        if found.status_code == 404:
+            raise RuntimeError("computer VM runner is not provisioned on this node")
+        found.raise_for_status()
+        info = found.json()
+        verify_vm_instance(info, spec)
+        if info.get("State", {}).get("Running") is not True:
+            return
+        stopped = await self.docker.post(
+            f"/containers/{spec.container_name}/stop", params={"t": "30"}
+        )
+        if stopped.status_code not in {200, 304}:
+            stopped.raise_for_status()
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 30
+        while loop.time() < deadline:
+            check = await self.docker.get(f"/containers/{spec.container_name}/json")
+            if check.status_code == 404:
+                raise RuntimeError("computer VM disappeared during shutdown")
+            check.raise_for_status()
+            if check.json().get("State", {}).get("Running") is False:
+                return
+            await asyncio.sleep(0.1)
+        raise RuntimeError("computer VM did not stop in time; it remains fenced")
 
     async def _reset(self, spec: VmComputerSpec, token: ComputerLease) -> str | None:
         identifier = await self._inspect(spec)

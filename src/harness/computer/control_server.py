@@ -59,7 +59,7 @@ from harness.computer.vm_host import (
     VmDesktopService,
     verify_vm_instance,
 )
-from harness.core.errors import NotFoundError
+from harness.core.errors import ConflictError, NotFoundError
 from harness.storage.database import create_database
 
 
@@ -115,6 +115,14 @@ class DesktopRequest(BaseModel):
     operation: str
     payload: dict[str, Any]
     expected_epoch: int
+
+
+class VmPowerRequest(BaseModel):
+    """Maintenance power request for one cloud VM; the node re-validates idleness."""
+
+    tenant_id: str
+    user_id: str
+    idle_seconds: float = Field(gt=0, le=86400)
 
 
 async def _active_execution(db: Any, computer: AssistantComputerRow) -> bool:
@@ -253,6 +261,9 @@ def create_app(settings: ControllerSettings) -> FastAPI:
     )
     desktop_service = DesktopControlService(sessions)
     desktop_screen = VmDesktopService({**vm_specs, **remote_specs})
+    vm_lifecycle = (
+        VmComputerLifecycle(registry, docker, vm_specs, authorizer=access) if vm_specs else None
+    )
     host = ComputerLifecycleRouter(
         registry,
         {
@@ -265,11 +276,7 @@ def create_app(settings: ControllerSettings) -> FastAPI:
                 ),
                 authorizer=access,
             ),
-            **(
-                {VM_PROVIDER: VmComputerLifecycle(registry, docker, vm_specs, authorizer=access)}
-                if vm_specs
-                else {}
-            ),
+            **({VM_PROVIDER: vm_lifecycle} if vm_lifecycle is not None else {}),
         },
     )
 
@@ -397,6 +404,28 @@ def create_app(settings: ControllerSettings) -> FastAPI:
             raise HTTPException(503, "Computer lifecycle could not be confirmed") from None
 
     app.add_api_route("/v1/computer/lifecycle", lifecycle, methods=["POST"])
+
+    async def vm_suspend(request: Request):
+        try:
+            command = VmPowerRequest.model_validate_json(await private_body(request))
+        except ValidationError:
+            raise HTTPException(400, "Computer VM power request is invalid") from None
+        if vm_lifecycle is None:
+            raise HTTPException(404, "No cloud VM is declared on this node")
+        try:
+            reference = await vm_lifecycle.suspend_idle(
+                command.tenant_id, command.user_id, idle_seconds=command.idle_seconds
+            )
+        except NotFoundError:
+            raise HTTPException(404, "Computer is not registered") from None
+        except (ConflictError, ComputerLeaseLostError):
+            # Busy, taken over or not idle long enough: keep it running.
+            raise HTTPException(409, "Computer VM is not idle") from None
+        except (httpx.HTTPError, RuntimeError, ValueError):
+            raise HTTPException(503, "Computer VM suspend could not be confirmed") from None
+        return {"state": "stopped", "provider_ref": reference}
+
+    app.add_api_route("/v1/computer/vm/suspend", vm_suspend, methods=["POST"])
 
     async def desktop(request: Request):
         try:

@@ -36,10 +36,17 @@ async def test_private_control_routes_require_auth_before_parsing() -> None:
                 "/v1/computer/control",
                 "/v1/computer/lifecycle",
                 "/v1/computer/image/check",
+                "/v1/computer/vm/suspend",
             ]:
                 response = await client.post(path, content=b"not-json private-fixture")
                 assert response.status_code == 403
                 assert "private-fixture" not in response.text
+            response = await client.post(
+                "/v1/computer/vm/suspend",
+                headers={"Authorization": "Bearer " + "a" * 48},
+                json={"tenant_id": "t", "user_id": "u", "idle_seconds": 1800},
+            )
+            assert response.status_code == 404  # no cloud VM is declared here
             response = await client.post(
                 "/v1/computer/control",
                 headers={"Authorization": "Bearer " + "a" * 48},
