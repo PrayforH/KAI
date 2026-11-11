@@ -576,10 +576,54 @@ async def test_completed_reply_without_text_is_retried_once_in_place() -> None:
     request = agui.create_run_with_result.await_args.kwargs["request"]
     assert request.run_id.endswith("-retry")
     assert "没有产生任何文字" in request.messages[0].content
+    assert "不要只思考不输出" in request.messages[0].content
+    assert "No response requested" in request.messages[0].content
     assert repo.messages[group.group_id][-1].run_id == retried.run_id
     assert len(repo.messages[group.group_id]) == 2  # 仍是同一个用户消息+同一条占位
 
     # 第二次轮询只看重试运行，不会继续造运行。
+    agui.create_run_with_result.reset_mock()
+    await service.list_assistant_group_messages("t", "u", group.group_id)
+    assert agui.create_run_with_result.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_empty_reply_is_retried_at_most_twice() -> None:
+    """模型只思考不输出时会重问；最多两次，仍为空则保留兜底。"""
+    service, repo, agui = _service()
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    posted = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="收到E"
+    )
+    original = posted.replies[0]
+    base = f"group-{original.message_id}"
+    service._events.list_after = AsyncMock(return_value=[])
+    runs: dict[str, object] = {
+        original.run_id: _run(original.run_id, RunStatus.SUCCEEDED, base)
+    }
+
+    async def get_run(tenant_id, run_id):
+        return runs[run_id]
+
+    service._runs.get = AsyncMock(side_effect=get_run)
+    agui.create_run_with_result.reset_mock()
+
+    messages = await service.list_assistant_group_messages("t", "u", group.group_id)
+    first = next(item for item in messages if item.message_id == original.message_id)
+    assert first.run_id is not None and first.run_id.endswith("-retry")
+    assert agui.create_run_with_result.await_args.kwargs["request"].run_id == f"{base}-retry"
+    runs[first.run_id] = _run(first.run_id, RunStatus.SUCCEEDED, f"{base}-retry")
+
+    agui.create_run_with_result.reset_mock()
+    messages = await service.list_assistant_group_messages("t", "u", group.group_id)
+    second = next(item for item in messages if item.message_id == original.message_id)
+    assert second.run_id is not None and second.run_id.endswith("-retry2")
+    assert (
+        agui.create_run_with_result.await_args.kwargs["request"].run_id
+        == f"{base}-retry2"
+    )
+    runs[second.run_id] = _run(second.run_id, RunStatus.SUCCEEDED, f"{base}-retry2")
+
     agui.create_run_with_result.reset_mock()
     await service.list_assistant_group_messages("t", "u", group.group_id)
     assert agui.create_run_with_result.await_count == 0

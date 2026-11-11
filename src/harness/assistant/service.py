@@ -43,11 +43,24 @@ GROUP_PRIMARY_MEMBER_ID = "primary"
 GROUP_REACTION_EMOJIS = ("👍", "❤️", "😂", "🎉", "👀")
 GROUP_THREAD_PREFIX = "assistant_group_"
 GROUP_EMPTY_REPLY_RETRY_WINDOW = timedelta(minutes=10)
+GROUP_EMPTY_REPLY_MAX_RETRIES = 2
 
 
 def group_thread_id(group_id: str, member_id: str) -> str:
     """每个群成员一条独立线程；前缀保证不会和 1:1/任务线程撞车。"""
     return f"{GROUP_THREAD_PREFIX}{group_id}_{member_id}"
+
+
+def _group_retry_attempts(idempotency_key: str, message_id: str) -> int:
+    """从固定运行键认出这是第几次空回复重问；别的运行一律不算。"""
+    prefix = f"group-{message_id}"
+    if not idempotency_key.startswith(prefix):
+        return 0
+    suffix = idempotency_key[len(prefix) :]
+    if suffix == "-retry":
+        return 1
+    match = re.fullmatch(r"-retry([2-9])", suffix)
+    return int(match.group(1)) if match else 0
 
 
 def _group_name(value: str) -> str:
@@ -2830,13 +2843,13 @@ class AssistantService:
         prompt: str,
         now: datetime,
         reply_message_id: str | None = None,
-        retry: bool = False,
+        retry: int = 0,
         addressed: bool = False,
     ) -> AssistantGroupMessage:
         """在群专属线程里起一次运行，并把占位回复写进本群时间线。
 
-        retry 复用同一条回复占位（只换运行），用于“运行成功却没有文字”的一
-        次自动重问；固定运行 id 让重复触发也只会有一条重试运行。
+        retry 复用同一条回复占位（只换运行），用于“运行成功却没有文字”的
+        自动重问；固定运行 id 让重复触发也只会有一条重试运行。
         """
         thread_id = group_thread_id(group.group_id, member.member_id)
         bot_specialist_id: str | None
@@ -2913,8 +2926,9 @@ class AssistantService:
             + ("（本条消息 @ 了你）\n" if addressed else "")
             + f"现在要回复的消息：\n{prompt}"
         )
-        request_run_id = f"group-{reply.message_id}" + ("-retry" if retry else "")
-        request_message_id = f"{reply.message_id}-retry" if retry else reply.message_id
+        retry_suffix = "" if retry <= 0 else ("-retry" if retry == 1 else f"-retry{retry}")
+        request_run_id = f"group-{reply.message_id}{retry_suffix}"
+        request_message_id = f"{reply.message_id}{retry_suffix}"
         creation = await self._agui.create_run_with_result(
             tenant_id=tenant_id,
             user_id=user_id,
@@ -3100,7 +3114,8 @@ class AssistantService:
             run = await self._runs.get(tenant_id, stored.run_id)
         except (NotFoundError, PermissionDeniedError):
             return None
-        if run.status is not RunStatus.SUCCEEDED or run.idempotency_key.endswith("-retry"):
+        attempts = _group_retry_attempts(run.idempotency_key, stored.message_id)
+        if run.status is not RunStatus.SUCCEEDED or attempts >= GROUP_EMPTY_REPLY_MAX_RETRIES:
             return None
         try:
             events = await self._events.list_after(tenant_id, run.run_id, 0)
@@ -3146,12 +3161,13 @@ class AssistantService:
             user_message,
             member=member,
             prompt=(
-                "你上一条群回复没有产生任何文字。请直接回复下面这条消息：\n"
-                + (prompt or user_message.text)
+                "你上一条群回复没有产生任何文字。请直接输出文字回复这条消息：\n"
+                f"{prompt or user_message.text}\n"
+                "不要只思考不输出，也不要输出“No response requested”之类的控制语。"
             ),
             now=datetime.now(UTC),
             reply_message_id=stored.message_id,
-            retry=True,
+            retry=attempts + 1,
             addressed=_mentioned_by_name(user_message.text, member.name),
         )
 
