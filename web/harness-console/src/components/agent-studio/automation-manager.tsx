@@ -15,7 +15,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRandomId } from "../../lib/random-id";
 import styles from "./automation-manager.module.css";
-import { ScheduleCardActions } from "./schedule-card-actions";
+import { ScheduleCardActions, type ScheduleCardActionKind } from "./schedule-card-actions";
 import {
   automationClient,
   type ApiAutomationRunRecord,
@@ -264,8 +264,10 @@ export function AutomationManager() {
   const [dutySchedules, setDutySchedules] = useState<ApiSchedule[]>([]);
   // One in-flight action per card; the ref makes the guard synchronous so a
   // double click cannot enqueue the same run twice before React re-renders.
-  const [pendingActions, setPendingActions] = useState<Set<string>>(new Set());
-  const pendingActionsRef = useRef<Set<string>>(new Set());
+  // The kind lets each control show its own pending state (the run button's
+  // spinner must not appear when the switch is the one waiting).
+  const [pendingActions, setPendingActions] = useState<Map<string, ScheduleCardActionKind>>(new Map());
+  const pendingActionsRef = useRef<Map<string, ScheduleCardActionKind>>(new Map());
   const [records, setRecords] = useState<ApiAutomationRunRecord[]>([]);
   const [dutyRuns, setDutyRuns] = useState<DutyRun[]>([]);
   const [recordsLoading, setRecordsLoading] = useState(false);
@@ -291,16 +293,16 @@ export function AutomationManager() {
     setToast(message);
   }, []);
 
-  const beginAction = useCallback((key: string): boolean => {
+  const beginAction = useCallback((key: string, kind: ScheduleCardActionKind = "toggle"): boolean => {
     if (pendingActionsRef.current.has(key)) return false;
-    pendingActionsRef.current.add(key);
-    setPendingActions(new Set(pendingActionsRef.current));
+    pendingActionsRef.current.set(key, kind);
+    setPendingActions(new Map(pendingActionsRef.current));
     return true;
   }, []);
 
   const endAction = useCallback((key: string) => {
     pendingActionsRef.current.delete(key);
-    setPendingActions(new Set(pendingActionsRef.current));
+    setPendingActions(new Map(pendingActionsRef.current));
   }, []);
 
   const loadTasks = useCallback(async () => {
@@ -341,7 +343,7 @@ export function AutomationManager() {
 
   async function runDuty(duty: ApiSchedule) {
     const key = dutyKey(duty);
-    if (!beginAction(key)) return;
+    if (!beginAction(key, "run")) return;
     try {
       // The endpoint deduplicates on this key, so a retried click after a
       // timeout cannot enqueue a second execution.
@@ -361,7 +363,7 @@ export function AutomationManager() {
 
   async function deleteDuty(duty: ApiSchedule) {
     const key = dutyKey(duty);
-    if (!beginAction(key)) return;
+    if (!beginAction(key, "delete")) return;
     setConfirmingDelete(null);
     try {
       // Objectives have no physical delete; stop is the terminal state and the
@@ -518,7 +520,7 @@ export function AutomationManager() {
 
   async function runTask(task: ApiAutomationTask) {
     const key = taskKey(task);
-    if (!beginAction(key)) return;
+    if (!beginAction(key, "run")) return;
     try {
       await automationClient.run(task.taskId);
       showToast("已触发立即执行，可在运行记录中查看进度");
@@ -532,7 +534,7 @@ export function AutomationManager() {
 
   async function removeTask(task: ApiAutomationTask) {
     const key = taskKey(task);
-    if (!beginAction(key)) return;
+    if (!beginAction(key, "delete")) return;
     setConfirmingDelete(null);
     try {
       await automationClient.remove(task.taskId);
@@ -730,8 +732,9 @@ export function AutomationManager() {
                     </button>
                     <ScheduleCardActions
                       title={duty.title}
-                      toggleLabel={duty.status === "active" ? "禁用" : "启用"}
+                      enabled={duty.status === "active"}
                       pending={pendingActions.has(key)}
+                      pendingAction={pendingActions.get(key)}
                       confirmingDelete={confirmingDelete === key}
                       onToggle={() => void toggleDuty(duty)}
                       onRun={() => void runDuty(duty)}
@@ -784,8 +787,9 @@ export function AutomationManager() {
                     </button>
                     <ScheduleCardActions
                       title={task.name}
-                      toggleLabel={task.status === "paused" ? "启用" : "禁用"}
+                      enabled={task.status !== "paused"}
                       pending={pendingActions.has(key)}
+                      pendingAction={pendingActions.get(key)}
                       confirmingDelete={confirmingDelete === key}
                       onToggle={() => void toggleTask(task)}
                       onRun={() => void runTask(task)}

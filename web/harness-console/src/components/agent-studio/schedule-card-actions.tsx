@@ -3,13 +3,32 @@ import { useRef, useState } from "react";
 import { ActionMenuPopover } from "../action-menu-popover";
 import styles from "./automation-manager.module.css";
 
-/** Card-level actions for one schedule: enable/disable, run now, and a “more”
- *  menu that holds edit and the two-step delete. Keeping this out of the
- *  manager keeps the list markup to its summary and one action strip. */
+/** Which card action is in flight; the card itself allows only one at a time. */
+export type ScheduleCardActionKind = "toggle" | "run" | "delete";
+
+const PlayIcon = () => (
+  <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" focusable="false">
+    <path d="M7 4.8v10.4a.8.8 0 0 0 1.22.68l8.3-5.2a.8.8 0 0 0 0-1.36l-8.3-5.2A.8.8 0 0 0 7 4.8Z" fill="currentColor" />
+  </svg>
+);
+
+const MoreIcon = () => (
+  <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" focusable="false">
+    <circle cx="4.5" cy="10" r="1.5" fill="currentColor" />
+    <circle cx="10" cy="10" r="1.5" fill="currentColor" />
+    <circle cx="15.5" cy="10" r="1.5" fill="currentColor" />
+  </svg>
+);
+
+/** Card-level actions for one schedule: the state switch, run now, and a “more”
+ *  menu that holds edit and the two-step delete. The strip is icon-only so a
+ *  scheduled task reads like every other binary state in the console, and the
+ *  manager keeps only its summary plus this one strip. */
 export function ScheduleCardActions({
   title,
-  toggleLabel,
+  enabled,
   pending,
+  pendingAction,
   confirmingDelete,
   onToggle,
   onRun,
@@ -18,8 +37,10 @@ export function ScheduleCardActions({
   onDelete,
 }: {
   title: string;
-  toggleLabel: "启用" | "禁用";
+  /** Whether the schedule is currently active; the switch reports this state. */
+  enabled: boolean;
   pending: boolean;
+  pendingAction?: ScheduleCardActionKind;
   confirmingDelete: boolean;
   onToggle: () => void;
   onRun: () => void;
@@ -32,21 +53,40 @@ export function ScheduleCardActions({
 
   return (
     <div className={styles.taskActions}>
-      <button type="button" className={styles.cardAction} disabled={pending} onClick={onToggle}>
-        {toggleLabel}
-      </button>
-      <button type="button" className={styles.cardAction} disabled={pending} onClick={onRun}>
-        立即执行
+      <button
+        type="button"
+        role="switch"
+        aria-checked={enabled}
+        aria-label={`${title} 启用状态`}
+        className={styles.cardSwitch}
+        disabled={pending}
+        onClick={onToggle}
+      />
+      <button
+        type="button"
+        className={styles.cardIconAction}
+        aria-label={`立即执行 ${title}`}
+        title="立即执行"
+        aria-busy={pendingAction === "run" || undefined}
+        disabled={pending}
+        onClick={onRun}
+      >
+        {pendingAction === "run"
+          ? <span className={styles.cardSpinner} aria-hidden="true" />
+          : <PlayIcon />}
       </button>
       <button
         ref={trigger}
         type="button"
-        className={styles.cardAction}
+        className={styles.cardIconAction}
+        aria-label={`${title} 的更多操作`}
+        title="更多操作"
         aria-haspopup="menu"
         aria-expanded={menuOpen}
+        disabled={pending && pendingAction === "delete"}
         onClick={() => setMenuOpen((open) => !open)}
       >
-        更多 ▾
+        <MoreIcon />
       </button>
       {menuOpen && (
         <ActionMenuPopover

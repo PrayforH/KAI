@@ -114,6 +114,19 @@ function byText(text: string) {
   return (button: HTMLButtonElement) => button.textContent?.trim() === text;
 }
 
+function byLabel(label: string) {
+  return (button: HTMLButtonElement) => button.getAttribute("aria-label") === label;
+}
+
+function switchFor(title: string) {
+  return (button: HTMLButtonElement) =>
+    button.getAttribute("role") === "switch" && button.getAttribute("aria-label") === `${title} 启用状态`;
+}
+
+function switchState(title: string): string | null {
+  return buttons().find(switchFor(title))?.getAttribute("aria-checked") ?? null;
+}
+
 it("names merged schedules 定时任务 and shows the owning assistant", async () => {
   client.dutySchedules.mockResolvedValue([duty]);
   await render();
@@ -158,7 +171,9 @@ it("toggles a duty schedule through the objective actions API", async () => {
   assistantRequest.mockResolvedValue({ status: "paused", revision: 3 });
   await render();
 
-  await click(byText("禁用"));
+  expect(switchState("每日巡检")).toBe("true");
+
+  await click(switchFor("每日巡检"));
   expect(assistantRequest).toHaveBeenCalledWith(
     "objectives/duty_1/actions",
     "POST",
@@ -171,7 +186,7 @@ it("runs a duty once even when 立即执行 is double-clicked", async () => {
   assistantRequest.mockResolvedValue({ executionId: "execution_1" });
   await render();
 
-  const runButton = buttons().find(byText("立即执行"));
+  const runButton = buttons().find(byLabel("立即执行 每日巡检"));
   if (!runButton) throw new Error("run button missing");
   await act(async () => {
     runButton.click();
@@ -192,7 +207,7 @@ it("deletes a duty through stop only after a second confirmation", async () => {
   assistantRequest.mockResolvedValue({ status: "cancelled", revision: 3 });
   await render();
 
-  await click(byText("更多 ▾"));
+  await click(byLabel("每日巡检 的更多操作"));
   await click(byText("删除"));
   expect(host.textContent).toContain("每日巡检");
   expect(buttons().some(byText("确认删除？"))).toBe(true);
@@ -214,16 +229,48 @@ it("maps automation card actions to pause, enable and run", async () => {
   client.run.mockResolvedValue({});
   await render();
 
-  await click(byText("禁用"));
+  expect(switchState("每周工作周报")).toBe("true");
+  await click(switchFor("每周工作周报"));
   expect(client.pause).toHaveBeenCalledWith("task_1");
   expect(host.textContent).toContain("已暂停");
+  expect(switchState("每周工作周报")).toBe("false");
 
-  await click(byText("启用"));
+  await click(switchFor("每周工作周报"));
   expect(client.enable).toHaveBeenCalledWith("task_1");
   expect(host.textContent).toContain("已启用");
+  expect(switchState("每周工作周报")).toBe("true");
 
-  await click(byText("立即执行"));
+  await click(byLabel("立即执行 每周工作周报"));
   expect(client.run).toHaveBeenCalledWith("task_1");
+});
+
+it("keeps the strip icon-only and wires the more menu to its trigger", async () => {
+  client.dutySchedules.mockResolvedValue([duty]);
+  await render();
+
+  expect(host.textContent).not.toContain("更多 ▾");
+  const more = buttons().find(byLabel("每日巡检 的更多操作"));
+  expect(more?.getAttribute("aria-haspopup")).toBe("menu");
+  expect(more?.getAttribute("aria-expanded")).toBe("false");
+
+  await click(byLabel("每日巡检 的更多操作"));
+  expect(buttons().find(byLabel("每日巡检 的更多操作"))?.getAttribute("aria-expanded")).toBe("true");
+  expect(buttons().some(byText("编辑"))).toBe(true);
+});
+
+it("shows the run button busy while a duty execution is in flight", async () => {
+  client.dutySchedules.mockResolvedValue([duty]);
+  assistantRequest.mockImplementation(() => new Promise(() => undefined));
+  await render();
+
+  const run = buttons().find(byLabel("立即执行 每日巡检"));
+  if (!run) throw new Error("run button missing");
+  await act(async () => { run.click(); });
+  await flush();
+
+  const busy = buttons().find(byLabel("立即执行 每日巡检"));
+  expect(busy?.getAttribute("aria-busy")).toBe("true");
+  expect(busy?.hasAttribute("disabled")).toBe(true);
 });
 
 it("deletes an automation task with DELETE after a second confirmation", async () => {
@@ -232,7 +279,7 @@ it("deletes an automation task with DELETE after a second confirmation", async (
   client.remove.mockResolvedValue(undefined);
   await render();
 
-  await click(byText("更多 ▾"));
+  await click(byLabel("我的周报任务 的更多操作"));
   await click(byText("删除"));
   expect(host.textContent).toContain("我的周报任务");
 

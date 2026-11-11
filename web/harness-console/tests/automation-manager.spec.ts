@@ -91,16 +91,24 @@ describe("Automation manager", () => {
     expect(component).toContain("编辑定时任务");
     expect(component).toContain("stop");
     expect(component).toContain("/executions");
-    expect(cardActions).toContain("启用");
+    // The card strip uses control syntax instead of three pill buttons: a real
+    // switch carries the on/off state and the two actions are icon buttons.
+    expect(cardActions).toContain('role="switch"');
+    expect(cardActions).toContain("aria-checked");
     expect(cardActions).toContain("立即执行");
+    expect(cardActions).toContain('aria-haspopup="menu"');
     expect(cardActions).toContain("确认删除？");
+    expect(cardActions).not.toContain("更多 ▾");
     // The merged cards and run records no longer borrow the backend's name.
     expect(component).not.toContain("Bot 职责");
     expect(component).not.toContain("主助理职责");
     expect(component).not.toContain("编辑职责排程");
     expect(component).not.toContain("DutyHistory");
     expect(styles).toContain(".taskActions");
-    expect(styles).toContain(".cardAction");
+    expect(styles).toContain(".cardIconAction");
+    expect(styles).toContain(".cardSwitch");
+    expect(styles).toContain(".cardSpinner");
+    expect(styles).not.toContain(".cardAction");
   });
 
   it("shows a next-run preview before saving", () => {
