@@ -11,6 +11,24 @@ type ConnectionState = "connecting" | "reconnecting" | "connected" | "disconnect
 type ControlState = "observe" | "agent" | "human" | "takeover_pending";
 type DesktopControl = { state: ControlState; binding_key: string; desktop_id?: string; owner?: string | null; epoch?: number; revision?: number };
 const labels = { connecting: "正在连接", reconnecting: "正在重新连接", connected: "已连接", disconnected: "连接已断开", unauthorized: "请重新登录", starting: "正在连接" };
+// A takeover is bound to the viewer that observed it. Keeping that identity in
+// sessionStorage means a reload in the same tab resumes its own takeover
+// instead of showing a dead window's lease as "already taken over".
+const VIEWER_KEY = "kai.desktop.viewer";
+// A connection that dies sooner than this is treated as a failed attempt, so a
+// server that keeps closing new sessions cannot spin the retry loop forever.
+const STABLE_CONNECTION_MS = 10_000;
+function browserViewerId(): string {
+  try {
+    const saved = window.sessionStorage.getItem(VIEWER_KEY);
+    if (saved && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(saved)) return saved;
+    const created = window.crypto.randomUUID();
+    window.sessionStorage.setItem(VIEWER_KEY, created);
+    return created;
+  } catch {
+    return window.crypto.randomUUID();
+  }
+}
 
 
 export function ComputerDesktop({ embedded = false, onClose, botId }: {
@@ -53,6 +71,8 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
     let rfb: RFB | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let retries = 0;
+    let retrying = false;
+    let connectedAt = 0;
     let wasConnected = false;
     let slotPrepared = false;
     const controller = new AbortController();
@@ -108,13 +128,21 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
     }
     refreshControl.current = pollControl;
     function retryConnection() {
-      if (disposed || retryTimer !== undefined) return;
-      if (rfb) rfb.viewOnly = true;
+      // Guard re-entry: disconnecting the old transport below can emit another
+      // disconnect synchronously before the retry timer exists.
+      if (disposed || retrying || retryTimer !== undefined) return;
+      retrying = true;
+      if (rfb) { rfb.viewOnly = true; rfb.disconnect(); }
       client.current = null;
-      if (retries >= 5) { setState("disconnected"); return; }
+      // Only a connection that actually stayed up earns a fresh budget. A
+      // server that accepts and then drops every socket would otherwise keep
+      // resetting retries and loop forever.
+      if (connectedAt !== 0 && Date.now() - connectedAt >= STABLE_CONNECTION_MS) retries = 0;
+      connectedAt = 0;
+      if (retries >= 5) { retrying = false; setState("disconnected"); return; }
       setState(wasConnected ? "reconnecting" : "connecting");
       const delay = Math.min(1500 * 2 ** retries++, 10000);
-      retryTimer = setTimeout(() => { retryTimer = undefined; void connect(); }, delay);
+      retryTimer = setTimeout(() => { retryTimer = undefined; retrying = false; void connect(); }, delay);
     }
     async function connect() {
       try {
@@ -185,7 +213,7 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
           if (slot.state !== "busy" && slot.state !== "idle") { retryConnection(); return; }
           if (start) setState(wasConnected ? "reconnecting" : "connecting");
           desktopRef.current = slot.desktopId;
-          viewerRef.current ??= window.crypto.randomUUID();
+          viewerRef.current ??= browserViewerId();
           url.searchParams.set("desktop", slot.desktopId);
           url.searchParams.set("viewer_id", viewerRef.current);
           await pollControl();
@@ -212,12 +240,14 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
         let established = false;
         connection.addEventListener("connect", () => {
           if (disposed || rfb !== connection) return;
-          established = true; wasConnected = true; retries = 0; setState("connected");
+          established = true; wasConnected = true; connectedAt = Date.now(); setState("connected");
           if (!embedded && controlRef.current === "human") connection.focus();
         });
         connection.addEventListener("disconnect", () => {
           if (disposed || rfb !== connection || securityFailed) return;
-          if (established) slotPrepared = false;
+          // Re-running the guest start is only worth it after a session that
+          // actually ran; a socket that died immediately did not stop the guest.
+          if (established && Date.now() - connectedAt >= STABLE_CONNECTION_MS) slotPrepared = false;
           retryConnection();
         });
         connection.addEventListener("securityfailure", () => {
@@ -312,6 +342,7 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
   const activeBinding = selection?.targets.find(target => target.target_id === selection.active_target)?.binding_key;
   const otherWindow = botPreview && (authority?.state === "human" || authority?.state === "takeover_pending") && authority.owner !== viewerRef.current;
   const returnable = !otherWindow && authority?.binding_key === activeBinding && (authority?.state === "human" || authority?.state === "takeover_pending");
+  const activeHeld = authority?.state === "human" || authority?.state === "takeover_pending";
   return <section aria-label="我的电脑" className={`${styles.shell} ${embedded ? styles.embedded : ""}`} ref={shell}>
     <header className={styles.windowHeader}>
       {!embedded && <Link href="/assistant" className={styles.back} aria-label="返回我的助理">←</Link>}
@@ -363,9 +394,13 @@ export function ComputerDesktop({ embedded = false, onClose, botId }: {
       <span className={styles.connection} role="status">{state === "connected" && control === "agent" ? "助理操作中" : labels[state]}</span>
     </footer>
     {!viewingExecution && returnable && <div className={styles.ownershipNotice}>
-      <span>{executionLabel ?? "助理使用的电脑"}{authority?.state === "human" ? "由你控制" : "正在交接控制权"}</span>
+      <span>{executionLabel ?? "助理使用的电脑"}{authority?.state === "human" ? "由你控制" : "正在交接控制权"} · 当前画面仅观看</span>
+      {selection?.active_target && <button disabled={actionBusy} onClick={() => viewComputer(selection.active_target!)}>切回{executionLabel}</button>}
       <button disabled={actionBusy} onClick={() => void changeControl("return")}>{authority?.state === "takeover_pending" ? "取消接管" : `交还${executionLabel ?? "控制权"}`}</button>
     </div>}
+    {!viewingExecution && selection && !returnable && !activeHeld && (
+      <p className={styles.viewOnlyHint}>当前画面仅观看：点「供助理使用」把这台电脑交给助理后，再用「取得控制权」操作。</p>
+    )}
     {actionError && <p className={styles.selectionError} role="alert">{actionError}</p>}
     {selectionError && <p className={styles.selectionError} role="alert">{selectionError}</p>}
   </section>;

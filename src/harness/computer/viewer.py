@@ -566,12 +566,19 @@ def create_viewer_app(
                     while True:
                         message = await websocket.receive()
                         if message["type"] == "websocket.disconnect":
+                            logging.getLogger(__name__).info(
+                                "desktop client closed the input stream (code %s)",
+                                message.get("code"),
+                            )
                             return
                         data = message.get("bytes")
                         if not isinstance(data, bytes) or len(data) > RFB_FRAME_LIMIT:
                             raise ValueError("desktop input exceeds frame size")
                         # Check immediately before forwarding anything.
                         if time.monotonic() >= valid_until:
+                            logging.getLogger(__name__).warning(
+                                "desktop input closed: authorization was not refreshed"
+                            )
                             return
                         for kind, chunk in policy.feed(
                             data,
@@ -610,9 +617,12 @@ def create_viewer_app(
 
                 async def watch_authorization() -> None:
                     nonlocal valid_until, granted_epoch
+                    log = logging.getLogger(__name__)
                     while True:
                         await asyncio.sleep(AUTH_CHECK_SECONDS)
+                        began = time.monotonic()
                         if not await authorized(token):
+                            log.info("desktop session ended: login is no longer valid")
                             return
                         selected, current_endpoint, current_binding = await active_endpoint(
                             token, requested
@@ -622,15 +632,23 @@ def create_viewer_app(
                             endpoint,
                             binding,
                         ):
+                            log.info("desktop session ended: the selected desktop changed")
                             return
                         if slot is not None:
                             if not await owns_desktop(token, slot):
+                                log.info("desktop session ended: the viewer no longer owns it")
                                 return
                         may_refresh = slot is None or input_connections.get(slot) is websocket
+                        previous = (control["state"], control["epoch"])
                         control.update(await desktop_state(
                             token, binding=binding, slot=slot, viewer_id=viewer_id,
                             refresh=may_refresh,
                         ))
+                        if (control["state"], control["epoch"]) != previous:
+                            log.info(
+                                "desktop control: %s -> %s (epoch %s)",
+                                previous, control["state"], control["epoch"],
+                            )
                         if control["state"] == "human":
                             if (
                                 slot is not None
@@ -652,6 +670,14 @@ def create_viewer_app(
                                 input_connections.pop(slot)
                             granted_epoch = None
                         valid_until = time.monotonic() + AUTH_GRACE_SECONDS
+                        # The grace window is three seconds; a poll that takes
+                        # longer than that can close a session under the owner.
+                        elapsed = time.monotonic() - began
+                        if elapsed >= AUTH_GRACE_SECONDS:
+                            log.warning(
+                                "desktop authorization poll took %.1fs; input may lapse",
+                                elapsed,
+                            )
 
                 tasks = [
                     asyncio.create_task(job(), name=job.__name__)

@@ -34,7 +34,10 @@ from harness.storage.database import SessionFactory
 
 DRAIN_WINDOW_SECONDS = 5
 DRAIN_POLL_SECONDS = 0.2
-HUMAN_TTL_SECONDS = 300
+# An open viewer refreshes this every second, so the window only has to cover
+# a reconnect. Keeping it long would leave a crashed tab's lease blocking the
+# owner's next window for minutes with no way to take over sooner.
+HUMAN_TTL_SECONDS = 90
 AGENT_TTL_SECONDS = 120
 
 

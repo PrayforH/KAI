@@ -28,6 +28,7 @@ const requests: string[] = [];
 async function flush() { for (let i = 0; i < 10; i++) await act(async () => { await Promise.resolve(); }); }
 beforeEach(() => {
   requests.length = 0; sockets.length = 0; frames.length = 0; startFailure = false; delayedStart = null;
+  window.sessionStorage.clear();
   botControls.clear();
   refused = false; current = "cloud"; controlState = "human"; controlFailure = 0; readFailure = false; sessionStatus = 200; delayedRead = null; disconnected.mockClear();
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
@@ -224,10 +225,35 @@ describe("desktop session renewal", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(20000); });
     expect(requests).toEqual([]);
   });
+  it("stops retrying instead of looping through connections that die immediately", async () => {
+    vi.useFakeTimers(); await mount();
+    for (let attempt = 0; attempt < 6; attempt++) {
+      await act(async () => frames.at(-1)!.emit("disconnect"));
+      await act(async () => { await vi.advanceTimersByTimeAsync(11000); }); await flush();
+      if (attempt < 5) await act(async () => frames.at(-1)!.emit("connect"));
+    }
+    expect(host.textContent).toContain("电脑暂未连接");
+    expect(sockets).toHaveLength(6);
+    await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+    expect(sockets).toHaveLength(6);
+  });
 });
 
 
 describe("Bot desktop preview", () => {
+  it("keeps its viewer identity across a reload so the tab resumes its own takeover", async () => {
+    vi.useFakeTimers();
+    await act(async () => root.render(<ComputerDesktop botId="specialist_a" />));
+    await flush();
+    const first = new URL(sockets.at(-1)!).searchParams.get("viewer_id");
+    expect(first).toBeTruthy();
+    await act(async () => root.render(null));
+    await act(async () => root.render(<ComputerDesktop botId="specialist_a" />));
+    await flush();
+    expect(sockets).toHaveLength(2);
+    expect(new URL(sockets[1]).searchParams.get("viewer_id")).toBe(first);
+  });
+
   it("takes over the selected Bot slot and returns to view-only when switching Bots", async () => {
     vi.useFakeTimers();
     await act(async () => root.render(<ComputerDesktop botId="specialist_a" />));

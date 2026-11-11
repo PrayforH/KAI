@@ -122,6 +122,33 @@
   两处 targets 的 cloud image 已改成 `498e0e…`，与注册表一致；当前没有活跃
   execution lease，接管应恢复，用户需硬刷新加载新 chunk。
 
+### 远程电脑「接管不了 / 重连循环」（2026-11-11 追加）
+
+- 现象：查看 Remote Computer（`local-32-45`）时鼠标点击无反应；点「重新连接」后
+  连续重连停不下来，状态仍显示接管。
+- 根因 1（查看的不是执行电脑）：接管只对「助理当前使用的电脑」有效。查看另一台时
+  `viewTarget !== active_target`；viewer 按当前目标的 binding 读取控制状态，得到
+  `observe` 并丢弃全部输入。前端底部却只写「<执行电脑>由你控制」，看起来像当前
+  画面已被接管。
+  → 占用提示改为「…由你控制 · 当前画面仅观看」，并加「切回<执行电脑>」；
+  查看非执行电脑且无人接管时明确显示「当前画面仅观看：点『供助理使用』…再取得
+  控制权」。
+- 根因 2（租约绑在已消失的 viewer）：`viewer_id` 每次挂载随机生成，刷新页面就变成
+  新的 viewer，旧租约仍记着旧 id 并保持 `human`（TTL 300s）。前端读到的是
+  「另一个窗口已接管」，接管按钮禁用；每次连接成功又把重试计数清零，短命连接会
+  无限重连。
+  → viewer id 存 `sessionStorage`（同标签页刷新继续沿用）；连接稳定 10s 后才换取
+  新的重试预算、才允许重跑 guest start；`HUMAN_TTL_SECONDS` 300→90（viewer 每秒
+  续期一次，窗口只需覆盖一次重连）。
+- viewer 增加排障日志：客户端关闭码、授权宽限过期、watch 退出的具体原因、控制状态
+  变化，以及超过宽限的慢轮询。
+- 验证：283 个前端测试文件 / 1738 通过 / 1 跳过（新增 2 项：瞬时断线不会无限重连、
+  刷新后沿用 viewer id）；tsc 无错误；viewer 20 项单测通过；ruff 通过。
+  79 已更新：web `kai/alignment-web:desktop-pane5-20261111`、viewer
+  `kai/computer-viewer:session-log-20261111`（备份 `compose.before-desktop-pane5.json`），
+  容器 healthy，`/`、`/assistant`、`/settings`、`/studio/automation`、
+  `/assistant/computer` 均 200，线上 chunk 含「当前画面仅观看」与 `kai.desktop.viewer`。
+
 ## 待办
 
 - P1b 新建任务仍缺 `POST /objectives` 的 `specialistId` 透传。
