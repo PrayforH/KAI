@@ -246,10 +246,20 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
 .conversation-index { position: absolute; z-index: 12; left: 4px; top: 50%; transform: translateY(-50%); max-height: 56%; }
 .conversation-index-rail { display: flex; flex-direction: column; max-height: min(52dvh, 440px); overflow-y: auto; scrollbar-width: none; padding: 4px 0; }
 .conversation-index-rail::-webkit-scrollbar { display: none; }
-.conversation-index button { display: flex; align-items: center; flex: 0 0 10px; width: 32px; height: 10px; padding: 0 0 0 10px; border: 0; background: transparent; cursor: pointer; }
-.conversation-index button > span { width: var(--index-line-width, 6px); height: 2px; background: var(--codex-muted); opacity: .45; transition: width 180ms cubic-bezier(.2,.8,.2,1), opacity 160ms ease, background-color 160ms ease; }
+.conversation-index button { position: relative; display: flex; align-items: center; flex: 0 0 10px; width: 32px; height: 10px; padding: 0 0 0 10px; border: 0; background: transparent; cursor: pointer; }
+/* Ticks paint at a fixed width and scale with transform: animating `width`
+   laid the tick out again on every hover move. */
+.conversation-index button > span { width: var(--index-line-base, 19px); height: 2px; background: var(--codex-muted); opacity: .45; transform: scaleX(var(--index-scale, .32)); transform-origin: left center; transition: transform 180ms cubic-bezier(.2,.8,.2,1), opacity 160ms ease, background-color 160ms ease; }
 .conversation-index button[aria-current] > span { opacity: .85; }
 .conversation-index button[data-highlighted="true"] > span { background: var(--codex-ink); opacity: 1; }
+/* The landed turn grows out of the rail once, then hands back to the active tick. */
+.conversation-index button[data-located="true"]::after { content: ""; position: absolute; left: 10px; top: 50%; width: var(--index-line-base, 19px); height: 2px; margin-top: -1px; border-radius: 1px; background: var(--codex-ink); transform-origin: left center; pointer-events: none; animation: index-locate-pulse 1.2s cubic-bezier(.2,.8,.2,1); }
+@keyframes index-locate-pulse {
+  0% { opacity: 0; transform: scaleX(.25); }
+  18% { opacity: 1; }
+  65% { opacity: .7; }
+  100% { opacity: 0; transform: scaleX(1); }
+}
 /* Ticks for earlier runs that are not loaded yet read exactly like the loaded
    ones; clicking one pulls the pages needed to reveal that turn. */
 .conversation-index button:focus-visible { outline: 1px solid var(--codex-muted); outline-offset: 0; border-radius: 3px; }
@@ -257,8 +267,13 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
 .conversation-index-preview strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .conversation-index-preview p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin: 4px 0 0; color: var(--codex-muted); }
 @keyframes index-preview-in { from { opacity: 0; transform: translate(5px, -50%) scale(.98); } to { opacity: 1; transform: translate(0, -50%) scale(1); } }
-@media (max-width: 640px) { .conversation-index { left: 0; } .conversation-index button { width: 20px; } .conversation-index button { padding-left: 5px; } .conversation-index-preview { left: 38px; } .harness-thread-frame .aui-thread-viewport { padding-left: 30px !important; } }
-@media (prefers-reduced-motion: reduce) { .conversation-index button > span { transition: none; } .conversation-index-preview { animation: none; } }
+@media (max-width: 640px) { .conversation-index { left: 0; } .conversation-index button { width: 20px; } .conversation-index button { padding-left: 5px; } .conversation-index button[data-located="true"]::after { left: 5px; } .conversation-index-preview { left: 38px; } .harness-thread-frame .aui-thread-viewport { padding-left: 30px !important; } }
+@media (prefers-reduced-motion: reduce) {
+  .conversation-index button > span { transition: none; }
+  .conversation-index-preview { animation: none; }
+  /* Keep the "you landed here" answer, drop the motion. */
+  .conversation-index button[data-located="true"]::after { animation: none; opacity: .9; }
+}
 /* Agent workspaces retain the shared sidebar and its user-controlled collapse. */
 .studio-unified:has([data-build-workspace="true"]) .studio-unified-content { overflow: hidden; }
 

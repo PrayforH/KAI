@@ -154,6 +154,7 @@ export function AssistantHistoryPanel({ open, threadId, assistantName = "助理"
   const [loadingMore, setLoadingMore] = useState(false);
   const [reload, setReload] = useState(0);
   const [locatingId, setLocatingId] = useState<string | null>(null);
+  const [locatePages, setLocatePages] = useState(0);
   const closeButton = useRef<HTMLButtonElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -279,11 +280,15 @@ export function AssistantHistoryPanel({ open, threadId, assistantName = "助理"
   const days = useMemo(() => [...new Set((data?.files ?? []).map(file => dayOf(file.createdAt)).filter(Boolean))], [data]);
   const locate = useCallback(async (messageId: string | null) => {
     if (!messageId) { setNotice("这条记录没有关联消息"); return; }
-    setNotice("正在加载更早的消息…");
+    // The walk is visible in two places: the clicked row says 正在定位… and this
+    // drawer-level status keeps the real page count in view while older pages
+    // are being fetched. Clearing the stale notice avoids two competing lines.
+    setNotice("");
+    setLocatePages(0);
     setLocatingId(messageId);
     try {
       const outcome = await locateMessage(messageId, threadId, {
-        onProgress: () => setNotice("正在加载更早的消息…"),
+        onProgress: () => setLocatePages(pages => pages + 1),
       });
       // "busy" only means a page is still in flight; it is not proof the
       // message is gone, so never turn it into "not found".
@@ -298,6 +303,7 @@ export function AssistantHistoryPanel({ open, threadId, assistantName = "助理"
       setNotice("未能加载更早的消息，请重试");
     } finally {
       setLocatingId(null);
+      setLocatePages(0);
     }
   }, [threadId]);
   if (!open) return null;
@@ -362,6 +368,11 @@ export function AssistantHistoryPanel({ open, threadId, assistantName = "助理"
         {days.map(day => <option key={day} value={day}>{day}</option>)}
       </select>}
     </div>
+    {locatingId && <p className={styles.locateStatus} role="status" aria-live="polite">
+      <span className={styles.spinner} aria-hidden="true" />
+      <span>正在翻找更早的消息…</span>
+      {locatePages > 0 && <span className={styles.locateCount} aria-hidden="true">已查 {locatePages} 页</span>}
+    </p>}
     <div ref={body} className={styles.body} onScroll={onBodyScroll}>
       {loadingMore && data && !empty && <p className={styles.hint}>正在读取更早的记录…</p>}
       {error && <p role="alert" className={styles.error}>{error}
