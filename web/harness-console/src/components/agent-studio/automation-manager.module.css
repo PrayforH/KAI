@@ -260,6 +260,58 @@
   opacity: 0.6;
 }
 
+/* 卡片整块是打开编辑面板的入口，卡片本身只放摘要。 */
+.taskOpen {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.taskOpen:focus-visible {
+  outline: 2px solid var(--auto-running);
+  outline-offset: 3px;
+  border-radius: 10px;
+}
+
+.panelSummary {
+  display: grid;
+  gap: 6px;
+}
+
+.panelSummary strong {
+  font-size: 16px;
+}
+
+.panelSummary p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0;
+  color: var(--auto-muted);
+  font-size: 13px;
+}
+
+.fieldLabel {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.panelNote {
+  margin: 0;
+  color: var(--auto-muted);
+  font-size: 13px;
+}
+
 .taskMain,
 .recordMain {
   display: grid;
@@ -756,6 +808,7 @@
 
 .modalFooter {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 12px;
 }

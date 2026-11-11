@@ -58,7 +58,8 @@ describe("Automation manager", () => {
 
   it("opens the run's conversation and can still locate its task", () => {
     expect(component).toContain("openRecordConversation");
-    expect(component).toContain("/?thread=");
+    // The href is built by the shared helper, not by string concatenation here.
+    expect(component).toContain("taskThreadHref");
     expect(component).toContain("打开这次执行所在的会话");
     expect(component).toContain("定位任务");
     expect(styles).toContain(".recordTaskAction");
