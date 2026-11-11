@@ -12,6 +12,8 @@
   --auto-danger: #e5484d;
   --auto-success: #2f9e63;
   --auto-running: #3b82c4;
+  --auto-switch-off: #cfcfcf;
+  --auto-switch-knob: #ffffff;
   --auto-warning: #b7813a;
   min-height: 100%;
   padding: 28px clamp(20px, 3.4vw, 44px) 72px;
@@ -290,32 +292,102 @@
   gap: 8px;
 }
 
-.cardAction {
-  min-height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--auto-line);
-  border-radius: 999px;
-  background: var(--auto-card);
-  color: var(--auto-ink);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
+/* Icon buttons keep one 32×32 footprint so a pending state never shifts the
+   strip; the switch owns the on/off state and needs no text. */
+.cardIconAction {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--auto-muted);
   cursor: pointer;
 }
 
-.cardAction:hover:not(:disabled) {
+.cardIconAction:hover:not(:disabled) {
   background: var(--auto-hover);
+  color: var(--auto-ink);
 }
 
-.cardAction:focus-visible {
+.cardIconAction:focus-visible {
   outline: 2px solid var(--auto-running);
   outline-offset: 2px;
 }
 
-.cardAction:disabled {
+.cardIconAction:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.cardSwitch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: var(--auto-switch-off);
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+
+.cardSwitch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--auto-switch-knob);
+  transition: transform 160ms ease;
+}
+
+.cardSwitch[aria-checked="true"] {
+  background: var(--auto-running);
+}
+
+.cardSwitch[aria-checked="true"]::after {
+  transform: translateX(14px);
+}
+
+.cardSwitch:focus-visible {
+  outline: 2px solid var(--auto-running);
+  outline-offset: 2px;
+}
+
+.cardSwitch:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cardSpinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--auto-line);
+  border-top-color: var(--auto-running);
+  border-radius: 50%;
+  animation: card-spin 800ms linear infinite;
+}
+
+@keyframes card-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cardSwitch,
+  .cardSwitch::after {
+    transition: none;
+  }
+
+  .cardSpinner {
+    animation: none;
+  }
 }
 
 .cardMenu {
@@ -517,29 +589,6 @@
   margin: 0;
   color: var(--auto-danger);
   font-size: 12px;
-}
-
-.taskActions {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-  flex-wrap: wrap;
-}
-
-.taskActions button {
-  min-height: 32px;
-  padding: 0 13px;
-  border: 1px solid var(--auto-line);
-  border-radius: 9px;
-  background: var(--auto-card);
-  color: var(--auto-ink);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.taskActions button:hover {
-  background: var(--auto-hover);
 }
 
 .dangerAction {
@@ -943,6 +992,8 @@
   --auto-danger: var(--codex-danger, #ff6369);
   --auto-success: var(--codex-success, #4cd98a);
   --auto-running: #6cb2ff;
+  --auto-switch-off: var(--codex-line, #3a3d40);
+  --auto-switch-knob: var(--codex-ink, #f0f0f0);
   background:
     radial-gradient(circle at 54% -8%, rgb(236 236 236 / 5%), transparent 30rem),
     var(--auto-page);
