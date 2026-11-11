@@ -5,6 +5,17 @@
 账号：`xiaokai@shdata.com`（密码从本机密钥文件读取，不写入仓库/文档）
 对照：同一账号的普通助理 1:1 会话；群消息不得出现在该会话。
 
+## 从助理主界面进入群聊（主入口）
+
+1. 打开 https://172.20.105.79:3543/assistant 。
+2. 左侧「机器人」标题右侧点「+」。
+3. 选择「创建群聊」。
+4. 填写群名称，勾选要拉入的子助理（只能选自己的专职子助理），点「创建群聊」。
+5. 创建后自动进入该群；之后也可从左侧「群聊」分组点群名进入。
+6. 群内顶部可看花名册（创建者/主助理/子助理）和「未 @ 接话人」下拉。
+
+右上角独立群聊页仍保留，仅作次要入口。
+
 ## 角色识别
 
 - 花名册中「创建者」= 当前用户；「主助理」= 默认接话人；其余为「子助理」。
@@ -56,6 +67,11 @@ P0 判定：A–L 全部达到预期。
   进入（调用 read）后清零；对消息加 🎉 后刷新仍在；非白名单 emoji 返回 409。
 - 回归脚本：`5f4b7ed0`，新增 `scripts/verify_group_chat_79.py`，按 A–L 主路径
   可重复执行；读取已有 Cookie 罐，不含账号密码。本机运行通过。
+- 主界面入口：`ed7d0383`，左侧「+」提供「创建 Bot / 创建群聊」，建群弹层可勾选
+  自己的子助理；建好的群进入左侧「群聊」分组，点击打开该群时间线；右上角
+  独立页仅作次要入口。79 现场 Web 镜像
+  `kai/alignment-web:groupchat-entry-20261112-79`（revision=`ed7d0383`，healthy），
+  API 仍为 `groupchat-p1h-20261111-79`。
 - 入群前历史：`ade80304`，群回复会把最近 20 条群记录带入本次运行，新成员由此
   看到入群前上下文。79 现场为 API
   `kai/alignment-api:groupchat-p1h-20261111-79`（revision=`ade80304`，healthy），
@@ -64,7 +80,8 @@ P0 判定：A–L 全部达到预期。
   追问，回复“紫罗兰”；部署后再次跑 A–L 回归，全部通过。
 - Compose 备份：`compose.private.before-groupchat-20261111.json`、
   `compose.private.before-groupchat-p2-20261111.json`、
-  `compose.private.before-groupchat-p1history-20261111.json`（79 本机，不在仓库）。
+  `compose.private.before-groupchat-p1history-20261111.json`、
+  `compose.private.before-groupchat-entry-20261112.json`（79 本机，不在仓库）。
 - 116：仅用 116 现有镜像离线构建 `kai/alignment-api:groupchat-20261111-116`
   与 `kai/alignment-web:groupchat-20261111-116`，bundle 在
   `/data/kai-assistant-116-20261109/bundle-groupchat-20261111`；DB 仍为 `0072`，

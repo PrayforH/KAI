@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>助理域架构对照：KAI · OpenMausBot · Grok Bot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;600;650;700&display=swap" rel="stylesheet">
+  <style>
+:root {
+  --bg: #f4efe6;
+  --bg-raised: #fbf7f0;
+  --ink: #1c1916;
+  --muted: #5c564d;
+  --faint: #8a8378;
+  --line: #d9d1c4;
+  --line-strong: #b9b09f;
+  --accent: #8d3b2f;
+  --accent-soft: #f3e4dc;
+  --kai: #1b4d48;
+  --kai-soft: #e4efed;
+  --maus: #7a4a16;
+  --maus-soft: #f3eadc;
+  --grok: #3d4a5c;
+  --grok-soft: #e7ebf0;
+  --warn: #8a5a12;
+  --warn-soft: #f7eedc;
+  --sidebar: #1f1c18;
+  --sidebar-text: #ede6d8;
+  --sidebar-muted: #b2a898;
+  --shadow: 0 1px 2px rgba(28,25,22,.06), 0 8px 24px rgba(28,25,22,.05);
+  --serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", Georgia, "Times New Roman", serif;
+  --sans: "Noto Sans SC", "Source Han Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", "Source Code Pro", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  --sidebar-w: 248px;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--bg);
+  font-family: var(--sans);
+  font-size: 15.5px;
+  line-height: 1.7;
+  text-rendering: optimizeLegibility;
+}
+a { color: var(--kai); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:hover { color: var(--accent); }
+.wrap { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: 100vh; }
+.sidebar {
+  position: sticky; top: 0; height: 100vh; overflow: auto;
+  background: var(--sidebar); color: var(--sidebar-text);
+  padding: 28px 20px 40px;
+}
+.sidebar .brand { font-family: var(--serif); font-size: 15px; letter-spacing: .02em; margin: 0 0 4px; }
+.sidebar .sub { color: var(--sidebar-muted); font-size: 12px; margin: 0 0 22px; }
+.sidebar nav a {
+  display: block; color: var(--sidebar-text); text-decoration: none;
+  padding: 6px 8px; margin: 0 -8px; border-radius: 6px; font-size: 13px; line-height: 1.45;
+}
+.sidebar nav a:hover, .sidebar nav a.active { background: rgba(251,247,240,.1); color: #fff; }
+.sidebar nav .lvl2 { padding-left: 16px; font-size: 12.5px; color: var(--sidebar-muted); }
+.sidebar .meta { margin-top: 28px; padding-top: 16px; border-top: 1px solid rgba(237,230,216,.15); font-size: 11.5px; color: var(--sidebar-muted); line-height: 1.55; }
+.main { padding: 36px 56px 80px; max-width: 1080px; }
+header.dochead { margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+header.dochead .kicker { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); font-weight: 600; margin: 0 0 8px; }
+h1 { font-family: var(--serif); font-weight: 650; font-size: 32px; line-height: 1.25; margin: 0 0 12px; letter-spacing: -.02em; }
+.lede { font-size: 16.5px; color: var(--muted); margin: 0 0 16px; max-width: 46em; }
+.meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 20px; font-size: 13px; color: var(--muted); }
+.meta-grid strong { color: var(--ink); font-weight: 600; display: block; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 2px; }
+h2 { font-family: var(--serif); font-size: 23px; margin: 42px 0 12px; padding-top: 8px; scroll-margin-top: 20px; }
+h3 { font-family: var(--serif); font-size: 18px; margin: 26px 0 8px; scroll-margin-top: 20px; }
+h4 { font-size: 14px; margin: 16px 0 6px; }
+p { margin: 0 0 12px; max-width: 52em; }
+ul, ol { margin: 0 0 14px; padding-left: 1.25em; max-width: 52em; }
+li { margin: 0 0 4px; }
+.note, .callout {
+  background: var(--bg-raised); border: 1px solid var(--line); border-left: 3px solid var(--kai);
+  padding: 12px 14px; margin: 14px 0 18px; border-radius: 0 8px 8px 0;
+}
+.callout.warn { border-left-color: var(--warn); background: var(--warn-soft); }
+.callout.accent { border-left-color: var(--accent); background: var(--accent-soft); }
+.callout .lead { font-weight: 650; margin-right: .4em; }
+.figure {
+  background: var(--bg-raised); border: 1px solid var(--line); border-radius: 10px;
+  padding: 16px 16px 12px; margin: 16px 0 22px; box-shadow: var(--shadow);
+  break-inside: avoid;
+}
+.figure .ftitle { font-family: var(--serif); font-size: 16px; margin: 0 0 4px; }
+.figure .fcaption { font-size: 13px; color: var(--muted); margin: 0 0 12px; max-width: none; }
+.mermaid { display: flex; justify-content: center; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 10px 0 20px; background: var(--bg-raised); }
+th, td { border: 1px solid var(--line); padding: 8px 10px; vertical-align: top; text-align: left; }
+th { background: #efe8db; font-weight: 650; }
+th.col-kai, td.col-kai { background: linear-gradient(0deg, transparent, var(--kai-soft)); }
+th.col-maus { background: #efe4d0; }
+th.col-grok { background: #e4e8ee; }
+.badge { display: inline-block; font-size: 11px; font-weight: 650; letter-spacing: .04em; padding: 1px 7px; border-radius: 999px; vertical-align: middle; }
+.badge.kai { background: var(--kai-soft); color: var(--kai); }
+.badge.maus { background: var(--maus-soft); color: var(--maus); }
+.badge.grok { background: var(--grok-soft); color: var(--grok); }
+.badge.warn { background: var(--warn-soft); color: var(--warn); }
+.badge.open { background: #eceae4; color: var(--muted); }
+code, .mono { font-family: var(--mono); font-size: 12.5px; background: #efe8db; padding: .1em .35em; border-radius: 3px; }
+.src { font-size: 12.5px; color: var(--muted); }
+.src a { word-break: break-all; }
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 14px 0 20px; }
+.card { background: var(--bg-raised); border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 12px; box-shadow: var(--shadow); }
+.card h3 { margin: 6px 0 8px; }
+.card p { font-size: 13.5px; margin: 0; max-width: none; }
+.card dl { margin: 8px 0 0; font-size: 12.5px; }
+.card dt { color: var(--faint); font-weight: 600; }
+.card dd { margin: 0 0 6px; }
+.list-sources { font-size: 13.5px; }
+.list-sources li { margin-bottom: 8px; }
+footer.site { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
+@media (max-width: 960px) {
+  .wrap { display: block; }
+  .sidebar { position: relative; height: auto; }
+  .main { padding: 24px 20px 60px; }
+  .cards { grid-template-columns: 1fr; }
+  table { display: block; overflow-x: auto; }
+}
+@media print {
+  body { background: #fff; font-size: 11.5pt; }
+  .wrap { display: block; }
+  .sidebar { display: none; }
+  .main { max-width: none; padding: 0; }
+  a { color: inherit; text-decoration: none; }
+  .figure, table, .callout, .card { break-inside: avoid; box-shadow: none; }
+  header.dochead { border-bottom: 1pt solid #222; }
+}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <aside class="sidebar">
+      <p class="brand">助理域对照</p>
+      <p class="sub">对照架构说明 · 可打印</p>
+      <nav id="toc"><a href="#takeaway" class="">对照结论</a>
+<a href="#snapshot" class="">三方定位</a>
+<a href="#identity" class="">身份与会话形态</a>
+<a href="#fig-identity" class="lvl2">图 1 身份与会话</a>
+<a href="#who" class="">谁来回答</a>
+<a href="#fig-who" class="lvl2">图 2 未 @ / 有 @ 分流</a>
+<a href="#paths" class="">1:1 与群的路径</a>
+<a href="#fig-paths" class="lvl2">图 3 路径对照</a>
+<a href="#boundary" class="">容易混淆的边界</a>
+<a href="#fig-boundary" class="lvl2">图 4 群 ≠ 团队空间</a>
+<a href="#tonight" class="">今晚群内锁定（KAI）</a>
+<a href="#status" class="">已落地与待办</a>
+<a href="#unknown" class="">未查到或未复核</a>
+<a href="#sources" class="">出处列表</a></nav>
+      <div class="meta">
+        核对时间：2026-11-11 23:07（北京时间，Asia/Shanghai）<br>
+        论断均附出处。查不到的已单独标明。
+      </div>
+    </aside>
+    <main class="main">
+      <header class="dochead">
+        <p class="kicker">助理域对照</p>
+        <h1>助理域架构对照：KAI · OpenMausBot · Grok Bot</h1>
+        <p class="lede">把三种「助理 + 群」放在同一张图上比较：KAI 对齐分支以仓库文档和代码为准，OpenMausBot 以 main 文档为准，Grok Bot 只用已有出处。KAI 只作为对照栏的一方，不另写现状专章。</p>
+        <div class="meta-grid">
+          <div><strong>核对时间</strong>2026-11-11 23:07（北京时间，Asia/Shanghai）</div>
+<div><strong>KAI 基线</strong>auto/bot-runtime-alignment-20261109 @ 5a457c2b</div>
+<div><strong>OpenMausBot 基线</strong>main @ acb1159 · 发行版 v0.1.153</div>
+<div><strong>Grok Bot 口径</strong>今晚群内自述；内部实现不猜测</div>
+        </div>
+      </header>
+      
+<section id="takeaway">
+  <h2>对照结论</h2>
+  <div class="callout"><span class="lead">差异在「谁是联系人、群里谁开口、1:1 与群是否同一套决策」。不是再写一份 KAI 现状说明书。</span></div>
+  <ul>
+    <li><span class="badge kai">KAI</span> 助理域是企业工作台上的专属 <code>/assistant</code> 面：一个主助理加多名职责子助理（Specialist），各有 1:1 会话。跨助理协作在 1:1 里走「发送 / 回执」，由平台校验归属与权限，不再强制每轮分类路由。团队空间用来共享已发布 Agent 版本，<strong>不是群聊</strong>。群组能力按今晚群内口径要对标「主理」，但提交 <code>f9c3872a</code> 在 GitHub 上未找到，本页不把它写成已验证落地。</li>
+    <li><span class="badge maus">OpenMausBot</span> 把每个 Bot 当成通讯录里的联系人：独立人格、模型、电脑和 1:1 线程。频道 / 房间是带可编花名册的共享 transcript，应答模式包括主责、全员、仅 @，以及 Auto（Jev / Clef / OpenRouter）给未 @ 消息选人。</li>
+    <li><span class="badge grok">Grok Bot</span> 今晚在群内自述：群是带花名册的频道；没有 MausBot 那种 Jev 自动选人层；被 @ 的人应当回应；未 @ 时成员自己判断是否开口，有协调人时一般话由协调人接；1:1 与群分开。内部实现（存储、进程、路由代码）<strong>未在公开资料中找到</strong>，本文不猜测。</li>
+  </ul>
+</section>
+
+<section id="snapshot">
+  <h2>三方定位</h2>
+  <div class="cards">
+    <article class="card">
+      <span class="badge kai">KAI WORK</span>
+      <h3>企业可治理的 AgentOps 控制面，并带专属助理工作台</h3>
+      <dl>
+        <dt>仓库 / 分支</dt><dd>PrayforH/KAI · <code>auto/bot-runtime-alignment-20261109</code></dd>
+        <dt>HEAD（已复核）</dt><dd><code>5a457c2b</code> · 2026-11-11 22:00 北京时间</dd>
+        <dt>版本 / 许可</dt><dd>平台 0.3.1 · Apache-2.0</dd>
+        <dt>技术栈</dt><dd>TypeScript / Next.js 工作台，Python API 与 Worker，PostgreSQL / Redis / 对象存储；运行时为 Claude Agent SDK、Codex App Server、可选 DeepAgents</dd>
+      </dl>
+    </article>
+    <article class="card">
+      <span class="badge maus">OpenMausBot</span>
+      <h3>开源的「聊天应用里的 Bot 团队」，本地优先</h3>
+      <dl>
+        <dt>仓库 / 分支</dt><dd>milind-soni/OpenMausBot · <code>main</code></dd>
+        <dt>HEAD / 发行版</dt><dd><code>acb1159</code>；发行版 v0.1.153，2026-11-11 21:24 北京时间发布</dd>
+        <dt>许可</dt><dd>主仓库 Apache-2.0；<code>enterprise/</code> 为另一套源码可得许可，不能当成可随意复制的开源实现</dd>
+        <dt>技术栈</dt><dd>TypeScript、React、Electron；本机 harness 调用本地 claude / codex / grok CLI；记录与密钥在 <code>~/.openmausbot</code></dd>
+      </dl>
+    </article>
+    <article class="card">
+      <span class="badge grok">Grok Bot</span>
+      <h3>对照依据仅限有出处的说明</h3>
+      <dl>
+        <dt>今晚群内（2026-11-11）</dt><dd>花名册频道、无 Jev 自动选人层、@ 应回应、未 @ 有协调人则由其接、1:1 与群分开</dd>
+        <dt>第三方公开表述</dt><dd>OpenMausBot README 将其概括为「一份花名册、一台共享云电脑、只用 Grok」。这是对方的对照主张，不是 Grok Bot 官方架构文档</dd>
+        <dt>内部实现</dt><dd>未在公开资料中找到，本文不补内部模块图</dd>
+      </dl>
+    </article>
+  </div>
+</section>
+
+<section id="identity">
+  <h2>身份与会话形态</h2>
+  <table>
+    <thead>
+      <tr><th>维度</th><th>KAI（对齐分支 HEAD）</th><th>OpenMausBot（main / v0.1.153）</th><th>Grok Bot（有出处部分）</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>助理是什么</td>
+        <td>主助理置顶；专职子助理绑定已发布 <code>agentName@version</code>，状态机 draft → ready → active，入口 <code>/assistant?bot=</code></td>
+        <td>侧栏里每个 Bot 都是联系人：名称/职称/描述、头像、模型、技能、记忆开关、电脑与审批策略</td>
+        <td>今晚未描述身份数据模型。OpenMausBot 称其形态是「花名册里的一组 Bot」</td>
+      </tr>
+      <tr>
+        <td>1:1</td>
+        <td>主助理与每个子助理都有独立会话坐标；转交回执区分发送 ≠ 接收 ≠ 执行</td>
+        <td>每个 Bot 有独立 <code>threadId</code>，记忆默认与房间隔离</td>
+        <td>明确：1:1 与群分开</td>
+      </tr>
+      <tr>
+        <td>群 / 频道</td>
+        <td>仓库文档仍把「群聊 @ 后代办」列为待办。今晚群内锁定要做带花名册的共享会话，但 GitHub 上尚未复核到对应提交</td>
+        <td>频道有独立 transcript、共享指示、工作目录、应答规则和可编辑花名册</td>
+        <td>群是带花名册的频道</td>
+      </tr>
+      <tr>
+        <td>「团队」一词</td>
+        <td>Team Space = 共享已发布、不可变的 Agent 版本引用；运行时 Session 仍按使用者隔离记忆和凭据。不是群聊</td>
+        <td>Team / 部门包可一次安装一组 Bot、频道、Playbook、例程；分享不带聊天记录、密钥、模型选择和电脑权限</td>
+        <td>未在公开资料中找到与「部门包 / 团队空间」对等的说明</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="src">出处：KAI <a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/plans/2026-10-30-kai-assistant-managed-goal.md">docs/plans/2026-10-30-kai-assistant-managed-goal.md</a>、<a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/team-spaces.md">docs/team-spaces.md</a>；OpenMausBot <a href="https://github.com/milind-soni/OpenMausBot/blob/main/README.md">README.md</a>（Channels / Install a complete team / Share a whole department）。</p>
+
+  <div class="figure" id="fig-identity">
+    <h3 class="ftitle">图 1　身份与会话：三方差在哪里</h3>
+    <p class="fcaption">KAI 当前已核实的是「主助理 + 子助理的 1:1 星型」；OpenMausBot 是「联系人 + 共享房间」；Grok Bot 只画出今晚自述的频道与 1:1 分离，内部节点不补。</p>
+    <pre class="mermaid">
+flowchart LR
+  subgraph KAI[KAI 已核实]
+    KU[用户]
+    KM[主助理 1:1]
+    KS1[子助理 1:1]
+    KS2[子助理 1:1]
+    KU --> KM
+    KU --> KS1
+    KU --> KS2
+    KM -->|发送 / 回执| KS1
+    KM -->|发送 / 回执| KS2
+  end
+  subgraph OMB[OpenMausBot]
+    OU[用户]
+    OB1[Bot 1:1]
+    OB2[Bot 1:1]
+    OR[房间共享记录]
+    OU --> OB1
+    OU --> OB2
+    OU --> OR
+    OB1 --- OR
+    OB2 --- OR
+  end
+  subgraph GB[Grok Bot 今晚自述]
+    GU[用户]
+    G1[1:1]
+    GR[带花名册的频道]
+    GU --> G1
+    GU --> GR
+  end
+    </pre>
+  </div>
+</section>
+
+<section id="who">
+  <h2>谁来回答</h2>
+  <p>这是三方最需要并排看的决策差。KAI 的 1:1 职责分派、OpenMausBot 的房间 Auto、以及今晚锁定的 KAI 群「主理」，<strong>不是同一套机制</strong>。</p>
+  <table>
+    <thead>
+      <tr><th>情形</th><th>KAI 1:1（当前分支）</th><th>OpenMausBot 房间</th><th>Grok Bot（今晚自述）</th><th>KAI 群（今晚锁定，未复核代码）</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>未 @ 的一般话</td>
+        <td>主模型可自行处理、发送给子助理或提问；平台不再强制每轮 <code>assistant_route_message</code> 分类。服务端仍校验归属、权限、附件与投递幂等</td>
+        <td>视房间模式：主责、全员、仅 @，或 Auto。Auto 用决策模型（默认 Jev，也可 Clef / OpenRouter）在 1.5 秒内挑选；概率 ≥ 0.6 才独立点名，「多人」达阈值则全员；失败开放，回退主责</td>
+        <td>成员自己判断是否有必要开口；有协调人时一般话由协调人接</td>
+        <td>专职子助理必须静默；一般话由本群「未 @ 接话人」直接回，默认是主助理（主理，不是「仅 @ 才回」）</td>
+      </tr>
+      <tr>
+        <td>有 @</td>
+        <td>可用 <code>@</code> 把话直接交给对应子助理；结果可回到发起会话，带来源行</td>
+        <td>@ 与 @everyone 不走决策模型，被点名的 Bot 回答</td>
+        <td>被点名的人应当回应</td>
+        <td>被点名的成员以自己身份在本群直接承办；主助理不中转、不抢话；@ 主助理则主助理回；@ 非成员或已移出者必须明确提示</td>
+      </tr>
+      <tr>
+        <td>决策器与 1:1 的关系</td>
+        <td>历史上（2026-11-03 上午）曾用 <code>assistant_route_message</code>（dispatch / direct / clarify）并在 79 用真实浏览器验过；同日自主化改造删除了强制分类与工作流门控，现工具为 <code>assistant_create_specialist</code> 与 <code>assistant_send_message</code></td>
+        <td>决策模型只服务房间 Auto 的未 @ 消息，不代替 Bot 自己的引擎干活</td>
+        <td>明确没有 MausBot 那种 Jev 自动选人层</td>
+        <td>群应答不得与 1:1 的历史路由工具或发送工具混成一套；Auto / Jev 列为下一期可选房间模式，失败回退接话人</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="src">出处：KAI <a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/plans/2026-11-03-assistant-semantic-routing.md">2026-11-03-assistant-semantic-routing.md</a>、<a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/results/2026-11-03-assistant-routing-79.md">routing-79 报告</a>、<a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/plans/2026-11-03-bot-autonomy-refactor.md">bot-autonomy-refactor.md</a>、<a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/results/2026-11-03-bot-autonomy-79.md">autonomy-79 报告</a>（写明删除强制分类，运行镜像中 <code>routing.py</code> 已不存在）；源码 <a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/src/harness/assistant/messaging.py">src/harness/assistant/messaging.py</a>。OpenMausBot <a href="https://github.com/milind-soni/OpenMausBot/blob/main/docs/decision-model.md">docs/decision-model.md</a>。Grok Bot 与 KAI 群口径见文末「今晚群内锁定」。</p>
+
+  <div class="figure" id="fig-who">
+    <h3 class="ftitle">图 2　未 @ / 有 @ 时谁开口</h3>
+    <p class="fcaption">同一条用户消息，三条产品线的分流不同。Grok Bot 只画今晚说过的规则；KAI 群用虚线表示「口径已锁、代码未在 GitHub 复核」。</p>
+    <pre class="mermaid">
+flowchart TB
+  M[一条新消息]
+  M --> AT{是否被 @?}
+  AT -->|有 @| AT1[被点名的对象应直接回应]
+  AT -->|未 @| U[未点名]
+  U --> KAI1[KAI 1:1：模型自行处理或发送]
+  U --> OMB1[OpenMausBot：主责 / 全员 / 仅@ / Auto]
+  OMB1 -->|Auto| JEV[决策模型 1.5 秒失败回退主责]
+  U --> GB1[Grok Bot：有协调人则由其接]
+  U --> KG1[KAI 群口径：接话人回其余静默]
+    </pre>
+  </div>
+</section>
+
+<section id="paths">
+  <h2>1:1 与群的路径</h2>
+  <p>KAI 已经在 79 验证过的，是主会话与子助理会话之间的发送、提问卡和回执，而不是房间级轮流发言。OpenMausBot 房间成员的回合是房间 transcript 上的根回合。不要把前者画成后者。</p>
+  <div class="figure" id="fig-paths">
+    <h3 class="ftitle">图 3　1:1 派发 / 房间应答：两条不相等的调用链</h3>
+    <p class="fcaption">左侧是 KAI 当前 1:1（自主化之后）。右侧是 OpenMausBot 房间。KAI 群若落地，应对齐右侧的「共享花名册会话」，而不是复用左侧工具。</p>
+    <pre class="mermaid">
+flowchart TB
+  subgraph LEFT[KAI 1:1 当前]
+    L1[用户主会话] --> L2[主助理模型]
+    L2 -->|自行处理| L3[主会话直接回答]
+    L2 -->|assistant_send_message| L4[服务端校验归属与权限]
+    L4 --> L5[子助理原会话 Run]
+    L5 --> L6[结果回主会话并带来源行]
+  end
+  subgraph RIGHT[OpenMausBot 房间]
+    R1[房间新消息] --> R2{被 @ ?}
+    R2 -->|是| R3[被点名 Bot 在房间直接说]
+    R2 -->|否| R4[房间应答模式]
+    R4 -->|Auto| R5[决策模型选人]
+    R4 -->|主责| R6[主责回答]
+    R5 --> R7[入选 Bot 用自己的引擎跑一轮]
+    R6 --> R7
+    R3 --> R8[写进同一条房间记录]
+    R7 --> R8
+  end
+    </pre>
+  </div>
+  <p>KAI 1:1 的其他已核实能力（此处只列与对照有关的边界，不展开成功能清单）：Objectives / 管理任务与 handovers；记忆提案必填 <code>evidence_quote</code>（4–500 字，须为用户原话）；飞书 / 微信是独立信道，今晚群故事线明确不含 IM 群同步。</p>
+</section>
+
+<section id="boundary">
+  <h2>容易混淆的边界</h2>
+  <div class="callout warn"><span class="lead">不要混用三个「群/团队」。</span>KAI 的团队空间、OpenMausBot 的房间、OpenMausBot 的部门包，解决的是不同问题。2026-09-21 方案里的 AgentTeams 式任务板也尚未实现，不能当成已有群聊。</div>
+  <div class="figure" id="fig-boundary">
+    <h3 class="ftitle">图 4　共享的是什么：版本、会话，还是部门包装</h3>
+    <p class="fcaption">矩形表示「已有且已文档化」；KAI 群用虚线框，表示今晚锁定但 GitHub 未复核。</p>
+    <pre class="mermaid">
+flowchart LR
+  subgraph SHARE[共享已发布能力]
+    TS[KAI 团队空间：共享已发布版本]
+  end
+  subgraph CHAT[共享会话]
+    RM[OpenMausBot 房间 / 频道]
+    GR[Grok Bot 花名册频道]
+    KG[KAI 群：口径已锁尚未复核提交]
+  end
+  subgraph PACK[可分享的编制]
+    DP[OpenMausBot 部门包不含密钥与历史]
+  end
+  TS -.->|不是同一层| RM
+    </pre>
+  </div>
+  <p>云电脑是另一份子系统：KAI 账号共享桌面、单执行者排队与接管租约；OpenMausBot 则是「每个 Bot 可以有自己的电脑」。细节见伴生文档 <a href="./kai-cloud-computer-architecture-compare.html">云电脑 / 远程电脑架构对照</a>，本文不展开。</p>
+</section>
+
+<section id="tonight">
+  <h2>今晚群内锁定（KAI 群组口径）</h2>
+  <p>以下不是仓库旧文档，而是 2026-11-11 当晚「AI产品研发组」锁定的产品口径。P0 / P1 / P2 只作一脚索引，不是本页主体。</p>
+  <ul>
+    <li>群是带花名册的共享会话；建群时创建者和主助理默认在群；只能拉 / 移出当前用户的专职子助理，不能拉其他真人。</li>
+    <li>未 @：接话人（默认主助理）在本群直接回，其他专职子助理静默。不是「全员不回」。</li>
+    <li>有 @：被点名者以自己身份直接承办，主助理不中转。移出接话人或主助理后，未 @ 不自动改派，并给明确提示。</li>
+    <li>消息只出现在本群，刷新后还在，不泄漏到 1:1 或其他群。</li>
+    <li>Jev / Auto 下一期；不要和 1:1 的 <code>assistant_route_message</code>（或其后续发送工具）混用。</li>
+    <li>P0（今晚 79 通过线）对应验收 A–L；P1 为可配置接话人、一次 @ 多人、入群前历史；P2 为未读与表情。计划入口 <code>https://172.20.105.79:3543/assistant</code>（编码协同口述，本页未做现网探活）。</li>
+  </ul>
+</section>
+
+<section id="status">
+  <h2>已落地与待办（对照视角）</h2>
+  <table>
+    <thead><tr><th>项</th><th>状态</th><th>说明与出处</th></tr></thead>
+    <tbody>
+      <tr><td>KAI 专属助理面、主 / 子助理、handover</td><td>已在 79 迭代并有文档</td><td>managed-goal 计划与 10-30 结果报告</td></tr>
+      <tr><td>KAI 1:1 强制 <code>assistant_route_message</code></td><td>曾落地，随后删除</td><td>11-03 路由报告验证过；同日 autonomy 报告删除强制分类，镜像中无 <code>routing.py</code></td></tr>
+      <tr><td>KAI 记忆出处校验、聊天记录 / 执行记录、模型 Auto</td><td>对齐计划记为已发布</td><td><a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/plans/2026-11-10-assistant-parity-1-2-3-7.md">2026-11-10-assistant-parity-1-2-3-7.md</a>；本页未重跑 79 / 116</td></tr>
+      <tr><td>KAI 群聊（能力 5）</td><td>文档仍为待办；今晚作为 P0 推进</td><td>编码协同称已落到 <code>f9c3872a</code> 并在部署。GitHub API 对该 SHA 返回不存在，本页标为未复核</td></tr>
+      <tr><td>OpenMausBot 房间应答与 Jev</td><td>已成型并有规范</td><td>decision-model.md、README Channels / Jev 节</td></tr>
+      <tr><td>Grok Bot 群规则</td><td>仅有今晚自述</td><td>无公开架构仓可对代码</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="unknown">
+  <h2>未查到或未复核</h2>
+  <ul>
+    <li>提交 <code>f9c3872a</code>：GitHub API 于 2026-11-11 23:05 左右查询，状态 422，「No commit found for SHA: f9c3872a」。不能写成已验证合入对齐分支。</li>
+    <li>KAI 群对象、API 与页面是否已在 <code>5a457c2b</code> 中：按该 HEAD 树未作为已合并内容复核。</li>
+    <li>Grok Bot 的存储、进程模型、花名册实现、是否有服务端路由模块：未在公开资料中找到；今晚群内也未说明内部实现。</li>
+    <li>Grok Bot 官方对「共享云电脑 / 仅 Grok 模型」的确认：仅见到 OpenMausBot README 的对照表述，未找到 Grok Bot 自己的架构文档。</li>
+    <li>79 现网是否已部署今晚 P0、A–L 是否跑通：验收文档当时全部为未执行；本对照未登录、未探活。</li>
+  </ul>
+</section>
+
+<section id="sources">
+  <h2>出处列表</h2>
+  <ol class="list-sources">
+    <li>KAI 仓库与分支：<a href="https://github.com/PrayforH/KAI/tree/auto/bot-runtime-alignment-20261109">https://github.com/PrayforH/KAI/tree/auto/bot-runtime-alignment-20261109</a>，HEAD <a href="https://github.com/PrayforH/KAI/commit/5a457c2b5d6cb0139e51de7e5d66a8fb8f31b106">5a457c2b</a></li>
+    <li><a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/README.md">README.md</a>（版本 0.3.1、技术栈、Apache-2.0）</li>
+    <li><a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/architecture.md">docs/architecture.md</a></li>
+    <li><a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/team-spaces.md">docs/team-spaces.md</a></li>
+    <li><a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/plans/2026-10-30-kai-assistant-managed-goal.md">docs/plans/2026-10-30-kai-assistant-managed-goal.md</a></li>
+    <li><a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/plans/2026-11-03-assistant-semantic-routing.md">docs/plans/2026-11-03-assistant-semantic-routing.md</a> 与 <a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/results/2026-11-03-assistant-routing-79.md">results/2026-11-03-assistant-routing-79.md</a></li>
+    <li><a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/plans/2026-11-03-bot-autonomy-refactor.md">docs/plans/2026-11-03-bot-autonomy-refactor.md</a> 与 <a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/results/2026-11-03-bot-autonomy-79.md">results/2026-11-03-bot-autonomy-79.md</a></li>
+    <li><a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/plans/2026-11-10-assistant-parity-1-2-3-7.md">docs/plans/2026-11-10-assistant-parity-1-2-3-7.md</a></li>
+    <li><a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/plans/2026-09-21-agent-workspace-agenta-agentteams.md">docs/plans/2026-09-21-agent-workspace-agenta-agentteams.md</a>（AgentTeams 式协作尚未实现）</li>
+    <li>源码：<a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/src/harness/assistant/messaging.py">src/harness/assistant/messaging.py</a></li>
+    <li>OpenMausBot：<a href="https://github.com/milind-soni/OpenMausBot">https://github.com/milind-soni/OpenMausBot</a>，<a href="https://github.com/milind-soni/OpenMausBot/blob/main/README.md">README.md</a>，<a href="https://github.com/milind-soni/OpenMausBot/blob/main/docs/decision-model.md">docs/decision-model.md</a>，<a href="https://github.com/milind-soni/OpenMausBot/blob/main/LICENSING.md">LICENSING.md</a>，发行说明 <a href="https://github.com/milind-soni/OpenMausBot/releases/tag/v0.1.153">v0.1.153</a></li>
+    <li>Grok Bot：2026-11-11 晚「AI产品研发组」群内 Grok Bot 自己的说明（花名册频道、无 Jev 层、@ 应回应、协调人接一般话、1:1 与群分开）</li>
+  </ol>
+</section>
+
+      <footer class="site">
+        本文为对照说明，不是任何一方的完整系统说明书。双击即可在浏览器打开；图表由 Mermaid（jsDelivr CDN）渲染，打印时建议使用「背景图形」。文件：kai-assistant-architecture-compare.html
+      </footer>
+    </main>
+  </div>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: "base",
+      securityLevel: "strict",
+      themeVariables: {
+        background: "#fbf7f0",
+        fontFamily: "Noto Sans SC, Source Han Sans SC, sans-serif",
+        primaryColor: "#e4efed",
+        primaryTextColor: "#1c1916",
+        primaryBorderColor: "#1b4d48",
+        secondaryColor: "#f3eadc",
+        secondaryTextColor: "#1c1916",
+        secondaryBorderColor: "#7a4a16",
+        tertiaryColor: "#e7ebf0",
+        tertiaryBorderColor: "#3d4a5c",
+        lineColor: "#5c564d",
+        clusterBkg: "#f4efe6",
+        clusterBorder: "#b9b09f",
+        edgeLabelBackground: "#fbf7f0"
+      },
+      flowchart: { htmlLabels: false, curve: "basis" }
+    });
+    const links = [...document.querySelectorAll("#toc a")];
+    const secs = links.map(a => document.getElementById(a.getAttribute("href").slice(1))).filter(Boolean);
+    const io = new IntersectionObserver((entries) => {
+      const vis = entries.filter(e => e.isIntersecting).sort((a,b)=>b.intersectionRatio-a.intersectionRatio)[0];
+      if (!vis) return;
+      links.forEach(l => l.classList.toggle("active", l.getAttribute("href") === "#" + vis.target.id));
+    }, { rootMargin: "0px 0px -65% 0px", threshold: [0, .2, .6] });
+    secs.forEach(s => io.observe(s));
+  </script>
+</body>
+</html>

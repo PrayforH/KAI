@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>云电脑与远程电脑架构对照：KAI · OpenMausBot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;600;650;700&display=swap" rel="stylesheet">
+  <style>
+:root {
+  --bg: #f4efe6;
+  --bg-raised: #fbf7f0;
+  --ink: #1c1916;
+  --muted: #5c564d;
+  --faint: #8a8378;
+  --line: #d9d1c4;
+  --line-strong: #b9b09f;
+  --accent: #8d3b2f;
+  --accent-soft: #f3e4dc;
+  --kai: #1b4d48;
+  --kai-soft: #e4efed;
+  --maus: #7a4a16;
+  --maus-soft: #f3eadc;
+  --grok: #3d4a5c;
+  --grok-soft: #e7ebf0;
+  --warn: #8a5a12;
+  --warn-soft: #f7eedc;
+  --sidebar: #1f1c18;
+  --sidebar-text: #ede6d8;
+  --sidebar-muted: #b2a898;
+  --shadow: 0 1px 2px rgba(28,25,22,.06), 0 8px 24px rgba(28,25,22,.05);
+  --serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", Georgia, "Times New Roman", serif;
+  --sans: "Noto Sans SC", "Source Han Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", "Source Code Pro", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  --sidebar-w: 248px;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--bg);
+  font-family: var(--sans);
+  font-size: 15.5px;
+  line-height: 1.7;
+  text-rendering: optimizeLegibility;
+}
+a { color: var(--kai); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:hover { color: var(--accent); }
+.wrap { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: 100vh; }
+.sidebar {
+  position: sticky; top: 0; height: 100vh; overflow: auto;
+  background: var(--sidebar); color: var(--sidebar-text);
+  padding: 28px 20px 40px;
+}
+.sidebar .brand { font-family: var(--serif); font-size: 15px; letter-spacing: .02em; margin: 0 0 4px; }
+.sidebar .sub { color: var(--sidebar-muted); font-size: 12px; margin: 0 0 22px; }
+.sidebar nav a {
+  display: block; color: var(--sidebar-text); text-decoration: none;
+  padding: 6px 8px; margin: 0 -8px; border-radius: 6px; font-size: 13px; line-height: 1.45;
+}
+.sidebar nav a:hover, .sidebar nav a.active { background: rgba(251,247,240,.1); color: #fff; }
+.sidebar nav .lvl2 { padding-left: 16px; font-size: 12.5px; color: var(--sidebar-muted); }
+.sidebar .meta { margin-top: 28px; padding-top: 16px; border-top: 1px solid rgba(237,230,216,.15); font-size: 11.5px; color: var(--sidebar-muted); line-height: 1.55; }
+.main { padding: 36px 56px 80px; max-width: 1080px; }
+header.dochead { margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+header.dochead .kicker { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); font-weight: 600; margin: 0 0 8px; }
+h1 { font-family: var(--serif); font-weight: 650; font-size: 32px; line-height: 1.25; margin: 0 0 12px; letter-spacing: -.02em; }
+.lede { font-size: 16.5px; color: var(--muted); margin: 0 0 16px; max-width: 46em; }
+.meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 20px; font-size: 13px; color: var(--muted); }
+.meta-grid strong { color: var(--ink); font-weight: 600; display: block; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 2px; }
+h2 { font-family: var(--serif); font-size: 23px; margin: 42px 0 12px; padding-top: 8px; scroll-margin-top: 20px; }
+h3 { font-family: var(--serif); font-size: 18px; margin: 26px 0 8px; scroll-margin-top: 20px; }
+h4 { font-size: 14px; margin: 16px 0 6px; }
+p { margin: 0 0 12px; max-width: 52em; }
+ul, ol { margin: 0 0 14px; padding-left: 1.25em; max-width: 52em; }
+li { margin: 0 0 4px; }
+.note, .callout {
+  background: var(--bg-raised); border: 1px solid var(--line); border-left: 3px solid var(--kai);
+  padding: 12px 14px; margin: 14px 0 18px; border-radius: 0 8px 8px 0;
+}
+.callout.warn { border-left-color: var(--warn); background: var(--warn-soft); }
+.callout.accent { border-left-color: var(--accent); background: var(--accent-soft); }
+.callout .lead { font-weight: 650; margin-right: .4em; }
+.figure {
+  background: var(--bg-raised); border: 1px solid var(--line); border-radius: 10px;
+  padding: 16px 16px 12px; margin: 16px 0 22px; box-shadow: var(--shadow);
+  break-inside: avoid;
+}
+.figure .ftitle { font-family: var(--serif); font-size: 16px; margin: 0 0 4px; }
+.figure .fcaption { font-size: 13px; color: var(--muted); margin: 0 0 12px; max-width: none; }
+.mermaid { display: flex; justify-content: center; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 10px 0 20px; background: var(--bg-raised); }
+th, td { border: 1px solid var(--line); padding: 8px 10px; vertical-align: top; text-align: left; }
+th { background: #efe8db; font-weight: 650; }
+th.col-kai, td.col-kai { background: linear-gradient(0deg, transparent, var(--kai-soft)); }
+th.col-maus { background: #efe4d0; }
+th.col-grok { background: #e4e8ee; }
+.badge { display: inline-block; font-size: 11px; font-weight: 650; letter-spacing: .04em; padding: 1px 7px; border-radius: 999px; vertical-align: middle; }
+.badge.kai { background: var(--kai-soft); color: var(--kai); }
+.badge.maus { background: var(--maus-soft); color: var(--maus); }
+.badge.grok { background: var(--grok-soft); color: var(--grok); }
+.badge.warn { background: var(--warn-soft); color: var(--warn); }
+.badge.open { background: #eceae4; color: var(--muted); }
+code, .mono { font-family: var(--mono); font-size: 12.5px; background: #efe8db; padding: .1em .35em; border-radius: 3px; }
+.src { font-size: 12.5px; color: var(--muted); }
+.src a { word-break: break-all; }
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 14px 0 20px; }
+.card { background: var(--bg-raised); border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 12px; box-shadow: var(--shadow); }
+.card h3 { margin: 6px 0 8px; }
+.card p { font-size: 13.5px; margin: 0; max-width: none; }
+.card dl { margin: 8px 0 0; font-size: 12.5px; }
+.card dt { color: var(--faint); font-weight: 600; }
+.card dd { margin: 0 0 6px; }
+.list-sources { font-size: 13.5px; }
+.list-sources li { margin-bottom: 8px; }
+footer.site { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
+@media (max-width: 960px) {
+  .wrap { display: block; }
+  .sidebar { position: relative; height: auto; }
+  .main { padding: 24px 20px 60px; }
+  .cards { grid-template-columns: 1fr; }
+  table { display: block; overflow-x: auto; }
+}
+@media print {
+  body { background: #fff; font-size: 11.5pt; }
+  .wrap { display: block; }
+  .sidebar { display: none; }
+  .main { max-width: none; padding: 0; }
+  a { color: inherit; text-decoration: none; }
+  .figure, table, .callout, .card { break-inside: avoid; box-shadow: none; }
+  header.dochead { border-bottom: 1pt solid #222; }
+}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <aside class="sidebar">
+      <p class="brand">云电脑对照</p>
+      <p class="sub">对照架构说明 · 可打印</p>
+      <nav id="toc"><a href="#takeaway" class="">对照结论</a>
+<a href="#snapshot" class="">三方怎么放置电脑</a>
+<a href="#ownership" class="">归属与隔离</a>
+<a href="#fig-own" class="lvl2">图 1 电脑归谁</a>
+<a href="#runtime" class="">执行与查看路径</a>
+<a href="#fig-kai" class="lvl2">图 2 KAI 查看 / 执行 / 队列</a>
+<a href="#fig-omb" class="lvl2">图 3 OpenMausBot 三种电脑</a>
+<a href="#takeover" class="">接管、租约与审批</a>
+<a href="#fig-takeover" class="lvl2">图 4 人工接管对照</a>
+<a href="#deploy" class="">79 / 116 与部署差</a>
+<a href="#boundary" class="">与助理域的边界</a>
+<a href="#unknown" class="">未查到或未复核</a>
+<a href="#sources" class="">出处列表</a></nav>
+      <div class="meta">
+        核对时间：2026-11-11 23:07（北京时间，Asia/Shanghai）<br>
+        论断均附出处。查不到的已单独标明。
+      </div>
+    </aside>
+    <main class="main">
+      <header class="dochead">
+        <p class="kicker">云电脑对照</p>
+        <h1>云电脑与远程电脑架构对照：KAI · OpenMausBot</h1>
+        <p class="lede">比较电脑跟谁走、多人如何抢同一块屏幕、人工怎么接管。KAI 与 OpenMausBot 以仓库文档和代码为准；Grok Bot 只写有出处的句子，缺的标明未找到。不另写一份 KAI 现状专章。</p>
+        <div class="meta-grid">
+          <div><strong>核对时间</strong>2026-11-11 23:07（北京时间，Asia/Shanghai）</div>
+<div><strong>KAI 基线</strong>auto/bot-runtime-alignment-20261109 @ 5a457c2b</div>
+<div><strong>OpenMausBot 基线</strong>main @ acb1159 · 发行版 v0.1.153</div>
+<div><strong>Grok Bot</strong>无内部出处则不推测</div>
+        </div>
+      </header>
+      
+<section id="takeaway">
+  <h2>对照结论</h2>
+  <div class="callout"><span class="lead">差在「电脑跟账号走还是跟 Bot 走，以及多人抢同一块屏幕时怎么排队」。不要把本文读成 KAI 云电脑操作手册。</span></div>
+  <ul>
+    <li><span class="badge kai">KAI</span> 电脑是账号级执行环境：云桌面与远程电脑（含 <code>local-32-45</code>）可切换，但同一时刻共享桌面只有一个执行者。查看目标与执行机分开；占用按优先级降序加 FIFO 排队，活的 holder 不被硬抢。人工接管有租约：当前分支代码里 <code>HUMAN_TTL_SECONDS = 90</code>；文档记录 79 已按 90 秒发布，116 的 api / viewer 当时仍是 300 秒。</li>
+    <li><span class="badge maus">OpenMausBot</span> 默认「每个 Bot 可以有自己的电脑」：云端 Linux 桌面、隔离的 Local VM，或在明确开启后使用「这台电脑」。高风险操作走聊天里的审批卡。本机控制由 Electron 托管的 CUA 驱动负责；云端 turn 可进入 bubblewrap「bot box」。Local VM 在 bot box 开启时不可用，因为不能把 Docker 套接字送进盒子。</li>
+    <li><span class="badge grok">Grok Bot</span> 今晚群内没有说明电脑内部结构。OpenMausBot README 的对照表将其概括为「一份花名册共用一台云电脑、只用 Grok」。这是对方主张，不是已核实的内部调度、租约或 viewer 协议。细节标为未在公开资料中找到。</li>
+  </ul>
+</section>
+
+<section id="snapshot">
+  <h2>三方怎么放置电脑</h2>
+  <div class="cards">
+    <article class="card">
+      <span class="badge kai">KAI</span>
+      <h3>账号共享桌面，控制面管生命周期与权限</h3>
+      <p>ComputerRegistry 是助理当前执行电脑的唯一事实来源。运营配置声明可选目标，API 只暴露不透明的 target ID 与名称。平台继续只管生命周期、权限与消息，不把业务流程写进电脑层。</p>
+    </article>
+    <article class="card">
+      <span class="badge maus">OpenMausBot</span>
+      <h3>Bot 自带电脑，本地优先也可上云</h3>
+      <p>云桌面走已有 <code>computer-proxy</code>（Boat）；本机走 Electron 主进程拉起的 cua-driver，harness 只拿到校验过的 MCP 代理，自己不生成驱动。浏览器优先用应用内嵌的 Chromium。</p>
+    </article>
+    <article class="card">
+      <span class="badge grok">Grok Bot</span>
+      <h3>只有间接表述</h3>
+      <p>公开对照声称是「共享云电脑」。今晚群内自述只覆盖频道应答，没有电脑队列、租约或显示协议。本文不画未核实的内部箱。</p>
+    </article>
+  </div>
+</section>
+
+<section id="ownership">
+  <h2>归属与隔离</h2>
+  <table>
+    <thead>
+      <tr><th>维度</th><th>KAI</th><th>OpenMausBot</th><th>Grok Bot</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>电脑跟谁走</td>
+        <td>跟账号的当前执行电脑走。已获电脑访问的自有 Bot 会话缺省继承该执行电脑；普通任务 / 项目、未授权或显式沙箱保持原边界</td>
+        <td>跟每个 Bot 走。云桌面、Local VM 或「这台电脑」是 Bot 资料的一部分</td>
+        <td>OpenMausBot 称其为「一台共享云电脑」。官方内部模型未找到</td>
+      </tr>
+      <tr>
+        <td>多执行者冲突</td>
+        <td>共享桌面单执行者；队列 = 优先级降序 + FIFO；occupancy 投影位次与原因；对活 holder 不硬抢。软抢占（把剩余 TTL 钳到 30 秒）在计划里写为已落地，当时注明尚未部署 79</td>
+        <td>未在 computer-use 文档中找到与 KAI 对等的跨 Bot 共享桌面排队模型。房间对电脑的约束，runtime-contract 只写到「房间电脑上限是准入」一层，细节未在本对照中展开为完整队列</td>
+        <td>未在公开资料中找到排队或单执行者规则</td>
+      </tr>
+      <tr>
+        <td>隔离边界</td>
+        <td>云 VM 的桌面账户与任务账户 HOME 分离；不能由「同一台机器」推断桌面文件管理器可直接访问工作区。远程机经反向 SSH Unix 套接字接入，凭证不进聊天 / 仓库 / 模型上下文</td>
+        <td>云 turn 的 bot box：bubblewrap 用户命名空间，只放回本轮工作目录与该 Bot 自己的文件夹；出站走 egress 门，密钥可换成经纪代币。本机「这台电脑」是另一条 CUA 路径，需一次性明文征求同意</td>
+        <td>隔离实现未在公开资料中找到</td>
+      </tr>
+      <tr>
+        <td>本地 / 远程形态</td>
+        <td>云 VM 保留；用户可授权把 192.168.32.45 接为 Remote Computer（目标 ID <code>local-32-45</code>）。79 不能主动连该机，由本机反向 SSH。原生 computer_ui / AX 已接到 32.45，与 RFB 共享租约和接管屏障</td>
+        <td>云端 Boat 电脑与隔离 Local VM 是独立提供方，不被 CUA-only 规则替换。本机控制在 macOS 与 Ubuntu Xorg 明确开启后可用；Ubuntu Wayland 主机控制在 issue #345 解决前保持关闭</td>
+        <td>是否区分本机与云电脑：未在公开资料中找到</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="src">出处：KAI <a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/plans/2026-11-03-remote-computer.md">docs/plans/2026-11-03-remote-computer.md</a>、<a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/results/2026-11-05-bot-shared-vm-desktop.md">docs/results/2026-11-05-bot-shared-vm-desktop.md</a>、<a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/plans/2026-10-30-kai-assistant-managed-goal.md">managed-goal 4.4 / R6</a>。OpenMausBot <a href="https://github.com/milind-soni/OpenMausBot/blob/main/README.md">README.md</a>（Every bot gets a computer / Agents with hands）、<a href="https://github.com/milind-soni/OpenMausBot/blob/main/docs/computer-use-integration.md">docs/computer-use-integration.md</a>、<a href="https://github.com/milind-soni/OpenMausBot/blob/main/docs/bot-box.md">docs/bot-box.md</a>。</p>
+
+  <div class="figure" id="fig-own">
+    <h3 class="ftitle">图 1　电脑归谁：账号共享 vs 每 Bot 一台</h3>
+    <p class="fcaption">这是本页最核心的结构差。Grok Bot 只用虚线框标出「公开对照所称的共享云电脑」，不补内部模块。</p>
+    <pre class="mermaid">
+flowchart TB
+  subgraph KAI[KAI]
+    KA[账号] --> KR[ComputerRegistry 当前执行电脑]
+    KR --> KC[云桌面]
+    KR --> KL[远程电脑 local-32-45]
+    KB1[主助理] --> KR
+    KB2[子助理] --> KR
+    KQ[单执行者队列] --- KR
+  end
+  subgraph OMB[OpenMausBot]
+    B1[Bot A] --> C1[Bot A 的电脑]
+    B2[Bot B] --> C2[Bot B 的电脑]
+    C1 --> T1[云桌面或 Local VM 或本机]
+    C2 --> T2[云桌面或 Local VM 或本机]
+  end
+  subgraph GB[Grok Bot 仅有间接表述]
+    G1[花名册中的多个 Bot] -.-> GC[一台共享云电脑？]
+  end
+    </pre>
+  </div>
+</section>
+
+<section id="runtime">
+  <h2>执行与查看路径</h2>
+  <p>KAI 特意把「正在看哪台」和「助理正在用哪台」拆开：只读切画面不改变执行机，必须经「供助理使用」才申请变更执行。这是 2026-11-11 接管困惑的根因之一——查看非执行电脑时输入会被丢弃，但旧文案看起来像已经接管。</p>
+  <div class="figure" id="fig-kai">
+    <h3 class="ftitle">图 2　KAI：查看、执行与占用队列</h3>
+    <p class="fcaption">执行租约、人工接管租约和 occupancy 队列走同一套桌面协调器。切换目标会递增桌面 epoch。</p>
+    <pre class="mermaid">
+flowchart LR
+  U[用户工作台] --> V[查看目标]
+  U --> E[执行电脑]
+  V --> W[noVNC / viewer]
+  E --> R[ComputerRegistry]
+  R --> CLOUD[云 VM]
+  R --> REM[远程机 反向 SSH]
+  Q[优先级 + FIFO 队列] --> R
+  T[人工接管租约] --> R
+  A[助理 computer 工具] --> R
+  W -->|只读切画面| V
+  U -->|供助理使用| R
+    </pre>
+  </div>
+  <div class="figure" id="fig-omb">
+    <h3 class="ftitle">图 3　OpenMausBot：三条互不替代的电脑路径</h3>
+    <p class="fcaption">本机 CUA、云端 Boat、隔离 Local VM 是不同提供方。审批卡对云和本机都生效。bot box 默认加在 Cloud home 的 turn 上。</p>
+    <pre class="mermaid">
+flowchart TB
+  BOT[某个 Bot 的一轮] --> CH{电脑选择}
+  CH -->|这台电脑| EL[Electron 主进程]
+  EL --> CUA[cua-driver 嵌入守护]
+  CUA --> MCP[stdio MCP 代理]
+  MCP --> H1[harness 转发工具调用]
+  CH -->|云桌面| CP[computer-proxy]
+  CP --> BOAT[Boat 云 Linux 桌面]
+  CH -->|Local VM| VM[隔离本地虚拟机]
+  BOT --> BOX[Cloud 上的 bot box]
+  BOX -.->|不暴露 Docker 套接字| VM
+  BOT --> ASK[审批卡：允许 / 拒绝]
+    </pre>
+  </div>
+  <p class="src">KAI 源码入口：<a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/src/harness/computer/registry.py">registry.py</a>、<a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/src/harness/computer/desktop.py">desktop.py</a>（<code>HUMAN_TTL_SECONDS = 90</code>）、<a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/src/harness/computer/targets.py">targets.py</a>、<a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/src/harness/computer/remote.py">remote.py</a>。OpenMausBot：<a href="https://github.com/milind-soni/OpenMausBot/blob/main/docs/computer-use-integration.md">computer-use-integration.md</a> 中的架构示意图。</p>
+</section>
+
+<section id="takeover">
+  <h2>接管、租约与审批</h2>
+  <table>
+    <thead><tr><th>动作</th><th>KAI</th><th>OpenMausBot</th><th>Grok Bot</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>人工接管画面</td>
+        <td>已实证链路：<code>observe</code> → <code>POST /desktop/takeover</code> → <code>takeover_pending</code> → gate ack → <code>human</code> → heartbeat 续期 → <code>POST /desktop/return</code> 回到 observe。epoch 单调递增。viewer 每次输入都核验当前人工控制 epoch</td>
+        <td>计算机面板提供实时预览，并有「Open desktop」在浏览器里接管。未在对照文档中找到与 KAI 相同的 epoch / ACK 状态机描述</td>
+        <td>未在公开资料中找到接管协议</td>
+      </tr>
+      <tr>
+        <td>租约时长</td>
+        <td>2026-11-05 演示报告里接管 TTL 曾为 300 秒。2026-11-11 修复把 <code>HUMAN_TTL_SECONDS</code> 改为 90 秒，并向 sessionStorage 固化 viewer_id，避免刷新后旧租约占着「另一个窗口已接管」。连接需稳定 10 秒才重置重试预算</td>
+        <td>未在 computer-use-integration.md 或 bot-box.md 中找到对等的 90 秒 / 300 秒人工接管 TTL 数字</td>
+        <td>未在公开资料中找到</td>
+      </tr>
+      <tr>
+        <td>风险操作怎么问人</td>
+        <td>工具策略与 Approval 仍在控制面；电脑层强调与协调器共享取消和人工接管屏障，不另起生命周期</td>
+        <td>Shell、改文件和提问以内嵌审批卡出现（Allow / Deny / 在聊天里回答）。权限经纪对云和本机都把高风险动作变成一次决定。使用「这台电脑」时，除非用户已把它选为地点，否则首次动作还要再问一次</td>
+        <td>未在公开资料中找到审批卡或经纪模型</td>
+      </tr>
+      <tr>
+        <td>与助理会话的联动</td>
+        <td>真实 occupancy 出现时助理页自动展开一次云电脑；用户手动关闭后，同一 execution 不再弹回</td>
+        <td>面板可在 Bot 工作时给实时屏幕预览，并把工作截图折进 transcript</td>
+        <td>未在公开资料中找到</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="src">KAI：<a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/results/2026-11-05-kai-computer-demo.md">docs/results/2026-11-05-kai-computer-demo.md</a>（当时 TTL 300s 的实证链）、<a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/plans/2026-11-10-assistant-parity-1-2-3-7.md">parity 文「接管不了 / 重连循环」</a>、<a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/src/harness/computer/desktop.py">desktop.py</a>。OpenMausBot README「Every bot gets a computer / Bots ask before they act」与 computer-use-integration.md「Before a bot's first action on the person's own computer」。</p>
+  <div class="figure" id="fig-takeover">
+    <h3 class="ftitle">图 4　人工接管：KAI 有完整租约状态机，另两方不对齐画满</h3>
+    <p class="fcaption">OpenMausBot 只画文档写过的「打开桌面 / 审批」；Grok Bot 标明未查到，避免把 KAI 的状态机套过去。</p>
+    <pre class="mermaid">
+flowchart LR
+  subgraph K[KAI]
+    KO[观察 observe] --> KP[申请接管]
+    KP --> KA[gate 确认]
+    KA --> KH[人工 human]
+    KH -->|心跳续期 90 秒| KH
+    KH --> KR[交还 return]
+    KR --> KO
+  end
+  subgraph O[OpenMausBot 文档已写到的部分]
+    OP[实时预览] --> OD[在浏览器打开桌面]
+    OP --> OA[聊天里的审批卡]
+  end
+  subgraph G[Grok Bot]
+    GX[未在公开资料中找到接管状态机]
+  end
+    </pre>
+  </div>
+</section>
+
+<section id="deploy">
+  <h2>79 / 116 与部署差</h2>
+  <p>KAI 的电脑行为不仅取决于仓库 HEAD，还取决于各环境有没有把 api / viewer 一起升上去。这是对照时必须单独写的一层。</p>
+  <table>
+    <thead><tr><th>环境</th><th>文档记录的电脑相关状态（截至 2026-11-11 对齐计划）</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>79</td>
+        <td>远程电脑与云桌面均有多轮迭代。2026-11-11 已发布 web <code>desktop-pane5-20261111</code> 与 viewer <code>session-log-20261111</code>，文案含「当前画面仅观看」；接管租约按 90 秒 + viewer 排障日志记录。计划入口（口述、未在本页探活）：<code>https://172.20.105.79:3543/assistant</code></td>
+      </tr>
+      <tr>
+        <td>116</td>
+        <td>同步时只升了 web，api / worker 镜像未变；文档写明「116 的 viewer 仍跑旧 api 镜像，接管租约 TTL 仍是 300 秒。若要和 79 一致（90 秒 + 排障日志），下次连同 api / viewer 一起重建。」待办列表再次写：「116 的 api / viewer 仍未带 90 秒接管租约与 viewer 排障日志（当前只有 web 修复）。」本对照未再登录 116 复核之后是否已补做。</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>当前分支源码中的默认值已经是 90 秒；把「代码默认」直接说成「116 现网行为」会与部署记录矛盾。</p>
+</section>
+
+<section id="boundary">
+  <h2>与助理域的边界</h2>
+  <p>助理是谁、群里谁开口，见伴生文档 <a href="./kai-assistant-architecture-compare.html">助理域架构对照</a>。本文只保留电脑边界上的几条，避免把路由写进来：</p>
+  <ul>
+    <li>KAI：电脑占用可以带动助理页自动展开，但不改变 1:1 发送或群应答规则。</li>
+    <li>OpenMausBot：每个 Bot 的电脑权限是 Bot 资料的一部分；部门分享明确<strong>不带</strong>电脑权限。</li>
+    <li>群组若共享桌面，KAI 今晚口径是沿用现有单执行者队列，而不是按房间另做一套执行机。此条来自既有对照分析与占用设计，不是新的现网结论。</li>
+  </ul>
+</section>
+
+<section id="unknown">
+  <h2>未查到或未复核</h2>
+  <ul>
+    <li>Grok Bot 电脑的调度、是否单执行者、租约 TTL、viewer 协议、本机控制方式：今晚群内未说明，也未在公开资料中找到。OpenMausBot README 的「一台共享云电脑」只作为对方对照主张引用。</li>
+    <li>OpenMausBot「Open desktop」是否存在与 KAI 类似的 epoch、gate ACK、90 秒 TTL、心跳续期：未在已读的 computer-use-integration.md、bot-box.md、README 中找到对等数字与状态机。</li>
+    <li>OpenMausBot 房间内多 Bot 争用同一台电脑的完整队列规则：runtime-contract 仅提到房间电脑上限是准入，细规则未在本对照中查到完整说明。</li>
+    <li>KAI 软抢占（队首更高优先级时把 holder 剩余 TTL 钳到 30 秒）：managed-goal 写为已落地，并注明当时「未部署 79」。本对照未在 11 月 10–11 日之后的文档里找到「已部署 79」的复核。</li>
+    <li>116 在本对照核对之后是否已补建 api / viewer：以 parity 文 2026-11-11 的记录为准，未做现网探活。</li>
+  </ul>
+</section>
+
+<section id="sources">
+  <h2>出处列表</h2>
+  <ol class="list-sources">
+    <li>KAI 分支 HEAD：<a href="https://github.com/PrayforH/KAI/tree/auto/bot-runtime-alignment-20261109">auto/bot-runtime-alignment-20261109</a> @ <a href="https://github.com/PrayforH/KAI/commit/5a457c2b5d6cb0139e51de7e5d66a8fb8f31b106">5a457c2b</a></li>
+    <li><a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/plans/2026-11-03-remote-computer.md">docs/plans/2026-11-03-remote-computer.md</a></li>
+    <li><a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/results/2026-11-05-bot-shared-vm-desktop.md">docs/results/2026-11-05-bot-shared-vm-desktop.md</a></li>
+    <li><a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/results/2026-11-05-kai-computer-demo.md">docs/results/2026-11-05-kai-computer-demo.md</a></li>
+    <li><a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/plans/2026-10-30-kai-assistant-managed-goal.md">docs/plans/2026-10-30-kai-assistant-managed-goal.md</a>（单执行者、occupancy、优先级队列、软抢占部署状态）</li>
+    <li><a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/docs/plans/2026-11-10-assistant-parity-1-2-3-7.md">docs/plans/2026-11-10-assistant-parity-1-2-3-7.md</a>（79 / 116 接管修复与 90 秒 / 300 秒差）</li>
+    <li>源码：<a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/src/harness/computer/desktop.py">src/harness/computer/desktop.py</a>、<a href="https://github.com/PrayforH/KAI/blob/auto/bot-runtime-alignment-20261109/src/harness/computer/registry.py">registry.py</a></li>
+    <li>OpenMausBot <a href="https://github.com/milind-soni/OpenMausBot/blob/main/README.md">README.md</a>、<a href="https://github.com/milind-soni/OpenMausBot/blob/main/docs/computer-use-integration.md">docs/computer-use-integration.md</a>、<a href="https://github.com/milind-soni/OpenMausBot/blob/main/docs/bot-box.md">docs/bot-box.md</a>、<a href="https://github.com/milind-soni/OpenMausBot/blob/main/docs/runtime-contract.md">docs/runtime-contract.md</a>（房间电脑上限一句）、发行版 <a href="https://github.com/milind-soni/OpenMausBot/releases/tag/v0.1.153">v0.1.153</a></li>
+    <li>Grok Bot：今晚群内未描述电脑内部；间接表述仅引自 OpenMausBot README 对照表</li>
+  </ol>
+</section>
+
+      <footer class="site">
+        本文为对照说明，不是任何一方的完整系统说明书。双击即可在浏览器打开；图表由 Mermaid（jsDelivr CDN）渲染，打印时建议使用「背景图形」。文件：kai-cloud-computer-architecture-compare.html
+      </footer>
+    </main>
+  </div>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: "base",
+      securityLevel: "strict",
+      themeVariables: {
+        background: "#fbf7f0",
+        fontFamily: "Noto Sans SC, Source Han Sans SC, sans-serif",
+        primaryColor: "#e4efed",
+        primaryTextColor: "#1c1916",
+        primaryBorderColor: "#1b4d48",
+        secondaryColor: "#f3eadc",
+        secondaryTextColor: "#1c1916",
+        secondaryBorderColor: "#7a4a16",
+        tertiaryColor: "#e7ebf0",
+        tertiaryBorderColor: "#3d4a5c",
+        lineColor: "#5c564d",
+        clusterBkg: "#f4efe6",
+        clusterBorder: "#b9b09f",
+        edgeLabelBackground: "#fbf7f0"
+      },
+      flowchart: { htmlLabels: false, curve: "basis" }
+    });
+    const links = [...document.querySelectorAll("#toc a")];
+    const secs = links.map(a => document.getElementById(a.getAttribute("href").slice(1))).filter(Boolean);
+    const io = new IntersectionObserver((entries) => {
+      const vis = entries.filter(e => e.isIntersecting).sort((a,b)=>b.intersectionRatio-a.intersectionRatio)[0];
+      if (!vis) return;
+      links.forEach(l => l.classList.toggle("active", l.getAttribute("href") === "#" + vis.target.id));
+    }, { rootMargin: "0px 0px -65% 0px", threshold: [0, .2, .6] });
+    secs.forEach(s => io.observe(s));
+  </script>
+</body>
+</html>
