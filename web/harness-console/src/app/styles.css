@@ -920,21 +920,6 @@ textarea:not(.aui-composer-input):focus-visible {
   margin-bottom: 8px;
 }
 
-.composer-queue-notice {
-  width: 100%;
-  margin-bottom: 8px;
-  padding: 9px 11px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border: 1px solid #dbc59d;
-  border-radius: 9px;
-  background: #fffaf0;
-  color: #6f4d17;
-  font-size: 12px;
-}
-
 .composer-run-reuse-notice {
   width: 100%;
   margin-bottom: 8px;
@@ -976,26 +961,6 @@ textarea:not(.aui-composer-input):focus-visible {
   cursor: pointer;
   font-size: 18px;
   line-height: 1;
-}
-
-.composer-queue-notice span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.composer-queue-notice button {
-  flex: 0 0 auto;
-  min-height: 30px;
-  padding: 0 10px;
-  border: 1px solid #b88636;
-  border-radius: 7px;
-  background: transparent;
-  color: #755019;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
 }
 
 .approval-card {
@@ -5052,6 +5017,15 @@ textarea:not(.aui-composer-input):focus-visible,
   color: #7f8782;
   font-size: 12px;
   font-weight: 500;
+  white-space: nowrap;
+}
+
+.execution-queue-hint {
+  min-width: 0;
+  overflow: hidden;
+  color: #8a6a2f;
+  font-size: 12px;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

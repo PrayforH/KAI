@@ -88,8 +88,8 @@ it("registers the approval renderer through the assistant-ui Thread config", () 
   expect(agentThreadSource).toContain("<ApprovalToolBridge");
   expect(agentThreadSource).toContain('className="composer-approval-slot"');
   expect(agentThreadSource).toContain("<ApprovalCard");
-  expect(agentThreadSource).toContain("runView.queueReason");
-  expect(agentThreadSource).toContain("直达审批");
+  // Queueing is announced by the run status bar, not a composer overlay.
+  expect(agentThreadSource).not.toContain("composer-queue-notice");
 });
 
 it("presents task-first guidance through a custom assistant-ui welcome", () => {
