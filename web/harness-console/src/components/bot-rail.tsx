@@ -3,8 +3,13 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { assistantRequest, type Specialist } from "../lib/assistant-client";
+import {
+  assistantRequest,
+  type AssistantGroup,
+  type Specialist,
+} from "../lib/assistant-client";
 import { CreateBotDialog } from "./create-bot-dialog";
+import { CreateGroupDialog } from "./create-group-dialog";
 import { BOT_SHAPES, botAppearanceTokens, botAppearanceVars } from "../lib/bot-appearance";
 import { BotGlyph } from "./bot-glyph";
 import { SidebarIcon } from "./sidebar-icon";
@@ -119,6 +124,9 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
   const sectionId = useId();
   const expanded = groupsView.has("bots:all");
   const [creating, setCreating] = useState(false);
+  const [creatingGroup, setCreatingGroup] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [groupChats, setGroupChats] = useState<AssistantGroup[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
   const [railError, setRailError] = useState("");
 
@@ -127,7 +135,19 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
     lastReadAt.current = Date.now();
     let initialized = false;
     try {
-      let list = await assistantRequest<Specialist[]>("specialists");
+      const [listResult, groupList] = await Promise.all([
+        assistantRequest<Specialist[]>("specialists"),
+        userId
+          ? assistantRequest<AssistantGroup[]>("groups").catch(() => null)
+          : Promise.resolve(null),
+      ]);
+      let list = listResult;
+      if (
+        Array.isArray(groupList) &&
+        groupList.every((group) => typeof group?.groupId === "string")
+      ) {
+        setGroupChats(groupList);
+      }
       if (!mounted.current || version !== requestVersion.current) return;
       if (userId && !list.some(isPrimaryBot)) {
         try {
@@ -164,11 +184,13 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
       queueMicrotask(() => { scheduled = false; if (mounted.current) void load(); });
     });
     window.addEventListener("kai:specialists-changed", onChanged);
+    window.addEventListener("kai:groups-changed", onChanged);
     const timer = setInterval(() => {
       if (!document.hidden && Date.now() - lastReadAt.current >= (working.current ? 4000 : 30000)) void load();
     }, 4000);
     return () => {
       window.removeEventListener("kai:specialists-changed", onChanged);
+      window.removeEventListener("kai:groups-changed", onChanged);
       clearInterval(timer);
       unsubscribe();
     };
@@ -228,15 +250,42 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
             const next = new Set(current); if (collapsed) next.delete("section:bots:collapsed"); else next.add("section:bots:collapsed"); return next;
           })}><span>机器人</span><SidebarIcon name="chevronDown" size={12} className="task-group-chevron" /></button>
         </div>
-        <button
-          type="button"
-          className="bot-rail-add"
-          aria-label="新建 Bot"
-          title="新建 Bot"
-          onClick={() => setCreating(true)}
-        >
-          <SidebarIcon name="plus" />
-        </button>
+        <div className="bot-rail-add-wrap">
+          <button
+            type="button"
+            className="bot-rail-add"
+            aria-label="新建"
+            title="新建"
+            aria-expanded={addMenuOpen}
+            onClick={() => setAddMenuOpen((open) => !open)}
+          >
+            <SidebarIcon name="plus" />
+          </button>
+          {addMenuOpen && (
+            <div className="bot-rail-add-menu" role="menu">
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setAddMenuOpen(false);
+                  setCreating(true);
+                }}
+              >
+                创建 Bot
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setAddMenuOpen(false);
+                  setCreatingGroup(true);
+                }}
+              >
+                创建群聊
+              </button>
+            </div>
+          )}
+        </div>
       </div>
       <div id={sectionId} hidden={collapsed}>
       <ul className="bot-rail-list">
@@ -261,6 +310,40 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
         {contacts.length > 0 && (pinned.length > 0 || grouped.length > 0) && <li className="bot-rail-group">未分组</li>}
         {visibleContacts.map(row)}
       </ul>
+      {groupChats.length > 0 && (
+        <>
+          <div className="bot-rail-group">群聊</div>
+          <ul className="bot-rail-list">
+            {groupChats.map((group) => (
+              <li key={group.groupId} className="bot-rail-row">
+                <Link
+                  className="bot-rail-item"
+                  href={`/assistant/groups?group=${encodeURIComponent(group.groupId)}`}
+                  scroll={false}
+                  title={group.name}
+                >
+                  <span
+                    className="bot-rail-avatar"
+                    data-avatar="letter"
+                    aria-hidden="true"
+                    style={{ background: botAccent(group.groupId) }}
+                  >
+                    群
+                  </span>
+                  <span className="bot-rail-label">
+                    <strong>{group.name}</strong>
+                  </span>
+                  {group.unreadCount > 0 && (
+                    <span className="bot-rail-unread-count" aria-label={`${group.unreadCount} 条未读`}>
+                      {group.unreadCount > 99 ? "99+" : group.unreadCount}
+                    </span>
+                  )}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       {railError && <p role="alert">{railError}</p>}
       {editing && <BotProfileDialog specialistId={editing} onClose={() => setEditing(null)} onSaved={() => {
         setEditing(null); void load(); window.dispatchEvent(new CustomEvent("kai:specialists-changed"));
@@ -273,6 +356,16 @@ function BotDirectory({currentThreadId, activeBotId = null, userId, tenantId, gr
             setCreating(false);
             window.dispatchEvent(new CustomEvent("kai:specialists-changed"));
             router.push(`/assistant?bot=${encodeURIComponent(specialistId)}`, {scroll: false});
+          }}
+        />
+      )}
+      {creatingGroup && (
+        <CreateGroupDialog
+          onClose={() => setCreatingGroup(false)}
+          onCreated={(groupId) => {
+            setCreatingGroup(false);
+            window.dispatchEvent(new CustomEvent("kai:groups-changed"));
+            router.push(`/assistant/groups?group=${encodeURIComponent(groupId)}`);
           }}
         />
       )}

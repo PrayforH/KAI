@@ -110,7 +110,12 @@ export default function AssistantGroupsPage() {
         if (cancelled) return;
         setGroups(groupList);
         setSpecialists(specialistList);
-        setSelectedId(groupList[0]?.groupId ?? null);
+        const requested = new URLSearchParams(window.location.search).get("group");
+        setSelectedId(
+          requested && groupList.some((group) => group.groupId === requested)
+            ? requested
+            : (groupList[0]?.groupId ?? null),
+        );
       } catch (reason) {
         if (!cancelled) setError(reason instanceof Error ? reason.message : "群聊加载失败");
       } finally {
