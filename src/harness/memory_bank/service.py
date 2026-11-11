@@ -257,6 +257,7 @@ class MemoryBankService:
         conditions: str = "",
         supersedes: str | None = None,
         supersedes_version: int | None = None,
+        evidence: str = "",
     ) -> MemoryEntry:
         return await self.propose(
             tenant_id=identity.tenant_id,
@@ -270,6 +271,7 @@ class MemoryBankService:
             conditions=conditions,
             supersedes=supersedes,
             supersedes_version=supersedes_version,
+            evidence=evidence,
             source_kind=MemorySourceKind.AGENT,
             source_label="Agent 提议",
             confidence=0.7,

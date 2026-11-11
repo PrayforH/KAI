@@ -101,6 +101,29 @@
   `/studio/automation` 均 200，新 chunk 含「记忆待确认 / 确认保存」标记。
 - 提交：`55aa5d86`。
 
+## 长期记忆拦截粒度：按出处放行（2026-11-11）
+
+- 现象：会话里由用户直接说出的偏好（「以后报告都用 HTML」）也被
+  `untrusted-memory-deny` 拦掉；而同一轮的自动提取却能写进去，看起来自相矛盾。
+- 根因：`context_trust` 是**会话级单调水位**（`session_context_state.trust_high_watermark`），
+  同会话里只要发生过一次 `WebSearch` / `WebFetch`，后续所有工具都按 UNTRUSTED 处理；
+  策略层拿不到「这句话是谁说的」，只能整段拒绝。
+- 改法（出处校验）：
+  - `propose_memory` 新增必填 `evidence_quote`（1–500 字），描述里写明必须是用户原话、
+    不得取自网页或工具输出；`memory_tools` 校验后随提案写入 `evidence`。
+  - `SdkToolGate.pre_tool_use` 在判定前做逐字比对：`evidence_quote` 是
+    `run.input["prompt"]`（用户本轮输入）的子串时才把**策略视角**的
+    `ContextTrust` 降回 SAFE；审计里的 `context_trust` 仍记录真实值，
+    并另记 `provenance_verified: true`。
+  - 网页/工具结果里的句子永远不是用户 prompt 的子串，所以「引网页冒充用户」仍被拒绝；
+    `audit_redaction` 把 `evidence_quote` 与 `content` 一起打码。
+  - 卡片文案改为说明：本会话读过外部内容后需附用户原话作出处，或新开一个会话。
+- 测试：`test_sdk_tool_gate.py` 新增
+  `test_memory_proposal_passes_untrusted_session_only_with_user_quote`
+  （网页原句 DENY / 用户原句 ALLOW，审计保留 `context_trust=untrusted` 与
+  `provenance_verified=true`，用户原话不出现在事件里）；`test_memory_mcp.py`、
+  `test_memory_tools.py` 同步补 `evidence_quote`；卡片用例 5 项通过。
+
 ## 79 同步部署与「接管」问题（2026-11-11）
 
 - 镜像按 79 现网基线增量构建，不跨环境复用：

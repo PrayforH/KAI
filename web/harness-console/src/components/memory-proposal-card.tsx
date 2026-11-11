@@ -105,7 +105,7 @@ export function MemoryProposalCard({ proposal }: { proposal: MemoryProposal }) {
 
 export function MemoryToolNotice({ reason }: { reason: "untrusted" | "invalid" }) {
   const copy = reason === "untrusted"
-    ? "这次记忆没有写入：当前对话包含来自网页等外部内容，平台不允许把未经信任的内容存进长期记忆。可以新开一轮对话再让助理记住。"
+    ? "这次记忆没有写入：本会话读过网页等外部内容后，平台默认不再接受未经核对的写入。助理提交时需要附上你的原话作出处，网页内容不算数；也可以新开一个会话再让助理记住。"
     : "这次记忆没有送达：助理生成的提交内容不完整。可以让助理再试一次。";
   return <section className={styles.card} data-state="blocked" aria-label="长期记忆未写入">
     <strong className={styles.title}>记忆未写入</strong>
