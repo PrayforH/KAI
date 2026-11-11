@@ -12,6 +12,10 @@ const styles = readFileSync(
   join(process.cwd(), "src/components/agent-studio/automation-manager.module.css"),
   "utf8",
 );
+const cardActions = readFileSync(
+  join(process.cwd(), "src/components/agent-studio/schedule-card-actions.tsx"),
+  "utf8",
+);
 
 describe("Automation manager", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -71,13 +75,32 @@ describe("Automation manager", () => {
     expect(component).toContain("taskCardFocused");
     expect(component).toContain("scrollIntoView");
     // A deleted task must not pretend to navigate.
-    expect(component).toContain("已删除，无法跳转");
+    expect(component).toContain("无法跳转");
     expect(styles).toContain(".recordTaskLink");
     expect(styles).toContain(".taskCardFocused");
   });
 
   it("names the module 自动化任务", () => {
     expect(page).toContain('title: "自动化任务"');
+  });
+
+  it("restores card actions and drops the internal 职责 label", () => {
+    expect(component).toContain("ScheduleCardActions");
+    expect(component).toContain("立即执行");
+    expect(component).toContain("删除");
+    expect(component).toContain("编辑定时任务");
+    expect(component).toContain("stop");
+    expect(component).toContain("/executions");
+    expect(cardActions).toContain("启用");
+    expect(cardActions).toContain("立即执行");
+    expect(cardActions).toContain("确认删除？");
+    // The merged cards and run records no longer borrow the backend's name.
+    expect(component).not.toContain("Bot 职责");
+    expect(component).not.toContain("主助理职责");
+    expect(component).not.toContain("编辑职责排程");
+    expect(component).not.toContain("DutyHistory");
+    expect(styles).toContain(".taskActions");
+    expect(styles).toContain(".cardAction");
   });
 
   it("shows a next-run preview before saving", () => {

@@ -283,6 +283,55 @@
   border-radius: 10px;
 }
 
+.taskActions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.cardAction {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--auto-line);
+  border-radius: 999px;
+  background: var(--auto-card);
+  color: var(--auto-ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cardAction:hover:not(:disabled) {
+  background: var(--auto-hover);
+}
+
+.cardAction:focus-visible {
+  outline: 2px solid var(--auto-running);
+  outline-offset: 2px;
+}
+
+.cardAction:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cardMenu {
+  --action-menu-width: 168px;
+  --action-menu-item-height: 38px;
+}
+
+.menuDanger {
+  color: var(--auto-danger);
+}
+
+.agentBadge {
+  color: var(--auto-muted);
+  font-size: 11px;
+}
+
 .panelSummary {
   display: grid;
   gap: 6px;
@@ -869,6 +918,11 @@
   .recordCard {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .taskActions {
+    flex-wrap: wrap;
+    width: 100%;
   }
 
   .search {

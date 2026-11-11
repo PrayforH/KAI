@@ -60,6 +60,8 @@ const duty: ApiSchedule = {
   title: "每日巡检",
   status: "active",
   revision: 2,
+  specialistId: "specialist_1",
+  agentName: "小助手",
   nextRunAt: "2026-11-11T09:00:00Z",
   timing: { kind: "cron", expression: "0 9 * * *", timezone: "Asia/Shanghai" },
 };
@@ -96,18 +98,38 @@ async function render() {
   await flush();
 }
 
+// The “more” menu renders in a portal, so look at the whole document.
 function buttons() {
-  return [...host.querySelectorAll("button")];
+  return [...document.querySelectorAll("button")];
 }
 
 async function click(match: (button: HTMLButtonElement) => boolean) {
   const button = buttons().find(match);
-  if (!button) throw new Error(`button not found; page says: ${host.textContent}`);
+  if (!button) throw new Error(`button not found; page says: ${document.body.textContent}`);
   await act(async () => { button.click(); });
   await flush();
 }
 
-it("lists duty executions inside 运行记录 and keeps them off the duty card", async () => {
+function byText(text: string) {
+  return (button: HTMLButtonElement) => button.textContent?.trim() === text;
+}
+
+it("names merged schedules 定时任务 and shows the owning assistant", async () => {
+  client.dutySchedules.mockResolvedValue([duty]);
+  await render();
+
+  expect(host.textContent).toContain("每日巡检");
+  expect(host.textContent).toContain("定时任务");
+  expect(host.textContent).toContain("小助手");
+  expect(host.textContent).not.toContain("Bot 职责");
+  expect(host.textContent).not.toContain("主助理职责");
+
+  await click((button) => button.getAttribute("aria-label") === "编辑定时任务 每日巡检");
+  expect(host.querySelector('[role="dialog"]')?.getAttribute("aria-label")).toBe("编辑定时任务");
+  expect(host.textContent).toContain("排程编辑器：每日巡检");
+});
+
+it("lists duty executions inside 运行记录 with the unified label", async () => {
   client.dutySchedules.mockResolvedValue([duty]);
   assistantRequest.mockResolvedValue([{
     executionId: "execution_1",
@@ -124,43 +146,19 @@ it("lists duty executions inside 运行记录 and keeps them off the duty card",
   expect(host.textContent).not.toContain("执行记录");
   expect(host.textContent).toContain("每日巡检");
 
-  await click((button) => button.textContent?.includes("运行记录") ?? false);
+  await click(byText("运行记录"));
   expect(host.textContent).toContain("巡检通过");
-  expect(host.textContent).toContain("Bot 职责 · 定时");
+  expect(host.textContent).toContain("定时任务 · 定时");
+  expect(host.textContent).not.toContain("Bot 职责");
   expect(assistantRequest).toHaveBeenCalledWith("objectives/duty_1/executions");
 });
 
-it("moves task actions into the edit panel", async () => {
-  client.list.mockResolvedValue([task]);
-  client.run.mockResolvedValue({});
-  await render();
-
-  expect(buttons().some((button) => button.textContent === "立即执行")).toBe(false);
-  expect(buttons().some((button) => button.textContent === "暂停")).toBe(false);
-
-  await click((button) => button.getAttribute("aria-label") === "编辑 每周工作周报");
-  expect(host.textContent).toContain("编辑自动化任务");
-  expect(buttons().map((button) => button.textContent)).toEqual(
-    expect.arrayContaining(["立即执行", "暂停", "删除", "取消", "保存"]),
-  );
-
-  await click((button) => button.textContent === "立即执行");
-  expect(client.run).toHaveBeenCalledWith("task_1");
-});
-
-it("moves duty schedule editing and pause into the same panel", async () => {
+it("toggles a duty schedule through the objective actions API", async () => {
   client.dutySchedules.mockResolvedValue([duty]);
   assistantRequest.mockResolvedValue({ status: "paused", revision: 3 });
   await render();
 
-  expect(buttons().some((button) => button.textContent === "暂停")).toBe(false);
-  expect(host.querySelector("[data-testid='duty-schedule-control']")).toBeNull();
-
-  await click((button) => button.getAttribute("aria-label") === "编辑 每日巡检 的排程");
-  expect(host.textContent).toContain("编辑职责排程");
-  expect(host.textContent).toContain("排程编辑器：每日巡检");
-
-  await click((button) => button.textContent === "暂停职责");
+  await click(byText("禁用"));
   expect(assistantRequest).toHaveBeenCalledWith(
     "objectives/duty_1/actions",
     "POST",
@@ -168,7 +166,96 @@ it("moves duty schedule editing and pause into the same panel", async () => {
   );
 });
 
-it("shows templates only while the list is empty", async () => {
+it("runs a duty once even when 立即执行 is double-clicked", async () => {
+  client.dutySchedules.mockResolvedValue([duty]);
+  assistantRequest.mockResolvedValue({ executionId: "execution_1" });
+  await render();
+
+  const runButton = buttons().find(byText("立即执行"));
+  if (!runButton) throw new Error("run button missing");
+  await act(async () => {
+    runButton.click();
+    runButton.click();
+  });
+  await flush();
+
+  const runCalls = assistantRequest.mock.calls.filter(([path]) => path === "objectives/duty_1/executions");
+  expect(runCalls).toHaveLength(1);
+  expect(runCalls[0][1]).toBe("POST");
+  expect(runCalls[0][2]).toBeUndefined();
+  expect(runCalls[0][3]).toEqual(expect.any(String));
+  expect((runCalls[0][3] as string).length).toBeGreaterThanOrEqual(8);
+});
+
+it("deletes a duty through stop only after a second confirmation", async () => {
+  client.dutySchedules.mockResolvedValue([duty]);
+  assistantRequest.mockResolvedValue({ status: "cancelled", revision: 3 });
+  await render();
+
+  await click(byText("更多 ▾"));
+  await click(byText("删除"));
+  expect(host.textContent).toContain("每日巡检");
+  expect(buttons().some(byText("确认删除？"))).toBe(true);
+
+  await click(byText("确认删除？"));
+  expect(assistantRequest).toHaveBeenCalledWith(
+    "objectives/duty_1/actions",
+    "POST",
+    expect.objectContaining({ action: "stop", expectedRevision: 2 }),
+  );
+  expect(client.remove).not.toHaveBeenCalled();
+  expect(host.textContent).not.toContain("每日巡检");
+});
+
+it("maps automation card actions to pause, enable and run", async () => {
+  client.list.mockResolvedValue([task]);
+  client.pause.mockResolvedValue({ ...task, status: "paused" });
+  client.enable.mockResolvedValue({ ...task, status: "active" });
+  client.run.mockResolvedValue({});
+  await render();
+
+  await click(byText("禁用"));
+  expect(client.pause).toHaveBeenCalledWith("task_1");
+  expect(host.textContent).toContain("已暂停");
+
+  await click(byText("启用"));
+  expect(client.enable).toHaveBeenCalledWith("task_1");
+  expect(host.textContent).toContain("已启用");
+
+  await click(byText("立即执行"));
+  expect(client.run).toHaveBeenCalledWith("task_1");
+});
+
+it("deletes an automation task with DELETE after a second confirmation", async () => {
+  // Avoid a name that also appears in the empty-state templates.
+  client.list.mockResolvedValue([{ ...task, name: "我的周报任务" }]);
+  client.remove.mockResolvedValue(undefined);
+  await render();
+
+  await click(byText("更多 ▾"));
+  await click(byText("删除"));
+  expect(host.textContent).toContain("我的周报任务");
+
+  await click(byText("确认删除？"));
+  expect(client.remove).toHaveBeenCalledWith("task_1");
+  expect(host.textContent).not.toContain("我的周报任务");
+});
+
+it("hides ended schedules (completed, cancelled, expired) from the default list", async () => {
+  client.dutySchedules.mockResolvedValue([
+    { ...duty, sourceId: "duty_done", title: "已完成的巡检", status: "completed" },
+    { ...duty, sourceId: "duty_stopped", title: "已取消的巡检", status: "cancelled" },
+  ]);
+  client.list.mockResolvedValue([{ ...task, taskId: "task_expired", name: "过期的周报", status: "expired" }]);
+  await render();
+
+  expect(host.textContent).not.toContain("已完成的巡检");
+  expect(host.textContent).not.toContain("已取消的巡检");
+  expect(host.textContent).not.toContain("过期的周报");
+  expect(host.textContent).toContain("自动化任务模版");
+});
+
+it("shows templates only while the visible list is empty", async () => {
   client.list.mockResolvedValue([task]);
   await render();
   expect(host.textContent).not.toContain("自动化任务模版");

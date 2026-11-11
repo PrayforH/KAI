@@ -2781,6 +2781,7 @@ export type ApiSchedule = {
   status: string;
   revision: number;
   specialistId?: string | null;
+  agentName?: string | null;
   nextRunAt?: string | null;
   timing: {
     kind: "once" | "every" | "cron";

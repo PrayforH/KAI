@@ -13,7 +13,9 @@ import {
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createRandomId } from "../../lib/random-id";
 import styles from "./automation-manager.module.css";
+import { ScheduleCardActions } from "./schedule-card-actions";
 import {
   automationClient,
   type ApiAutomationRunRecord,
@@ -78,6 +80,23 @@ const DUTY_STATUS_LABELS: Record<string, string> = {
   completed: "已结束",
   cancelled: "已结束",
 };
+
+/** A schedule that can no longer act: objective completed/cancelled, or an
+ *  automation that ran out of validity. The default list hides these so a
+ *  delete visibly removes the card; records stay readable in 运行记录. */
+const TERMINAL_STATUSES = new Set(["completed", "cancelled", "expired"]);
+
+function isTerminalStatus(status: string): boolean {
+  return TERMINAL_STATUSES.has(status);
+}
+
+function dutyKey(duty: ApiSchedule): string {
+  return `${duty.source}:${duty.sourceId}`;
+}
+
+function taskKey(task: ApiAutomationTask): string {
+  return `automation:${task.taskId}`;
+}
 
 /** A schedule row as the duty editor expects it; the seconds→minutes split is
  *  the one shape difference between the list payload and the editor. */
@@ -243,7 +262,10 @@ export function AutomationManager() {
   const [tab, setTab] = useState<Tab>("tasks");
   const [tasks, setTasks] = useState<ApiAutomationTask[]>([]);
   const [dutySchedules, setDutySchedules] = useState<ApiSchedule[]>([]);
-  const [changingDuty, setChangingDuty] = useState<string | null>(null);
+  // One in-flight action per card; the ref makes the guard synchronous so a
+  // double click cannot enqueue the same run twice before React re-renders.
+  const [pendingActions, setPendingActions] = useState<Set<string>>(new Set());
+  const pendingActionsRef = useRef<Set<string>>(new Set());
   const [records, setRecords] = useState<ApiAutomationRunRecord[]>([]);
   const [dutyRuns, setDutyRuns] = useState<DutyRun[]>([]);
   const [recordsLoading, setRecordsLoading] = useState(false);
@@ -269,6 +291,18 @@ export function AutomationManager() {
     setToast(message);
   }, []);
 
+  const beginAction = useCallback((key: string): boolean => {
+    if (pendingActionsRef.current.has(key)) return false;
+    pendingActionsRef.current.add(key);
+    setPendingActions(new Set(pendingActionsRef.current));
+    return true;
+  }, []);
+
+  const endAction = useCallback((key: string) => {
+    pendingActionsRef.current.delete(key);
+    setPendingActions(new Set(pendingActionsRef.current));
+  }, []);
+
   const loadTasks = useCallback(async () => {
     try {
       const [automation, duties] = await Promise.all([automationClient.list(), automationClient.dutySchedules()]);
@@ -281,7 +315,8 @@ export function AutomationManager() {
   }, []);
 
   async function toggleDuty(duty: ApiSchedule) {
-    setChangingDuty(duty.sourceId);
+    const key = dutyKey(duty);
+    if (!beginAction(key)) return;
     try {
       const updated = await assistantRequest<{ status?: string; revision?: number }>(
         `objectives/${encodeURIComponent(duty.sourceId)}/actions`, "POST", {
@@ -298,9 +333,51 @@ export function AutomationManager() {
         current && current.sourceId === duty.sourceId ? { ...current, status, revision } : current);
       await loadTasks();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "职责状态未更新");
+      setError(cause instanceof Error ? cause.message : "任务状态未更新");
     } finally {
-      setChangingDuty(null);
+      endAction(key);
+    }
+  }
+
+  async function runDuty(duty: ApiSchedule) {
+    const key = dutyKey(duty);
+    if (!beginAction(key)) return;
+    try {
+      // The endpoint deduplicates on this key, so a retried click after a
+      // timeout cannot enqueue a second execution.
+      await assistantRequest(
+        `objectives/${encodeURIComponent(duty.sourceId)}/executions`,
+        "POST",
+        undefined,
+        createRandomId(),
+      );
+      showToast("已触发立即执行，可在运行记录中查看进度");
+    } catch (cause) {
+      showToast(cause instanceof Error ? `触发失败：${cause.message}` : "触发失败，请稍后重试");
+    } finally {
+      endAction(key);
+    }
+  }
+
+  async function deleteDuty(duty: ApiSchedule) {
+    const key = dutyKey(duty);
+    if (!beginAction(key)) return;
+    setConfirmingDelete(null);
+    try {
+      // Objectives have no physical delete; stop is the terminal state and the
+      // execution history stays attached to the objective.
+      await assistantRequest(
+        `objectives/${encodeURIComponent(duty.sourceId)}/actions`,
+        "POST",
+        { action: "stop", expectedRevision: duty.revision },
+      );
+      setDutySchedules((current) => current.filter((item) => item.sourceId !== duty.sourceId));
+      if (editingDuty?.sourceId === duty.sourceId) closePanel();
+      showToast("定时任务已删除");
+    } catch (cause) {
+      showToast(cause instanceof Error ? `删除失败：${cause.message}` : "删除失败，请稍后重试");
+    } finally {
+      endAction(key);
     }
   }
 
@@ -334,7 +411,7 @@ export function AutomationManager() {
       const loaded = pages.flatMap((page) => (page.status === "fulfilled" ? page.value : []));
       setDutyRuns(loaded);
       if (pages.every((page) => page.status === "rejected")) {
-        setError("职责执行记录加载失败，请稍后刷新重试");
+        setError("定时任务执行记录加载失败，请稍后刷新重试");
       }
     } finally {
       setDutyRunsLoading(false);
@@ -366,6 +443,7 @@ export function AutomationManager() {
   function openCreate(template?: TemplateDef) {
     setEditingTask(null);
     setEditingDuty(null);
+    setConfirmingDelete(null);
     setInvalid({});
     setForm(template ? formFromTemplate(template) : emptyForm());
     setModalOpen(true);
@@ -374,12 +452,13 @@ export function AutomationManager() {
   function openEdit(task: ApiAutomationTask) {
     setEditingDuty(null);
     setEditingTask(task);
+    setConfirmingDelete(null);
     setInvalid({});
     setForm(formFromTask(task));
     setModalOpen(true);
   }
 
-  /** 职责的编辑排程、暂停/恢复现在都在这个面板里，卡片只剩摘要。 */
+  /** 定时任务的编辑排程、启用/禁用都在这个面板里，卡片只放摘要和快捷操作。 */
   function openDutyPanel(duty: ApiSchedule) {
     setEditingTask(null);
     setEditingDuty(duty);
@@ -421,42 +500,61 @@ export function AutomationManager() {
   }
 
   async function toggleTask(task: ApiAutomationTask) {
+    const key = taskKey(task);
+    if (!beginAction(key)) return;
     try {
       const updated = task.status === "paused"
         ? await automationClient.enable(task.taskId)
         : await automationClient.pause(task.taskId);
       setTasks((current) => current.map((item) => (item.taskId === updated.taskId ? updated : item)));
       setEditingTask((current) => (current?.taskId === updated.taskId ? updated : current));
-      showToast(updated.status === "paused" ? "任务已暂停" : "任务已启用");
-    } catch {
-      showToast("操作失败，请稍后重试");
+      showToast(updated.status === "paused" ? "任务已禁用" : "任务已启用");
+    } catch (cause) {
+      showToast(cause instanceof Error ? `操作失败：${cause.message}` : "操作失败，请稍后重试");
+    } finally {
+      endAction(key);
     }
   }
 
   async function runTask(task: ApiAutomationTask) {
+    const key = taskKey(task);
+    if (!beginAction(key)) return;
     try {
       await automationClient.run(task.taskId);
       showToast("已触发立即执行，可在运行记录中查看进度");
       void automationClient.records().then(setRecords).catch(() => undefined);
-    } catch {
-      showToast("触发失败，请稍后重试");
+    } catch (cause) {
+      showToast(cause instanceof Error ? `触发失败：${cause.message}` : "触发失败，请稍后重试");
+    } finally {
+      endAction(key);
     }
   }
 
   async function removeTask(task: ApiAutomationTask) {
-    if (confirmingDelete !== task.taskId) {
-      setConfirmingDelete(task.taskId);
-      return;
-    }
+    const key = taskKey(task);
+    if (!beginAction(key)) return;
     setConfirmingDelete(null);
     try {
       await automationClient.remove(task.taskId);
       setTasks((current) => current.filter((item) => item.taskId !== task.taskId));
       if (editingTask?.taskId === task.taskId) closePanel();
-      showToast("任务已删除");
-    } catch {
-      showToast("删除失败，请稍后重试");
+      showToast("定时任务已删除");
+    } catch (cause) {
+      showToast(cause instanceof Error ? `删除失败：${cause.message}` : "删除失败，请稍后重试");
+    } finally {
+      endAction(key);
     }
+  }
+
+  /** First press asks, the second performs. The key is the card identity, so
+   *  the confirmation cannot leak onto another row. */
+  function confirmDelete(key: string, remove: () => void) {
+    if (confirmingDelete !== key) {
+      setConfirmingDelete(key);
+      return;
+    }
+    setConfirmingDelete(null);
+    remove();
   }
 
   function openRecordConversation(record: UnifiedRecord) {
@@ -465,11 +563,13 @@ export function AutomationManager() {
   }
 
   function openTaskFromRecord(record: UnifiedRecord) {
+    // Ended schedules are hidden from the default list, so a record pointing
+    // at one has nowhere to scroll even though the record itself is intact.
     const exists = record.source === "automation"
-      ? tasks.some((task) => task.taskId === record.sourceId)
-      : dutySchedules.some((duty) => duty.sourceId === record.sourceId);
+      ? tasks.some((task) => task.taskId === record.sourceId && !isTerminalStatus(task.status))
+      : dutySchedules.some((duty) => duty.sourceId === record.sourceId && !isTerminalStatus(duty.status));
     if (!exists) {
-      showToast(`任务「${record.name}」已删除，无法跳转`);
+      showToast(`任务「${record.name}」已删除或已结束，无法跳转`);
       return;
     }
     setTab("tasks");
@@ -489,6 +589,18 @@ export function AutomationManager() {
     () => filterRunRecords(mergedRecords, { status: recordStatus, query: recordQuery }),
     [mergedRecords, recordQuery, recordStatus],
   );
+
+  // The default list is the live set; ended schedules stay reachable through
+  // 运行记录 but no longer occupy a card that cannot act.
+  const visibleDuties = useMemo(
+    () => dutySchedules.filter((duty) => !isTerminalStatus(duty.status)),
+    [dutySchedules],
+  );
+  const visibleTasks = useMemo(
+    () => tasks.filter((task) => !isTerminalStatus(task.status)),
+    [tasks],
+  );
+  const hasVisibleSchedules = visibleDuties.length > 0 || visibleTasks.length > 0;
 
   const nextRunPreview = previewNextRun(form);
   useEffect(() => {
@@ -555,7 +667,7 @@ export function AutomationManager() {
             </button>
           </div>
         )}
-        {tab === "tasks" && (tasks.length > 0 || dutySchedules.length > 0) && (
+        {tab === "tasks" && hasVisibleSchedules && (
           <button type="button" className={styles.headerAdd} onClick={() => openCreate()}>
             + 添加自动化
           </button>
@@ -568,7 +680,7 @@ export function AutomationManager() {
         <section className={styles.section}>
           {loading ? (
             <p className={styles.loading}>正在加载自动化任务…</p>
-          ) : tasks.length === 0 && dutySchedules.length === 0 ? (
+          ) : !hasVisibleSchedules ? (
             <div className={styles.emptyTasks}>
               <span className={styles.emptyAlarm}><AlarmIcon /></span>
               <p>开启你的第一个自动化任务吧</p>
@@ -578,87 +690,117 @@ export function AutomationManager() {
             </div>
           ) : (
             <ul className={styles.taskList}>
-              {dutySchedules.map((duty) => (
-                <li
-                  key={duty.sourceId}
-                  ref={(node) => {
-                    if (node) taskRefs.current.set(duty.sourceId, node);
-                    else taskRefs.current.delete(duty.sourceId);
-                  }}
-                  className={
-                    focusedTaskId === duty.sourceId
-                      ? `${styles.taskCard} ${styles.taskCardFocused}`
-                      : styles.taskCard
-                  }
-                  data-status={duty.status}
-                  data-focused={focusedTaskId === duty.sourceId || undefined}
-                >
-                  <button
-                    type="button"
-                    className={styles.taskOpen}
-                    title="打开编辑面板"
-                    aria-label={`编辑 ${duty.title} 的排程`}
-                    onClick={() => openDutyPanel(duty)}
+              {visibleDuties.map((duty) => {
+                const key = dutyKey(duty);
+                return (
+                  <li
+                    key={key}
+                    ref={(node) => {
+                      if (node) taskRefs.current.set(duty.sourceId, node);
+                      else taskRefs.current.delete(duty.sourceId);
+                    }}
+                    className={
+                      focusedTaskId === duty.sourceId
+                        ? `${styles.taskCard} ${styles.taskCardFocused}`
+                        : styles.taskCard
+                    }
+                    data-status={duty.status}
+                    data-focused={focusedTaskId === duty.sourceId || undefined}
                   >
-                    <span className={styles.taskMain}>
-                      <span className={styles.taskTitleRow}>
-                        <strong>{duty.title}</strong>
-                        <span className={styles.statusBadge}>{duty.specialistId ? "Bot 职责" : "主助理职责"}</span>
-                        <span className={styles.statusBadge} data-kind={duty.status}>
-                          {DUTY_STATUS_LABELS[duty.status] ?? "已结束"}
+                    <button
+                      type="button"
+                      className={styles.taskOpen}
+                      title="打开编辑面板"
+                      aria-label={`编辑定时任务 ${duty.title}`}
+                      onClick={() => openDutyPanel(duty)}
+                    >
+                      <span className={styles.taskMain}>
+                        <span className={styles.taskTitleRow}>
+                          <strong>{duty.title}</strong>
+                          <span className={styles.statusBadge}>定时任务</span>
+                          {duty.agentName && <span className={styles.agentBadge}>{duty.agentName}</span>}
+                          <span className={styles.statusBadge} data-kind={duty.status}>
+                            {DUTY_STATUS_LABELS[duty.status] ?? "已结束"}
+                          </span>
+                        </span>
+                        <span className={styles.taskMeta}>
+                          <span>下次执行 {formatScheduleTime(duty.nextRunAt)}</span>
                         </span>
                       </span>
-                      <span className={styles.taskMeta}>
-                        <span>下次执行 {formatScheduleTime(duty.nextRunAt)}</span>
-                      </span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-              {tasks.map((task) => (
-                <li
-                  key={task.taskId}
-                  ref={(node) => {
-                    if (node) taskRefs.current.set(task.taskId, node);
-                    else taskRefs.current.delete(task.taskId);
-                  }}
-                  className={
-                    focusedTaskId === task.taskId
-                      ? `${styles.taskCard} ${styles.taskCardFocused}`
-                      : styles.taskCard
-                  }
-                  data-status={task.status}
-                  data-focused={focusedTaskId === task.taskId || undefined}
-                >
-                  <button
-                    type="button"
-                    className={styles.taskOpen}
-                    title="打开编辑面板"
-                    aria-label={`编辑 ${task.name}`}
-                    onClick={() => openEdit(task)}
+                    </button>
+                    <ScheduleCardActions
+                      title={duty.title}
+                      toggleLabel={duty.status === "active" ? "禁用" : "启用"}
+                      pending={pendingActions.has(key)}
+                      confirmingDelete={confirmingDelete === key}
+                      onToggle={() => void toggleDuty(duty)}
+                      onRun={() => void runDuty(duty)}
+                      onEdit={() => openDutyPanel(duty)}
+                      onRequestDelete={() => setConfirmingDelete(key)}
+                      onDelete={() => void deleteDuty(duty)}
+                    />
+                  </li>
+                );
+              })}
+              {visibleTasks.map((task) => {
+                const key = taskKey(task);
+                return (
+                  <li
+                    key={key}
+                    ref={(node) => {
+                      if (node) taskRefs.current.set(task.taskId, node);
+                      else taskRefs.current.delete(task.taskId);
+                    }}
+                    className={
+                      focusedTaskId === task.taskId
+                        ? `${styles.taskCard} ${styles.taskCardFocused}`
+                        : styles.taskCard
+                    }
+                    data-status={task.status}
+                    data-focused={focusedTaskId === task.taskId || undefined}
                   >
-                    <span className={styles.taskMain}>
-                      <span className={styles.taskTitleRow}>
-                        <strong>{task.name}</strong>
-                        <span className={styles.statusBadge} data-kind={task.status}>
-                          {task.status === "active" ? "已启用" : task.status === "paused" ? "已暂停" : "已结束"}
+                    <button
+                      type="button"
+                      className={styles.taskOpen}
+                      title="打开编辑面板"
+                      aria-label={`编辑定时任务 ${task.name}`}
+                      onClick={() => openEdit(task)}
+                    >
+                      <span className={styles.taskMain}>
+                        <span className={styles.taskTitleRow}>
+                          <strong>{task.name}</strong>
+                          <span className={styles.statusBadge}>定时任务</span>
+                          <span className={styles.statusBadge} data-kind={task.status}>
+                            {task.status === "active" ? "已启用" : task.status === "paused" ? "已暂停" : "已结束"}
+                          </span>
+                        </span>
+                        <span className={styles.taskMeta}>
+                          <span>{scheduleSummary(task)}</span>
+                          {task.nextRunAt && task.status === "active" && (
+                            <span>下次执行：{formatScheduleTime(task.nextRunAt)}</span>
+                          )}
                         </span>
                       </span>
-                      <span className={styles.taskMeta}>
-                        <span>{scheduleSummary(task)}</span>
-                        {task.nextRunAt && task.status === "active" && (
-                          <span>下次执行：{formatScheduleTime(task.nextRunAt)}</span>
-                        )}
-                      </span>
-                    </span>
-                  </button>
-                </li>
-              ))}
+                    </button>
+                    <ScheduleCardActions
+                      title={task.name}
+                      toggleLabel={task.status === "paused" ? "启用" : "禁用"}
+                      pending={pendingActions.has(key)}
+                      confirmingDelete={confirmingDelete === key}
+                      onToggle={() => void toggleTask(task)}
+                      onRun={() => void runTask(task)}
+                      onEdit={() => openEdit(task)}
+                      onRequestDelete={() => setConfirmingDelete(key)}
+                      onDelete={() => void removeTask(task)}
+                    />
+                  </li>
+                );
+              })}
             </ul>
           )}
 
           {/* 模板是空列表的起步引导；已经有任务时它只会把真正的列表挤下去。 */}
-          {!loading && tasks.length === 0 && dutySchedules.length === 0 && (
+          {!loading && !hasVisibleSchedules && (
             <>
               <h2 className={styles.templatesTitle}>自动化任务模版</h2>
               <div className={styles.templateGrid}>
@@ -715,7 +857,7 @@ export function AutomationManager() {
                         {RECORD_STATUS_LABELS[record.status]}
                       </span>
                       <small className={styles.triggerTag}>
-                        {record.source === "duty" ? "Bot 职责" : "定时任务"} · {record.trigger}
+                        定时任务 · {record.trigger}
                       </small>
                     </div>
                     <p className={styles.recordMeta}>
@@ -771,11 +913,11 @@ export function AutomationManager() {
             className={styles.modal}
             role="dialog"
             aria-modal="true"
-            aria-label={editingDuty ? "编辑职责排程" : editingTask ? "编辑自动化任务" : "添加自动化任务"}
+            aria-label={editingDuty || editingTask ? "编辑定时任务" : "添加自动化任务"}
             onClick={(event) => event.stopPropagation()}
           >
             <header className={styles.modalHeader}>
-              <h2>{editingDuty ? "编辑职责排程" : editingTask ? "编辑自动化任务" : "添加自动化任务"}</h2>
+              <h2>{editingDuty || editingTask ? "编辑定时任务" : "添加自动化任务"}</h2>
               <button type="button" className={styles.modalClose} aria-label="关闭" onClick={closePanel}>✕</button>
             </header>
 
@@ -820,7 +962,7 @@ export function AutomationManager() {
                   />
                 </div>
                 {editingDuty.status !== "active" && editingDuty.status !== "paused" && (
-                  <p className={styles.panelNote}>职责已结束，排程只读。</p>
+                  <p className={styles.panelNote}>定时任务已结束，排程只读。</p>
                 )}
               </>
             ) : (
@@ -989,10 +1131,10 @@ export function AutomationManager() {
                     <button
                       type="button"
                       className={styles.cancelButton}
-                      disabled={changingDuty !== null}
+                      disabled={pendingActions.has(dutyKey(editingDuty))}
                       onClick={() => void toggleDuty(editingDuty)}
                     >
-                      {editingDuty.status === "paused" ? "恢复职责" : "暂停职责"}
+                      {editingDuty.status === "paused" ? "启用" : "禁用"}
                     </button>
                   )}
                   <button type="button" className={styles.confirmButton} onClick={closePanel}>关闭</button>
@@ -1003,14 +1145,14 @@ export function AutomationManager() {
                     立即执行
                   </button>
                   <button type="button" className={styles.cancelButton} onClick={() => void toggleTask(editingTask)}>
-                    {editingTask.status === "paused" ? "恢复" : "暂停"}
+                    {editingTask.status === "paused" ? "启用" : "禁用"}
                   </button>
                   <button
                     type="button"
                     className={`${styles.cancelButton} ${styles.dangerAction}`}
-                    onClick={() => void removeTask(editingTask)}
+                    onClick={() => confirmDelete(taskKey(editingTask), () => void removeTask(editingTask))}
                   >
-                    {confirmingDelete === editingTask.taskId ? "确认删除？" : "删除"}
+                    {confirmingDelete === taskKey(editingTask) ? "确认删除？" : "删除"}
                   </button>
                   <button type="button" className={styles.cancelButton} onClick={closePanel}>取消</button>
                   <button type="button" className={styles.confirmButton} disabled={submitting} onClick={() => void submit()}>
