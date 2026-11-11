@@ -413,3 +413,66 @@ class MentionMessage(StudioModel):
     created_at: AwareDatetime
     run_id: str
     target_thread_id: str
+
+
+class GroupMemberKind(StrEnum):
+    CREATOR = "creator"
+    PRIMARY = "primary"
+    SPECIALIST = "specialist"
+
+
+class AssistantGroupMember(StudioModel):
+    """One active seat in a group chat.
+
+    Only the creator (a human) and owned specialists can hold seats. Removed
+    seats disappear from the roster; the primary assistant can be removed,
+    which is why the group carries `primary_present` separately.
+    """
+
+    member_id: str = Field(alias="memberId")
+    kind: GroupMemberKind
+    name: str
+    specialist_id: str | None = Field(default=None, alias="specialistId")
+    status: str = "active"
+    joined_at: AwareDatetime = Field(alias="joinedAt")
+
+
+class AssistantGroup(StudioModel):
+    """A shared conversation with a roster, distinct from 1:1 assistant chats."""
+
+    group_id: str = Field(alias="groupId")
+    name: str
+    creator_user_id: str = Field(alias="creatorUserId")
+    primary_present: bool = Field(alias="primaryPresent")
+    reply_as: str | None = Field(default=None, alias="replyAs")
+    members: tuple[AssistantGroupMember, ...] = ()
+    created_at: AwareDatetime = Field(alias="createdAt")
+    updated_at: AwareDatetime = Field(alias="updatedAt")
+
+
+class AssistantGroupMessageAuthor(StrEnum):
+    USER = "user"
+    PRIMARY = "primary"
+    SPECIALIST = "specialist"
+    SYSTEM = "system"
+
+
+class AssistantGroupMessage(StudioModel):
+    """A message in a group timeline, including pending/failed replies."""
+
+    message_id: str = Field(alias="messageId")
+    group_id: str = Field(alias="groupId")
+    author: AssistantGroupMessageAuthor
+    author_name: str = Field(alias="authorName")
+    specialist_id: str | None = Field(default=None, alias="specialistId")
+    text: str = ""
+    run_id: str | None = Field(default=None, alias="runId")
+    reply_to_message_id: str | None = Field(default=None, alias="replyToMessageId")
+    status: str = "completed"
+    created_at: AwareDatetime = Field(alias="createdAt")
+
+
+class GroupPostResult(StudioModel):
+    message: AssistantGroupMessage
+    replies: tuple[AssistantGroupMessage, ...] = ()
+    notices: tuple[str, ...] = ()

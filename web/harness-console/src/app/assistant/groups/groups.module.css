@@ -1,0 +1,213 @@
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  color: var(--codex-ink, #ededed);
+  background: var(--codex-page-bg, #0f0f0f);
+}
+
+.header {
+  height: var(--shell-header-height, 46px);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--codex-line, #333);
+  background: var(--codex-thread-bg, #141414);
+  flex-shrink: 0;
+}
+.header h1 { font-size: 15px; font-weight: 600; margin: 0; }
+.header .sub { color: var(--codex-muted, #8a8a8a); font-size: 12px; }
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
+  text-decoration: none;
+  font-size: 13px;
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+.back:hover { background: var(--codex-surface-hover, rgba(255, 255, 255, 0.08)); }
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+}
+
+.rail {
+  border-right: 1px solid var(--codex-line, #333);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--codex-thread-bg, #141414);
+}
+.create {
+  display: flex;
+  gap: 6px;
+  padding: 12px;
+  border-bottom: 1px solid var(--codex-line, #333);
+}
+.create input, .composer textarea, .addRow select, .replyAs select {
+  border: 1px solid var(--codex-line, #333);
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  outline: none;
+}
+.create input { flex: 1; min-width: 0; }
+.create input:focus, .composer textarea:focus { border-color: var(--codex-accent, #6b9eff); }
+
+.primaryButton {
+  border: 0;
+  border-radius: 10px;
+  background: var(--codex-accent, #3b82f6);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.primaryButton:disabled { opacity: 0.5; cursor: default; }
+
+.groupList { overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+.groupItem {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.groupItem:hover { background: var(--codex-surface-hover, rgba(255, 255, 255, 0.07)); }
+.groupItemActive, .groupItemActive:hover { background: var(--codex-surface-hover, #2a2a2a); }
+.groupItem strong { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.groupItem span { font-size: 11px; color: var(--codex-muted, #8a8a8a); }
+
+.main { display: flex; flex-direction: column; min-height: 0; }
+.empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--codex-muted, #8a8a8a);
+  font-size: 13px;
+  padding: 24px;
+  text-align: center;
+}
+
+.groupHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--codex-line, #333);
+}
+.groupHead h2 { margin: 0; font-size: 16px; font-weight: 600; flex: 1 1 200px; }
+.meta { color: var(--codex-muted, #8a8a8a); font-size: 12px; }
+
+.roster { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 20px; border-bottom: 1px solid var(--codex-line, #333); }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--codex-line, #3a3a3a);
+  font-size: 12px;
+}
+.chip small { color: var(--codex-muted, #8a8a8a); }
+.chip button {
+  border: 0;
+  background: transparent;
+  color: var(--codex-muted, #8a8a8a);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.chip button:hover { color: #f87171; }
+.addRow { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.addRow select { padding: 5px 8px; font-size: 12px; }
+.replyAs { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--codex-muted, #8a8a8a); }
+.replyAs select { padding: 5px 8px; font-size: 12px; }
+
+.notice {
+  margin: 10px 20px 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #fbbf24;
+  font-size: 12px;
+}
+.error {
+  margin: 10px 20px 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(248, 113, 113, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  color: #f87171;
+  font-size: 12px;
+}
+
+.timeline {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.message { display: flex; flex-direction: column; gap: 4px; max-width: min(720px, 88%); }
+.messageUser { align-self: flex-end; align-items: flex-end; }
+.messageSystem { align-self: center; max-width: 90%; align-items: center; }
+.author { font-size: 11px; color: var(--codex-muted, #8a8a8a); display: flex; gap: 6px; align-items: center; }
+.badge { padding: 0 6px; border-radius: 999px; border: 1px solid var(--codex-line, #3a3a3a); font-size: 10px; }
+.bubble {
+  padding: 9px 12px;
+  border-radius: 14px;
+  background: var(--codex-surface-hover, #232323);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.messageUser .bubble { background: var(--codex-accent, #3b82f6); color: #fff; }
+.messageSystem .bubble {
+  background: transparent;
+  border: 1px dashed var(--codex-line, #4a4a4a);
+  color: var(--codex-muted, #a3a3a3);
+  font-size: 12px;
+}
+.running { color: var(--codex-muted, #8a8a8a); font-style: italic; }
+.failed { color: #f87171; }
+
+.composer { border-top: 1px solid var(--codex-line, #333); padding: 10px 20px 16px; display: flex; flex-direction: column; gap: 8px; }
+.mentionBar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: var(--codex-muted, #8a8a8a); }
+.mentionButton {
+  border: 1px solid var(--codex-line, #3a3a3a);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 9px;
+  cursor: pointer;
+}
+.mentionButton:hover { background: var(--codex-surface-hover, rgba(255, 255, 255, 0.08)); }
+.inputRow { display: flex; gap: 8px; align-items: flex-end; }
+.inputRow textarea { flex: 1; min-height: 44px; max-height: 180px; resize: vertical; }
+.hint { font-size: 11px; color: var(--codex-muted, #8a8a8a); }

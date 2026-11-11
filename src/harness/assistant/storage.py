@@ -314,3 +314,69 @@ class PersonalSkillRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class AssistantGroupRow(Base):
+    """共享会话（群）：名称与接话配置；成员名单单独存。"""
+
+    __tablename__ = "assistant_groups"
+    __table_args__ = (
+        Index("ix_assistant_groups_owner", "tenant_id", "user_id", "updated_at"),
+    )
+
+    group_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(128))
+    user_id: Mapped[str] = mapped_column(String(128))
+    name: Mapped[str] = mapped_column(String(80))
+    revision: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class AssistantGroupMemberRow(Base):
+    """群成员席位；移除后保留 status=removed，名单查询只返回 active。"""
+
+    __tablename__ = "assistant_group_members"
+    __table_args__ = (
+        UniqueConstraint("group_id", "member_id", name="uq_assistant_group_member"),
+        Index("ix_assistant_group_members_group", "group_id", "status"),
+    )
+
+    group_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    member_id: Mapped[str] = mapped_column(String(160), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(128))
+    user_id: Mapped[str] = mapped_column(String(128))
+    kind: Mapped[str] = mapped_column(String(16))
+    name: Mapped[str] = mapped_column(String(80))
+    specialist_id: Mapped[str | None] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(16))
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AssistantGroupMessageRow(Base):
+    """群消息时间线；回复行先占位，正文在 Run 结束后从事件里补。"""
+
+    __tablename__ = "assistant_group_messages"
+    __table_args__ = (
+        UniqueConstraint(
+            "group_id", "client_message_id", name="uq_assistant_group_client_message"
+        ),
+        Index("ix_assistant_group_messages_timeline", "group_id", "created_at"),
+    )
+
+    message_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    group_id: Mapped[str] = mapped_column(String(128))
+    tenant_id: Mapped[str] = mapped_column(String(128))
+    user_id: Mapped[str] = mapped_column(String(128))
+    author: Mapped[str] = mapped_column(String(16))
+    author_name: Mapped[str] = mapped_column(String(80))
+    specialist_id: Mapped[str | None] = mapped_column(String(128))
+    text: Mapped[str] = mapped_column(Text, default="")
+    run_id: Mapped[str | None] = mapped_column(String(128))
+    thread_id: Mapped[str | None] = mapped_column(String(256))
+    reply_to_message_id: Mapped[str | None] = mapped_column(String(128))
+    client_message_id: Mapped[str | None] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

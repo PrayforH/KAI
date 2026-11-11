@@ -18,6 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from harness.assistant.lifecycle import next_check, transition, validate_new_schedule
 from harness.assistant.models import (
+    AssistantGroup,
+    AssistantGroupMember,
+    AssistantGroupMessage,
     AssistantInboxItem,
     AssistantInboxMetrics,
     DesktopTurn,
@@ -38,6 +41,9 @@ from harness.assistant.models import (
 from harness.assistant.permissions import require_local_tools
 from harness.assistant.skill_models import PersonalSkill, SkillProposal
 from harness.assistant.storage import (
+    AssistantGroupMemberRow,
+    AssistantGroupMessageRow,
+    AssistantGroupRow,
     AssistantInboxRow,
     AssistantSkillProposalRow,
     DesktopTurnRow,
@@ -2455,3 +2461,359 @@ class PostgresAssistantRepository:
                 return False
             await session.delete(row)
         return True
+
+    # ------------------------------------------------------------------
+    # 群聊（带花名册的共享会话）：组、成员席位与消息时间线。
+    # 组与成员都按 (tenant_id, user_id) 归属；跨用户不可见。
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _group(row: AssistantGroupRow) -> AssistantGroup:
+        payload = type_cast(dict[str, object], row.payload or {})
+        return AssistantGroup(
+            groupId=row.group_id,
+            name=row.name,
+            creatorUserId=row.user_id,
+            primaryPresent=bool(payload.get("primaryPresent", True)),
+            replyAs=type_cast(str | None, payload.get("replyAs")),
+            members=(),
+            createdAt=row.created_at,
+            updatedAt=row.updated_at,
+        )
+
+    @staticmethod
+    def _group_member(row: AssistantGroupMemberRow) -> AssistantGroupMember:
+        return AssistantGroupMember(
+            memberId=row.member_id,
+            kind=row.kind,  # type: ignore[arg-type]
+            name=row.name,
+            specialistId=row.specialist_id,
+            status=row.status,
+            joinedAt=row.joined_at,
+        )
+
+    async def create_group(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group: AssistantGroup,
+        members: Sequence[AssistantGroupMember],
+    ) -> AssistantGroup:
+        """Insert the group and its initial roster in one transaction."""
+        now = group.created_at
+        async with self._context(write=True) as session:
+            session.add(
+                AssistantGroupRow(
+                    group_id=group.group_id,
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    name=group.name,
+                    revision=1,
+                    created_at=now,
+                    updated_at=now,
+                    payload={
+                        "primaryPresent": group.primary_present,
+                        "replyAs": group.reply_as,
+                    },
+                )
+            )
+            for member in members:
+                session.add(
+                    AssistantGroupMemberRow(
+                        group_id=group.group_id,
+                        member_id=member.member_id,
+                        tenant_id=tenant_id,
+                        user_id=user_id,
+                        kind=member.kind.value,
+                        name=member.name,
+                        specialist_id=member.specialist_id,
+                        status=member.status,
+                        joined_at=member.joined_at,
+                        removed_at=None,
+                    )
+                )
+        return group.model_copy(update={"members": tuple(members)})
+
+    async def list_groups(self, tenant_id: str, user_id: str) -> list[AssistantGroup]:
+        async with self._context() as session:
+            rows = await session.scalars(
+                select(AssistantGroupRow)
+                .where(
+                    AssistantGroupRow.tenant_id == tenant_id,
+                    AssistantGroupRow.user_id == user_id,
+                )
+                .order_by(AssistantGroupRow.updated_at.desc(), AssistantGroupRow.group_id)
+                .limit(200)
+            )
+            groups = [self._group(row) for row in rows]
+            return [await self._group_with_members(session, group) for group in groups]
+
+    async def get_group(
+        self, tenant_id: str, user_id: str, group_id: str
+    ) -> AssistantGroup:
+        async with self._context() as session:
+            row = await session.scalar(
+                select(AssistantGroupRow).where(
+                    AssistantGroupRow.tenant_id == tenant_id,
+                    AssistantGroupRow.user_id == user_id,
+                    AssistantGroupRow.group_id == group_id,
+                )
+            )
+            if row is None:
+                raise NotFoundError("Assistant group not found")
+            return await self._group_with_members(session, self._group(row))
+
+    async def _group_with_members(
+        self, session: AsyncSession, group: AssistantGroup
+    ) -> AssistantGroup:
+        rows = await session.scalars(
+            select(AssistantGroupMemberRow)
+            .where(
+                AssistantGroupMemberRow.group_id == group.group_id,
+                AssistantGroupMemberRow.status == "active",
+            )
+            .order_by(AssistantGroupMemberRow.joined_at, AssistantGroupMemberRow.member_id)
+        )
+        members = tuple(self._group_member(row) for row in rows)
+        return group.model_copy(
+            update={
+                "members": members,
+                "primary_present": any(member.kind == "primary" for member in members),
+            }
+        )
+
+    async def add_group_member(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        member: AssistantGroupMember,
+    ) -> None:
+        now = member.joined_at
+        async with self._context(write=True) as session:
+            await self._require_group(session, tenant_id, user_id, group_id, lock=True)
+            existing = await session.scalar(
+                select(AssistantGroupMemberRow).where(
+                    AssistantGroupMemberRow.group_id == group_id,
+                    AssistantGroupMemberRow.member_id == member.member_id,
+                )
+            )
+            if existing is None:
+                session.add(
+                    AssistantGroupMemberRow(
+                        group_id=group_id,
+                        member_id=member.member_id,
+                        tenant_id=tenant_id,
+                        user_id=user_id,
+                        kind=member.kind.value,
+                        name=member.name,
+                        specialist_id=member.specialist_id,
+                        status="active",
+                        joined_at=now,
+                        removed_at=None,
+                    )
+                )
+            else:
+                existing.status = "active"
+                existing.name = member.name
+                existing.specialist_id = member.specialist_id
+                existing.kind = member.kind.value
+                existing.removed_at = None
+            group_row = await self._require_group(session, tenant_id, user_id, group_id)
+            group_row.updated_at = now
+            group_row.revision += 1
+
+    async def remove_group_member(
+        self, tenant_id: str, user_id: str, group_id: str, member_id: str
+    ) -> AssistantGroup:
+        now = datetime.now(UTC)
+        async with self._context(write=True) as session:
+            group_row = await self._require_group(
+                session, tenant_id, user_id, group_id, lock=True
+            )
+            member_row = await session.scalar(
+                select(AssistantGroupMemberRow).where(
+                    AssistantGroupMemberRow.group_id == group_id,
+                    AssistantGroupMemberRow.member_id == member_id,
+                )
+            )
+            if member_row is None or member_row.status != "active":
+                raise NotFoundError("Group member not found")
+            member_row.status = "removed"
+            member_row.removed_at = now
+            payload = dict(type_cast(dict[str, object], group_row.payload or {}))
+            if member_row.kind == "primary":
+                payload["primaryPresent"] = False
+            group_row.payload = payload
+            group_row.updated_at = now
+            group_row.revision += 1
+            group = self._group(group_row)
+            return await self._group_with_members(session, group)
+
+    @staticmethod
+    async def _require_group(
+        session: AsyncSession,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        *,
+        lock: bool = False,
+    ) -> AssistantGroupRow:
+        query = select(AssistantGroupRow).where(
+            AssistantGroupRow.tenant_id == tenant_id,
+            AssistantGroupRow.user_id == user_id,
+            AssistantGroupRow.group_id == group_id,
+        )
+        row = await session.scalar(query.with_for_update() if lock else query)
+        if row is None:
+            raise NotFoundError("Assistant group not found")
+        return row
+
+    async def set_group_reply_as(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        reply_as: str | None,
+    ) -> AssistantGroup:
+        """设置未 @ 时的接话人；None 表示默认主助理。"""
+        now = datetime.now(UTC)
+        async with self._context(write=True) as session:
+            group_row = await self._require_group(
+                session, tenant_id, user_id, group_id, lock=True
+            )
+            payload = dict(type_cast(dict[str, object], group_row.payload or {}))
+            payload["replyAs"] = reply_as
+            group_row.payload = payload
+            group_row.updated_at = now
+            group_row.revision += 1
+            group = self._group(group_row)
+            return await self._group_with_members(session, group)
+
+    async def add_group_message(
+        self,
+        tenant_id: str,
+        user_id: str,
+        message: AssistantGroupMessage,
+        *,
+        thread_id: str | None = None,
+        reply_to_message_id: str | None = None,
+        client_message_id: str | None = None,
+    ) -> AssistantGroupMessage:
+        async with self._context(write=True) as session:
+            await self._require_group(session, tenant_id, user_id, message.group_id)
+            session.add(
+                AssistantGroupMessageRow(
+                    message_id=message.message_id,
+                    group_id=message.group_id,
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    author=message.author.value,
+                    author_name=message.author_name,
+                    specialist_id=message.specialist_id,
+                    text=message.text,
+                    run_id=message.run_id,
+                    thread_id=thread_id,
+                    reply_to_message_id=reply_to_message_id,
+                    client_message_id=client_message_id,
+                    status=message.status,
+                    created_at=message.created_at,
+                )
+            )
+        return message
+
+    async def list_group_messages(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        *,
+        limit: int = 300,
+    ) -> list[AssistantGroupMessage]:
+        async with self._context() as session:
+            await self._require_group(session, tenant_id, user_id, group_id)
+            rows = list(await session.scalars(
+                select(AssistantGroupMessageRow)
+                .where(
+                    AssistantGroupMessageRow.group_id == group_id,
+                    AssistantGroupMessageRow.tenant_id == tenant_id,
+                    AssistantGroupMessageRow.user_id == user_id,
+                )
+                .order_by(
+                    AssistantGroupMessageRow.created_at.desc(),
+                    AssistantGroupMessageRow.message_id.desc(),
+                )
+                .limit(limit)
+            ))
+            rows.reverse()
+            return [
+                AssistantGroupMessage(
+                    messageId=row.message_id,
+                    groupId=row.group_id,
+                    author=row.author,  # type: ignore[arg-type]
+                    authorName=row.author_name,
+                    specialistId=row.specialist_id,
+                    text=row.text,
+                    runId=row.run_id,
+                    replyToMessageId=row.reply_to_message_id,
+                    status=row.status,
+                    createdAt=row.created_at,
+                )
+                for row in rows
+            ]
+
+    async def get_group_message(
+        self, tenant_id: str, user_id: str, group_id: str, message_id: str
+    ) -> AssistantGroupMessage:
+        async with self._context() as session:
+            await self._require_group(session, tenant_id, user_id, group_id)
+            row = await session.scalar(
+                select(AssistantGroupMessageRow).where(
+                    AssistantGroupMessageRow.group_id == group_id,
+                    AssistantGroupMessageRow.message_id == message_id,
+                    AssistantGroupMessageRow.tenant_id == tenant_id,
+                    AssistantGroupMessageRow.user_id == user_id,
+                )
+            )
+            if row is None:
+                raise NotFoundError("Group message not found")
+            return AssistantGroupMessage(
+                messageId=row.message_id,
+                groupId=row.group_id,
+                author=row.author,  # type: ignore[arg-type]
+                authorName=row.author_name,
+                specialistId=row.specialist_id,
+                text=row.text,
+                runId=row.run_id,
+                replyToMessageId=row.reply_to_message_id,
+                status=row.status,
+                createdAt=row.created_at,
+            )
+
+    async def get_group_message_by_client_id(
+        self, tenant_id: str, user_id: str, group_id: str, client_message_id: str
+    ) -> AssistantGroupMessage | None:
+        async with self._context() as session:
+            row = await session.scalar(
+                select(AssistantGroupMessageRow).where(
+                    AssistantGroupMessageRow.group_id == group_id,
+                    AssistantGroupMessageRow.tenant_id == tenant_id,
+                    AssistantGroupMessageRow.user_id == user_id,
+                    AssistantGroupMessageRow.client_message_id == client_message_id,
+                )
+            )
+            return self._group_message(row) if row is not None else None
+
+    @staticmethod
+    def _group_message(row: AssistantGroupMessageRow) -> AssistantGroupMessage:
+        return AssistantGroupMessage(
+            messageId=row.message_id,
+            groupId=row.group_id,
+            author=row.author,  # type: ignore[arg-type]
+            authorName=row.author_name,
+            specialistId=row.specialist_id,
+            text=row.text,
+            runId=row.run_id,
+            status=row.status,
+            createdAt=row.created_at,
+        )

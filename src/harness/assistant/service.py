@@ -23,7 +23,11 @@ from ag_ui.core import (
 )
 from pydantic import SecretStr
 
-from harness.agui.response import final_response_text, recorded_response_text
+from harness.agui.response import (
+    active_response_text,
+    final_response_text,
+    recorded_response_text,
+)
 from harness.agui.service import AguiRunService
 from harness.application.agents import AgentService
 from harness.application.events import EventService
@@ -34,8 +38,107 @@ from harness.assistant.appearance import (
     choose_appearance,
 )
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD, primary_specialist_id
+
+GROUP_PRIMARY_MEMBER_ID = "primary"
+GROUP_THREAD_PREFIX = "assistant_group_"
+
+
+def group_thread_id(group_id: str, member_id: str) -> str:
+    """每个群成员一条独立线程；前缀保证不会和 1:1/任务线程撞车。"""
+    return f"{GROUP_THREAD_PREFIX}{group_id}_{member_id}"
+
+
+def _group_name(value: str) -> str:
+    text = re.sub(r"\s+", " ", unicodedata.normalize("NFKC", value or "")).strip()
+    if not text:
+        raise ConflictError("群聊名称不能为空")
+    if len(text) > 40:
+        raise ConflictError("群聊名称不能超过 40 个字")
+    if any(unicodedata.category(char).startswith("C") for char in text):
+        raise ConflictError("群聊名称不能包含换行或控制字符")
+    return text
+
+
+def _group_view(group: AssistantGroup, user_id: str) -> AssistantGroup:
+    """创建者是人类席位，不落库；只对本人可见。"""
+    creator = AssistantGroupMember(
+        memberId=f"user:{user_id}",
+        kind=GroupMemberKind.CREATOR,
+        name="创建者",
+        joinedAt=group.created_at,
+    )
+    members = (creator, *group.members)
+    return group.model_copy(
+        update={
+            "members": members,
+            "primary_present": any(
+                member.kind is GroupMemberKind.PRIMARY and member.status == "active"
+                for member in members
+            ),
+        }
+    )
+
+
+def _group_mentions(
+    text: str,
+    roster: dict[str, AssistantGroupMember],
+    owned_by_name: dict[str, Specialist],
+) -> tuple[list[AssistantGroupMember], list[str]]:
+    """只认花名册里的 @；非成员/已移出给提示，不误唤醒别人。"""
+    roster_by_name = {
+        unicodedata.normalize("NFKC", member.name).strip(): member
+        for member in roster.values()
+        if member.name.strip()
+    }
+    candidates = sorted(
+        set(roster_by_name) | set(owned_by_name), key=len, reverse=True
+    )
+    spans: list[tuple[int, int]] = []
+    hits: list[tuple[int, AssistantGroupMember]] = []
+    notices: list[str] = []
+    noticed: set[str] = set()
+    for name in candidates:
+        pattern = re.compile(rf"@{re.escape(name)}(?!\w)")
+        for match in pattern.finditer(text):
+            start, end = match.span()
+            if any(left <= start < right for left, right in spans):
+                continue
+            spans.append((start, end))
+            member = roster_by_name.get(name)
+            if member is not None:
+                hits.append((start, member))
+            elif name not in noticed:
+                noticed.add(name)
+                notices.append(
+                    f"@{name} 不在本群（可能已被移出），这条消息没有发给 TA。"
+                )
+    hits.sort(key=lambda item: item[0])
+    ordered: list[AssistantGroupMember] = []
+    seen: set[str] = set()
+    for _, member in hits:
+        if member.member_id in seen:
+            continue
+        seen.add(member.member_id)
+        ordered.append(member)
+    return ordered, notices
+
+
+def _strip_group_mentions(
+    text: str, roster: dict[str, AssistantGroupMember]
+) -> str:
+    cleaned = text
+    for member in roster.values():
+        name = unicodedata.normalize("NFKC", member.name).strip()
+        if name:
+            cleaned = re.sub(rf"@{re.escape(name)}(?!\w)", "", cleaned)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    return cleaned.strip() or text
 from harness.assistant.lifecycle import next_check, validate_new_schedule
 from harness.assistant.models import (
+    AssistantGroup,
+    AssistantGroupMember,
+    AssistantGroupMessage,
+    AssistantGroupMessageAuthor,
     AssistantInboxItem,
     DelegationMode,
     HandoverStatus,
@@ -49,6 +152,8 @@ from harness.assistant.models import (
     ObjectiveExecutionStatus,
     ObjectiveSchedule,
     ObjectiveStatus,
+    GroupMemberKind,
+    GroupPostResult,
     Specialist,
     SpecialistActivity,
     SpecialistConversation,
@@ -1157,6 +1262,8 @@ class AssistantService:
             tenant_id=tenant_id, user_id=user_id, limit=limit, archived=False, query=value,
         )
         for binding in bindings:
+            if binding.thread_id.startswith(GROUP_THREAD_PREFIX):
+                continue
             if binding.thread_id not in candidates and (
                 not needle or needle in (binding.title or "").casefold()
                 or needle in binding.thread_id.casefold()
@@ -2308,6 +2415,506 @@ class AssistantService:
             "execution_id": execution.execution_id,
             "thread_id": execution.thread_id,
         }
+
+
+    # ------------------------------------------------------------------
+    # 群聊：带花名册的共享会话。群内每条发言落在独立的群线程里，
+    # 不复用 1:1 或别的群；消息只存在群时间线，刷新后从存储重建。
+    # ------------------------------------------------------------------
+
+    async def create_assistant_group(
+        self, tenant_id: str, user_id: str, *, name: str
+    ) -> AssistantGroup:
+        normalized = _group_name(name)
+        now = datetime.now(UTC)
+        group = AssistantGroup(
+            groupId=f"group_{uuid4().hex}",
+            name=normalized,
+            creatorUserId=user_id,
+            primaryPresent=True,
+            createdAt=now,
+            updatedAt=now,
+        )
+        members = (
+            AssistantGroupMember(
+                memberId=GROUP_PRIMARY_MEMBER_ID,
+                kind=GroupMemberKind.PRIMARY,
+                name="主助理",
+                joinedAt=now,
+            ),
+        )
+        created = await self.repository.create_group(tenant_id, user_id, group, members)
+        return _group_view(created, user_id)
+
+    async def list_assistant_groups(
+        self, tenant_id: str, user_id: str
+    ) -> list[AssistantGroup]:
+        groups = await self.repository.list_groups(tenant_id, user_id)
+        return [_group_view(group, user_id) for group in groups]
+
+    async def get_assistant_group(
+        self, tenant_id: str, user_id: str, group_id: str
+    ) -> AssistantGroup:
+        group = await self.repository.get_group(tenant_id, user_id, group_id)
+        return _group_view(group, user_id)
+
+    async def add_assistant_group_member(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        *,
+        specialist_id: str,
+    ) -> AssistantGroup:
+        """只能拉当前用户自己的专职子助理；主助理/创建者不能重复占位。"""
+        group = await self.repository.get_group(tenant_id, user_id, group_id)
+        if specialist_id == primary_specialist_id(tenant_id, user_id):
+            raise ConflictError("主助理默认在群里，无需重复添加")
+        specialist = await self.repository.get_specialist(tenant_id, user_id, specialist_id)
+        if specialist.status is SpecialistStatus.ARCHIVED:
+            raise ConflictError("已归档的子助理不能加入群聊")
+        if any(
+            member.member_id == specialist_id and member.status == "active"
+            for member in group.members
+        ):
+            return _group_view(group, user_id)
+        member = AssistantGroupMember(
+            memberId=specialist.specialist_id,
+            kind=GroupMemberKind.SPECIALIST,
+            name=specialist.name,
+            specialistId=specialist.specialist_id,
+            joinedAt=datetime.now(UTC),
+        )
+        await self.repository.add_group_member(tenant_id, user_id, group_id, member)
+        updated = await self.repository.get_group(tenant_id, user_id, group_id)
+        return _group_view(updated, user_id)
+
+    async def remove_assistant_group_member(
+        self, tenant_id: str, user_id: str, group_id: str, *, member_id: str
+    ) -> AssistantGroup:
+        """移出成员只影响花名册；被移出者立即不能发言、也不能被 @。"""
+        group = await self.repository.get_group(tenant_id, user_id, group_id)
+        if member_id.startswith("user:"):
+            raise ConflictError("创建者不能被移出群聊")
+        member = next(
+            (item for item in group.members if item.member_id == member_id), None
+        )
+        if member is None:
+            raise NotFoundError("群成员不存在或已被移出")
+        updated = await self.repository.remove_group_member(
+            tenant_id, user_id, group_id, member_id
+        )
+        if member.kind is GroupMemberKind.PRIMARY:
+            # 需求 4：主助理被移出后，未 @ 的消息不改派；这里把规则写进时间线，
+            # 后续每条普通消息还会再提示一次。
+            await self._append_group_notice(
+                tenant_id,
+                user_id,
+                group_id,
+                "主助理已被移出本群。之后未 @ 的消息不会改派给其他成员，"
+                "仍然可以 @ 群里的子助理。",
+                datetime.now(UTC),
+                reply_to_message_id=None,
+            )
+        return _group_view(updated, user_id)
+
+    async def set_assistant_group_reply_as(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        *,
+        reply_as: str | None,
+    ) -> AssistantGroup:
+        """P1：可配置未 @ 时的接话人；默认（None）仍是主助理。"""
+        group = await self.repository.get_group(tenant_id, user_id, group_id)
+        if reply_as not in (None, GROUP_PRIMARY_MEMBER_ID):
+            member = next(
+                (item for item in group.members if item.member_id == reply_as), None
+            )
+            if member is None or member.kind is not GroupMemberKind.SPECIALIST:
+                raise ConflictError("未 @ 接话人必须是本群成员")
+        updated = await self.repository.set_group_reply_as(
+            tenant_id, user_id, group_id, reply_as
+        )
+        return _group_view(updated, user_id)
+
+    async def list_assistant_group_messages(
+        self, tenant_id: str, user_id: str, group_id: str
+    ) -> list[AssistantGroupMessage]:
+        await self.repository.get_group(tenant_id, user_id, group_id)
+        messages = await self.repository.list_group_messages(tenant_id, user_id, group_id)
+        return list(
+            await asyncio.gather(
+                *(self._hydrate_group_message(tenant_id, message) for message in messages)
+            )
+        )
+
+    async def post_assistant_group_message(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        *,
+        text: str,
+        client_message_id: str | None = None,
+    ) -> GroupPostResult:
+        """群内发言入口：@ 谁谁回复；未 @ 时只由主助理回复。
+
+        群线程各自独立，回复只回写本群时间线；不做内容级自动分派（P0 范围外）。
+        """
+        value = unicodedata.normalize("NFKC", text or "").strip()
+        if not value:
+            raise ConflictError("消息不能为空")
+        if len(value) > 8_000:
+            raise ConflictError("消息过长，请控制在 8000 字以内")
+        if "\x00" in value:
+            raise ConflictError("消息包含非法字符")
+        group = await self.get_assistant_group(tenant_id, user_id, group_id)
+        if client_message_id:
+            prior = await self.repository.get_group_message_by_client_id(
+                tenant_id, user_id, group_id, client_message_id
+            )
+            if prior is not None:
+                messages = await self.repository.list_group_messages(
+                    tenant_id, user_id, group_id
+                )
+                replies = [
+                    await self._hydrate_group_message(tenant_id, item)
+                    for item in messages
+                    if item.reply_to_message_id == prior.message_id
+                ]
+                return GroupPostResult(
+                    message=prior, replies=tuple(replies), notices=()
+                )
+        now = datetime.now(UTC)
+        message = AssistantGroupMessage(
+            messageId=f"gmsg_{uuid4().hex}",
+            groupId=group_id,
+            author=AssistantGroupMessageAuthor.USER,
+            authorName="我",
+            text=value,
+            status="completed",
+            createdAt=now,
+        )
+        await self.repository.add_group_message(
+            tenant_id,
+            user_id,
+            message,
+            client_message_id=client_message_id,
+        )
+
+        active_roster = {
+            member.specialist_id: member
+            for member in group.members
+            if member.kind is GroupMemberKind.SPECIALIST
+            and member.status == "active"
+            and member.specialist_id
+        }
+        primary_member = next(
+            (
+                member
+                for member in group.members
+                if member.kind is GroupMemberKind.PRIMARY and member.status == "active"
+            ),
+            None,
+        )
+        mentionable = dict(active_roster)
+        if primary_member is not None:
+            # P0 补充：@ 主助理时由主助理在本群以自己身份回复。
+            mentionable[GROUP_PRIMARY_MEMBER_ID] = primary_member
+        owned = await self.repository.list_specialists(tenant_id, user_id)
+        owned_by_name = {
+            unicodedata.normalize("NFKC", item.name).strip(): item
+            for item in owned
+            if item.status is not SpecialistStatus.ARCHIVED
+            and item.name.strip()
+        }
+        mentioned, notices = _group_mentions(value, mentionable, owned_by_name)
+
+        replies: list[AssistantGroupMessage] = []
+        if mentioned:
+            # 被 @ 的子助理各自以自己的身份回复；主助理不插话、不转述。
+            prompt = _strip_group_mentions(value, mentionable)
+            for member in mentioned:
+                try:
+                    replies.append(
+                        await self._dispatch_group_reply(
+                            tenant_id,
+                            user_id,
+                            group,
+                            message,
+                            member=member,
+                            prompt=prompt,
+                            now=now,
+                        )
+                    )
+                except (ConflictError, NotFoundError, PermissionDeniedError) as error:
+                    notices.append(f"@{member.name} 这次没能接话：{error}")
+                except Exception as error:  # noqa: BLE001 - 单个成员失败不拖垮整条消息
+                    logger.warning(
+                        "group reply failed group=%s member=%s: %s",
+                        group_id,
+                        member.member_id,
+                        error,
+                    )
+                    notices.append(f"@{member.name} 这次没能接话，请稍后重试。")
+        else:
+            # P1：未 @ 的接话人可配置，默认主助理。接话人被移出后不自动改派。
+            responder = primary_member
+            if group.reply_as not in (None, GROUP_PRIMARY_MEMBER_ID):
+                responder = active_roster.get(group.reply_as)
+                if responder is None:
+                    notice = "配置的接话人已不在本群：这条消息不会自动改派给其他成员。"
+                    notices.append(notice)
+                    replies.append(
+                        await self._append_group_notice(
+                            tenant_id,
+                            user_id,
+                            group_id,
+                            notice,
+                            now,
+                            reply_to_message_id=message.message_id,
+                        )
+                    )
+            if responder is not None:
+                try:
+                    replies.append(
+                        await self._dispatch_group_reply(
+                            tenant_id,
+                            user_id,
+                            group,
+                            message,
+                            member=responder,
+                            prompt=value,
+                            now=now,
+                        )
+                    )
+                except (ConflictError, NotFoundError, PermissionDeniedError) as error:
+                    notices.append(f"@{responder.name} 这次没能回复：{error}")
+                except Exception as error:  # noqa: BLE001
+                    logger.warning(
+                        "group reply failed group=%s member=%s: %s",
+                        group_id,
+                        responder.member_id,
+                        error,
+                    )
+                    notices.append(f"@{responder.name} 这次没能回复，请稍后重试。")
+            elif group.primary_present:
+                # 配置的接话人缺失、但主助理仍在：保持“不改派”，只提示。
+                notice = "配置的接话人已不在本群：这条消息不会自动改派给主助理。"
+                notices.append(notice)
+                replies.append(
+                    await self._append_group_notice(
+                        tenant_id,
+                        user_id,
+                        group_id,
+                        notice,
+                        now,
+                        reply_to_message_id=message.message_id,
+                    )
+                )
+            else:
+                # 需求 4：主助理不在时绝不改派给其他成员，只留明确提示。
+                notice = "主助理已被移出本群：未 @ 的消息不会改派给其他成员。"
+                notices.append(notice)
+                replies.append(
+                    await self._append_group_notice(
+                        tenant_id,
+                        user_id,
+                        group_id,
+                        notice,
+                        now,
+                        reply_to_message_id=message.message_id,
+                    )
+                )
+        return GroupPostResult(
+            message=message, replies=tuple(replies), notices=tuple(notices)
+        )
+
+    async def _dispatch_group_reply(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group: AssistantGroup,
+        user_message: AssistantGroupMessage,
+        *,
+        member: AssistantGroupMember,
+        prompt: str,
+        now: datetime,
+    ) -> AssistantGroupMessage:
+        """在群专属线程里起一次运行，并把占位回复写进本群时间线。"""
+        thread_id = group_thread_id(group.group_id, member.member_id)
+        bot_specialist_id: str | None
+        if member.kind is GroupMemberKind.PRIMARY:
+            bot_specialist_id = primary_specialist_id(tenant_id, user_id)
+            try:
+                binding = await self._agui.get_binding(
+                    tenant_id=tenant_id, user_id=user_id, thread_id=thread_id
+                )
+                agent_name = binding.agent_name
+                agent_version = binding.agent_version
+                agent_owner_user_id = binding.agent_owner_user_id
+            except NotFoundError:
+                agent = await self._agents.ensure_user_default(tenant_id, user_id)
+                if agent is None:
+                    raise ConflictError("主助理尚未配置") from None
+                agent_name, agent_version = agent.name, agent.version
+                agent_owner_user_id = user_id
+        else:
+            if not member.specialist_id:
+                raise ConflictError("该成员不是可回复的子助理")
+            specialist = await self.repository.get_specialist(
+                tenant_id, user_id, member.specialist_id
+            )
+            if specialist.status is SpecialistStatus.ARCHIVED:
+                raise ConflictError("该子助理已归档")
+            bot_specialist_id = specialist.specialist_id
+            try:
+                binding = await self._agui.get_binding(
+                    tenant_id=tenant_id, user_id=user_id, thread_id=thread_id
+                )
+                agent_name = binding.agent_name
+                agent_version = binding.agent_version
+                agent_owner_user_id = binding.agent_owner_user_id
+            except NotFoundError:
+                target = await self.specialist_conversation(
+                    tenant_id, user_id, specialist
+                )
+                agent_name = target.agent_name
+                agent_version = target.agent_version
+                agent_owner_user_id = target.agent_owner_user_id
+
+        reply = AssistantGroupMessage(
+            messageId=f"gmsg_{uuid4().hex}",
+            groupId=group.group_id,
+            author=(
+                AssistantGroupMessageAuthor.PRIMARY
+                if member.kind is GroupMemberKind.PRIMARY
+                else AssistantGroupMessageAuthor.SPECIALIST
+            ),
+            authorName=member.name,
+            specialistId=member.specialist_id,
+            status="running",
+            createdAt=now,
+        )
+        roster = "、".join(
+            item.name
+            for item in group.members
+            if item.kind is not GroupMemberKind.CREATOR
+        )
+        body = (
+            f"【群聊「{group.name}」】成员：{roster}。"
+            f"你在群里以「{member.name}」的身份回复；只回复这条消息，不要冒充其他成员。\n"
+            f"{prompt}"
+        )
+        creation = await self._agui.create_run_with_result(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            agent_name=agent_name,
+            agent_version=agent_version,
+            agent_owner_user_id=agent_owner_user_id,
+            connection_mode="service_owned",
+            append_to_history=True,
+            deduplicate_active_input=False,
+            assistant_dispatch=False,
+            bot_specialist_id=bot_specialist_id,
+            request=RunAgentInput(
+                thread_id=thread_id,
+                run_id=f"group-{reply.message_id}",
+                state={},
+                messages=[UserMessage(id=reply.message_id, content=body)],
+                tools=[],
+                context=[],
+                forwarded_props={
+                    "conversationSurface": "assistant",
+                    "assistantScope": True,
+                    "groupChat": group.group_id,
+                },
+            ),
+        )
+        reply = reply.model_copy(update={"run_id": creation.run.run_id})
+        return await self.repository.add_group_message(
+            tenant_id,
+            user_id,
+            reply,
+            thread_id=thread_id,
+            reply_to_message_id=user_message.message_id,
+        )
+
+    async def _append_group_notice(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        text: str,
+        now: datetime,
+        *,
+        reply_to_message_id: str | None,
+    ) -> AssistantGroupMessage:
+        notice = AssistantGroupMessage(
+            messageId=f"gmsg_{uuid4().hex}",
+            groupId=group_id,
+            author=AssistantGroupMessageAuthor.SYSTEM,
+            authorName="系统",
+            text=text,
+            status="completed",
+            createdAt=now,
+        )
+        return await self.repository.add_group_message(
+            tenant_id,
+            user_id,
+            notice,
+            reply_to_message_id=reply_to_message_id,
+        )
+
+    async def _hydrate_group_message(
+        self, tenant_id: str, message: AssistantGroupMessage
+    ) -> AssistantGroupMessage:
+        """回复文本以运行事件为准；占位/刷新后都能恢复同一条答案。"""
+        if message.run_id is None or message.author in (
+            AssistantGroupMessageAuthor.USER,
+            AssistantGroupMessageAuthor.SYSTEM,
+        ):
+            return message
+        try:
+            run = await self._runs.get(tenant_id, message.run_id)
+        except (NotFoundError, PermissionDeniedError):
+            return message.model_copy(
+                update={"status": "failed", "text": message.text or "这条回复已不可读取。"}
+            )
+        terminal = run.status.is_terminal
+        try:
+            text = await recorded_response_text(
+                self._events, tenant_id, run.run_id, terminal=terminal
+            )
+        except Exception as error:  # noqa: BLE001 - 读事件失败时保留占位而不是 500
+            logger.warning("group message hydration failed run=%s: %s", run.run_id, error)
+            text = ""
+        if not terminal and not text:
+            try:
+                text = active_response_text(
+                    await self._events.list_after(tenant_id, run.run_id, 0)
+                )
+            except Exception:  # noqa: BLE001
+                text = ""
+        status = "running"
+        if run.status is RunStatus.SUCCEEDED:
+            status = "completed"
+        elif run.status in (RunStatus.FAILED, RunStatus.REJECTED, RunStatus.TIMED_OUT):
+            status = "failed"
+        elif run.status in (RunStatus.CANCELLED, RunStatus.CANCELLING):
+            status = "stopped"
+        elif run.status is RunStatus.WAITING_APPROVAL:
+            status = "waiting"
+        if not text:
+            text = {
+                "failed": "这次回复没有完成，请稍后重试。",
+                "stopped": "这次回复已停止。",
+                "waiting": "需要你先确认一项操作，回复才能继续。",
+            }.get(status, "" if status == "running" else "这次没有返回文字。")
+        return message.model_copy(update={"text": text, "status": status})
+
 
 
 def routine_forwarded_props() -> dict[str, object]:

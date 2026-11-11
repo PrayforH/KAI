@@ -154,3 +154,98 @@ export async function deletePersonalSkill(skillId: string): Promise<{ deleted: b
     `personal-skills/${encodeURIComponent(skillId)}`, "DELETE",
   );
 }
+
+/**
+ * 群聊：带花名册的共享会话。消息只属于本群时间线；@ 谁谁回复，
+ * 未 @ 时由配置的接话人（默认主助理）回复。
+ */
+export type GroupMemberKind = "creator" | "primary" | "specialist";
+export type GroupMember = {
+  memberId: string;
+  kind: GroupMemberKind;
+  name: string;
+  specialistId: string | null;
+  status: "active" | "removed";
+  joinedAt: string;
+};
+export type AssistantGroup = {
+  groupId: string;
+  name: string;
+  creatorUserId: string;
+  primaryPresent: boolean;
+  replyAs: string | null;
+  members: GroupMember[];
+  createdAt: string;
+  updatedAt: string;
+};
+export type GroupMessage = {
+  messageId: string;
+  groupId: string;
+  author: "user" | "primary" | "specialist" | "system";
+  authorName: string;
+  specialistId: string | null;
+  text: string;
+  runId: string | null;
+  replyToMessageId: string | null;
+  status: "running" | "waiting" | "completed" | "failed" | "stopped";
+  createdAt: string;
+};
+export type GroupPostResult = {
+  message: GroupMessage;
+  replies: GroupMessage[];
+  notices: string[];
+};
+
+export async function listAssistantGroups(): Promise<AssistantGroup[]> {
+  return assistantRequest<AssistantGroup[]>("groups");
+}
+export async function createAssistantGroup(name: string): Promise<AssistantGroup> {
+  return assistantRequest<AssistantGroup>("groups", "POST", { name });
+}
+export async function addAssistantGroupMember(
+  groupId: string,
+  specialistId: string,
+): Promise<AssistantGroup> {
+  return assistantRequest<AssistantGroup>(
+    `groups/${encodeURIComponent(groupId)}/members`,
+    "POST",
+    { specialistId },
+  );
+}
+export async function removeAssistantGroupMember(
+  groupId: string,
+  memberId: string,
+): Promise<AssistantGroup> {
+  return assistantRequest<AssistantGroup>(
+    `groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(memberId)}`,
+    "DELETE",
+  );
+}
+export async function setAssistantGroupReplyAs(
+  groupId: string,
+  replyAs: string | null,
+): Promise<AssistantGroup> {
+  return assistantRequest<AssistantGroup>(
+    `groups/${encodeURIComponent(groupId)}`,
+    "PATCH",
+    { replyAs },
+  );
+}
+export async function listAssistantGroupMessages(
+  groupId: string,
+): Promise<GroupMessage[]> {
+  return assistantRequest<GroupMessage[]>(
+    `groups/${encodeURIComponent(groupId)}/messages`,
+  );
+}
+export async function postAssistantGroupMessage(
+  groupId: string,
+  text: string,
+  clientMessageId: string,
+): Promise<GroupPostResult> {
+  return assistantRequest<GroupPostResult>(
+    `groups/${encodeURIComponent(groupId)}/messages`,
+    "POST",
+    { text, clientMessageId },
+  );
+}

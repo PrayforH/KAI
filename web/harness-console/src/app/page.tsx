@@ -1040,6 +1040,16 @@ function AuthenticatedHome() {
             <div className="header-utilities">
               {assistantView && computerOpen && <DesktopOccupancyChip />}
               {assistantView && (
+                <Link
+                  href="/assistant/groups"
+                  className="header-icon-button"
+                  aria-label="群聊"
+                  title="群聊"
+                >
+                  <SidebarIcon name="spaces" />
+                </Link>
+              )}
+              {assistantView && (
                 <button
                   type="button"
                   className="header-icon-button"

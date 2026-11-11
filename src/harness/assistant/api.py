@@ -9,7 +9,10 @@ from pydantic import Field
 from harness.api.dependencies import Identity, ensure_permission, require_identity
 from harness.assistant.constants import primary_specialist_id
 from harness.assistant.models import (
+    AssistantGroup,
+    AssistantGroupMessage,
     AssistantInboxItem,
+    GroupPostResult,
     HandoverStatus,
     ManagedTask,
     Objective,
@@ -867,3 +870,98 @@ async def delete_personal_skill(
             identity.tenant_id, identity.user_id, skill_id
         )
     }
+
+
+class GroupCreateRequest(StudioModel):
+    """群名是唯一的必填项；创建者与主助理由服务端按身份与默认规则落位。"""
+
+    name: str = Field(min_length=1, max_length=80)
+
+
+class GroupMemberRequest(StudioModel):
+    specialist_id: str = Field(alias="specialistId", min_length=1, max_length=128)
+
+
+class GroupReplyAsRequest(StudioModel):
+    """None 表示默认主助理；其他值必须是当前群成员。"""
+
+    reply_as: str | None = Field(default=None, alias="replyAs", max_length=128)
+
+
+class GroupMessageRequest(StudioModel):
+    text: str = Field(min_length=1, max_length=8_000)
+    client_message_id: str | None = Field(
+        default=None, alias="clientMessageId", max_length=128
+    )
+
+
+@router.get("/groups")
+async def list_assistant_groups(identity: Reader, assistant: Service) -> list[AssistantGroup]:
+    return await assistant.list_assistant_groups(identity.tenant_id, identity.user_id)
+
+
+@router.post("/groups", status_code=201)
+async def create_assistant_group(
+    body: GroupCreateRequest, identity: Writer, assistant: Service
+) -> AssistantGroup:
+    return await assistant.create_assistant_group(
+        identity.tenant_id, identity.user_id, name=body.name
+    )
+
+
+@router.get("/groups/{group_id}")
+async def get_assistant_group(
+    group_id: str, identity: Reader, assistant: Service
+) -> AssistantGroup:
+    return await assistant.get_assistant_group(
+        identity.tenant_id, identity.user_id, group_id
+    )
+
+
+@router.patch("/groups/{group_id}")
+async def update_assistant_group(
+    group_id: str, body: GroupReplyAsRequest, identity: Writer, assistant: Service
+) -> AssistantGroup:
+    return await assistant.set_assistant_group_reply_as(
+        identity.tenant_id, identity.user_id, group_id, reply_as=body.reply_as
+    )
+
+
+@router.post("/groups/{group_id}/members", status_code=201)
+async def add_assistant_group_member(
+    group_id: str, body: GroupMemberRequest, identity: Writer, assistant: Service
+) -> AssistantGroup:
+    return await assistant.add_assistant_group_member(
+        identity.tenant_id, identity.user_id, group_id, specialist_id=body.specialist_id
+    )
+
+
+@router.delete("/groups/{group_id}/members/{member_id}")
+async def remove_assistant_group_member(
+    group_id: str, member_id: str, identity: Writer, assistant: Service
+) -> AssistantGroup:
+    return await assistant.remove_assistant_group_member(
+        identity.tenant_id, identity.user_id, group_id, member_id=member_id
+    )
+
+
+@router.get("/groups/{group_id}/messages")
+async def list_assistant_group_messages(
+    group_id: str, identity: Reader, assistant: Service
+) -> list[AssistantGroupMessage]:
+    return await assistant.list_assistant_group_messages(
+        identity.tenant_id, identity.user_id, group_id
+    )
+
+
+@router.post("/groups/{group_id}/messages", status_code=201)
+async def post_assistant_group_message(
+    group_id: str, body: GroupMessageRequest, identity: Writer, assistant: Service
+) -> GroupPostResult:
+    return await assistant.post_assistant_group_message(
+        identity.tenant_id,
+        identity.user_id,
+        group_id,
+        text=body.text,
+        client_message_id=body.client_message_id,
+    )
