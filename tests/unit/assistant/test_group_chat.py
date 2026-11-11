@@ -228,15 +228,11 @@ async def test_mentioning_a_removed_member_is_a_notice_not_a_run() -> None:
         "t", "u", group.group_id, text="@资料 Bot 还在吗"
     )
     assert any("不在本群" in notice for notice in result.notices)
-    assert all(
-        reply.author is not AssistantGroupMessageAuthor.SPECIALIST
-        for reply in result.replies
-    )
-    # 没有有效收件人时回到未 @ 路径，由主助理接话。
-    assert agui.create_run_with_result.await_count == 1
-    assert agui.create_run_with_result.await_args.kwargs["request"].thread_id == (
-        group_thread_id(group.group_id, "primary")
-    )
+    # 只 @ 了已移出成员：提示明确，但不把消息改派给主助理。
+    assert agui.create_run_with_result.await_count == 0
+    assert len(result.replies) == 1
+    assert result.replies[0].author is AssistantGroupMessageAuthor.SYSTEM
+    assert "不在本群" in result.replies[0].text
 
 
 @pytest.mark.asyncio

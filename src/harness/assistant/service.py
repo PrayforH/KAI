@@ -2634,7 +2634,7 @@ class AssistantService:
 
         replies: list[AssistantGroupMessage] = []
         if mentioned:
-            # 被 @ 的子助理各自以自己的身份回复；主助理不插话、不转述。
+            # 被 @ 的成员各自以自己的身份回复；主助理不插话、不转述。
             prompt = _strip_group_mentions(value, mentionable)
             for member in mentioned:
                 try:
@@ -2659,25 +2659,48 @@ class AssistantService:
                         error,
                     )
                     notices.append(f"@{member.name} 这次没能接话，请稍后重试。")
+        elif notices:
+            # 只 @ 了非成员/已移出成员：明确提示，但不改派给任何人。
+            reply_notice = "这条消息没有发送成功：被 @ 的成员不在本群。"
+            replies.append(
+                await self._append_group_notice(
+                    tenant_id,
+                    user_id,
+                    group_id,
+                    " ".join(notices) or reply_notice,
+                    now,
+                    reply_to_message_id=message.message_id,
+                )
+            )
         else:
             # P1：未 @ 的接话人可配置，默认主助理。接话人被移出后不自动改派。
-            responder = primary_member
+            responder: AssistantGroupMember | None
+            missing_notice: str | None = None
             if group.reply_as not in (None, GROUP_PRIMARY_MEMBER_ID):
                 responder = active_roster.get(group.reply_as)
                 if responder is None:
-                    notice = "配置的接话人已不在本群：这条消息不会自动改派给其他成员。"
-                    notices.append(notice)
-                    replies.append(
-                        await self._append_group_notice(
-                            tenant_id,
-                            user_id,
-                            group_id,
-                            notice,
-                            now,
-                            reply_to_message_id=message.message_id,
-                        )
+                    missing_notice = (
+                        "配置的接话人已不在本群：这条消息不会自动改派给其他成员。"
                     )
-            if responder is not None:
+            else:
+                responder = primary_member
+                if responder is None:
+                    missing_notice = (
+                        "主助理已被移出本群：未 @ 的消息不会改派给其他成员。"
+                    )
+            if missing_notice is not None:
+                notices.append(missing_notice)
+                replies.append(
+                    await self._append_group_notice(
+                        tenant_id,
+                        user_id,
+                        group_id,
+                        missing_notice,
+                        now,
+                        reply_to_message_id=message.message_id,
+                    )
+                )
+            elif responder is not None:
                 try:
                     replies.append(
                         await self._dispatch_group_reply(
@@ -2700,34 +2723,6 @@ class AssistantService:
                         error,
                     )
                     notices.append(f"@{responder.name} 这次没能回复，请稍后重试。")
-            elif group.primary_present:
-                # 配置的接话人缺失、但主助理仍在：保持“不改派”，只提示。
-                notice = "配置的接话人已不在本群：这条消息不会自动改派给主助理。"
-                notices.append(notice)
-                replies.append(
-                    await self._append_group_notice(
-                        tenant_id,
-                        user_id,
-                        group_id,
-                        notice,
-                        now,
-                        reply_to_message_id=message.message_id,
-                    )
-                )
-            else:
-                # 需求 4：主助理不在时绝不改派给其他成员，只留明确提示。
-                notice = "主助理已被移出本群：未 @ 的消息不会改派给其他成员。"
-                notices.append(notice)
-                replies.append(
-                    await self._append_group_notice(
-                        tenant_id,
-                        user_id,
-                        group_id,
-                        notice,
-                        now,
-                        reply_to_message_id=message.message_id,
-                    )
-                )
         return GroupPostResult(
             message=message, replies=tuple(replies), notices=tuple(notices)
         )
