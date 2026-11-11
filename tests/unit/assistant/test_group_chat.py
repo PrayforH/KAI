@@ -1,6 +1,6 @@
 """群聊 P0：花名册、@ 路由、主助理移出与隔离边界。"""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -17,6 +17,7 @@ from harness.assistant.models import (
 )
 from harness.assistant.service import AssistantService, group_thread_id
 from harness.core.errors import ConflictError, NotFoundError
+from harness.core.models import RunStatus
 
 
 def _specialist(specialist_id: str, name: str) -> Specialist:
@@ -142,6 +143,22 @@ class FakeGroupRepository:
             (item for item in self.messages[group_id] if item.message_id == message_id),
             None,
         )
+
+    async def get_group_message(self, tenant_id, user_id, group_id, message_id):
+        for item in self.messages[group_id]:
+            if item.message_id == message_id:
+                return item
+        raise NotFoundError("missing")
+
+    async def set_group_message_run(
+        self, tenant_id, user_id, group_id, message_id, *, run_id
+    ):
+        seats = self.messages[group_id]
+        for index, item in enumerate(seats):
+            if item.message_id == message_id:
+                seats[index] = item.model_copy(update={"run_id": run_id})
+                return
+        raise NotFoundError("missing")
 
     async def get_specialist(self, tenant_id, user_id, specialist_id):
         try:
@@ -423,3 +440,188 @@ async def test_group_history_includes_messages_from_before_join() -> None:
         "t", "u", group.group_id, "gmsg_new"
     )
     assert "入群前的约定" in history
+
+
+@pytest.mark.asyncio
+async def test_history_for_a_seated_member_is_limited_to_before_the_join() -> None:
+    """继续在群里的成员不重复吃历史：只有入群前的消息才是背景。"""
+    service, repo, _ = _service()
+    group = await service.create_assistant_group("t", "u", name="历史群")
+    primary = repo.members[group.group_id][0]
+    joined = primary.joined_at
+    repo.messages[group.group_id].extend(
+        (
+            AssistantGroupMessage(
+                messageId="gmsg_before",
+                groupId=group.group_id,
+                author=AssistantGroupMessageAuthor.USER,
+                authorName="我",
+                text="入群前的约定",
+                status="completed",
+                createdAt=joined - timedelta(seconds=1),
+            ),
+            AssistantGroupMessage(
+                messageId="gmsg_after",
+                groupId=group.group_id,
+                author=AssistantGroupMessageAuthor.USER,
+                authorName="我",
+                text="入群后的指令：请只回复已收到E",
+                status="completed",
+                createdAt=joined + timedelta(seconds=1),
+            ),
+        )
+    )
+    # 只有严格早于入群时间的消息算“入群前”。
+    history = await service._group_history_text(
+        "t", "u", group.group_id, "gmsg_new", member=primary
+    )
+    assert "入群前的约定" in history
+    assert "入群后的指令" not in history
+
+
+@pytest.mark.asyncio
+async def test_unknown_mention_is_a_notice_and_primary_does_not_answer() -> None:
+    """J：@ 一个本群和本人都没有的名字，也要给系统提示，不能由主助理代答。"""
+    service, _, agui = _service()
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    agui.create_run_with_result.reset_mock()
+    result = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="【J】@编码协同 请确认你不在本群"
+    )
+    assert agui.create_run_with_result.await_count == 0
+    assert any("@编码协同 不在本群" in notice for notice in result.notices)
+    assert len(result.replies) == 1
+    assert result.replies[0].author is AssistantGroupMessageAuthor.SYSTEM
+    assert "@编码协同 不在本群" in result.replies[0].text
+
+
+@pytest.mark.asyncio
+async def test_unknown_mention_beside_a_member_still_leaves_a_notice() -> None:
+    specialist = _specialist("specialist_a", "资料 Bot")
+    service, _, agui = _service([specialist])
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    await service.add_assistant_group_member(
+        "t", "u", group.group_id, specialist_id=specialist.specialist_id
+    )
+    result = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="@资料 Bot @编码协同 一起看看"
+    )
+    assert agui.create_run_with_result.await_count == 1
+    assert any("@编码协同 不在本群" in notice for notice in result.notices)
+    notices = [
+        item for item in result.replies
+        if item.author is AssistantGroupMessageAuthor.SYSTEM
+    ]
+    assert len(notices) == 1 and "@编码协同 不在本群" in notices[0].text
+
+
+@pytest.mark.asyncio
+async def test_email_at_sign_is_not_mistaken_for_a_mention() -> None:
+    service, _, agui = _service()
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    agui.create_run_with_result.reset_mock()
+    result = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="发到 ops@example.com 就行"
+    )
+    assert result.notices == ()
+    assert agui.create_run_with_result.await_count == 1  # 未 @，仍由主助理接话
+
+
+@pytest.mark.asyncio
+async def test_continuing_member_prompt_does_not_replay_earlier_instructions() -> None:
+    """I：上一条消息的“只回复已收到E”不能进入下一条的提示词。"""
+    service, _, agui = _service()
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="【E】请只回复「已收到E」"
+    )
+    agui.create_run_with_result.reset_mock()
+    await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="【I】请只回复「已收到I」"
+    )
+    content = agui.create_run_with_result.await_args.kwargs["request"].messages[0].content
+    assert "已收到E" not in content
+    assert "现在要回复的消息" in content
+    assert "已收到I" in content
+
+
+def _run(run_id: str, status: RunStatus, idempotency_key: str):
+    return SimpleNamespace(
+        run_id=run_id, status=status, idempotency_key=idempotency_key
+    )
+
+
+@pytest.mark.asyncio
+async def test_completed_reply_without_text_is_retried_once_in_place() -> None:
+    service, repo, agui = _service()
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    posted = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="收到E"
+    )
+    original = posted.replies[0]
+
+    async def get_run(tenant_id, run_id):
+        if run_id.endswith("-retry"):
+            return _run(run_id, RunStatus.RUNNING, "group-retry")
+        return _run(run_id, RunStatus.SUCCEEDED, "group-original")
+
+    service._runs.get = AsyncMock(side_effect=get_run)
+    service._events.list_after = AsyncMock(return_value=[])
+    agui.create_run_with_result.reset_mock()
+
+    messages = await service.list_assistant_group_messages("t", "u", group.group_id)
+    retried = next(item for item in messages if item.message_id == original.message_id)
+    assert retried.status == "running"
+    assert retried.run_id is not None and retried.run_id.endswith("-retry")
+    request = agui.create_run_with_result.await_args.kwargs["request"]
+    assert request.run_id.endswith("-retry")
+    assert "没有产生任何文字" in request.messages[0].content
+    assert repo.messages[group.group_id][-1].run_id == retried.run_id
+    assert len(repo.messages[group.group_id]) == 2  # 仍是同一个用户消息+同一条占位
+
+    # 第二次轮询只看重试运行，不会继续造运行。
+    agui.create_run_with_result.reset_mock()
+    await service.list_assistant_group_messages("t", "u", group.group_id)
+    assert agui.create_run_with_result.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_empty_reply_after_a_tool_is_not_retried() -> None:
+    """重问可能重复执行工具副作用：已经调用过工具的空结果保留原样。"""
+    service, _, agui = _service()
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    posted = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="收到E"
+    )
+    original = posted.replies[0]
+    service._runs.get = AsyncMock(
+        return_value=_run(original.run_id, RunStatus.SUCCEEDED, "group-original")
+    )
+    service._events.list_after = AsyncMock(
+        return_value=[SimpleNamespace(type="tool.request")]
+    )
+    agui.create_run_with_result.reset_mock()
+    messages = await service.list_assistant_group_messages("t", "u", group.group_id)
+    assert agui.create_run_with_result.await_count == 0
+    assert any(item.text == "这次没有返回文字。" for item in messages)
+
+
+@pytest.mark.asyncio
+async def test_stale_empty_reply_is_not_revived() -> None:
+    service, repo, agui = _service()
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    posted = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="收到E"
+    )
+    original = posted.replies[0]
+    repo.messages[group.group_id][-1] = repo.messages[group.group_id][-1].model_copy(
+        update={"created_at": datetime(2026, 11, 11, tzinfo=UTC)}
+    )
+    service._runs.get = AsyncMock(
+        return_value=_run(original.run_id, RunStatus.SUCCEEDED, "group-original")
+    )
+    service._events.list_after = AsyncMock(return_value=[])
+    agui.create_run_with_result.reset_mock()
+    messages = await service.list_assistant_group_messages("t", "u", group.group_id)
+    assert agui.create_run_with_result.await_count == 0
+    assert any(item.text == "这次没有返回文字。" for item in messages)

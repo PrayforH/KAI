@@ -2910,6 +2910,30 @@ class PostgresAssistantRepository:
             )
             return self._group_message(row) if row is not None else None
 
+    async def set_group_message_run(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        message_id: str,
+        *,
+        run_id: str,
+    ) -> None:
+        """把已有回复占位指向新的运行（空回复自动重问），不新增群消息。"""
+        async with self._context(write=True) as session:
+            await self._require_group(session, tenant_id, user_id, group_id)
+            row = await session.scalar(
+                select(AssistantGroupMessageRow).where(
+                    AssistantGroupMessageRow.group_id == group_id,
+                    AssistantGroupMessageRow.message_id == message_id,
+                    AssistantGroupMessageRow.tenant_id == tenant_id,
+                    AssistantGroupMessageRow.user_id == user_id,
+                )
+            )
+            if row is None:
+                raise NotFoundError("Group message not found")
+            row.run_id = run_id
+
     @staticmethod
     def _group_message(row: AssistantGroupMessageRow) -> AssistantGroupMessage:
         return AssistantGroupMessage(
