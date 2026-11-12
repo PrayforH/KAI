@@ -79,6 +79,9 @@ export function AssistantGroupChat({ groupId, onGroupName }: AssistantGroupChatP
   const [unreadSeed, setUnreadSeed] = useState<number | null>(null);
   const [dividerIndex, setDividerIndex] = useState<number | null>(null);
   const [newPill, setNewPill] = useState(0);
+  /** 花名册/邀请/接话人平时收起，点右上角「⋯」才展开，不占对话区。 */
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsRef = useRef<HTMLDivElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const seenCounts = useRef<Record<string, number>>({});
@@ -114,6 +117,23 @@ export function AssistantGroupChat({ groupId, onGroupName }: AssistantGroupChatP
         item.config?.conversation_thread_id !== PERSONAL_THREAD,
     );
   }, [selected, specialists]);
+
+  // 点面板外面或按 Esc 收起群设置。
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (!settingsRef.current?.contains(event.target as Node)) setSettingsOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSettingsOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [settingsOpen]);
 
   const refreshGroups = useCallback(async () => {
     const list = await listAssistantGroups();
@@ -360,84 +380,98 @@ export function AssistantGroupChat({ groupId, onGroupName }: AssistantGroupChatP
 
   return (
     <section className={styles.chat} aria-label={`群聊 ${selected.name}`}>
-      <header className={styles.toolbar}>
-        <div className={styles.toolbarInner}>
-          <div className={styles.roster}>
-            {selected.members.map((member) => {
-              const role =
-                member.kind === "creator"
-                  ? "创建者"
-                  : member.kind === "primary"
-                    ? "主助理"
-                    : "子助理";
-              return (
-              <span key={member.memberId} className={styles.chip}>
-                {member.name}
-                {/* 花名册里的名字本身就叫「创建者/主助理」时不再重复角色。 */}
-                {member.name !== role && <small>{role}</small>}
-                {member.kind !== "creator" && (
-                  <button
-                    type="button"
-                    title={`移出 ${member.name}`}
-                    aria-label={`移出 ${member.name}`}
-                    disabled={busy}
-                    onClick={() => void handleRemove(member.memberId, member.name)}
-                  >
-                    ×
-                  </button>
-                )}
-              </span>
-              );
-            })}
-            <span className={styles.addRow}>
-              <select
-                value={memberToAdd}
-                disabled={busy || addableSpecialists.length === 0}
-                onChange={(event) => setMemberToAdd(event.target.value)}
-              >
-                <option value="">
-                  {addableSpecialists.length ? "选择子助理…" : "无可添加的子助理"}
-                </option>
-                {addableSpecialists.map((item) => (
-                  <option key={item.specialistId} value={item.specialistId}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className={styles.inviteButton}
-                disabled={!memberToAdd || busy}
-                onClick={() => void handleAdd()}
-              >
-                邀请
-              </button>
-            </span>
-          </div>
-          <label className={styles.replyAs}>
-            未 @ 接话人
-            <select
-              value={selected.replyAs ?? PRIMARY_MEMBER_ID}
-              disabled={busy}
-              onChange={(event) => void handleReplyAs(event.target.value)}
-            >
-              <option value={PRIMARY_MEMBER_ID}>
-                主助理{selected.primaryPresent ? "" : "（已移出）"}
-              </option>
-              {selected.replyAs &&
-                selected.replyAs !== PRIMARY_MEMBER_ID &&
-                !activeSpecialists.some((member) => member.memberId === selected.replyAs) && (
-                  <option value={selected.replyAs}>{selected.replyAs}（已移出）</option>
-                )}
-              {activeSpecialists.map((member) => (
-                <option key={member.memberId} value={member.memberId}>
+      <div className={styles.settings} ref={settingsRef}>
+        <button
+          type="button"
+          className={styles.settingsButton}
+          aria-label="群设置"
+          title="群设置"
+          aria-expanded={settingsOpen}
+          onClick={() => setSettingsOpen((open) => !open)}
+        >
+          ⋯
+        </button>
+        {settingsOpen && (
+          <div className={styles.settingsPanel} role="dialog" aria-label="群设置">
+            <div className={styles.roster}>
+              {selected.members.map((member) => {
+                const role =
+                  member.kind === "creator"
+                    ? "创建者"
+                    : member.kind === "primary"
+                      ? "主助理"
+                      : "子助理";
+                return (
+                <span key={member.memberId} className={styles.chip}>
                   {member.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </header>
+                  {/* 花名册里的名字本身就叫「创建者/主助理」时不再重复角色。 */}
+                  {member.name !== role && <small>{role}</small>}
+                  {member.kind !== "creator" && (
+                    <button
+                      type="button"
+                      title={`移出 ${member.name}`}
+                      aria-label={`移出 ${member.name}`}
+                      disabled={busy}
+                      onClick={() => void handleRemove(member.memberId, member.name)}
+                    >
+                      ×
+                    </button>
+                  )}
+                </span>
+                );
+              })}
+            </div>
+            <div className={styles.settingsRow}>
+              <span className={styles.addRow}>
+                <select
+                  value={memberToAdd}
+                  disabled={busy || addableSpecialists.length === 0}
+                  onChange={(event) => setMemberToAdd(event.target.value)}
+                >
+                  <option value="">
+                    {addableSpecialists.length ? "选择子助理…" : "无可添加的子助理"}
+                  </option>
+                  {addableSpecialists.map((item) => (
+                    <option key={item.specialistId} value={item.specialistId}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className={styles.inviteButton}
+                  disabled={!memberToAdd || busy}
+                  onClick={() => void handleAdd()}
+                >
+                  邀请
+                </button>
+              </span>
+              <label className={styles.replyAs}>
+                未 @ 接话人
+                <select
+                  value={selected.replyAs ?? PRIMARY_MEMBER_ID}
+                  disabled={busy}
+                  onChange={(event) => void handleReplyAs(event.target.value)}
+                >
+                  <option value={PRIMARY_MEMBER_ID}>
+                    主助理{selected.primaryPresent ? "" : "（已移出）"}
+                  </option>
+                  {selected.replyAs &&
+                    selected.replyAs !== PRIMARY_MEMBER_ID &&
+                    !activeSpecialists.some((member) => member.memberId === selected.replyAs) && (
+                      <option value={selected.replyAs}>{selected.replyAs}（已移出）</option>
+                    )}
+                  {activeSpecialists.map((member) => (
+                    <option key={member.memberId} value={member.memberId}>
+                      {member.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
+        )}
+      </div>
       <div
         className={styles.timeline}
         ref={timelineRef}
