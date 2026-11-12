@@ -51,4 +51,18 @@ describe("group chats live in the main assistant surface", () => {
       expect(groupChat).toContain(capability);
     }
   });
+
+  it("reuses the assistant conversation look without forwarding entries", () => {
+    // 输入框占位与主助理会话同一套：给 {群名} 发消息。
+    expect(groupChat).toContain("`给 ${selected.name} 发消息`");
+    // 群聊是共享会话，不做单聊那种转发/转交。
+    expect(groupChat).not.toContain("消息来自");
+    expect(groupChat).not.toContain("已发消息给");
+    expect(groupChat).not.toContain("转发");
+    expect(groupChat).not.toContain("转交");
+    // 对话区分隔与未读提示。
+    expect(groupChat).toContain("styles.stamp");
+    expect(groupChat).toContain("styles.unreadLine");
+    expect(groupChat).toContain("条新消息");
+  });
 });

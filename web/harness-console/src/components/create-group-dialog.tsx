@@ -46,14 +46,19 @@ export function CreateGroupDialog({
   };
 
   const submit = async () => {
-    if (!name.trim() || busy || !ready) return;
+    // 建群不依赖花名册：名单还在加载或加载失败时也能先建成“创建者+主助理”的群。
+    if (!name.trim() || busy) return;
     setBusy(true);
     setSubmitError(null);
     try {
       const group = await createAssistantGroup(name.trim());
-      for (const specialistId of selected) {
-        await addAssistantGroupMember(group.groupId, specialistId);
-      }
+      // 群已经建好就要进群；个别成员邀请失败不能让整次创建看起来失败，
+      // 否则重试会再建一个群。失败的人进群后在花名册里再拉即可。
+      await Promise.allSettled(
+        [...selected].map((specialistId) =>
+          addAssistantGroupMember(group.groupId, specialistId),
+        ),
+      );
       onCreated(group.groupId);
     } catch (reason) {
       setSubmitError(reason instanceof Error ? reason.message : "创建群聊失败");
@@ -89,7 +94,9 @@ export function CreateGroupDialog({
           <legend>拉入子助理（可多选）</legend>
           {!ready ? (
             <span className={styles.empty}>
-              {error ? "子助理加载失败，请点下方“重试”。" : "正在加载子助理…"}
+              {error
+                ? "子助理加载失败，请点下方“重试”；也可以先建群，进群后再拉人。"
+                : "正在加载子助理…也可以先建群，进群后再拉人。"}
             </span>
           ) : specialists.length === 0 ? (
             <span className={styles.empty}>还没有可拉入的子助理，可先只建创建者+主助理的群。</span>
@@ -124,10 +131,10 @@ export function CreateGroupDialog({
           <button
             type="button"
             className={styles.primary}
-            disabled={!name.trim() || busy || !ready}
+            disabled={!name.trim() || busy}
             onClick={() => void submit()}
           >
-            {busy ? "正在创建…" : ready ? "创建群聊" : "加载中…"}
+            {busy ? "正在创建…" : "创建群聊"}
           </button>
         </div>
       </div>
