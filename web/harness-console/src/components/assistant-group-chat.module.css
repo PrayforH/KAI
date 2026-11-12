@@ -261,8 +261,9 @@
 }
 /* 用户消息与助理页同一颗 Bot 气泡色。 */
 .messageUser .bubble {
-  width: fit-content;
-  max-width: min(82%, 40rem);
+  /* max-content 避免“自测-发送-010330”这类无空格文本被压成一两个字宽。 */
+  width: max-content;
+  max-width: 100%;
   padding: 10px 14px;
   border: 0;
   border-radius: 18px;
