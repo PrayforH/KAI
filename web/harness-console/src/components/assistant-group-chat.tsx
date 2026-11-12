@@ -68,6 +68,8 @@ export function AssistantGroupChat({ groupId, onGroupName }: AssistantGroupChatP
   const [groups, setGroups] = useState<AssistantGroup[]>([]);
   const [specialists, setSpecialists] = useState<Specialist[]>([]);
   const [messages, setMessages] = useState<GroupMessage[]>([]);
+  /** 首轮消息还没回来时不要先闪一句「还没有消息」。 */
+  const [messagesReady, setMessagesReady] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -178,6 +180,7 @@ export function AssistantGroupChat({ groupId, onGroupName }: AssistantGroupChatP
         const list = await listAssistantGroupMessages(groupId);
         if (cancelled) return;
         setMessages(list);
+        setMessagesReady(true);
         setError(null);
         if (
           !atBottom.current &&
@@ -204,7 +207,10 @@ export function AssistantGroupChat({ groupId, onGroupName }: AssistantGroupChatP
             .catch(() => undefined);
         }
       } catch (reason) {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : "消息加载失败");
+        if (!cancelled) {
+          setMessagesReady(true);
+          setError(reason instanceof Error ? reason.message : "消息加载失败");
+        }
       }
     };
     void load();
@@ -490,7 +496,7 @@ export function AssistantGroupChat({ groupId, onGroupName }: AssistantGroupChatP
               {error && <div className={styles.error}>{error}</div>}
             </div>
           )}
-          {orderedMessages.length === 0 && (
+          {messagesReady && orderedMessages.length === 0 && (
             <div className={styles.empty}>还没有消息，打个招呼吧。</div>
           )}
           {orderedMessages.map((message, index) => {
