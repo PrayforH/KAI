@@ -1,12 +1,13 @@
-/* 群会话沿用主助理对话区的视觉：居中阅读列、右侧灰色用户气泡、
-   左侧无气泡的成员回复，以及同款底部输入框。 */
+/* 群会话沿用主助理对话区的视觉：居中阅读列、右侧用户气泡、
+   左侧无气泡的成员回复，以及同款底部输入框。
+   颜色全部走 codex 主题变量，深浅两套主题都跟主界面一致。 */
 
 .chat {
   height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  color: #25302c;
+  color: var(--codex-ink-soft, #d2d2d2);
 }
 
 .empty {
@@ -14,7 +15,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #6b746e;
+  color: var(--codex-muted, #a3a3a3);
   font-size: 13px;
   padding: 24px;
   text-align: center;
@@ -24,8 +25,7 @@
 .toolbar {
   flex: none;
   padding: 8px 24px;
-  border-bottom: 1px solid #e1e4df;
-  background: #f7f8f6;
+  border-bottom: 1px solid var(--codex-line, #343434);
 }
 .toolbarInner {
   width: 100%;
@@ -49,51 +49,58 @@
   gap: 6px;
   padding: 3px 9px;
   border-radius: 999px;
-  border: 1px solid #e1e4df;
-  background: #fff;
-  color: #3d453f;
+  border: 1px solid var(--codex-line, #343434);
+  background: var(--codex-surface-raised, #242424);
+  color: var(--codex-ink-soft, #d2d2d2);
   font-size: 12px;
   line-height: 1.5;
 }
-.chip small { color: #6b746e; font-size: 11px; }
+.chip small { color: var(--codex-muted, #a3a3a3); font-size: 11px; }
 .chip button {
   border: 0;
   background: transparent;
-  color: #8a938c;
+  color: var(--codex-faint, #727272);
   cursor: pointer;
   font-size: 14px;
   line-height: 1;
   padding: 0 2px;
 }
-.chip button:hover { color: #c0392b; }
+.chip button:hover { color: var(--codex-danger, #e05a50); }
 .addRow { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
-.replyAs { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #6b746e; white-space: nowrap; }
+.replyAs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--codex-muted, #a3a3a3);
+  white-space: nowrap;
+}
 
 .addRow select,
 .replyAs select {
-  border: 1px solid #d4d8d3;
+  border: 1px solid var(--codex-line-strong, #474747);
   border-radius: 8px;
-  background: #fff;
-  color: #3d453f;
+  background: var(--codex-surface-raised, #242424);
+  color: var(--codex-ink, #f5f5f5);
   font: inherit;
   font-size: 12px;
   padding: 4px 8px;
   outline: none;
 }
 .addRow select:focus-visible,
-.replyAs select:focus-visible { border-color: #b7bcb8; }
+.replyAs select:focus-visible { border-color: var(--codex-muted, #a3a3a3); }
 .inviteButton {
-  border: 1px solid #d4d8d3;
+  border: 1px solid var(--codex-line-strong, #474747);
   border-radius: 8px;
-  background: #fff;
-  color: #3d453f;
+  background: transparent;
+  color: var(--codex-ink-soft, #d2d2d2);
   font: inherit;
   font-size: 12px;
   padding: 4px 10px;
   cursor: pointer;
   white-space: nowrap;
 }
-.inviteButton:hover:not(:disabled) { border-color: #b7bcb8; background: #f2f4f1; }
+.inviteButton:hover:not(:disabled) { background: var(--codex-surface-hover, #303030); }
 .inviteButton:disabled { opacity: 0.45; cursor: default; }
 
 .bannerStack {
@@ -105,17 +112,17 @@
 .notice {
   padding: 9px 12px;
   border-radius: 10px;
-  background: #fdf6e7;
-  border: 1px solid #f0e0bd;
-  color: #8a6412;
+  background: var(--codex-warning-soft, rgb(207 159 94 / 13%));
+  border: 1px solid var(--codex-warning, #cf9f5e);
+  color: var(--codex-warning, #cf9f5e);
   font-size: 12px;
 }
 .error {
   padding: 9px 12px;
   border-radius: 10px;
-  background: #fdf0ee;
-  border: 1px solid #f1cbc5;
-  color: #a33527;
+  background: var(--codex-danger-soft, rgb(224 90 80 / 13%));
+  border: 1px solid var(--codex-danger, #e05a50);
+  color: var(--codex-danger, #e05a50);
   font-size: 12px;
 }
 
@@ -139,7 +146,7 @@
 .stamp {
   align-self: center;
   font-size: 12px;
-  color: #8a938c;
+  color: var(--codex-faint, #727272);
   padding: 2px 0;
 }
 .unreadLine {
@@ -147,7 +154,7 @@
   align-items: center;
   gap: 10px;
   width: 100%;
-  color: #2f7dd1;
+  color: #6aa9ff;
   font-size: 12px;
   margin: 2px 0;
 }
@@ -156,7 +163,8 @@
   content: "";
   flex: 1;
   height: 1px;
-  background: #d8e4f2;
+  background: currentColor;
+  opacity: 0.35;
 }
 .unreadLine span { font-weight: 600; }
 
@@ -198,15 +206,15 @@
   gap: 6px;
   align-items: center;
   font-size: 11px;
-  color: #8a938c;
+  color: var(--codex-faint, #727272);
 }
 .author strong { font-size: 12px; font-weight: 600; }
 .badge {
   padding: 0 6px;
   border-radius: 999px;
-  border: 1px solid #e1e4df;
-  background: #fff;
-  color: #4d554f;
+  border: 1px solid var(--codex-line, #343434);
+  background: var(--codex-surface-raised, #242424);
+  color: var(--codex-muted, #a3a3a3);
   font-size: 10px;
   line-height: 1.6;
 }
@@ -214,63 +222,68 @@
 .bubble {
   font-size: 14px;
   line-height: 1.68;
-  color: #303531;
+  color: var(--codex-ink-soft, #d2d2d2);
   white-space: pre-wrap;
   word-break: break-word;
 }
-/* 用户消息与助理页同款灰色气泡。 */
+/* 用户消息与助理页同一颗 Bot 气泡色。 */
 .messageUser .bubble {
   width: fit-content;
   max-width: min(82%, 40rem);
   padding: 10px 14px;
-  border: 1px solid #e6e8e4;
-  border-radius: 16px 16px 4px 16px;
-  background: #eceeeb;
-  color: #282c29;
+  border: 0;
+  border-radius: 18px;
+  background: var(--kai-bot-bubble, #126fd4);
+  color: var(--kai-bot-bubble-ink, #fff);
   font-size: 14px;
   line-height: 1.58;
 }
-/* 系统提示、空态、运行中状态都安静地居中显示。 */
+/* 系统提示安静地居中显示。 */
 .messageSystem .bubble,
 .messageSystem .bubble.failed {
   padding: 4px 10px;
   border-radius: 999px;
-  background: #f0f2ef;
-  color: #6b746e;
+  background: var(--codex-surface-subtle, #1b1b1b);
+  color: var(--codex-muted, #a3a3a3);
   font-size: 12px;
   text-align: center;
 }
+.messageSystem .bubble.failed { color: var(--codex-danger, #e05a50); }
+.running { color: var(--codex-muted, #a3a3a3); font-style: italic; }
+.failed { color: var(--codex-danger, #e05a50); }
+
 /* @ 某人渲染成芯片，和正文区分开。 */
 .mentionChip {
   display: inline-block;
   margin: 0 1px;
   padding: 0 5px;
   border-radius: 6px;
-  background: #fff1dd;
-  color: #a86400;
+  background: rgb(255 166 0 / 18%);
+  color: #ffb45e;
   font-size: 13px;
   line-height: 1.6;
 }
-.messageSystem .mentionChip { background: #eef2ed; color: #6b746e; }
-
-.running { color: #6b746e; font-style: italic; }
-.failed { color: #a33527; }
+.messageUser .mentionChip { background: rgb(255 255 255 / 20%); color: inherit; }
+.messageSystem .mentionChip { background: var(--codex-accent-soft, rgb(255 255 255 / 10%)); }
 
 .reactionRow { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 .messageUser .reactionRow { justify-content: flex-end; }
 .reactionChip,
 .reactionAdd,
 .reactionPicker button {
-  border: 1px solid #e1e4df;
-  background: #fff;
-  color: #4d554f;
+  border: 1px solid var(--codex-line, #343434);
+  background: transparent;
+  color: var(--codex-muted, #a3a3a3);
   border-radius: 999px;
   font-size: 12px;
   line-height: 1;
   padding: 3px 7px;
   cursor: pointer;
 }
-.reactionChipOn { background: #eef2ed; border-color: #cfd8d1; }
+.reactionChipOn {
+  background: var(--codex-accent-soft, rgb(255 255 255 / 10%));
+  border-color: var(--codex-line-strong, #474747);
+}
 .reactionAdd { opacity: 0.55; }
 .reactionRow:hover .reactionAdd,
 .reactionAdd:focus-visible { opacity: 1; }
@@ -279,14 +292,14 @@
   gap: 2px;
   padding: 3px;
   border-radius: 999px;
-  border: 1px solid #e1e4df;
-  background: #fff;
-  box-shadow: 0 6px 18px rgb(31 36 32 / 10%);
+  border: 1px solid var(--codex-line, #343434);
+  background: var(--codex-surface-raised, #242424);
+  box-shadow: var(--codex-shadow-soft, 0 8px 28px rgb(0 0 0 / 24%));
 }
 .reactionPicker button { border: none; font-size: 14px; padding: 2px 4px; }
-.reactionPicker button:hover { background: #f2f4f1; border-radius: 999px; }
+.reactionPicker button:hover { background: var(--codex-surface-hover, #303030); border-radius: 999px; }
 
-/* 底部输入框：与主助理 composer 同款白色圆角卡片。 */
+/* 底部输入框：与主助理 composer 同款圆角卡片。 */
 .composer { flex: none; padding: 8px 24px 14px; }
 .composerInner {
   width: 100%;
@@ -306,18 +319,18 @@
 }
 .newPillJump,
 .newPillClose {
-  border: 1px solid #cfd8d1;
+  border: 1px solid var(--codex-line-strong, #474747);
   border-radius: 999px;
-  background: #fff;
-  color: #3d453f;
+  background: var(--codex-surface-raised, #242424);
+  color: var(--codex-ink, #f5f5f5);
   font: inherit;
   font-size: 12px;
   padding: 5px 12px;
   cursor: pointer;
-  box-shadow: 0 6px 18px rgb(31 36 32 / 10%);
+  box-shadow: var(--codex-shadow-soft, 0 8px 28px rgb(0 0 0 / 24%));
 }
 .newPillJump:hover,
-.newPillClose:hover { background: #f2f4f1; }
+.newPillClose:hover { background: var(--codex-surface-hover, #303030); }
 .newPillClose { padding: 5px 9px; }
 
 .mentionBar {
@@ -326,63 +339,28 @@
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #6b746e;
+  color: var(--codex-muted, #a3a3a3);
 }
 .mentionButton {
-  border: 1px solid #e1e4df;
+  border: 1px solid var(--codex-line, #343434);
   border-radius: 999px;
-  background: #fff;
-  color: #3d453f;
+  background: transparent;
+  color: var(--codex-ink-soft, #d2d2d2);
   font: inherit;
   font-size: 12px;
   padding: 3px 9px;
   cursor: pointer;
 }
-.mentionButton:hover { background: #f2f4f1; border-color: #cfd8d1; }
-.inputShell {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  min-height: 58px;
-  padding: 8px 10px 8px 14px;
-  border: 1px solid #d4d8d3;
-  border-radius: 16px;
-  background: #fff;
-  box-shadow: 0 9px 30px rgb(31 36 32 / 9%), 0 1px 2px rgb(31 36 32 / 4%);
+.mentionButton:hover { background: var(--codex-surface-hover, #303030); }
+.hint { font-size: 11px; color: var(--codex-faint, #727272); text-align: center; }
+
+/* 浅色主题下少数彩色元素保持原来的浅底深字。 */
+:global(html[data-color-mode="light"]) .mentionChip {
+  background: #fff1dd;
+  color: #a86400;
 }
-.inputShell:focus-within {
-  border-color: #b7bcb8;
-  box-shadow: 0 0 0 1px #b7bcb8, 0 9px 30px rgb(31 36 32 / 9%);
+:global(html[data-color-mode="light"]) .messageUser .mentionChip {
+  background: rgb(255 255 255 / 24%);
+  color: inherit;
 }
-.inputShell textarea {
-  flex: 1;
-  min-width: 0;
-  min-height: 40px;
-  max-height: 180px;
-  resize: none;
-  border: 0;
-  background: transparent;
-  color: #292e2a;
-  font: inherit;
-  font-size: 14px;
-  line-height: 1.5;
-  padding: 10px 2px;
-  outline: none;
-}
-.inputShell textarea::placeholder { color: #8a938c; }
-.sendButton {
-  flex: none;
-  min-width: 62px;
-  min-height: 38px;
-  border: 0;
-  border-radius: 10px;
-  background: #282d29;
-  color: #fff;
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.sendButton:hover:not(:disabled) { background: #3a413c; }
-.sendButton:disabled { opacity: 0.45; cursor: default; }
-.hint { font-size: 11px; color: #8a938c; text-align: center; }
+:global(html[data-color-mode="light"]) .unreadLine { color: #2f7dd1; }
