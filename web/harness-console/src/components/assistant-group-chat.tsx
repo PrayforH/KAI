@@ -613,33 +613,47 @@ export function AssistantGroupChat({ groupId, onGroupName }: AssistantGroupChatP
               ))}
             </div>
           )}
-          <div className={styles.inputShell}>
-            <textarea
-              ref={composerRef}
-              value={draft}
-              rows={1}
-              placeholder={
-                selected.primaryPresent
-                  ? `给 ${selected.name} 发消息`
-                  : "主助理已移出：未 @ 的消息不会改派，请 @ 子助理"
-              }
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  void handleSend();
+          {/* 直接复用主助理 composer 的样式：外壳、输入框和发送键都走
+              harness-composer-shell / aui-composer-*，深浅主题自动跟随。 */}
+          <div className="harness-composer-shell">
+            <div className="aui-composer-root">
+              <textarea
+                ref={composerRef}
+                className="aui-composer-input"
+                value={draft}
+                rows={1}
+                placeholder={
+                  selected.primaryPresent
+                    ? `给 ${selected.name} 发消息`
+                    : "主助理已移出：未 @ 的消息不会改派，请 @ 子助理"
                 }
-              }}
-            />
-            <button
-              type="button"
-              className={styles.sendButton}
-              aria-label="发送"
-              disabled={!draft.trim() || busy}
-              onClick={() => void handleSend()}
-            >
-              {busy ? "发送中…" : "发送"}
-            </button>
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    void handleSend();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="aui-composer-send"
+                aria-label="发送"
+                title="发送"
+                disabled={!draft.trim() || busy}
+                onClick={() => void handleSend()}
+              >
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M12 19V5M12 5l-6 6M12 5l6 6"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            </div>
           </div>
           <span className={styles.hint}>
             Enter 发送 · Shift+Enter 换行 · 消息与回复只保存在本群
