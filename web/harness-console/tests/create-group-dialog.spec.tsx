@@ -95,7 +95,8 @@ describe("create group dialog uses the rail's specialist list", () => {
     expect(onCreated).toHaveBeenCalledWith("grp_new");
   });
 
-  it("keeps creating disabled and shows loading while the rail list is not ready", async () => {
+  it("still creates while the rail list is loading", async () => {
+    const onCreated = vi.fn();
     await act(async () => {
       root!.render(
         <CreateGroupDialog
@@ -104,14 +105,46 @@ describe("create group dialog uses the rail's specialist list", () => {
           error={null}
           onRetry={vi.fn()}
           onClose={vi.fn()}
-          onCreated={vi.fn()}
+          onCreated={onCreated}
         />,
       );
     });
     expect(text()).toContain("正在加载子助理");
+    expect(text()).toContain("也可以先建群");
     expect(text()).not.toContain("还没有可拉入的子助理");
     await typeName("演示群");
-    expect(byText("加载中…").disabled).toBe(true);
+    // 名单没加载完也不能让「创建群聊」点不动。
+    expect(byText("创建群聊").disabled).toBe(false);
+    await act(async () => byText("创建群聊").click());
+    await act(async () => {});
+    expect(createGroup).toHaveBeenCalledWith("演示群");
+    expect(onCreated).toHaveBeenCalledWith("grp_new");
+  });
+
+  it("enters the group even when a member invitation fails", async () => {
+    addMember.mockRejectedValue(new Error("成员邀请失败"));
+    const onCreated = vi.fn();
+    await act(async () => {
+      root!.render(
+        <CreateGroupDialog
+          specialists={bots}
+          ready
+          error={null}
+          onRetry={vi.fn()}
+          onClose={vi.fn()}
+          onCreated={onCreated}
+        />,
+      );
+    });
+    await act(async () => {
+      (host.querySelector("input[type='checkbox']") as HTMLInputElement).click();
+    });
+    await typeName("演示群");
+    await act(async () => byText("创建群聊").click());
+    await act(async () => {});
+    // 群已建成：不能让整次创建显示失败，否则重试会再建一个重复群。
+    expect(onCreated).toHaveBeenCalledWith("grp_new");
+    expect(text()).not.toContain("成员邀请失败");
   });
 
   it("shows a clear failure with retry instead of an empty state", async () => {
@@ -130,6 +163,9 @@ describe("create group dialog uses the rail's specialist list", () => {
     });
     expect(text()).toContain("子助理加载失败");
     expect(text()).not.toContain("还没有可拉入的子助理");
+    await typeName("演示群");
+    // 名单失败也不挡住建群，仍可只建创建者+主助理的群。
+    expect(byText("创建群聊").disabled).toBe(false);
     await act(async () => byText("重试").click());
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
