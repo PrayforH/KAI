@@ -271,3 +271,20 @@ F、G、H、K、L 保持通过。根因与改动如下，仅在 116 发布，79 
   通过；本地 `next start` 连 79 API 实测：左侧「+」→「创建群聊」可开、
   填名即建、创建后停在 `/assistant?group=…` 主界面；旧
   `/assistant/groups?group=…` 静默跳回主界面；发消息、@ 芯片、时间分隔正常。
+
+## 群聊主题与输入框复用（2026-11-12，已发 79 Web）
+
+- **深色主题适配**：群会话原先写死浅色，深色模式下成员正文和后输入框与背景
+  同色。CSS module 改为全部走 `--codex-*` 主题变量，少量彩色元素（@ 芯片、
+  「新」分割线）用 `html[data-color-mode="light"]` 单独覆盖；深/浅两套都跟
+  主界面一致。
+- **输入框复用**：不再自写 input shell，直接使用主助理的
+  `harness-composer-shell` / `aui-composer-root` / `aui-composer-input` /
+  `aui-composer-send`，样式与主界面完全同源（含 22px 圆角、发送按钮）。
+- 自测：`npm test` 285 文件 / 1748 通过；`npx tsc --noEmit`、`npm run build`
+  通过；本地密/浅两套截图与主助理 composer 一致。
+- 发布：79 Web 镜像 `kai/alignment-web:groupchat-embed2-20261112-79`
+  （revision `2c8e58e5`），API/worker/DB/116 均未动；alembic 仍 `0074`。
+  真机自测新建群 `自测-主题-083510`：左栏「+」→创建群聊直接建成并停在
+  主界面，占位「给 自测-主题-083510 发消息」，发消息后主助理在同群回复；
+  旧 `/assistant/groups?group=…` 跳回主界面；深/浅主题均正常，无 JS 报错。
