@@ -65,4 +65,12 @@ describe("group chats live in the main assistant surface", () => {
     expect(groupChat).toContain("styles.unreadLine");
     expect(groupChat).toContain("条新消息");
   });
+
+  it("keeps the roster behind the group settings toggle", () => {
+    // 花名册/邀请/接话人默认收起，对话区上方不再有一条工具条。
+    expect(groupChat).toContain('aria-label="群设置"');
+    expect(groupChat).toContain("styles.settingsPanel");
+    expect(groupChat).toContain("aria-expanded={settingsOpen}");
+    expect(groupChat).not.toContain("styles.toolbarInner");
+  });
 });
