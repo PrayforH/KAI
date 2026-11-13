@@ -130,7 +130,7 @@ export function AssistantGroupMessage({
             <span>{groupTimeLabel(message.createdAt)}</span>
           </div>
           {quote}
-          <div className={`${styles.userBubble} ${failed ? styles.failedBubble : ""}`}>{body}</div>
+          <div className={`${styles.userBubble} ${failed ? styles.failedBubble : ""}`} data-message-body="true">{body}</div>
           {attachments}
           {actions}
         </div>
@@ -150,7 +150,7 @@ export function AssistantGroupMessage({
           <span>{groupTimeLabel(message.createdAt)}</span>
         </div>
         {quote}
-        <div className={`${styles.memberBody} ${failed ? styles.failed : ""}`}>{body}</div>
+        <div className={`${styles.memberBody} ${failed ? styles.failed : ""}`} data-message-body="true">{body}</div>
         {attachments}
         {actions}
       </div>

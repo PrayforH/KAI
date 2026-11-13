@@ -1579,7 +1579,7 @@ export function AssistantResponse({ text, streaming }: { text: string; streaming
   useResponseMotion(response, Boolean(text));
   if (!text) return null;
   return (
-    <div ref={response} className="assistant-answer" data-streaming={streaming ? "true" : "false"} aria-busy={streaming}>
+    <div ref={response} className="assistant-answer" data-streaming={streaming ? "true" : "false"} data-message-body="true" aria-busy={streaming}>
       <TextMessagePartProvider text={text} isRunning={streaming}>
         <MarkdownText />
       </TextMessagePartProvider>
