@@ -84,6 +84,29 @@ describe("AssistantGroupComposer", () => {
     expect(host.querySelector<HTMLButtonElement>('[aria-label="发送"]')!.disabled).toBe(true);
   });
 
+  it("grows to five lines and then scrolls internally at 130px", async () => {
+    await act(async () => root!.render(<Harness />));
+    const input = host.querySelector<HTMLTextAreaElement>("textarea")!;
+    // jsdom 不做排版，用可控的 scrollHeight 模拟内容实际高度。
+    let scrollHeight = 0;
+    Object.defineProperty(input, "scrollHeight", {
+      configurable: true,
+      get: () => scrollHeight,
+    });
+
+    // 5 行 = 22 × 5 + 上下内边距 20 = 130px，正好到上限，仍不滚动。
+    scrollHeight = 130;
+    await type("第五行");
+    expect(input.style.height).toBe("130px");
+    expect(input.style.overflowY).toBe("hidden");
+
+    // 超过 5 行后封顶在 130px，改为内部滚动，不再把外框撑高。
+    scrollHeight = 240;
+    await type("第八行\n第八行\n第八行");
+    expect(input.style.height).toBe("130px");
+    expect(input.style.overflowY).toBe("auto");
+  });
+
   it("enables send once there is text and calls onSend on Enter", async () => {
     const onSend = vi.fn();
     await act(async () => root!.render(<Harness onSend={onSend} />));

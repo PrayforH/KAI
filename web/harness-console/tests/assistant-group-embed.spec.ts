@@ -116,7 +116,8 @@ describe("group chats live in the main assistant surface", () => {
 
   it("has a one-line composer with a quote bar and a capped textarea", () => {
     expect(composer).toContain("rows={1}");
-    expect(composer).toContain("MAX_HEIGHT = 110");
+    // 5 行封顶：22 × 5 + 上下内边距 20 = 130px。
+    expect(composer).toContain("MAX_HEIGHT = 130");
     expect(composer).toContain("event.shiftKey");
     expect(composer).toContain('aria-label="取消引用"');
     expect(composer).toContain('aria-label="提到群成员"');

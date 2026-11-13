@@ -44,8 +44,8 @@ type AssistantGroupComposerProps = {
 const LINE_HEIGHT = 22;
 const PADDING_Y = 20;
 const MIN_HEIGHT = LINE_HEIGHT + PADDING_Y;
-/** 与 CSS 的 max-height 一致：超过后输入框内部滚动，不再撑高。 */
-const MAX_HEIGHT = 110;
+/** 与 CSS 的 max-height 一致：5 行（22 × 5）加上下内边距 20 = 130，超过后内部滚动，不再撑高。 */
+const MAX_HEIGHT = 130;
 const MAX_ATTACHMENTS = 10;
 
 function PlusIcon() {
