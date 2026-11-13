@@ -58,9 +58,9 @@ describe("live status column", () => {
     const css = readFileSync(join(process.cwd(), "src/app/assistant-conversation.css"), "utf8");
     const rule = css.slice(css.indexOf(".assistant-message-tail-slot"));
     const block = rule.slice(0, rule.indexOf("}"));
-    // 输入框列是 width:min(800px,100%) + margin-inline:auto；状态行必须同列，
+    // 输入框列是 width:min(1100px,100%) + margin-inline:auto；状态行必须同列，
     // 否则窗口一宽就贴到最左边。
-    expect(block).toContain("min(800px, 100%)");
+    expect(block).toContain("min(1100px, 100%)");
     expect(block).toContain("margin-inline: auto");
     expect(block).not.toMatch(/width:\s*100%/);
   });

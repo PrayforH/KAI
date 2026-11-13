@@ -986,7 +986,8 @@ function AuthenticatedHome() {
           data-assistant-rail-open={assistantRailOpen || undefined}
           aria-hidden={compactTaskSidebar && taskSidebarOpen ? true : undefined}
         >
-          <header className="console-header">
+          {/* 助理面（群聊 / 单助理）取消顶栏：没有标题、图标、分隔线和阴影，内容直接顶到最上。 */}
+          {!assistantView && <header className="console-header">
             <div className="header-leading">
               {!taskSidebarOpen && (
                 <>
@@ -1106,7 +1107,7 @@ function AuthenticatedHome() {
                 }}
               />}
             </div>
-          </header>
+          </header>}
           <AssistantComputerPane open={assistantView && computerOpen}
             botId={botParam ?? null} onClose={() => showComputer(false)}>
           <section
@@ -1115,6 +1116,30 @@ function AuthenticatedHome() {
             style={botAppearanceVars(bot?.appearance?.color ?? botAccent(bot?.specialistId ?? "")) as React.CSSProperties}
             aria-label={groupParam ? "群聊对话" : personalAssistant ? "我的助理对话" : "Agent 任务对话"}
           >
+            {assistantView && !groupParam && (
+              <div className="assistant-floating-controls">
+                <button
+                  type="button"
+                  className="header-icon-button"
+                  aria-label={bot?.name ? `${bot.name} 的聊天记录` : "聊天记录"}
+                  aria-expanded={historyOpen}
+                  title="聊天记录"
+                  onClick={() => setHistoryOpen((current) => !current)}
+                >
+                  <SidebarIcon name="history" />
+                </button>
+                <SidebarPanelToggle
+                  expanded={botSideOpen}
+                  surface={botParam ? "bot" : "primary"}
+                  onToggle={() => {
+                    showComputer(false);
+                    setTaskRailOpen(false);
+                    setBotSideOpen((current) => !current);
+                    setRailExpanded(false);
+                  }}
+                />
+              </div>
+            )}
             {groupParam ? (
               <div className="chat-surface">
                 <AssistantGroupChat

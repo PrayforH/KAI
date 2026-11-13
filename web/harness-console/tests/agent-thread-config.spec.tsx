@@ -221,9 +221,10 @@ it("only edits the latest user turn and allows unchanged text to start a new run
   expect(agentThreadSource).toContain('className="user-message-editor"');
   expect(agentThreadSource).toContain("MessageEditorContext.Provider");
   expect(agentThreadSource).toContain("isLatestUserMessage");
-  // 编辑入口在任务页保留；助理面这条侧边栏只留复制与回复。
+  // 编辑入口在任务页保留；助理面这条侧边栏只留复制、回复、表情与删除。
+  expect(agentThreadSource).toContain("const messageActions = assistantSurface ? (");
   expect(agentThreadSource).toContain(
-    "{!assistantSurface && isLatestUserMessage && !threadRunning && !sensitive ? (",
+    "{isLatestUserMessage && !threadRunning && !sensitive ? (",
   );
   expect(agentThreadSource).toContain("setEditor({ messageId: message.id, draft: displayText })");
   expect(agentThreadSource).toContain("sourceId: message.id");

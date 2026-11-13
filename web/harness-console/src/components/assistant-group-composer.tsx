@@ -1,8 +1,22 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type RefObject } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type RefObject,
+} from "react";
 
 import type { GroupLibraryDocument } from "../lib/assistant-client";
+import {
+  MentionMenu,
+  filterMentionTargets,
+  mentionTrigger,
+  type MentionTarget,
+} from "./mention-picker";
 import styles from "./assistant-group-composer.module.css";
 
 /** 引用条只展示作者与截断后的文本，真正的引用 id 由父组件持有。 */
@@ -11,17 +25,10 @@ export type GroupQuotePreview = {
   text: string;
 };
 
-type MentionTarget = {
-  memberId: string;
-  name: string;
-};
-
 type AssistantGroupComposerProps = {
   value: string;
   onChange: (value: string) => void;
   onSend: () => void;
-  /** 由父组件统一写入草稿；未提供时输入框自己拼接。 */
-  onMention?: (name: string) => void;
   sending: boolean;
   disabled?: boolean;
   placeholder: string;
@@ -29,7 +36,6 @@ type AssistantGroupComposerProps = {
   quoted: GroupQuotePreview | null;
   onClearQuote: () => void;
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
-  hint?: string;
   /** 群资料库文档；「+」里列出可随消息发送的文件。 */
   libraryDocuments?: GroupLibraryDocument[];
   /** 资料库读取状态：读取中或暂时不可用时给准确文案。 */
@@ -58,13 +64,12 @@ function PlusIcon() {
 
 /**
  * 群聊输入框：单行 44px 外框，Shift+Enter 换行，长到约 5 行后内部滚动。
- * 提示文字在卡片外，不占输入框高度；@、+、引用条、附件都在同一块里。
+ * 发送在最左（紧跟 +），中间是 textarea；@、+、引用条、附件都在同一块里。
  */
 export function AssistantGroupComposer({
   value,
   onChange,
   onSend,
-  onMention,
   sending,
   disabled = false,
   placeholder,
@@ -72,7 +77,6 @@ export function AssistantGroupComposer({
   quoted,
   onClearQuote,
   textareaRef,
-  hint,
   libraryDocuments = [],
   libraryStatus = "ready",
   attachmentIds = [],
@@ -81,8 +85,12 @@ export function AssistantGroupComposer({
 }: AssistantGroupComposerProps) {
   const ownRef = useRef<HTMLTextAreaElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const [menu, setMenu] = useState<"mention" | "add" | null>(null);
-  const hintId = useId();
+  const [menu, setMenu] = useState<"add" | null>(null);
+  const [caret, setCaret] = useState(0);
+  const [activeMention, setActiveMention] = useState(0);
+  const [dismissedMention, setDismissedMention] = useState<number | null>(null);
+  const [composing, setComposing] = useState(false);
+  const mentionListId = useId();
 
   const setTextarea = (node: HTMLTextAreaElement | null) => {
     ownRef.current = node;
@@ -114,15 +122,68 @@ export function AssistantGroupComposer({
     };
   }, [menu]);
 
-  const insertMention = (name: string) => {
-    if (onMention) {
-      onMention(name);
-    } else {
-      const spacer = value && !value.endsWith(" ") ? " " : "";
-      onChange(`${value}${spacer}@${name} `);
+  // 输入法组词时不弹面板，避免拼音里的 @ 触发误选。
+  const trigger = composing ? null : mentionTrigger(value, Math.min(caret, value.length));
+  const mentionOpen =
+    Boolean(trigger) &&
+    trigger!.start !== dismissedMention &&
+    members.length > 0 &&
+    !disabled;
+  const filteredMembers = trigger ? filterMentionTargets(members, trigger.query) : [];
+
+  useEffect(() => {
+    setActiveMention(0);
+  }, [trigger?.start, trigger?.query]);
+
+  const chooseMention = (member: MentionTarget) => {
+    if (!trigger) return;
+    const nextCaret = trigger.start + member.name.length + 2;
+    onChange(`${value.slice(0, trigger.start)}@${member.name} ${value.slice(trigger.end)}`);
+    setCaret(nextCaret);
+    setDismissedMention(null);
+    requestAnimationFrame(() => {
+      const node = ownRef.current;
+      node?.focus();
+      node?.setSelectionRange(nextCaret, nextCaret);
+    });
+  };
+
+  const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    const next = event.target.value;
+    const nextCaret = event.target.selectionStart ?? next.length;
+    onChange(next);
+    setCaret(nextCaret);
+    setDismissedMention(null);
+  };
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    // 中文输入法选词也会发 keydown Enter；这时只确认候选词，不能发消息。
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (mentionOpen && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+      event.preventDefault();
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      setActiveMention((index) =>
+        filteredMembers.length ? (index + step + filteredMembers.length) % filteredMembers.length : 0,
+      );
+      return;
     }
-    setMenu(null);
-    requestAnimationFrame(() => ownRef.current?.focus());
+    if (mentionOpen && (event.key === "Enter" || event.key === "Tab")) {
+      const member = filteredMembers[Math.min(activeMention, filteredMembers.length - 1)];
+      if (member) {
+        event.preventDefault();
+        chooseMention(member);
+        return;
+      }
+    }
+    if (mentionOpen && event.key === "Escape") {
+      event.preventDefault();
+      setDismissedMention(trigger?.start ?? null);
+      return;
+    }
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      if (!sending && !disabled) onSend();
+    }
   };
 
   const selectedDocuments = attachmentIds.flatMap((id) => {
@@ -168,35 +229,6 @@ export function AssistantGroupComposer({
           </div>
         )}
         <div className={styles.row}>
-          <div className={styles.toolWrap}>
-            <button
-              type="button"
-              className={styles.toolButton}
-              aria-label="提到群成员"
-              title="提到群成员"
-              aria-haspopup="menu"
-              aria-expanded={menu === "mention"}
-              disabled={disabled || members.length === 0}
-              onClick={() => setMenu((current) => (current === "mention" ? null : "mention"))}
-            >
-              @
-            </button>
-            {menu === "mention" && (
-              <div className={styles.menu} role="menu" aria-label="选择要提到的成员">
-                {members.map((member) => (
-                  <button
-                    key={member.memberId}
-                    type="button"
-                    role="menuitem"
-                    className={styles.menuItem}
-                    onClick={() => insertMention(member.name)}
-                  >
-                    {member.name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
           <div className={styles.toolWrap}>
             <button
               type="button"
@@ -256,25 +288,6 @@ export function AssistantGroupComposer({
               </div>
             )}
           </div>
-          <textarea
-            ref={setTextarea}
-            className={styles.input}
-            value={value}
-            rows={1}
-            placeholder={placeholder}
-            aria-label="消息内容"
-            aria-describedby={hint ? hintId : undefined}
-            disabled={disabled}
-            onChange={(event) => onChange(event.target.value)}
-            onKeyDown={(event) => {
-              // 中文输入法选词也会发 keydown Enter；这时只确认候选词，不能发消息。
-              if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                if (!sending && !disabled) onSend();
-              }
-            }}
-          />
           <button
             type="button"
             className={styles.send}
@@ -294,13 +307,40 @@ export function AssistantGroupComposer({
               />
             </svg>
           </button>
+          <textarea
+            ref={setTextarea}
+            className={styles.input}
+            value={value}
+            rows={1}
+            placeholder={placeholder}
+            aria-label="消息内容"
+            aria-autocomplete="list"
+            aria-controls={mentionOpen ? mentionListId : undefined}
+            aria-expanded={mentionOpen}
+            aria-activedescendant={
+              mentionOpen && filteredMembers[activeMention]
+                ? `${mentionListId}-${activeMention}`
+                : undefined
+            }
+            disabled={disabled}
+            onChange={handleChange}
+            onSelect={(event) => setCaret(event.currentTarget.selectionStart ?? 0)}
+            onBlur={() => setDismissedMention(trigger?.start ?? null)}
+            onCompositionStart={() => setComposing(true)}
+            onCompositionEnd={() => setComposing(false)}
+            onKeyDown={handleKeyDown}
+          />
         </div>
+        {mentionOpen && (
+          <MentionMenu
+            id={mentionListId}
+            members={filteredMembers}
+            activeIndex={activeMention}
+            onChoose={chooseMention}
+            testId="group-mention-menu"
+          />
+        )}
       </div>
-      {hint && (
-        <span className={styles.hint} id={hintId} data-testid="group-composer-hint">
-          {hint}
-        </span>
-      )}
     </div>
   );
 }

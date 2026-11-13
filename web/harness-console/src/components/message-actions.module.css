@@ -1,0 +1,106 @@
+/* 共享消息操作条。群聊传自己的 actions/reactionRow 类保留原浮现时机；
+   单助理用这里的默认样式。 */
+.reactionRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.reactionChip {
+  border: 1px solid var(--codex-line-strong, #474747);
+  border-radius: 999px;
+  background: var(--codex-surface-raised, #242424);
+  color: var(--codex-ink-soft, #d2d2d2);
+  font-size: 12px;
+  line-height: 1;
+  padding: 3px 7px;
+  cursor: pointer;
+}
+.reactionChipOn {
+  background: var(--codex-accent-soft, rgb(255 255 255 / 10%));
+  border-color: var(--codex-muted, #a3a3a3);
+}
+.reactionChip:hover { border-color: var(--codex-faint, #727272); }
+
+.actions {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 1px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.actions:focus-within { opacity: 1; }
+@media (hover: none) {
+  .actions { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .actions { transition: none; }
+}
+
+.actionButtons {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 1px;
+  border-radius: 999px;
+  background: var(--codex-surface-raised, #242424);
+  border: 1px solid var(--codex-line, #343434);
+}
+.actionButton {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--codex-muted, #a3a3a3);
+  cursor: pointer;
+}
+.actionButton svg { width: 15px; height: 15px; display: block; }
+.actionButton:hover:not(:disabled) {
+  background: var(--codex-surface-hover, #303030);
+  color: var(--codex-ink, #f5f5f5);
+}
+.actionButton:focus-visible {
+  outline: 2px solid var(--codex-ink, #f5f5f5);
+  outline-offset: 1px;
+}
+.actionButton:disabled { opacity: 0.4; cursor: default; }
+
+.copyFeedback {
+  font-size: 11px;
+  color: var(--codex-muted, #a3a3a3);
+}
+
+.actionDanger { color: var(--codex-danger, #e05a50); }
+.confirmText { font-size: 10px; line-height: 1; white-space: nowrap; }
+
+.reactionPicker {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  z-index: 8;
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid var(--codex-line-strong, #474747);
+  background: var(--codex-surface-raised, #242424);
+  box-shadow: var(--codex-shadow-soft, 0 8px 28px rgb(0 0 0 / 24%));
+}
+.pickerButton {
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  font-size: 15px;
+  line-height: 1;
+  padding: 3px 5px;
+  cursor: pointer;
+}
+.pickerButton:hover,
+.pickerButtonOn { background: var(--codex-surface-hover, #303030); }

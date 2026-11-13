@@ -534,7 +534,19 @@ export function TaskSidebar({
     >
       {!collapsed && <PanelResizeHandle panel="sidebar" />}
       {collapsed ? (
-        <div className="task-sidebar-rail" />
+        <div className="task-sidebar-rail">
+          {/* 顶栏取消后，收起状态的侧栏仍需一个自己的展开入口。 */}
+          <button
+            type="button"
+            className="task-rail-toggle"
+            aria-label="展开任务列表"
+            aria-expanded="false"
+            title="展开任务列表"
+            onClick={onToggle}
+          >
+            <SidebarCollapseIcon />
+          </button>
+        </div>
       ) : (
         <>
           <div className="task-sidebar-brand">

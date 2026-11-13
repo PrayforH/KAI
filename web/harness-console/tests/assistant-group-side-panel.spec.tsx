@@ -120,11 +120,29 @@ function baseProps() {
 }
 
 describe("AssistantGroupSidePanel", () => {
-  it("shows group activity with the three tabs", async () => {
+  it("shows group activity with the four tabs", async () => {
     await render(<AssistantGroupSidePanel {...baseProps()} />);
-    expect(host.querySelectorAll('[role="tab"]')).toHaveLength(3);
+    expect(host.querySelectorAll('[role="tab"]')).toHaveLength(4);
+    expect(host.textContent).toContain("聊天记录");
     expect(host.textContent).toContain("主助理");
     expect(host.textContent).toContain("已完成评审");
+  });
+
+  it("shows the full message history in the history tab", async () => {
+    await render(
+      <AssistantGroupSidePanel
+        {...baseProps()}
+        tab="history"
+        messages={[
+          message({ messageId: "m1", text: "第一句" }),
+          message({ messageId: "m2", author: "user", authorName: "我", text: "第二句" }),
+        ]}
+      />,
+    );
+    expect(host.querySelector('[aria-label="搜索群聊记录"]')).not.toBeNull();
+    expect(host.textContent).toContain("第一句");
+    expect(host.textContent).toContain("第二句");
+    expect(host.textContent).toContain("我");
   });
 
   it("lists runs in the tasks tab", async () => {
@@ -174,6 +192,39 @@ describe("AssistantGroupSidePanel", () => {
       .find((button) => button.textContent === "绑定")!;
     await act(async () => bind.click());
     expect(props.onBind).toHaveBeenCalledWith("other-kb");
+  });
+
+  it("routes library document downloads through the web /api prefix", async () => {
+    const props = baseProps();
+    const document = {
+      ...library.documents[0],
+      downloadUrl: "/v1/studio/assistant/groups/g1/library/documents/d1/content",
+    };
+    await render(
+      <AssistantGroupSidePanel
+        {...props}
+        tab="library"
+        library={{ ...library, documents: [document] }}
+      />,
+    );
+    const link = host.querySelector<HTMLAnchorElement>('a[title="下载 需求.docx"]')!;
+    expect(link.getAttribute("href")).toBe(
+      "/api/studio/assistant/groups/g1/library/documents/d1/content",
+    );
+  });
+
+  it("renders a plain file name when a document has no download url", async () => {
+    const props = baseProps();
+    const document = { ...library.documents[0], downloadUrl: "" };
+    await render(
+      <AssistantGroupSidePanel
+        {...props}
+        tab="library"
+        library={{ ...library, documents: [document] }}
+      />,
+    );
+    expect(host.querySelector('a[title="下载 需求.docx"]')).toBeNull();
+    expect(host.textContent).toContain("需求.docx");
   });
 
   it("hides the delete action for files uploaded by someone else", async () => {

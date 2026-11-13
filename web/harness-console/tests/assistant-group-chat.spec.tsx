@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -209,5 +211,48 @@ describe("AssistantGroupChat", () => {
     );
     await flush();
     expect(host.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("上次没发完的草稿");
+  });
+
+  it("toggles the side panel and closes it without opening group info", async () => {
+    await act(async () =>
+      root!.render(<AssistantGroupChat groupId="g1" userId="u1" />),
+    );
+    await flush();
+
+    // 头部入口带 aria-expanded；侧栏自己的关闭按钮没有，用它区分同名按钮。
+    const headerToggle = () =>
+      host.querySelector<HTMLButtonElement>('[aria-expanded][aria-label$="群右侧栏"]')!;
+    const aside = () => host.querySelector('aside[aria-label="群右侧栏"]');
+
+    await act(async () => headerToggle().click());
+    await flush();
+    expect(aside()).not.toBeNull();
+    expect(headerToggle().getAttribute("aria-label")).toBe("关闭群右侧栏");
+
+    // 再点一次回到关闭态。
+    await act(async () => headerToggle().click());
+    expect(aside()).toBeNull();
+    expect(headerToggle().getAttribute("aria-label")).toBe("打开群右侧栏");
+
+    // 侧栏自己的 × 只关侧栏，不能触发群信息面板。
+    await act(async () => headerToggle().click());
+    await flush();
+    const close = host.querySelector<HTMLButtonElement>(
+      'aside[aria-label="群右侧栏"] button[aria-label="关闭群右侧栏"]',
+    )!;
+    await act(async () => close.click());
+    expect(aside()).toBeNull();
+    expect(host.querySelector('[role="dialog"][aria-label="群信息"]')).toBeNull();
+  });
+
+  it("anchors the header actions to the chat column so the side panel close stays on top", () => {
+    // jsdom 不做布局，这里守住层级修复的结构前提：⋯ 的绝对定位以 .main 为界，
+    // 不再按 .chat 定位到右侧栏上方。
+    const css = readFileSync(
+      resolve(process.cwd(), "src/components/assistant-group-chat.module.css"),
+      "utf8",
+    );
+    const mainBlock = css.match(/\.main\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(mainBlock).toContain("position: relative");
   });
 });

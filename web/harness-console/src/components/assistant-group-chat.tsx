@@ -92,7 +92,7 @@ export function AssistantGroupChat({
   const [libraryBusy, setLibraryBusy] = useState(false);
   const [availableKnowledgeBases, setAvailableKnowledgeBases] = useState<StudioKnowledgeBase[]>([]);
   const [sideOpen, setSideOpen] = useState(false);
-  const [sideTab, setSideTab] = useState<GroupSideTab>("activity");
+  const [sideTab, setSideTab] = useState<GroupSideTab>("history");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
@@ -391,14 +391,6 @@ export function AssistantGroupChat({
     }
   };
 
-  const insertMention = (name: string) => {
-    setDraft((current) => {
-      const spacer = current && !current.endsWith(" ") ? " " : "";
-      return `${current}${spacer}@${name} `;
-    });
-    requestAnimationFrame(() => composerRef.current?.focus());
-  };
-
   const handleReaction = async (message: GroupMessage, emoji: string) => {
     const next = message.reactions.includes(emoji)
       ? message.reactions.filter((item) => item !== emoji)
@@ -432,8 +424,8 @@ export function AssistantGroupChat({
     requestAnimationFrame(() => composerRef.current?.focus());
   };
 
-  const handleUpdateProfile = async (fields: GroupProfileUpdate): Promise<boolean> => {
-    if (!selected || busy) return false;
+  const handleUpdateProfile = async (fields: GroupProfileUpdate): Promise<string | null> => {
+    if (!selected || busy) return "正在保存，请稍候再试。";
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -442,10 +434,11 @@ export function AssistantGroupChat({
       await refreshGroups();
       // 左侧栏的群名同步刷新。
       window.dispatchEvent(new CustomEvent("kai:groups-changed"));
-      return true;
+      return null;
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "群资料保存失败");
-      return false;
+      const message = reason instanceof Error ? reason.message : "群资料保存失败";
+      setError(message);
+      return message;
     } finally {
       setBusy(false);
     }
@@ -487,7 +480,7 @@ export function AssistantGroupChat({
     }
   };
 
-  const openSidePanel = (tab: GroupSideTab = "activity") => {
+  const openSidePanel = (tab: GroupSideTab = "history") => {
     setSideTab(tab);
     setSideOpen(true);
     setSettingsOpen(false);
@@ -594,10 +587,10 @@ export function AssistantGroupChat({
             <button
               type="button"
               className={styles.settingsButton}
-              aria-label="打开群右侧栏"
-              title="动态 / 任务 / 资料库"
+              aria-label={sideOpen ? "关闭群右侧栏" : "打开群右侧栏"}
+              title="聊天记录 / 动态 / 任务 / 资料库"
               aria-expanded={sideOpen}
-              onClick={() => openSidePanel("activity")}
+              onClick={() => (sideOpen ? setSideOpen(false) : openSidePanel("history"))}
             >
               <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
                 <rect x="3" y="4" width="14" height="12" rx="2.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
@@ -714,7 +707,6 @@ export function AssistantGroupChat({
               value={draft}
               onChange={setDraft}
               onSend={() => void handleSend()}
-              onMention={insertMention}
               sending={busy}
               placeholder={
                 selected.primaryPresent
@@ -724,6 +716,7 @@ export function AssistantGroupChat({
               members={mentionTargets.map((member) => ({
                 memberId: member.memberId,
                 name: member.name,
+                role: member.kind,
               }))}
               quoted={
                 quoted
@@ -735,7 +728,6 @@ export function AssistantGroupChat({
               }
               onClearQuote={() => setQuoted(null)}
               textareaRef={composerRef}
-              hint="Enter 发送 · Shift+Enter 换行 · 消息与回复只保存在本群"
               libraryDocuments={library?.documents ?? []}
               libraryStatus={library ? "ready" : libraryError ? "unavailable" : "loading"}
               attachmentIds={attachmentIds}
@@ -754,6 +746,11 @@ export function AssistantGroupChat({
           tab={sideTab}
           onTabChange={setSideTab}
           onClose={() => setSideOpen(false)}
+          onOpenInfo={() => {
+            // 侧栏收起后再开群信息；两者同占右侧，不同时叠着。
+            setSideOpen(false);
+            setSettingsOpen(true);
+          }}
           library={library}
           libraryLoading={libraryLoading}
           libraryError={libraryError}

@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -32,9 +35,7 @@ type HarnessProps = {
   quoted?: { authorName: string; text: string } | null;
   sending?: boolean;
   onSend?: () => void;
-  onMention?: (name: string) => void;
   onClearQuote?: () => void;
-  hint?: string;
 };
 
 function Harness({
@@ -42,9 +43,7 @@ function Harness({
   quoted = null,
   sending = false,
   onSend = vi.fn(),
-  onMention,
   onClearQuote = vi.fn(),
-  hint,
 }: HarnessProps) {
   const [value, setValue] = useState(initial);
   return (
@@ -52,13 +51,11 @@ function Harness({
       value={value}
       onChange={setValue}
       onSend={onSend}
-      onMention={onMention}
       sending={sending}
       placeholder="给 演示群 发消息"
       members={members}
       quoted={quoted}
       onClearQuote={onClearQuote}
-      hint={hint}
     />
   );
 }
@@ -71,6 +68,7 @@ function type(value: string) {
   )!.set!;
   return act(async () => {
     setter.call(input, value);
+    input.setSelectionRange(value.length, value.length);
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
@@ -82,6 +80,16 @@ describe("AssistantGroupComposer", () => {
     expect(input.rows).toBe(1);
     expect(input.placeholder).toBe("给 演示群 发消息");
     expect(host.querySelector<HTMLButtonElement>('[aria-label="发送"]')!.disabled).toBe(true);
+  });
+
+  it("puts the send button on the left, right after the + control", async () => {
+    await act(async () => root!.render(<Harness />));
+    const input = host.querySelector<HTMLTextAreaElement>("textarea")!;
+    const send = host.querySelector<HTMLButtonElement>('[aria-label="发送"]')!;
+    expect(send.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const buttons = [...input.parentElement!.querySelectorAll("button")];
+    expect(buttons[0]!.getAttribute("aria-label")).toContain("添加附件或知识库");
+    expect(buttons[1]!.getAttribute("aria-label")).toBe("发送");
   });
 
   it("grows to five lines and then scrolls internally at 130px", async () => {
@@ -153,18 +161,76 @@ describe("AssistantGroupComposer", () => {
     expect(onClearQuote).toHaveBeenCalledTimes(1);
   });
 
-  it("inserts a mention from the @ menu", async () => {
-    const onMention = vi.fn();
-    await act(async () => root!.render(<Harness onMention={onMention} />));
-    const trigger = host.querySelector<HTMLButtonElement>('[aria-label="提到群成员"]')!;
-    expect(trigger.disabled).toBe(false);
-    await act(async () => trigger.click());
-    const items = host.querySelectorAll<HTMLButtonElement>(
-      '[aria-label="选择要提到的成员"] button',
+  it("has no @ button and opens the picker by typing @", async () => {
+    await act(async () => root!.render(<Harness />));
+    expect(host.querySelector('[aria-label="提到群成员"]')).toBeNull();
+    await type("请 @");
+    const menu = host.querySelector('[data-testid="group-mention-menu"]')!;
+    expect(menu).not.toBeNull();
+    const options = menu.querySelectorAll('[role="option"]');
+    expect(options).toHaveLength(2);
+    expect(options[0]!.textContent).toContain("主助理");
+    expect(options[1]!.textContent).toContain("Agent 内核");
+    await act(async () => (options[1] as HTMLElement).click());
+    const input = host.querySelector<HTMLTextAreaElement>("textarea")!;
+    // 替换掉光标前的 @ 词，而不是追加到末尾。
+    expect(input.value).toBe("请 @Agent 内核 ");
+  });
+
+  it("filters the picker by the text typed after @", async () => {
+    await act(async () => root!.render(<Harness />));
+    await type("@内");
+    const options = host.querySelectorAll('[role="option"]');
+    expect(options).toHaveLength(1);
+    expect(options[0]!.textContent).toContain("Agent 内核");
+  });
+
+  it("chooses the highlighted member with Enter instead of sending", async () => {
+    const onSend = vi.fn();
+    await act(async () => root!.render(<Harness onSend={onSend} />));
+    await type("@");
+    const input = host.querySelector("textarea")!;
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    });
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    expect(onSend).not.toHaveBeenCalled();
+    expect(input.value).toBe("@Agent 内核 ");
+  });
+
+  it("closes the picker with Escape, then Enter sends", async () => {
+    const onSend = vi.fn();
+    await act(async () => root!.render(<Harness onSend={onSend} />));
+    await type("@");
+    const input = host.querySelector("textarea")!;
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(host.querySelector('[data-testid="group-mention-menu"]')).toBeNull();
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    expect(onSend).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not open the picker while a Chinese IME is composing", async () => {
+    await act(async () => root!.render(<Harness />));
+    const input = host.querySelector("textarea")!;
+    await act(async () => {
+      input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    });
+    await type("@");
+    expect(host.querySelector('[data-testid="group-mention-menu"]')).toBeNull();
+  });
+
+  it("shows an empty state when nothing matches", async () => {
+    await act(async () => root!.render(<Harness />));
+    await type("@不存在");
+    expect(host.querySelector('[data-testid="group-mention-menu"]')!.textContent).toContain(
+      "没有匹配的成员",
     );
-    expect(items).toHaveLength(2);
-    await act(async () => items[1].click());
-    expect(onMention).toHaveBeenCalledWith("Agent 内核");
   });
 
   it("ignores Enter while a Chinese IME is composing", async () => {
@@ -185,11 +251,9 @@ describe("AssistantGroupComposer", () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
-  it("keeps the hint outside the composer card", async () => {
-    await act(async () => root!.render(<Harness hint="Enter 发送" />));
-    const hint = host.querySelector('[data-testid="group-composer-hint"]')!;
-    expect(hint.textContent).toBe("Enter 发送");
-    expect(hint.closest('[data-testid="group-composer-card"]')).toBeNull();
+  it("renders no keyboard hint under the composer", async () => {
+    await act(async () => root!.render(<Harness />));
+    expect(host.querySelector('[data-testid="group-composer-hint"]')).toBeNull();
   });
 
   it("lists group library documents in the + menu and toggles them", async () => {
@@ -255,5 +319,20 @@ describe("AssistantGroupComposer", () => {
         .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     });
     expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("suppresses the textarea focus ring but keeps the composer focus border", () => {
+    // jsdom 不做样式计算，这里守住修复的结构前提：内圈 outline 被压掉，
+    // 焦点提示仍由外层胶囊的 focus-within 边框承担。
+    const css = readFileSync(
+      resolve(process.cwd(), "src/components/assistant-group-composer.module.css"),
+      "utf8",
+    );
+    const inputFocusBlock =
+      css.match(/\.input:focus,\s*\.input:focus-visible\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(inputFocusBlock).toContain("outline: none !important");
+
+    const composerFocusBlock = css.match(/\.composer:focus-within\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(composerFocusBlock).toContain("border-color");
   });
 });

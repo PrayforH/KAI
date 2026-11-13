@@ -13,6 +13,9 @@
 
 /* 对话列；右侧栏打开时并排，不挤压消息阅读列的最小宽度。 */
 .main {
+  /* 右上角 ⋯ 的绝对定位以对话列为界；否则会按 .chat 定位到右侧栏上方，
+     把侧栏的关闭按钮盖住（验收 P2-2）。 */
+  position: relative;
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -103,7 +106,7 @@
 }
 .thread {
   width: 100%;
-  max-width: 820px;
+  max-width: 1100px;
   margin-inline: auto;
   display: flex;
   flex-direction: column;
@@ -142,7 +145,7 @@
 .composerArea { flex: none; padding: 8px 24px 14px; }
 .composerInner {
   width: 100%;
-  max-width: 820px;
+  max-width: 1100px;
   margin-inline: auto;
   display: flex;
   flex-direction: column;

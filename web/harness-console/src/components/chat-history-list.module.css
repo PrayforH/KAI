@@ -1,0 +1,101 @@
+.root { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: var(--codex-surface-hover, #303030);
+}
+.search svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  color: var(--codex-muted, #a3a3a3);
+}
+.search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--codex-ink, #f5f5f5);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.search input::placeholder { color: var(--codex-faint, #727272); }
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--codex-line, #343434);
+  border-radius: 10px;
+  background: var(--codex-surface-raised, #242424);
+  min-width: 0;
+}
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--codex-faint, #727272);
+}
+.meta strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--codex-ink-soft, #d2d2d2);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meta time { flex: none; margin-left: auto; }
+.locate {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--codex-accent, #8ab4f8);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.locate:hover { text-decoration: underline; }
+.text {
+  margin: 0;
+  color: var(--codex-ink-soft, #d2d2d2);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.sub { color: var(--codex-faint, #727272); font-size: 11px; }
+.empty { margin: 0; color: var(--codex-faint, #727272); font-size: 12px; line-height: 1.6; }
+.error {
+  margin: 0;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--codex-danger-soft, rgb(224 90 80 / 13%));
+  border: 1px solid var(--codex-danger, #e05a50);
+  color: var(--codex-danger, #e05a50);
+  font-size: 12px;
+}

@@ -15,6 +15,7 @@ import { BotGlyph } from "./bot-glyph";
 import { SidebarIcon } from "./sidebar-icon";
 import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
 import { BotRailMenu } from "./bot-rail-menu";
+import { GroupRailMenu } from "./group-rail-menu";
 import { BotProfileDialog } from "./bot-profile-dialog";
 import { botSidebar, type BotSidebar } from "../lib/bot-sidebar";
 import { stableBotOrder, isPrimaryBot, botConversationHref } from "../lib/bot-sidebar";
@@ -129,6 +130,10 @@ function BotDirectory({currentThreadId, activeBotId = null, activeGroupId = null
   const collapsed = groupsView.has("section:bots:collapsed");
   const sectionId = useId();
   const expanded = groupsView.has("bots:all");
+  const groupsCollapsed = groupsView.has("section:groups:collapsed");
+  const groupsExpanded = groupsView.has("groups:all");
+  const groupsSectionId = useId();
+  const GROUP_PREVIEW_LIMIT = 5;
   const [creating, setCreating] = useState(false);
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -319,45 +324,115 @@ function BotDirectory({currentThreadId, activeBotId = null, activeGroupId = null
         </li>}
         {pinned.length > 0 && <li className="bot-rail-group">已置顶</li>}
         {pinned.filter(shown).map(row)}
-        {grouped.filter(group => group.items.some(shown)).map(group => <li key={group.name} className="bot-rail-section">
-          <div className="bot-rail-group">{group.name}</div><ul className="bot-rail-list">{group.items.filter(shown).map(row)}</ul>
-        </li>)}
+        {grouped.filter(group => group.items.some(shown)).map(group => {
+          // 自定义分组同样可折叠，状态与导航区一起持久化。
+          const groupKey = `botgroup:${group.name}`;
+          const groupCollapsed = groupsView.has(groupKey);
+          return <li key={group.name} className="bot-rail-section">
+            <div className="bot-rail-group">
+              <button
+                type="button"
+                className="task-section-toggle"
+                aria-expanded={!groupCollapsed}
+                aria-label={`${groupCollapsed ? "展开" : "收起"}分组 ${group.name}`}
+                onClick={() => setGroupsView(current => {
+                  const next = new Set(current);
+                  if (groupCollapsed) next.delete(groupKey); else next.add(groupKey);
+                  return next;
+                })}
+              >
+                <span>{group.name}</span>
+                <SidebarIcon name="chevronDown" size={12} className="task-group-chevron" />
+              </button>
+            </div>
+            {!groupCollapsed && <ul className="bot-rail-list">{group.items.filter(shown).map(row)}</ul>}
+          </li>;
+        })}
         {contacts.length > 0 && (pinned.length > 0 || grouped.length > 0) && <li className="bot-rail-group">未分组</li>}
         {visibleContacts.map(row)}
       </ul>
       {groupChats.length > 0 && (
         <>
-          <div className="bot-rail-group">群聊</div>
-          <ul className="bot-rail-list">
-            {groupChats.map((group) => (
-              <li key={group.groupId} className="bot-rail-row">
-                <Link
-                  className="bot-rail-item"
-                  href={`/assistant?group=${encodeURIComponent(group.groupId)}`}
-                  scroll={false}
-                  title={group.name}
-                  data-active={activeGroupId === group.groupId ? "true" : undefined}
-                >
-                  <span
-                    className="bot-rail-avatar"
-                    data-avatar="letter"
-                    aria-hidden="true"
-                    style={{ background: botAccent(group.groupId) }}
+          <div className="task-list-toolbar bot-rail-toolbar">
+            <div className="task-list-heading">
+              <button
+                type="button"
+                className="task-section-toggle"
+                aria-expanded={!groupsCollapsed}
+                aria-controls={groupsSectionId}
+                aria-label={`${groupsCollapsed ? "展开" : "收起"}群聊分组`}
+                onClick={() => setGroupsView(current => {
+                  const next = new Set(current);
+                  if (groupsCollapsed) next.delete("section:groups:collapsed");
+                  else next.add("section:groups:collapsed");
+                  return next;
+                })}
+              >
+                <span>群聊</span>
+                <SidebarIcon name="chevronDown" size={12} className="task-group-chevron" />
+              </button>
+            </div>
+          </div>
+          <div id={groupsSectionId} hidden={groupsCollapsed}>
+            <ul className="bot-rail-list">
+              {(groupsExpanded ? groupChats : groupChats.slice(0, GROUP_PREVIEW_LIMIT)).map((group) => (
+                <li key={group.groupId} className="bot-rail-row">
+                  <Link
+                    className="bot-rail-item"
+                    href={`/assistant?group=${encodeURIComponent(group.groupId)}`}
+                    scroll={false}
+                    title={group.name}
+                    data-active={activeGroupId === group.groupId ? "true" : undefined}
                   >
-                    群
-                  </span>
-                  <span className="bot-rail-label">
-                    <strong>{group.name}</strong>
-                  </span>
-                  {group.unreadCount > 0 && (
-                    <span className="bot-rail-unread-count" aria-label={`${group.unreadCount} 条未读`}>
-                      {group.unreadCount > 99 ? "99+" : group.unreadCount}
+                    <span
+                      className="bot-rail-avatar"
+                      data-avatar="letter"
+                      aria-hidden="true"
+                      style={{ background: botAccent(group.groupId) }}
+                    >
+                      群
                     </span>
+                    <span className="bot-rail-label">
+                      <strong>{group.name}</strong>
+                    </span>
+                    {group.unreadCount > 0 && (
+                      <span className="bot-rail-unread-count" aria-label={`${group.unreadCount} 条未读`}>
+                        {group.unreadCount > 99 ? "99+" : group.unreadCount}
+                      </span>
+                    )}
+                  </Link>
+                  {userId && group.creatorUserId === userId && (
+                    <GroupRailMenu
+                      group={group}
+                      onDeleted={() => {
+                        setGroupChats((current) => current.filter((item) => item.groupId !== group.groupId));
+                        window.dispatchEvent(new CustomEvent("kai:groups-changed"));
+                        if (activeGroupId === group.groupId) router.replace("/assistant", { scroll: false });
+                      }}
+                    />
                   )}
-                </Link>
-              </li>
-            ))}
-          </ul>
+                </li>
+              ))}
+            </ul>
+            {groupChats.length > GROUP_PREVIEW_LIMIT && (
+              <button
+                type="button"
+                className="task-list-item tasks-show-more"
+                aria-label={groupsExpanded ? "收起群聊" : "展开群聊"}
+                aria-expanded={groupsExpanded}
+                onClick={() => setGroupsView(current => {
+                  const next = new Set(current);
+                  if (groupsExpanded) next.delete("groups:all");
+                  else next.add("groups:all");
+                  return next;
+                })}
+              >
+                <span className="task-list-title">
+                  {groupsExpanded ? "收起显示" : `展开显示（${groupChats.length - GROUP_PREVIEW_LIMIT}）`}
+                </span>
+              </button>
+            )}
+          </div>
         </>
       )}
       {railError && <p role="alert">{railError}</p>}

@@ -228,6 +228,11 @@ async def test_plain_message_wakes_only_primary_in_group_thread() -> None:
     request = agui.create_run_with_result.await_args.kwargs["request"]
     assert request.thread_id == group_thread_id(group.group_id, "primary")
     assert request.forwarded_props["groupChat"] == group.group_id
+    # 席位由服务端写入，客户端不可伪造；主助理据此获得成员管理工具。
+    assert agui.create_run_with_result.await_args.kwargs["group_context"] == {
+        "groupId": group.group_id,
+        "memberId": "primary",
+    }
     assert all(
         item.author is not AssistantGroupMessageAuthor.SPECIALIST
         for item in repo.messages[group.group_id]
@@ -252,6 +257,10 @@ async def test_mention_wakes_only_the_named_specialist() -> None:
     assert agui.create_run_with_result.await_count == 1
     request = agui.create_run_with_result.await_args.kwargs["request"]
     assert request.thread_id == group_thread_id(group.group_id, "specialist_a")
+    assert agui.create_run_with_result.await_args.kwargs["group_context"] == {
+        "groupId": group.group_id,
+        "memberId": "specialist_a",
+    }
     assert "查一下" in request.messages[0].content
     assert "@资料 Bot" not in request.messages[0].content
 

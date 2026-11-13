@@ -63,7 +63,7 @@ function baseProps() {
     busy: false,
     error: null,
     specialists: [],
-    onUpdate: vi.fn(async () => true),
+    onUpdate: vi.fn(async (): Promise<string | null> => null),
     onAddMember: vi.fn(),
     onRemoveMember: vi.fn(),
     onReplyAs: vi.fn(),
@@ -86,9 +86,23 @@ describe("AssistantGroupInfoPanel", () => {
     expect(props.onUpdate).toHaveBeenCalledWith({ name: "产品周会", description: null });
   });
 
-  it("keeps the input and shows an error when saving fails", async () => {
+  it("shows the server message and keeps the input when saving fails", async () => {
     const props = baseProps();
-    props.onUpdate.mockResolvedValue(false);
+    props.onUpdate.mockResolvedValue("群聊名称不能超过 40 个字");
+    await render(<AssistantGroupInfoPanel {...props} />);
+    const name = host.querySelector<HTMLInputElement>('[aria-label="群信息"] input')!;
+    await setValue(name, "新名字");
+    const save = [...host.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "保存")!;
+    await act(async () => save.click());
+    expect(name.value).toBe("新名字");
+    expect(host.textContent).toContain("群聊名称不能超过 40 个字");
+    expect(host.textContent).not.toContain("保存失败，已保留你输入的内容");
+  });
+
+  it("falls back to a generic message when the failure carries no text", async () => {
+    const props = baseProps();
+    props.onUpdate.mockResolvedValue("");
     await render(<AssistantGroupInfoPanel {...props} />);
     const name = host.querySelector<HTMLInputElement>('[aria-label="群信息"] input')!;
     await setValue(name, "新名字");
@@ -97,6 +111,20 @@ describe("AssistantGroupInfoPanel", () => {
     await act(async () => save.click());
     expect(name.value).toBe("新名字");
     expect(host.textContent).toContain("保存失败，已保留你输入的内容");
+  });
+
+  it("rejects a name longer than the server's 40-character limit locally", async () => {
+    const props = baseProps();
+    await render(<AssistantGroupInfoPanel {...props} />);
+    const name = host.querySelector<HTMLInputElement>('[aria-label="群信息"] input')!;
+    expect(name.maxLength).toBe(40);
+    await setValue(name, "群".repeat(41));
+    const save = [...host.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "保存")!;
+    await act(async () => save.click());
+    expect(props.onUpdate).not.toHaveBeenCalled();
+    expect(name.value).toBe("群".repeat(41));
+    expect(host.textContent).toContain("群名最多 40 个字");
   });
 
   it("locks profile fields and hides dissolve for non-creators", async () => {

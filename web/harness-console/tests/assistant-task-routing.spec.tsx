@@ -172,7 +172,8 @@ it("never mounts the previous Bot under a new identity, and ignores a late detai
 it("editing main contact identity never replaces its actual task Agent binding", async () => {
   state.primary = {specialistId: "specialist_primary_test", name: "自定义总管", description: "我定义的角色", agentName: "profile-coordinate", agentVersion: "9", status: "ready", config: {}};
   await mount(true);
-  expect(host.textContent).toContain("自定义总管");
+  // 助理面取消顶栏后不再显示名称标题，名称保留在悬浮入口的可访问标签里。
+  expect(host.innerHTML).toContain("自定义总管");
   expect(host.querySelector('[data-runtime-agent]')?.getAttribute("data-runtime-agent")).toBe("agent");
   expect(host.querySelector(`[data-thread="${PERSONAL_ASSISTANT_THREAD}"]`)).not.toBeNull();
   expect(host.querySelector('[data-thread]')?.getAttribute('data-specialist')).toBe('');
