@@ -399,6 +399,9 @@ class AguiRunService:
         assistant_dispatch: bool = False,
         bot_specialist_id: str | None = None,
         background_duty: bool = False,
+        # Internal, server-authored scope for group-seat tools. Never read from
+        # forwarded_props: clients must not be able to claim a group seat.
+        group_context: dict[str, str] | None = None,
         # Already-snapshotted personal Skills; capture here so the Run pins the
         # exact revisions that were enabled when it was created.
         personal_skill_snapshots: tuple[SkillSnapshot, ...] = (),
@@ -523,6 +526,9 @@ class AguiRunService:
                 # Internal dispatch context stays available to execution, without
                 # being repeated as a user-authored message in the Bot UI.
                 **({"assistant_dispatch": True} if assistant_dispatch
+                   and binding.project_id is None else {}),
+                # Server-authored group seat; drives member-management tool scope.
+                **({"group_context": group_context} if group_context
                    and binding.project_id is None else {}),
                 # Presentation guidance is opt-in per send, never inherited from a thread name.
                 **({"conversation_surface": "assistant"} if (

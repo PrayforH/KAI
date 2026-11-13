@@ -41,6 +41,7 @@ from harness.assistant.delegation import (
     specialist_role_overlay,
 )
 from harness.assistant.file_delivery import ChannelFiles
+from harness.assistant.group_tools import assistant_group_management_overlay
 from harness.assistant.memory_tools import MemoryBankGateway, assistant_memory_overlay
 from harness.assistant.messaging import assistant_messaging_overlay
 from harness.assistant.personal_skills import PersonalSkillService
@@ -1759,6 +1760,26 @@ def build_production_container(
             file_overlay = await assistant_file_overlay(
                 artifact_service, run_service, agui, file_channel, run, session,
             )
+        group_overlay = PlatformToolOverlay()
+        raw_group_context = run.input.get("group_context")
+        if container.assistant is not None and isinstance(raw_group_context, dict):
+            group_context = cast(dict[str, object], raw_group_context)
+            group_id = group_context.get("groupId")
+            member_id = group_context.get("memberId")
+            if (
+                isinstance(group_id, str)
+                and group_id
+                and isinstance(member_id, str)
+                and member_id
+            ):
+                group_overlay = await assistant_group_management_overlay(
+                    container.assistant,
+                    events,
+                    run,
+                    session,
+                    group_id=group_id,
+                    member_id=member_id,
+                )
         merged = (
             overlay.tools
             + computer_overlay.tools
@@ -1767,6 +1788,7 @@ def build_production_container(
             + memory_overlay.tools
             + directory_overlay.tools
             + file_overlay.tools
+            + group_overlay.tools
         )
         instructions = "\n\n".join(
             layer.instructions
@@ -1780,6 +1802,7 @@ def build_production_container(
                 directory_overlay,
                 memory_overlay,
                 file_overlay,
+                group_overlay,
             )
             if layer.instructions
         )

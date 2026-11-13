@@ -37,7 +37,11 @@ from harness.assistant.appearance import (
     APPEARANCE_SHAPES,
     choose_appearance,
 )
-from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD, primary_specialist_id
+from harness.assistant.constants import (
+    GROUP_PRIMARY_MEMBER_ID,
+    PERSONAL_ASSISTANT_THREAD,
+    primary_specialist_id,
+)
 from harness.assistant.group_library import (
     GROUP_ATTACHMENT_LIMIT,
     group_description,
@@ -45,7 +49,6 @@ from harness.assistant.group_library import (
     group_document_name,
 )
 
-GROUP_PRIMARY_MEMBER_ID = "primary"
 GROUP_REACTION_EMOJIS = ("👍", "❤️", "😂", "🎉", "👀")
 GROUP_THREAD_PREFIX = "assistant_group_"
 GROUP_EMPTY_REPLY_RETRY_WINDOW = timedelta(minutes=10)
@@ -3387,6 +3390,9 @@ class AssistantService:
             deduplicate_active_input=False,
             assistant_dispatch=False,
             bot_specialist_id=bot_specialist_id,
+            # Server-authored seat identity for member-management tools. Clients
+            # never supply this, so a sub-assistant cannot claim the primary seat.
+            group_context={"groupId": group.group_id, "memberId": member.member_id},
             request=RunAgentInput(
                 thread_id=thread_id,
                 run_id=request_run_id,
