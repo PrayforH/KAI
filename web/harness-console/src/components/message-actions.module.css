@@ -31,7 +31,15 @@
   opacity: 0;
   transition: opacity 120ms ease;
 }
+/* 只在指针/焦点落在气泡或操作条上时出现，不再由整行 hover 触发。 */
+.actions[data-visible="true"] { opacity: 1; }
 .actions:focus-within { opacity: 1; }
+/* 气泡在滚动区里露出不足 24px：整条隐去，保留占位以稳定列表高度，且不可点。 */
+.actions[data-suppressed="true"] {
+  visibility: hidden;
+  pointer-events: none;
+  opacity: 0;
+}
 @media (hover: none) {
   .actions { opacity: 1; }
 }

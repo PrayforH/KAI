@@ -3,6 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 
 import { writeTextToClipboard } from "../lib/clipboard";
+import {
+  findMessageAnchor,
+  findScrollParent,
+  useMessageAnchorVisibility,
+} from "../lib/message-anchor-visibility";
 import styles from "./message-actions.module.css";
 
 /** 两层消息操作条共用同一套表情，避免群聊与助理各有一份。 */
@@ -50,15 +55,6 @@ function SmileIcon() {
   );
 }
 
-/** 最近的纵向滚动容器：用于判断弹层会不会被裁掉。 */
-function findScrollParent(node: HTMLElement | null): HTMLElement | null {
-  for (let current = node?.parentElement ?? null; current; current = current.parentElement) {
-    const overflowY = getComputedStyle(current).overflowY;
-    if (overflowY === "auto" || overflowY === "scroll") return current;
-  }
-  return null;
-}
-
 export type MessageActionsProps = {
   reactions?: readonly string[];
   onReact?: (emoji: string) => void;
@@ -104,8 +100,57 @@ export function MessageActions({
   const actionsRef = useRef<HTMLDivElement | null>(null);
   const pickerRef = useRef<HTMLSpanElement | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** 本条消息的正文/气泡：操作条只随它出现，也只用它判断是否还露在滚动区里。 */
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  /** 指针或键盘焦点落在气泡/操作条上。 */
+  const [engaged, setEngaged] = useState(false);
 
   useEffect(() => () => clearTimeout(copyTimer.current), []);
+
+  // 操作条挂在正文之后，挂载后向上找本条消息的锚点；找不到就按旧行为常驻。
+  useEffect(() => {
+    setAnchor(findMessageAnchor(actionsRef.current));
+  }, []);
+
+  // 整行:hover 会把“只剩操作条可见”也算作悬停；改由气泡本身触发。
+  useEffect(() => {
+    const actions = actionsRef.current;
+    if (!anchor || !actions) return;
+    const isInside = (node: Node | null) =>
+      node !== null && (anchor.contains(node) || actions.contains(node));
+    const enter = () => setEngaged(true);
+    const leave = (event: Event) => {
+      const related = (event as PointerEvent).relatedTarget as Node | null;
+      if (!isInside(related)) setEngaged(false);
+    };
+    const focusOut = (event: Event) => {
+      const related = (event as FocusEvent).relatedTarget as Node | null;
+      if (!isInside(related)) setEngaged(false);
+    };
+    const targets = [anchor, actions];
+    for (const target of targets) {
+      target.addEventListener("pointerenter", enter);
+      target.addEventListener("pointerleave", leave);
+      target.addEventListener("focusin", enter);
+      target.addEventListener("focusout", focusOut);
+    }
+    return () => {
+      for (const target of targets) {
+        target.removeEventListener("pointerenter", enter);
+        target.removeEventListener("pointerleave", leave);
+        target.removeEventListener("focusin", enter);
+        target.removeEventListener("focusout", focusOut);
+      }
+    };
+  }, [anchor]);
+
+  const anchorVisible = useMessageAnchorVisibility(anchor);
+  // 气泡几乎完全滚出上沿时，操作条不得悬在空白处：整条隐去且不接收点击。
+  const suppressed = anchor !== null && !anchorVisible;
+
+  useEffect(() => {
+    if (suppressed) setPickerOpen(false);
+  }, [suppressed]);
 
   // 弹层默认向上展开；若操作条已在滚动区顶部，向上会被裁掉，就翻到下方。
   useEffect(() => {
@@ -166,7 +211,12 @@ export function MessageActions({
   return (
     <>
       {reactionChips}
-      <div className={`${styles.actions}${className ? ` ${className}` : ""}`} ref={actionsRef}>
+      <div
+        className={`${styles.actions}${className ? ` ${className}` : ""}`}
+        ref={actionsRef}
+        data-visible={engaged ? "true" : "false"}
+        data-suppressed={suppressed ? "true" : "false"}
+      >
         <div className={styles.actionButtons}>
           {onReact && (
             <button

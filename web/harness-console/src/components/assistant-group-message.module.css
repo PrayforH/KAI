@@ -187,13 +187,8 @@
   opacity: 0;
   transition: opacity 120ms ease;
 }
-.memberRow:hover .actions,
-.memberRow:focus-within .actions,
-.userRow:hover .actions,
-.userRow:focus-within .actions,
-.actions:focus-within {
-  opacity: 1;
-}
+/* 浮现时机由共享操作条按“气泡可见高度 + 气泡自身悬停”决定，
+   不再用整行 :hover——整行在滚动后可能只剩操作条那一条可见。 */
 @media (hover: none) {
   .actions { opacity: 1; }
 }
