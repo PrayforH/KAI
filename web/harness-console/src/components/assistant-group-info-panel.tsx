@@ -7,7 +7,8 @@ import styles from "./assistant-group-info-panel.module.css";
 
 const PRIMARY_MEMBER_ID = "primary";
 const PERSONAL_THREAD = "kai-personal-assistant-v1";
-const MAX_NAME = 80;
+/** 服务端上限 40 个字（见 service.py 的群名校验），前端按同一口径拦。 */
+const MAX_NAME = 40;
 const MAX_DESCRIPTION = 500;
 
 export type GroupProfileUpdate = {
@@ -21,7 +22,8 @@ type AssistantGroupInfoPanelProps = {
   busy: boolean;
   error: string | null;
   specialists: Specialist[];
-  onUpdate: (fields: GroupProfileUpdate) => Promise<boolean>;
+  /** 成功返回 null；失败返回可读文案（服务端原文优先）。 */
+  onUpdate: (fields: GroupProfileUpdate) => Promise<string | null>;
   onAddMember: (specialistId: string) => void;
   onRemoveMember: (memberId: string, name: string) => void;
   onReplyAs: (value: string) => void;
@@ -102,11 +104,13 @@ export function AssistantGroupInfoPanel({
     setLocalError(null);
     setSaving(true);
     try {
-      const ok = await onUpdate({
+      const failure = await onUpdate({
         name: trimmed,
         description: description.trim() ? description : null,
       });
-      if (!ok) setLocalError("保存失败，已保留你输入的内容");
+      // 服务端文案优先，拿不到才用通用兜底；无论哪种，输入都不清空。
+      if (failure === null) setLocalError(null);
+      else setLocalError(failure || "保存失败，已保留你输入的内容");
     } finally {
       setSaving(false);
     }

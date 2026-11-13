@@ -232,6 +232,44 @@ describe("AssistantGroupMessage", () => {
     expect(link.getAttribute("href")).toBe("/download/d1");
   });
 
+  it("routes attachment downloads through the web /api prefix", async () => {
+    await render(
+      <AssistantGroupMessage
+        message={message({
+          attachments: [
+            {
+              documentId: "d1",
+              name: "需求.docx",
+              downloadUrl: "/v1/studio/assistant/groups/g1/library/documents/d1/content",
+            },
+          ],
+        })}
+        tone="#38d591"
+        onReact={vi.fn()}
+        onReply={vi.fn()}
+      />,
+    );
+    const link = host.querySelector<HTMLAnchorElement>('[aria-label="附件"] a')!;
+    expect(link.getAttribute("href")).toBe(
+      "/api/studio/assistant/groups/g1/library/documents/d1/content",
+    );
+  });
+
+  it("renders a non-clickable chip when an attachment has no download url", async () => {
+    await render(
+      <AssistantGroupMessage
+        message={message({
+          attachments: [{ documentId: "d1", name: "需求.docx" }],
+        })}
+        tone="#38d591"
+        onReact={vi.fn()}
+        onReply={vi.fn()}
+      />,
+    );
+    expect(host.querySelector('[aria-label="附件"] a')).toBeNull();
+    expect(host.querySelector('[aria-label="附件"]')?.textContent).toContain("需求.docx");
+  });
+
   it("reports a reply request", async () => {
     const onReply = vi.fn();
     await render(

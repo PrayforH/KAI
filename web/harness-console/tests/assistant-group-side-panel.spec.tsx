@@ -176,6 +176,39 @@ describe("AssistantGroupSidePanel", () => {
     expect(props.onBind).toHaveBeenCalledWith("other-kb");
   });
 
+  it("routes library document downloads through the web /api prefix", async () => {
+    const props = baseProps();
+    const document = {
+      ...library.documents[0],
+      downloadUrl: "/v1/studio/assistant/groups/g1/library/documents/d1/content",
+    };
+    await render(
+      <AssistantGroupSidePanel
+        {...props}
+        tab="library"
+        library={{ ...library, documents: [document] }}
+      />,
+    );
+    const link = host.querySelector<HTMLAnchorElement>('a[title="下载 需求.docx"]')!;
+    expect(link.getAttribute("href")).toBe(
+      "/api/studio/assistant/groups/g1/library/documents/d1/content",
+    );
+  });
+
+  it("renders a plain file name when a document has no download url", async () => {
+    const props = baseProps();
+    const document = { ...library.documents[0], downloadUrl: "" };
+    await render(
+      <AssistantGroupSidePanel
+        {...props}
+        tab="library"
+        library={{ ...library, documents: [document] }}
+      />,
+    );
+    expect(host.querySelector('a[title="下载 需求.docx"]')).toBeNull();
+    expect(host.textContent).toContain("需求.docx");
+  });
+
   it("hides the delete action for files uploaded by someone else", async () => {
     await render(
       <AssistantGroupSidePanel

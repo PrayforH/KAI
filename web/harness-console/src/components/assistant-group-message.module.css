@@ -275,6 +275,9 @@
 }
 .attachment:hover { border-color: var(--codex-muted, #a3a3a3); }
 .attachment:focus-visible { outline: 2px solid var(--codex-ink, #f5f5f5); outline-offset: 2px; }
+/* 缺少下载链接时展示为不可点的文件块，不留空链接或 # 链接。 */
+.attachmentStatic { cursor: default; }
+.attachmentStatic:hover { border-color: var(--codex-line, #343434); }
 .userColumn .attachments { justify-content: flex-end; }
 
 .reactionPicker {

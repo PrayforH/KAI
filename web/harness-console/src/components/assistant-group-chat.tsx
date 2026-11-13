@@ -432,8 +432,8 @@ export function AssistantGroupChat({
     requestAnimationFrame(() => composerRef.current?.focus());
   };
 
-  const handleUpdateProfile = async (fields: GroupProfileUpdate): Promise<boolean> => {
-    if (!selected || busy) return false;
+  const handleUpdateProfile = async (fields: GroupProfileUpdate): Promise<string | null> => {
+    if (!selected || busy) return "正在保存，请稍候再试。";
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -442,10 +442,11 @@ export function AssistantGroupChat({
       await refreshGroups();
       // 左侧栏的群名同步刷新。
       window.dispatchEvent(new CustomEvent("kai:groups-changed"));
-      return true;
+      return null;
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "群资料保存失败");
-      return false;
+      const message = reason instanceof Error ? reason.message : "群资料保存失败";
+      setError(message);
+      return message;
     } finally {
       setBusy(false);
     }
@@ -594,10 +595,10 @@ export function AssistantGroupChat({
             <button
               type="button"
               className={styles.settingsButton}
-              aria-label="打开群右侧栏"
+              aria-label={sideOpen ? "关闭群右侧栏" : "打开群右侧栏"}
               title="动态 / 任务 / 资料库"
               aria-expanded={sideOpen}
-              onClick={() => openSidePanel("activity")}
+              onClick={() => (sideOpen ? setSideOpen(false) : openSidePanel("activity"))}
             >
               <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
                 <rect x="3" y="4" width="14" height="12" rx="2.5" fill="none" stroke="currentColor" strokeWidth="1.5" />

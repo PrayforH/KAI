@@ -85,9 +85,10 @@ describe("group chats live in the main assistant surface", () => {
     expect(groupChat).toContain("<AssistantGroupInfoPanel");
     expect(groupChat).toContain("aria-expanded={settingsOpen}");
     expect(groupChat).not.toContain("styles.toolbarInner");
-    // 右侧「动态 / 任务 / 资料库」侧栏。
+    // 右侧「动态 / 任务 / 资料库」侧栏；入口是真正的开关，开着再点会关。
     expect(groupChat).toContain("<AssistantGroupSidePanel");
-    expect(groupChat).toContain('aria-label="打开群右侧栏"');
+    expect(groupChat).toContain('aria-label={sideOpen ? "关闭群右侧栏" : "打开群右侧栏"}');
+    expect(groupChat).toContain('sideOpen ? setSideOpen(false) : openSidePanel("activity")');
   });
 
   it("renders messages through the shared row and composer components", () => {

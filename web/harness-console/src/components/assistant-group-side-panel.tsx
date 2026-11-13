@@ -10,6 +10,7 @@ import type {
   GroupMessage,
 } from "../lib/assistant-client";
 import type { StudioKnowledgeBase } from "../lib/studio-client";
+import { resolveDownloadUrl } from "../lib/assistant-download-url";
 import { groupTimeLabel } from "../lib/group-chat-time";
 import styles from "./assistant-group-side-panel.module.css";
 
@@ -206,44 +207,52 @@ export function AssistantGroupSidePanel({
               <p className={styles.empty}>群资料库还没有文件。上传后可以随消息发送。</p>
             ) : (
               <ul className={styles.list}>
-                {(library?.documents ?? []).map((document) => (
-                  <li key={document.documentId} className={styles.docItem}>
-                    <div className={styles.docMain}>
-                      <a
-                        className={styles.docName}
-                        href={document.downloadUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        title={`下载 ${document.name}`}
-                      >
-                        {document.name}
-                      </a>
-                      <span className={styles.time}>
-                        {formatBytes(document.sizeBytes)} · {document.uploadedByName} · {groupTimeLabel(document.createdAt)}
-                      </span>
-                    </div>
-                    {(isCreator || document.uploadedBy === currentUserId) && (
-                      <button
-                        type="button"
-                        className={`${styles.secondaryButton} ${confirmDelete === document.documentId ? styles.dangerButton : ""}`}
-                        disabled={libraryBusy}
-                        onClick={() => {
-                          if (confirmDelete === document.documentId) {
-                            setConfirmDelete(null);
-                            onDeleteDocument(document);
-                          } else {
-                            setConfirmDelete(document.documentId);
-                          }
-                        }}
-                        onBlur={() => setConfirmDelete((current) => (
-                          current === document.documentId ? null : current
-                        ))}
-                      >
-                        {confirmDelete === document.documentId ? "确认删除？" : "删除"}
-                      </button>
-                    )}
-                  </li>
-                ))}
+                {(library?.documents ?? []).map((document) => {
+                  // 服务端给的是 /v1/...，浏览器侧只代理 /api/...，统一在这里换算。
+                  const downloadUrl = resolveDownloadUrl(document.downloadUrl);
+                  return (
+                    <li key={document.documentId} className={styles.docItem}>
+                      <div className={styles.docMain}>
+                        {downloadUrl ? (
+                          <a
+                            className={styles.docName}
+                            href={downloadUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={`下载 ${document.name}`}
+                          >
+                            {document.name}
+                          </a>
+                        ) : (
+                          <span className={styles.docName} title={document.name}>{document.name}</span>
+                        )}
+                        <span className={styles.time}>
+                          {formatBytes(document.sizeBytes)} · {document.uploadedByName} · {groupTimeLabel(document.createdAt)}
+                        </span>
+                      </div>
+                      {(isCreator || document.uploadedBy === currentUserId) && (
+                        <button
+                          type="button"
+                          className={`${styles.secondaryButton} ${confirmDelete === document.documentId ? styles.dangerButton : ""}`}
+                          disabled={libraryBusy}
+                          onClick={() => {
+                            if (confirmDelete === document.documentId) {
+                              setConfirmDelete(null);
+                              onDeleteDocument(document);
+                            } else {
+                              setConfirmDelete(document.documentId);
+                            }
+                          }}
+                          onBlur={() => setConfirmDelete((current) => (
+                            current === document.documentId ? null : current
+                          ))}
+                        >
+                          {confirmDelete === document.documentId ? "确认删除？" : "删除"}
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
 

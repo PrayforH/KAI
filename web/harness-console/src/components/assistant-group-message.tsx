@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { GroupMessage } from "../lib/assistant-client";
+import { resolveDownloadUrl } from "../lib/assistant-download-url";
 import { writeTextToClipboard } from "../lib/clipboard";
 import { groupTimeLabel } from "../lib/group-chat-time";
 import { AssistantGroupMarkdown } from "./assistant-group-markdown";
@@ -148,20 +149,31 @@ export function AssistantGroupMessage({
   ) : null;
   const attachments = message.attachments && message.attachments.length > 0 ? (
     <ul className={styles.attachments} aria-label="附件">
-      {message.attachments.map((attachment) => (
-        <li key={attachment.documentId}>
-          <a
-            className={styles.attachment}
-            href={attachment.downloadUrl ?? "#"}
-            target="_blank"
-            rel="noreferrer"
-            title={`下载 ${attachment.name}`}
-          >
-            <AttachmentIcon />
-            <span>{attachment.name}</span>
-          </a>
-        </li>
-      ))}
+      {message.attachments.map((attachment) => {
+        // 服务端给的是 /v1/...，浏览器侧只代理 /api/...；缺链接时按“没有”处理，不渲染可点链接。
+        const downloadUrl = resolveDownloadUrl(attachment.downloadUrl);
+        return (
+          <li key={attachment.documentId}>
+            {downloadUrl ? (
+              <a
+                className={styles.attachment}
+                href={downloadUrl}
+                target="_blank"
+                rel="noreferrer"
+                title={`下载 ${attachment.name}`}
+              >
+                <AttachmentIcon />
+                <span>{attachment.name}</span>
+              </a>
+            ) : (
+              <span className={`${styles.attachment} ${styles.attachmentStatic}`} title={attachment.name}>
+                <AttachmentIcon />
+                <span>{attachment.name}</span>
+              </span>
+            )}
+          </li>
+        );
+      })}
     </ul>
   ) : null;
   const reactions = message.reactions.length > 0 && (
