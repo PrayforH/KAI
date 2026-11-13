@@ -44,6 +44,21 @@ GROUP_REACTION_EMOJIS = ("👍", "❤️", "😂", "🎉", "👀")
 GROUP_THREAD_PREFIX = "assistant_group_"
 GROUP_EMPTY_REPLY_RETRY_WINDOW = timedelta(minutes=10)
 GROUP_EMPTY_REPLY_MAX_RETRIES = 2
+GROUP_QUOTE_TEXT_LIMIT = 200
+# 流式占位、排队中或失败的占位没有可引用的正文，等它们落定后才能引用。
+GROUP_QUOTE_BLOCKED_STATUSES = frozenset({"pending", "queued", "running", "failed"})
+
+
+def _group_quote_reference(
+    target: AssistantGroupMessage,
+) -> AssistantGroupMessageReference:
+    """引用条只是展示快照：作者、名字与截断后的正文，不复制运行状态。"""
+    return AssistantGroupMessageReference(
+        messageId=target.message_id,
+        author=target.author,
+        authorName=target.author_name,
+        text=target.text[:GROUP_QUOTE_TEXT_LIMIT],
+    )
 
 
 def group_thread_id(group_id: str, member_id: str) -> str:
@@ -184,6 +199,7 @@ from harness.assistant.models import (
     AssistantGroupMember,
     AssistantGroupMessage,
     AssistantGroupMessageAuthor,
+    AssistantGroupMessageReference,
     AssistantInboxItem,
     DelegationMode,
     HandoverStatus,
@@ -2639,7 +2655,49 @@ class AssistantService:
             if retried is not None:
                 hydrated[index] = retried
                 break
-        return hydrated
+        return await self._with_group_quotes(tenant_id, user_id, group_id, hydrated)
+
+    async def _with_group_quotes(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        messages: Sequence[AssistantGroupMessage],
+    ) -> list[AssistantGroupMessage]:
+        """只有用户显式发出的引用才补 replyTo；机器人回复的自动回链不是引用。"""
+        quoted = {
+            message.message_id: message.reply_to_message_id
+            for message in messages
+            if message.author is AssistantGroupMessageAuthor.USER
+            and message.reply_to_message_id
+        }
+        if not quoted:
+            return list(messages)
+        known = {message.message_id: message for message in messages}
+        missing = [
+            target for target in quoted.values() if target and target not in known
+        ]
+        if missing:
+            fetched = await self.repository.group_quoted_messages(
+                tenant_id, user_id, group_id, missing
+            )
+            # 机器人回复的正文不在库里，只在运行事件里；引用快照必须先水合。
+            hydrated = await asyncio.gather(
+                *(self._hydrate_group_message(tenant_id, item) for item in fetched.values())
+            )
+            known.update({item.message_id: item for item in hydrated})
+        result: list[AssistantGroupMessage] = []
+        for message in messages:
+            target_id = quoted.get(message.message_id)
+            target = known.get(target_id) if target_id else None
+            if target is None:
+                # 引用目标已删或不在本群：省掉 replyTo，正文照常读。
+                result.append(message)
+                continue
+            result.append(
+                message.model_copy(update={"reply_to": _group_quote_reference(target)})
+            )
+        return result
 
     async def post_assistant_group_message(
         self,
@@ -2649,10 +2707,12 @@ class AssistantService:
         *,
         text: str,
         client_message_id: str | None = None,
+        reply_to_message_id: str | None = None,
     ) -> GroupPostResult:
         """群内发言入口：@ 谁谁回复；未 @ 时只由主助理回复。
 
         群线程各自独立，回复只回写本群时间线；不做内容级自动分派（P0 范围外）。
+        引用只能是本群、本租户、已经落定的消息；快照随消息一起读回。
         """
         value = unicodedata.normalize("NFKC", text or "").strip()
         if not value:
@@ -2675,9 +2735,26 @@ class AssistantService:
                     for item in messages
                     if item.reply_to_message_id == prior.message_id
                 ]
-                return GroupPostResult(
-                    message=prior, replies=tuple(replies), notices=()
+                replayed = await self._with_group_quotes(
+                    tenant_id, user_id, group_id, [prior]
                 )
+                return GroupPostResult(
+                    message=replayed[0], replies=tuple(replies), notices=()
+                )
+        quoted_message: AssistantGroupMessage | None = None
+        if reply_to_message_id:
+            try:
+                quoted_message = await self.repository.get_group_message(
+                    tenant_id, user_id, group_id, reply_to_message_id
+                )
+            except NotFoundError:
+                raise NotFoundError("quoted message not found") from None
+            # 机器人回复在库里既没有正文、状态也停在占位；先水合再判断能否引用。
+            quoted_message = await self._hydrate_group_message(
+                tenant_id, quoted_message
+            )
+            if quoted_message.status in GROUP_QUOTE_BLOCKED_STATUSES:
+                raise ConflictError("quoted message is not ready")
         now = datetime.now(UTC)
         message = AssistantGroupMessage(
             messageId=f"gmsg_{uuid4().hex}",
@@ -2692,7 +2769,18 @@ class AssistantService:
             tenant_id,
             user_id,
             message,
+            reply_to_message_id=reply_to_message_id,
             client_message_id=client_message_id,
+        )
+        message = message.model_copy(
+            update={
+                "reply_to_message_id": reply_to_message_id,
+                **(
+                    {"reply_to": _group_quote_reference(quoted_message)}
+                    if quoted_message is not None
+                    else {}
+                ),
+            }
         )
 
         active_roster = {

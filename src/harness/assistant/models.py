@@ -10,7 +10,14 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 
-from pydantic import AwareDatetime, Field, field_validator, model_validator
+from pydantic import (
+    AwareDatetime,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from harness.core.errors import ConflictError
 from harness.scheduling import Timing, TimingKind
@@ -459,6 +466,15 @@ class AssistantGroupMessageAuthor(StrEnum):
     SYSTEM = "system"
 
 
+class AssistantGroupMessageReference(StudioModel):
+    """The quoted message as it read when referenced; display-only snapshot."""
+
+    message_id: str = Field(alias="messageId")
+    author: AssistantGroupMessageAuthor
+    author_name: str = Field(alias="authorName")
+    text: str = ""
+
+
 class AssistantGroupMessage(StudioModel):
     """A message in a group timeline, including pending/failed replies."""
 
@@ -470,9 +486,20 @@ class AssistantGroupMessage(StudioModel):
     text: str = ""
     run_id: str | None = Field(default=None, alias="runId")
     reply_to_message_id: str | None = Field(default=None, alias="replyToMessageId")
+    reply_to: AssistantGroupMessageReference | None = Field(default=None, alias="replyTo")
     reactions: tuple[str, ...] = ()
     status: str = "completed"
     created_at: AwareDatetime = Field(alias="createdAt")
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_quote(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, object]:
+        """没有引用（或引用目标已删）时不输出 replyTo，旧消息字节不变。"""
+        data = handler(self)
+        if data.get("replyTo") is None:
+            data.pop("replyTo", None)
+        return data
 
 
 class GroupPostResult(StudioModel):

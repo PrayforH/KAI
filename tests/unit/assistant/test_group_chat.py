@@ -148,7 +148,17 @@ class FakeGroupRepository:
         for item in self.messages[group_id]:
             if item.message_id == message_id:
                 return item
-        raise NotFoundError("missing")
+        raise NotFoundError("Group message not found")
+
+    async def group_quoted_messages(
+        self, tenant_id, user_id, group_id, message_ids
+    ):
+        wanted = set(message_ids)
+        return {
+            item.message_id: item
+            for item in self.messages.get(group_id, [])
+            if item.message_id in wanted
+        }
 
     async def set_group_message_run(
         self, tenant_id, user_id, group_id, message_id, *, run_id
@@ -669,3 +679,239 @@ async def test_stale_empty_reply_is_not_revived() -> None:
     messages = await service.list_assistant_group_messages("t", "u", group.group_id)
     assert agui.create_run_with_result.await_count == 0
     assert any(item.text == "这次没有返回文字。" for item in messages)
+
+
+# ---- 引用回复：发送校验、快照投影与历史还原 ----
+
+
+def _settle_runs(service) -> None:
+    """历史里只看引用快照：把回复运行固定成“已结束、没有正文”。"""
+    service._runs.get = AsyncMock(
+        return_value=SimpleNamespace(
+            run_id="run-settled",
+            status=RunStatus.FAILED,
+            idempotency_key="group-original",
+        )
+    )
+    service._events.list_after = AsyncMock(return_value=[])
+
+
+@pytest.mark.asyncio
+async def test_sending_a_quote_returns_the_snapshot() -> None:
+    service, repo, _ = _service()
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    first = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="原始消息"
+    )
+    result = await service.post_assistant_group_message(
+        "t",
+        "u",
+        group.group_id,
+        text="引用一下",
+        reply_to_message_id=first.message.message_id,
+    )
+
+    quote = result.message.reply_to
+    assert quote is not None
+    assert quote.message_id == first.message.message_id
+    assert quote.author is AssistantGroupMessageAuthor.USER
+    assert quote.author_name == "我"
+    assert quote.text == "原始消息"
+    assert result.message.reply_to_message_id == first.message.message_id
+    stored = next(
+        item for item in repo.messages[group.group_id]
+        if item.message_id == result.message.message_id
+    )
+    assert stored.reply_to_message_id == first.message.message_id
+    payload = result.message.model_dump(mode="json", by_alias=True)
+    assert payload["replyTo"] == {
+        "messageId": first.message.message_id,
+        "author": "user",
+        "authorName": "我",
+        "text": "原始消息",
+    }
+
+
+@pytest.mark.asyncio
+async def test_history_carries_the_quote_but_not_bot_reply_links() -> None:
+    service, _, _ = _service()
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    first = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="原始消息"
+    )
+    quoted = await service.post_assistant_group_message(
+        "t",
+        "u",
+        group.group_id,
+        text="引用一下",
+        reply_to_message_id=first.message.message_id,
+    )
+    _settle_runs(service)
+
+    messages = await service.list_assistant_group_messages("t", "u", group.group_id)
+    restored = next(
+        item for item in messages if item.message_id == quoted.message.message_id
+    )
+    assert restored.reply_to is not None
+    assert restored.reply_to.message_id == first.message.message_id
+    assert restored.reply_to.text == "原始消息"
+    # 机器人回复的 reply_to 只是自动回链，不该显示成引用条。
+    bots = [
+        item for item in messages
+        if item.author is AssistantGroupMessageAuthor.PRIMARY
+    ]
+    assert bots
+    assert all(item.reply_to is None for item in bots)
+    assert all(item.reply_to_message_id for item in bots)
+
+
+@pytest.mark.asyncio
+async def test_quote_from_another_group_is_not_found() -> None:
+    service, repo, _ = _service()
+    left = await service.create_assistant_group("t", "u", name="左群")
+    right = await service.create_assistant_group("t", "u", name="右群")
+    first = await service.post_assistant_group_message(
+        "t", "u", left.group_id, text="只在左群"
+    )
+    with pytest.raises(NotFoundError, match="quoted message not found"):
+        await service.post_assistant_group_message(
+            "t",
+            "u",
+            right.group_id,
+            text="跨群引用",
+            reply_to_message_id=first.message.message_id,
+        )
+    # 校验不通过时不写消息、也不触发回复。
+    assert all("跨群引用" != item.text for item in repo.messages[right.group_id])
+
+
+@pytest.mark.asyncio
+async def test_quote_of_a_missing_message_is_not_found() -> None:
+    service, _, _ = _service()
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    with pytest.raises(NotFoundError, match="quoted message not found"):
+        await service.post_assistant_group_message(
+            "t", "u", group.group_id, text="引用不存在的",
+            reply_to_message_id="gmsg_missing",
+        )
+
+
+@pytest.mark.asyncio
+async def test_quote_of_a_streaming_placeholder_is_refused() -> None:
+    service, _, _ = _service()
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    posted = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="开始回答"
+    )
+    reply = posted.replies[0]
+    assert reply.status == "running"
+    with pytest.raises(ConflictError, match="not ready"):
+        await service.post_assistant_group_message(
+            "t", "u", group.group_id, text="引用运行中的",
+            reply_to_message_id=reply.message_id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_quote_text_is_truncated_to_200_characters() -> None:
+    service, _, _ = _service()
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    first = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="长" * 260
+    )
+    result = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="引用长文",
+        reply_to_message_id=first.message.message_id,
+    )
+    assert len(result.message.reply_to.text) == 200
+
+
+@pytest.mark.asyncio
+async def test_history_omits_the_quote_once_the_target_is_gone() -> None:
+    service, repo, _ = _service()
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    first = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="原始消息"
+    )
+    quoted = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="引用一下",
+        reply_to_message_id=first.message.message_id,
+    )
+    # 群消息没有删除接口；这里模拟目标行被外部清理，读取必须降级而不是报错。
+    repo.messages[group.group_id] = [
+        item for item in repo.messages[group.group_id]
+        if item.message_id != first.message.message_id
+    ]
+    _settle_runs(service)
+
+    messages = await service.list_assistant_group_messages("t", "u", group.group_id)
+    restored = next(
+        item for item in messages if item.message_id == quoted.message.message_id
+    )
+    assert restored.reply_to is None
+    assert restored.reply_to_message_id == first.message.message_id
+
+
+@pytest.mark.asyncio
+async def test_no_quote_keeps_the_old_payload_shape() -> None:
+    service, _, _ = _service()
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    result = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="没有引用"
+    )
+    payload = result.message.model_dump(mode="json", by_alias=True)
+    assert "replyTo" not in payload
+    assert payload["replyToMessageId"] is None
+
+
+@pytest.mark.asyncio
+async def test_idempotent_replay_keeps_the_quote_snapshot() -> None:
+    service, _, _ = _service()
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    first = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="原始消息"
+    )
+    sent = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="引用一下",
+        client_message_id="client-1",
+        reply_to_message_id=first.message.message_id,
+    )
+    _settle_runs(service)
+    again = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="引用一下",
+        client_message_id="client-1",
+        reply_to_message_id=first.message.message_id,
+    )
+    assert again.message.message_id == sent.message.message_id
+    assert again.message.reply_to is not None
+    assert again.message.reply_to.text == "原始消息"
+
+
+@pytest.mark.asyncio
+async def test_quoting_a_bot_reply_hydrates_its_text() -> None:
+    """机器人回复的正文不在库里：引用快照必须来自运行事件，而不是空串。"""
+    service, _, _ = _service()
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    posted = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="问一句"
+    )
+    reply = posted.replies[0]
+    service._runs.get = AsyncMock(
+        return_value=_run(reply.run_id, RunStatus.SUCCEEDED, "group-original")
+    )
+    service._events.list_after = AsyncMock(
+        return_value=[
+            SimpleNamespace(type="message.delta", payload={"text": "机器人原话"})
+        ]
+    )
+
+    result = await service.post_assistant_group_message(
+        "t",
+        "u",
+        group.group_id,
+        text="引用机器人",
+        reply_to_message_id=reply.message_id,
+    )
+    assert result.message.reply_to is not None
+    assert result.message.reply_to.author is AssistantGroupMessageAuthor.PRIMARY
+    assert result.message.reply_to.text == "机器人原话"

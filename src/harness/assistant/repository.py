@@ -2934,6 +2934,28 @@ class PostgresAssistantRepository:
                 raise NotFoundError("Group message not found")
             row.run_id = run_id
 
+    async def group_quoted_messages(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        message_ids: Sequence[str],
+    ) -> dict[str, AssistantGroupMessage]:
+        """一次查回引用目标；跨群/已删的 id 直接缺席，由调用方省略引用。"""
+        wanted = list(dict.fromkeys(item for item in message_ids if item))
+        if not wanted:
+            return {}
+        async with self._context() as session:
+            rows = list(await session.scalars(
+                select(AssistantGroupMessageRow).where(
+                    AssistantGroupMessageRow.group_id == group_id,
+                    AssistantGroupMessageRow.tenant_id == tenant_id,
+                    AssistantGroupMessageRow.user_id == user_id,
+                    AssistantGroupMessageRow.message_id.in_(wanted),
+                )
+            ))
+        return {row.message_id: self._group_message(row) for row in rows}
+
     @staticmethod
     def _group_message(row: AssistantGroupMessageRow) -> AssistantGroupMessage:
         return AssistantGroupMessage(
@@ -2944,6 +2966,7 @@ class PostgresAssistantRepository:
             specialistId=row.specialist_id,
             text=row.text,
             runId=row.run_id,
+            replyToMessageId=row.reply_to_message_id,
             status=row.status,
             createdAt=row.created_at,
         )

@@ -893,6 +893,9 @@ class GroupMessageRequest(StudioModel):
     client_message_id: str | None = Field(
         default=None, alias="clientMessageId", max_length=128
     )
+    reply_to_message_id: str | None = Field(
+        default=None, alias="replyToMessageId", min_length=1, max_length=128
+    )
 
 
 class GroupReactionRequest(StudioModel):
@@ -995,4 +998,5 @@ async def post_assistant_group_message(
         group_id,
         text=body.text,
         client_message_id=body.client_message_id,
+        reply_to_message_id=body.reply_to_message_id,
     )
