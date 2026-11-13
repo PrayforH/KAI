@@ -16,6 +16,19 @@ const groupsRoute = readFileSync(
   join(process.cwd(), "src/app/assistant/groups/page.tsx"),
   "utf8",
 );
+const composer = readFileSync(
+  join(process.cwd(), "src/components/assistant-group-composer.tsx"),
+  "utf8",
+);
+const messageRow = readFileSync(
+  join(process.cwd(), "src/components/assistant-group-message.tsx"),
+  "utf8",
+);
+const markdown = readFileSync(
+  join(process.cwd(), "src/components/assistant-group-markdown.tsx"),
+  "utf8",
+);
+const client = readFileSync(join(process.cwd(), "src/lib/assistant-client.ts"), "utf8");
 
 describe("group chats live in the main assistant surface", () => {
   it("opens a group through ?group= inside the main chat stage", () => {
@@ -72,5 +85,51 @@ describe("group chats live in the main assistant surface", () => {
     expect(groupChat).toContain("styles.settingsPanel");
     expect(groupChat).toContain("aria-expanded={settingsOpen}");
     expect(groupChat).not.toContain("styles.toolbarInner");
+  });
+
+  it("renders messages through the shared row and composer components", () => {
+    expect(groupChat).toContain("<AssistantGroupMessage");
+    expect(groupChat).toContain("<AssistantGroupComposer");
+    expect(groupChat).toContain("onReply={handleQuote}");
+    // 悬停操作放在消息行里，不再由群会话拼表情按钮。
+    expect(messageRow).toContain('aria-label="引用这条消息"');
+    expect(messageRow).toContain('aria-label="复制这条消息"');
+    expect(markdown).toContain("remarkMentions");
+    expect(markdown).toContain("remarkGfm");
+  });
+
+  it("sends the quote id and keeps the draft when sending fails", () => {
+    expect(groupChat).toContain("quoted?.messageId ?? null");
+    // 成功路径先 await 发送，再清草稿和引用；失败时两者都保留。
+    const send = groupChat.slice(
+      groupChat.indexOf("const handleSend"),
+      groupChat.indexOf("const insertMention"),
+    );
+    expect(send.indexOf("await postAssistantGroupMessage")).toBeLessThan(
+      send.indexOf("setQuoted(null)"),
+    );
+    expect(send).toContain('setError(reason instanceof Error ? reason.message : "发送失败")');
+  });
+
+  it("has a one-line composer with a quote bar and a capped textarea", () => {
+    expect(composer).toContain("rows={1}");
+    expect(composer).toContain("MAX_LINES = 5");
+    expect(composer).toContain("event.shiftKey");
+    expect(composer).toContain('aria-label="取消引用"');
+    expect(composer).toContain('aria-label="提到群成员"');
+  });
+
+  it("accepts an optional reply snapshot from the groups API", () => {
+    expect(client).toContain("export type GroupMessageReply");
+    expect(client).toContain("replyTo?: GroupMessageReply");
+    expect(client).toContain("replyToMessageId?: string | null");
+    expect(client).toContain("replyToMessageId: replyToMessageId ?? undefined");
+  });
+
+  it("shows the member avatar cluster in the group header", () => {
+    expect(page).toContain("onGroupMembers={setGroupMembers}");
+    expect(page).toContain("group-member-faces");
+    expect(page).toContain("kai:group-settings-open");
+    expect(groupChat).toContain('window.addEventListener("kai:group-settings-open"');
   });
 });

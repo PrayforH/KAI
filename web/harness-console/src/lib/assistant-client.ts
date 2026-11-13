@@ -180,6 +180,13 @@ export type AssistantGroup = {
   createdAt: string;
   updatedAt: string;
 };
+export type GroupMessageReply = {
+  messageId: string;
+  author: "user" | "primary" | "specialist" | "system";
+  authorName: string;
+  /** 服务端已截断到 200 字。 */
+  text: string;
+};
 export type GroupMessage = {
   messageId: string;
   groupId: string;
@@ -189,6 +196,8 @@ export type GroupMessage = {
   text: string;
   runId: string | null;
   replyToMessageId: string | null;
+  /** 仅当这条消息显式引用了另一条消息时才出现；机器人自动回链不带。 */
+  replyTo?: GroupMessageReply;
   reactions: string[];
   status: "running" | "waiting" | "completed" | "failed" | "stopped";
   createdAt: string;
@@ -245,11 +254,12 @@ export async function postAssistantGroupMessage(
   groupId: string,
   text: string,
   clientMessageId: string,
+  replyToMessageId?: string | null,
 ): Promise<GroupPostResult> {
   return assistantRequest<GroupPostResult>(
     `groups/${encodeURIComponent(groupId)}/messages`,
     "POST",
-    { text, clientMessageId },
+    { text, clientMessageId, replyToMessageId: replyToMessageId ?? undefined },
   );
 }
 export async function markAssistantGroupRead(

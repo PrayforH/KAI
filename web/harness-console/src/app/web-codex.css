@@ -1087,6 +1087,52 @@ body.codex-theme-v1:has(.console-shell) .console-header {
   border-radius: 4px;
 }
 
+/* 群聊页头：成员头像簇，最多 3 个 + 其余折成 +N。 */
+.group-member-faces {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  margin-left: 2px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+}
+.group-member-faces:hover { background: #242424; }
+.group-member-faces:focus-visible {
+  outline: 2px solid #efefef;
+  outline-offset: 2px;
+}
+.group-member-face {
+  width: 22px;
+  height: 22px;
+  margin-left: -6px;
+  border-radius: 50%;
+  border: 2px solid #111111;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+}
+.group-member-face:first-child { margin-left: 0; }
+.group-member-more {
+  height: 22px;
+  margin-left: -6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 2px solid #111111;
+  background: #2b2b2b;
+  color: #b8b8b8;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+
 .task-context-chip {
   min-width: 0;
   height: 30px;
