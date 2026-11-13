@@ -13,42 +13,22 @@ import {
   setAssistantGroupReplyAs,
   toggleAssistantGroupReaction,
   type AssistantGroup,
+  type GroupMember,
   type GroupMessage,
   type Specialist,
 } from "../lib/assistant-client";
 import { botAccent } from "./bot-rail";
+import { AssistantGroupComposer } from "./assistant-group-composer";
+import { AssistantGroupMessage } from "./assistant-group-message";
+import { groupStampLabel } from "../lib/group-chat-time";
 import styles from "./assistant-group-chat.module.css";
 
 const PRIMARY_MEMBER_ID = "primary";
 const PERSONAL_THREAD = "kai-personal-assistant-v1";
-const REACTION_EMOJIS = ["👍", "❤️", "😂", "🎉", "👀"];
 /** 相邻两条消息超过这段时间就插一个时间分隔。 */
 const STAMP_GAP_MS = 10 * 60 * 1000;
-
-function timeLabel(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? ""
-    : date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-}
-
-/** 时间分隔：今天只写「今天 HH:MM」，更早的带上日期。 */
-function stampLabel(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const time = timeLabel(value);
-  const now = new Date();
-  const sameDay =
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate();
-  return sameDay ? `今天 ${time}` : `${date.getMonth() + 1}月${date.getDate()}日 ${time}`;
-}
-
-/** 把文本里的 @某人 拆出来渲染成芯片。 */
-function splitMentions(text: string): string[] {
-  return text.split(/(@[^\s，。,.!?！？:：;；]+)/g);
-}
+/** 引用条里展示的文本长度；服务端快照本身已截断到 200 字。 */
+const QUOTE_PREVIEW_CHARS = 120;
 
 function newClientId(): string {
   return `web-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -58,25 +38,32 @@ type AssistantGroupChatProps = {
   groupId: string;
   /** 群名回传给主界面页头；群被删或未加载时传 null。 */
   onGroupName?: (name: string | null) => void;
+  /** 成员头像簇回传给页头；群被删或未加载时传空数组。 */
+  onGroupMembers?: (members: GroupMember[]) => void;
 };
 
 /**
- * 主界面聊天区里的群会话：花名册、接话人、消息、@、未读和表情都在这里，
+ * 主界面聊天区里的群会话：花名册、接话人、消息、@、未读、引用和表情都在这里，
  * 不再自带左栏或独立顶栏——群列表由主界面左侧 BotRail 负责。
  */
-export function AssistantGroupChat({ groupId, onGroupName }: AssistantGroupChatProps) {
+export function AssistantGroupChat({
+  groupId,
+  onGroupName,
+  onGroupMembers,
+}: AssistantGroupChatProps) {
   const [groups, setGroups] = useState<AssistantGroup[]>([]);
   const [specialists, setSpecialists] = useState<Specialist[]>([]);
   const [messages, setMessages] = useState<GroupMessage[]>([]);
   /** 首轮消息还没回来时不要先闪一句「还没有消息」。 */
   const [messagesReady, setMessagesReady] = useState(false);
   const [draft, setDraft] = useState("");
+  /** 当前正在引用的消息；发送成功后才清空。 */
+  const [quoted, setQuoted] = useState<GroupMessage | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [memberToAdd, setMemberToAdd] = useState("");
-  const [pickerFor, setPickerFor] = useState<string | null>(null);
   /** 进群时已有的未读条数，用来决定「新」分割线放在哪。 */
   const [unreadSeed, setUnreadSeed] = useState<number | null>(null);
   const [dividerIndex, setDividerIndex] = useState<number | null>(null);
@@ -136,6 +123,13 @@ export function AssistantGroupChat({ groupId, onGroupName }: AssistantGroupChatP
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [settingsOpen]);
+
+  // 页头的成员头像簇被点击时打开同一块群设置面板。
+  useEffect(() => {
+    const open = () => setSettingsOpen(true);
+    window.addEventListener("kai:group-settings-open", open);
+    return () => window.removeEventListener("kai:group-settings-open", open);
+  }, []);
 
   const refreshGroups = useCallback(async () => {
     const list = await listAssistantGroups();
@@ -246,6 +240,10 @@ export function AssistantGroupChat({ groupId, onGroupName }: AssistantGroupChatP
     onGroupName?.(selected?.name ?? null);
   }, [onGroupName, selected?.name]);
 
+  useEffect(() => {
+    onGroupMembers?.(selected?.members ?? []);
+  }, [onGroupMembers, selected?.members]);
+
   const replaceGroup = (group: AssistantGroup) => {
     setGroups((current) =>
       current.map((item) => (item.groupId === group.groupId ? group : item)),
@@ -307,8 +305,15 @@ export function AssistantGroupChat({ groupId, onGroupName }: AssistantGroupChatP
     setError(null);
     setNotice(null);
     try {
-      const result = await postAssistantGroupMessage(selected.groupId, text, newClientId());
+      const result = await postAssistantGroupMessage(
+        selected.groupId,
+        text,
+        newClientId(),
+        quoted?.messageId ?? null,
+      );
+      // 成功才清草稿和引用；失败时两者都保留，避免用户重打。
       setDraft("");
+      setQuoted(null);
       if (result.notices.length > 0) setNotice(result.notices.join(" "));
       await refreshMessages(selected.groupId);
       await refreshGroups();
@@ -324,11 +329,10 @@ export function AssistantGroupChat({ groupId, onGroupName }: AssistantGroupChatP
       const spacer = current && !current.endsWith(" ") ? " " : "";
       return `${current}${spacer}@${name} `;
     });
-    composerRef.current?.focus();
+    requestAnimationFrame(() => composerRef.current?.focus());
   };
 
   const handleReaction = async (message: GroupMessage, emoji: string) => {
-    setPickerFor(null);
     const next = message.reactions.includes(emoji)
       ? message.reactions.filter((item) => item !== emoji)
       : [...message.reactions, emoji];
@@ -354,6 +358,11 @@ export function AssistantGroupChat({ groupId, onGroupName }: AssistantGroupChatP
       setError(reason instanceof Error ? reason.message : "表情操作失败");
       void refreshMessages(message.groupId);
     }
+  };
+
+  const handleQuote = (message: GroupMessage) => {
+    setQuoted(message);
+    requestAnimationFrame(() => composerRef.current?.focus());
   };
 
   const mentionTargets = useMemo(
@@ -493,17 +502,15 @@ export function AssistantGroupChat({ groupId, onGroupName }: AssistantGroupChatP
           {(notice || error) && (
             <div className={styles.bannerStack}>
               {notice && <div className={styles.notice}>{notice}</div>}
-              {error && <div className={styles.error}>{error}</div>}
+              {error && <div className={styles.error} role="alert">{error}</div>}
             </div>
           )}
           {messagesReady && orderedMessages.length === 0 && (
             <div className={styles.empty}>还没有消息，打个招呼吧。</div>
           )}
           {orderedMessages.map((message, index) => {
-            const mine = message.author === "user";
-            const system = message.author === "system";
             const previous = orderedMessages[index - 1];
-            const stamp = stampLabel(message.createdAt);
+            const stamp = groupStampLabel(message.createdAt);
             const gap = previous
               ? Date.parse(message.createdAt) - Date.parse(previous.createdAt)
               : Number.POSITIVE_INFINITY;
@@ -520,108 +527,22 @@ export function AssistantGroupChat({ groupId, onGroupName }: AssistantGroupChatP
               <Fragment key={message.messageId}>
                 {showStamp && <div className={styles.stamp}>{stamp}</div>}
                 {dividerIndex === index && (
-                  <div className={styles.unreadLine} aria-label="新消息分隔">
-                    <span>新</span>
+                  <div className={styles.unreadLine} role="separator" aria-label="新消息分隔">
+                    <span>新消息</span>
                   </div>
                 )}
-                <div
-                  className={`${styles.message} ${mine ? styles.messageUser : ""} ${
-                    system ? styles.messageSystem : ""
-                  }`}
-                >
-                  {!mine && !system && (
-                    <span className={styles.avatar} style={{ background: tone }}>
-                      {message.authorName.slice(0, 1)}
-                    </span>
-                  )}
-                  <div className={styles.body}>
-                    {!system && (
-                      <span className={styles.author}>
-                        <strong style={{ color: tone }}>{message.authorName}</strong>
-                        <span className={styles.badge}>
-                          {message.author === "user"
-                            ? "我"
-                            : message.author === "primary"
-                              ? "主助理"
-                              : "子助理"}
-                        </span>
-                        <span>{timeLabel(message.createdAt)}</span>
-                      </span>
-                    )}
-                    <div
-                      className={`${styles.bubble} ${
-                        message.status === "failed" ? styles.failed : ""
-                      }`}
-                    >
-                      {message.text
-                        ? splitMentions(message.text).map((part, partIndex) =>
-                            part.startsWith("@") ? (
-                              <span key={partIndex} className={styles.mentionChip}>
-                                {part}
-                              </span>
-                            ) : (
-                              <Fragment key={partIndex}>{part}</Fragment>
-                            ),
-                          )
-                        : (
-                            <span className={styles.running}>
-                              {message.status === "waiting"
-                                ? "等待确认后继续…"
-                                : message.status === "running"
-                                  ? "正在回复…"
-                                  : "…"}
-                            </span>
-                          )}
-                    </div>
-                    {!system && (
-                      <div className={styles.reactionRow}>
-                        {message.reactions.map((emoji) => (
-                          <button
-                            key={emoji}
-                            type="button"
-                            className={`${styles.reactionChip} ${styles.reactionChipOn}`}
-                            title="取消这个表情"
-                            onClick={() => void handleReaction(message, emoji)}
-                          >
-                            {emoji}
-                          </button>
-                        ))}
-                        <button
-                          type="button"
-                          className={styles.reactionAdd}
-                          aria-label="添加表情"
-                          title="添加表情"
-                          onClick={() =>
-                            setPickerFor((current) =>
-                              current === message.messageId ? null : message.messageId,
-                            )
-                          }
-                        >
-                          ☺
-                        </button>
-                        {pickerFor === message.messageId && (
-                          <span className={styles.reactionPicker}>
-                            {REACTION_EMOJIS.map((emoji) => (
-                              <button
-                                key={emoji}
-                                type="button"
-                                onClick={() => void handleReaction(message, emoji)}
-                              >
-                                {emoji}
-                              </button>
-                            ))}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <AssistantGroupMessage
+                  message={message}
+                  tone={tone}
+                  onReact={(target, emoji) => void handleReaction(target, emoji)}
+                  onReply={handleQuote}
+                />
               </Fragment>
             );
           })}
         </div>
       </div>
-      <footer className={styles.composer}>
+      <footer className={styles.composerArea}>
         <div className={styles.composerInner}>
           {newPill > 0 && (
             <div className={styles.newPill}>
@@ -638,66 +559,33 @@ export function AssistantGroupChat({ groupId, onGroupName }: AssistantGroupChatP
               </button>
             </div>
           )}
-          {mentionTargets.length > 0 && (
-            <div className={styles.mentionBar}>
-              @
-              {mentionTargets.map((member) => (
-                <button
-                  key={member.memberId}
-                  type="button"
-                  className={styles.mentionButton}
-                  onClick={() => insertMention(member.name)}
-                >
-                  {member.name}
-                </button>
-              ))}
-            </div>
-          )}
-          {/* 直接复用主助理 composer 的样式：外壳、输入框和发送键都走
-              harness-composer-shell / aui-composer-*，深浅主题自动跟随。 */}
-          <div className="harness-composer-shell">
-            <div className="aui-composer-root">
-              <textarea
-                ref={composerRef}
-                className="aui-composer-input"
-                value={draft}
-                rows={1}
-                placeholder={
-                  selected.primaryPresent
-                    ? `给 ${selected.name} 发消息`
-                    : "主助理已移出：未 @ 的消息不会改派，请 @ 子助理"
-                }
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    void handleSend();
+          <AssistantGroupComposer
+            value={draft}
+            onChange={setDraft}
+            onSend={() => void handleSend()}
+            onMention={insertMention}
+            sending={busy}
+            placeholder={
+              selected.primaryPresent
+                ? `给 ${selected.name} 发消息`
+                : "主助理已移出：未 @ 的消息不会改派，请 @ 子助理"
+            }
+            members={mentionTargets.map((member) => ({
+              memberId: member.memberId,
+              name: member.name,
+            }))}
+            quoted={
+              quoted
+                ? {
+                    authorName: quoted.authorName,
+                    text: quoted.text.slice(0, QUOTE_PREVIEW_CHARS),
                   }
-                }}
-              />
-              <button
-                type="button"
-                className="aui-composer-send"
-                aria-label="发送"
-                title="发送"
-                disabled={!draft.trim() || busy}
-                onClick={() => void handleSend()}
-              >
-                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path
-                    d="M12 19V5M12 5l-6 6M12 5l6 6"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
-            </div>
-          </div>
-          <span className={styles.hint}>
-            Enter 发送 · Shift+Enter 换行 · 消息与回复只保存在本群
-          </span>
+                : null
+            }
+            onClearQuote={() => setQuoted(null)}
+            textareaRef={composerRef}
+            hint="Enter 发送 · Shift+Enter 换行 · 消息与回复只保存在本群"
+          />
         </div>
       </footer>
     </section>

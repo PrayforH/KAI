@@ -52,6 +52,10 @@
   background: var(--codex-surface-raised, #242424);
   color: var(--codex-ink, #f5f5f5);
 }
+.settingsButton:focus-visible {
+  outline: 2px solid var(--codex-ink, #f5f5f5);
+  outline-offset: 2px;
+}
 .settingsPanel {
   width: min(520px, calc(100vw - 32px));
   display: flex;
@@ -99,6 +103,10 @@
   padding: 0 2px;
 }
 .chip button:hover { color: var(--codex-danger, #e05a50); }
+.chip button:focus-visible {
+  outline: 2px solid var(--codex-ink, #f5f5f5);
+  outline-offset: 1px;
+}
 .addRow { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
 .replyAs {
   display: inline-flex;
@@ -164,7 +172,7 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 20px 24px 8px;
+  padding: 24px 24px 8px;
 }
 .thread {
   width: 100%;
@@ -172,23 +180,26 @@
   margin-inline: auto;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
 }
 
-/* 时间分隔与「新」未读分割线。 */
+/* 时间分隔与「新消息」分割线。 */
 .stamp {
   align-self: center;
   font-size: 12px;
+  line-height: 16px;
   color: var(--codex-faint, #727272);
   padding: 2px 0;
 }
 .unreadLine {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
   color: #6aa9ff;
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   margin: 2px 0;
 }
 .unreadLine::before,
@@ -199,142 +210,9 @@
   background: currentColor;
   opacity: 0.35;
 }
-.unreadLine span { font-weight: 600; }
 
-.message {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  gap: 10px;
-  width: 100%;
-}
-.messageUser { justify-content: flex-end; }
-.messageSystem { justify-content: center; }
-
-.avatar {
-  flex: none;
-  width: 24px;
-  height: 24px;
-  margin-top: 20px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1;
-}
-.body {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  min-width: 0;
-  max-width: min(82%, 40rem);
-}
-.messageUser .body { align-items: flex-end; }
-
-.author {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  font-size: 11px;
-  color: var(--codex-faint, #727272);
-}
-.author strong { font-size: 12px; font-weight: 600; }
-.badge {
-  padding: 0 6px;
-  border-radius: 999px;
-  border: 1px solid var(--codex-line, #343434);
-  background: var(--codex-surface-raised, #242424);
-  color: var(--codex-muted, #a3a3a3);
-  font-size: 10px;
-  line-height: 1.6;
-}
-
-.bubble {
-  font-size: 14px;
-  line-height: 1.68;
-  color: var(--codex-ink-soft, #d2d2d2);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-/* 用户消息与助理页同一颗 Bot 气泡色。 */
-.messageUser .bubble {
-  /* max-content 避免“自测-发送-010330”这类无空格文本被压成一两个字宽。 */
-  width: max-content;
-  max-width: 100%;
-  padding: 10px 14px;
-  border: 0;
-  border-radius: 18px;
-  background: var(--kai-bot-bubble, #126fd4);
-  color: var(--kai-bot-bubble-ink, #fff);
-  font-size: 14px;
-  line-height: 1.58;
-}
-/* 系统提示安静地居中显示。 */
-.messageSystem .bubble,
-.messageSystem .bubble.failed {
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: var(--codex-surface-subtle, #1b1b1b);
-  color: var(--codex-muted, #a3a3a3);
-  font-size: 12px;
-  text-align: center;
-}
-.messageSystem .bubble.failed { color: var(--codex-danger, #e05a50); }
-.running { color: var(--codex-muted, #a3a3a3); font-style: italic; }
-.failed { color: var(--codex-danger, #e05a50); }
-
-/* @ 某人渲染成芯片，和正文区分开。 */
-.mentionChip {
-  display: inline-block;
-  margin: 0 1px;
-  padding: 0 5px;
-  border-radius: 6px;
-  background: rgb(255 166 0 / 18%);
-  color: #ffb45e;
-  font-size: 13px;
-  line-height: 1.6;
-}
-.messageUser .mentionChip { background: rgb(255 255 255 / 20%); color: inherit; }
-.messageSystem .mentionChip { background: var(--codex-accent-soft, rgb(255 255 255 / 10%)); }
-
-.reactionRow { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
-.messageUser .reactionRow { justify-content: flex-end; }
-.reactionChip,
-.reactionAdd,
-.reactionPicker button {
-  border: 1px solid var(--codex-line, #343434);
-  background: transparent;
-  color: var(--codex-muted, #a3a3a3);
-  border-radius: 999px;
-  font-size: 12px;
-  line-height: 1;
-  padding: 3px 7px;
-  cursor: pointer;
-}
-.reactionChipOn {
-  background: var(--codex-accent-soft, rgb(255 255 255 / 10%));
-  border-color: var(--codex-line-strong, #474747);
-}
-.reactionAdd { opacity: 0.55; }
-.reactionRow:hover .reactionAdd,
-.reactionAdd:focus-visible { opacity: 1; }
-.reactionPicker {
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 999px;
-  border: 1px solid var(--codex-line, #343434);
-  background: var(--codex-surface-raised, #242424);
-  box-shadow: var(--codex-shadow-soft, 0 8px 28px rgb(0 0 0 / 24%));
-}
-.reactionPicker button { border: none; font-size: 14px; padding: 2px 4px; }
-.reactionPicker button:hover { background: var(--codex-surface-hover, #303030); border-radius: 999px; }
-
-/* 底部输入框：与主助理 composer 同款圆角卡片。 */
-.composer { flex: none; padding: 8px 24px 14px; }
+/* 底部输入区：居中，和阅读列同宽。 */
+.composerArea { flex: none; padding: 8px 24px 14px; }
 .composerInner {
   width: 100%;
   max-width: var(--aui-thread-max-width, 50rem);
@@ -367,34 +245,4 @@
 .newPillClose:hover { background: var(--codex-surface-hover, #303030); }
 .newPillClose { padding: 5px 9px; }
 
-.mentionBar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--codex-muted, #a3a3a3);
-}
-.mentionButton {
-  border: 1px solid var(--codex-line, #343434);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--codex-ink-soft, #d2d2d2);
-  font: inherit;
-  font-size: 12px;
-  padding: 3px 9px;
-  cursor: pointer;
-}
-.mentionButton:hover { background: var(--codex-surface-hover, #303030); }
-.hint { font-size: 11px; color: var(--codex-faint, #727272); text-align: center; }
-
-/* 浅色主题下少数彩色元素保持原来的浅底深字。 */
-:global(html[data-color-mode="light"]) .mentionChip {
-  background: #fff1dd;
-  color: #a86400;
-}
-:global(html[data-color-mode="light"]) .messageUser .mentionChip {
-  background: rgb(255 255 255 / 24%);
-  color: inherit;
-}
 :global(html[data-color-mode="light"]) .unreadLine { color: #2f7dd1; }

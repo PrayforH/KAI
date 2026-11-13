@@ -1,0 +1,130 @@
+/* 群消息 Markdown：与主对话的排版节奏一致，所有颜色走 codex 主题变量。 */
+.markdown {
+  font-size: 14px;
+  line-height: 1.7;
+  color: inherit;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.markdown > :first-child { margin-top: 0; }
+.markdown > :last-child { margin-bottom: 0; }
+
+.markdown p { margin: 0 0 8px; }
+.markdown p:last-child { margin-bottom: 0; }
+/* 纯文本消息里单个换行保留，和原来的 pre-wrap 行为一致。 */
+.markdown p { white-space: pre-wrap; }
+
+.heading {
+  margin: 14px 0 8px;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.45;
+  color: inherit;
+}
+.heading:first-child { margin-top: 0; }
+
+.markdown ul,
+.markdown ol {
+  margin: 4px 0 8px;
+  padding-left: 22px;
+}
+.markdown li { margin: 2px 0; }
+.markdown li > p { margin: 0; }
+
+.markdown strong { font-weight: 650; }
+.markdown em { font-style: italic; }
+.markdown del { opacity: 0.7; }
+
+.link {
+  color: var(--codex-link, #6aa9ff);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.quote {
+  margin: 6px 0 8px;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--codex-line-strong, #474747);
+  color: var(--codex-muted, #a3a3a3);
+}
+
+.rule {
+  margin: 12px 0;
+  border: 0;
+  border-top: 1px solid var(--codex-line, #343434);
+}
+
+.codeInline {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--codex-surface-subtle, #1b1b1b);
+  font-family: var(--codex-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12.5px;
+}
+
+.pre {
+  margin: 8px 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border: 1px solid var(--codex-line, #343434);
+  border-radius: 10px;
+  background: var(--codex-surface-subtle, #1b1b1b);
+}
+.pre .codeBlock,
+.codeBlock {
+  font-family: var(--codex-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre;
+}
+
+.tableScroll {
+  max-width: 100%;
+  margin: 8px 0;
+  overflow-x: auto;
+  border: 1px solid var(--codex-line, #343434);
+  border-radius: 10px;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.table th,
+.table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--codex-line, #343434);
+  text-align: left;
+  vertical-align: top;
+}
+.table th {
+  background: var(--codex-surface-subtle, #1b1b1b);
+  font-weight: 600;
+}
+.table tr:last-child td { border-bottom: 0; }
+
+.image {
+  max-width: 100%;
+  max-height: 320px;
+  border-radius: 10px;
+}
+
+/* @某人 芯片：与 composer 里的提及保持一致。 */
+.markdown :global([data-mention]) {
+  display: inline-block;
+  margin: 0 1px;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: rgb(255 166 0 / 18%);
+  color: var(--codex-mention, #ffb45e);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+:global(html[data-color-mode="light"]) .markdown :global([data-mention]) {
+  background: #fff1dd;
+  color: #a86400;
+}
+:global(html[data-color-mode="light"]) .link { color: #2f7dd1; }

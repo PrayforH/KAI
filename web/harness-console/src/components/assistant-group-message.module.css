@@ -1,0 +1,269 @@
+/* 一条群消息：成员无气泡、用户右侧气泡、系统居中。
+   操作条默认隐藏，悬停/键盘聚焦才出现；触屏常驻。 */
+
+.memberRow,
+.userRow {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.memberRow { justify-content: flex-start; }
+.userRow { justify-content: flex-end; }
+
+.avatar {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  margin-top: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+}
+
+.memberColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  max-width: min(100%, 44rem);
+}
+
+.userColumn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 0;
+  max-width: min(82%, 40rem);
+}
+
+.memberMeta,
+.userMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--codex-faint, #727272);
+}
+
+.memberMeta strong {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.badge {
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--codex-line, #343434);
+  background: var(--codex-surface-raised, #242424);
+  color: var(--codex-muted, #a3a3a3);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.memberBody {
+  min-width: 0;
+  color: var(--codex-ink-soft, #d2d2d2);
+}
+
+.memberBody.failed,
+.failed { color: var(--codex-danger, #e05a50); }
+
+.placeholder {
+  color: var(--codex-muted, #a3a3a3);
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* 用户气泡：与主助理会话同一颗蓝色。 */
+.userBubble {
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+  padding: 9px 13px;
+  border-radius: 16px;
+  background: var(--kai-bot-bubble, #126fd4);
+  color: var(--kai-bot-bubble-ink, #fff);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.userBubble :global(a) { color: #fff; }
+.userBubble :global([data-mention]) {
+  background: rgb(255 255 255 / 20%);
+  color: inherit;
+}
+.failedBubble { background: var(--codex-danger-soft, rgb(224 90 80 / 18%)); color: var(--codex-danger, #e05a50); }
+
+/* 引用块：左侧竖线 + 一行截断，作者名在前。 */
+.quoted {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 10px;
+  border-left: 3px solid var(--codex-line-strong, #474747);
+  border-radius: 0 8px 8px 0;
+  background: var(--codex-surface-subtle, #1b1b1b);
+  color: var(--codex-muted, #a3a3a3);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.userColumn .quoted { align-self: stretch; }
+.quotedAuthor {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  color: var(--codex-ink-soft, #d2d2d2);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.quotedText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 系统提示居中弱化。 */
+.systemRow {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  padding: 2px 0;
+}
+.systemPill {
+  max-width: 80%;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--codex-surface-subtle, #1b1b1b);
+  color: var(--codex-muted, #a3a3a3);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* 表情 chip。 */
+.reactionRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.userColumn .reactionRow { justify-content: flex-end; }
+.reactionChip {
+  border: 1px solid var(--codex-line-strong, #474747);
+  border-radius: 999px;
+  background: var(--codex-surface-raised, #242424);
+  color: var(--codex-ink-soft, #d2d2d2);
+  font-size: 12px;
+  line-height: 1;
+  padding: 3px 7px;
+  cursor: pointer;
+}
+.reactionChipOn {
+  background: var(--codex-accent-soft, rgb(255 255 255 / 10%));
+  border-color: var(--codex-muted, #a3a3a3);
+}
+.reactionChip:hover { border-color: var(--codex-faint, #727272); }
+
+/* 操作条。 */
+.actions {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 1px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.memberRow:hover .actions,
+.memberRow:focus-within .actions,
+.userRow:hover .actions,
+.userRow:focus-within .actions,
+.actions:focus-within {
+  opacity: 1;
+}
+@media (hover: none) {
+  .actions { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .actions { transition: none; }
+}
+
+.actionButtons {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 1px;
+  border-radius: 999px;
+  background: var(--codex-surface-raised, #242424);
+  border: 1px solid var(--codex-line, #343434);
+}
+.actionButton {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--codex-muted, #a3a3a3);
+  cursor: pointer;
+}
+.actionButton svg { width: 15px; height: 15px; display: block; }
+.actionButton:hover:not(:disabled) {
+  background: var(--codex-surface-hover, #303030);
+  color: var(--codex-ink, #f5f5f5);
+}
+.actionButton:focus-visible {
+  outline: 2px solid var(--codex-ink, #f5f5f5);
+  outline-offset: 1px;
+}
+.actionButton:disabled { opacity: 0.4; cursor: default; }
+
+.copyFeedback {
+  font-size: 11px;
+  color: var(--codex-muted, #a3a3a3);
+}
+
+.reactionPicker {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  z-index: 8;
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid var(--codex-line-strong, #474747);
+  background: var(--codex-surface-raised, #242424);
+  box-shadow: var(--codex-shadow-soft, 0 8px 28px rgb(0 0 0 / 24%));
+}
+.userColumn .reactionPicker {
+  left: auto;
+  right: 0;
+}
+.pickerButton {
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  font-size: 15px;
+  line-height: 1;
+  padding: 3px 5px;
+  cursor: pointer;
+}
+.pickerButton:hover,
+.pickerButtonOn { background: var(--codex-surface-hover, #303030); }
