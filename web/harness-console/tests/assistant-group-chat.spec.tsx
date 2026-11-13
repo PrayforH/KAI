@@ -245,14 +245,61 @@ describe("AssistantGroupChat", () => {
     expect(host.querySelector('[role="dialog"][aria-label="群信息"]')).toBeNull();
   });
 
-  it("anchors the header actions to the chat column so the side panel close stays on top", () => {
-    // jsdom 不做布局，这里守住层级修复的结构前提：⋯ 的绝对定位以 .main 为界，
-    // 不再按 .chat 定位到右侧栏上方。
+  it("keeps both header actions in the fixed title band, outside the message scroll area", async () => {
+    await act(async () =>
+      root!.render(<AssistantGroupChat groupId="g1" userId="u1" />),
+    );
+    await flush();
+
+    const band = host.querySelector<HTMLElement>('[data-testid="assistant-surface-title"]')!;
+    const timeline = host.querySelector<HTMLElement>('[data-testid="group-message-timeline"]')!;
+    const sideToggle = host.querySelector<HTMLButtonElement>(
+      '[aria-label$="群右侧栏"][aria-expanded]',
+    )!;
+    const infoToggle = host.querySelector<HTMLButtonElement>('[aria-label="群信息"]')!;
+
+    expect(band).not.toBeNull();
+    expect(timeline).not.toBeNull();
+    // 两个入口都在标题带里，且都不在滚动容器里。
+    expect(band.contains(sideToggle)).toBe(true);
+    expect(band.contains(infoToggle)).toBe(true);
+    expect(timeline.contains(sideToggle)).toBe(false);
+    expect(timeline.contains(infoToggle)).toBe(false);
+    // 标题带是滚动容器的前一个兄弟：消息滚动时带子不动，按钮矩形与气泡矩形必然分离。
+    expect(band.nextElementSibling).toBe(timeline);
+    // 滚动容器里不再有任何「absolute/fixed 的头部悬浮控件」。
+    expect(timeline.querySelector('[data-testid="assistant-surface-title"]')).toBeNull();
+  });
+
+  it("lays the title band out above a scrolling timeline at 1440 and 1024", () => {
+    // jsdom 不做布局：这里守住几何不相交的布局前提——
+    // 标题带 flex:0 0 auto 且不在 overflow 容器内；消息列 flex:1 + overflow:auto，
+    // 其内容被裁在自己的矩形里。两档宽度共用同一套分栏，没有宽度分支。
     const css = readFileSync(
       resolve(process.cwd(), "src/components/assistant-group-chat.module.css"),
       "utf8",
     );
+    const bandCss = readFileSync(
+      resolve(process.cwd(), "src/app/assistant-conversation.css"),
+      "utf8",
+    );
     const mainBlock = css.match(/\.main\s*\{([^}]*)\}/)?.[1] ?? "";
-    expect(mainBlock).toContain("position: relative");
+    const timelineBlock = css.match(/\.timeline\s*\{([^}]*)\}/)?.[1] ?? "";
+    const settingsBlock = css.match(/\.settings\s*\{([^}]*)\}/)?.[1] ?? "";
+    const bandBlock =
+      bandCss.match(/\.assistant-surface-title\s*\{([^}]*)\}/)?.[1] ?? "";
+
+    expect(mainBlock).toContain("flex-direction: column");
+    expect(bandBlock).toContain("flex: 0 0 auto");
+    expect(bandBlock).toContain("min-height: 46px");
+    expect(timelineBlock).toContain("flex: 1");
+    expect(timelineBlock).toContain("overflow: auto");
+    expect(timelineBlock).not.toContain("position: absolute");
+    // 标题带里的按钮组不再绝对定位到滚动区上方。
+    expect(settingsBlock).not.toContain("position: absolute");
+    expect(settingsBlock).toContain("margin-left: auto");
+    // 只有 900px 以下的横向内边距收窄，两档桌面宽度没有分栏变化。
+    expect(css).not.toContain("@media (max-width: 1024px)");
+    expect(css).not.toContain("@media (min-width: 1200px)");
   });
 });

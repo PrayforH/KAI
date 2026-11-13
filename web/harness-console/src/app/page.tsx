@@ -1142,10 +1142,8 @@ function AuthenticatedHome() {
             )}
             {groupParam ? (
               <div className="chat-surface">
-                {/* 左上角固定标识：只有名称，没有右侧图标、分隔线、阴影和渐变。 */}
-                <div className="assistant-surface-title" data-testid="assistant-surface-title">
-                  <span className="task-context-title">{groupTitle ?? "群聊"}</span>
-                </div>
+                {/* 群名与右侧栏/群信息入口同在群聊组件自己的固定标题带里，
+                    不随消息滚动；这里不再单独渲染一行标题，避免两行空占位。 */}
                 <AssistantGroupChat
                   key={groupParam}
                   groupId={groupParam}

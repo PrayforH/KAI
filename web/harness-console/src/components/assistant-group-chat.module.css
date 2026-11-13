@@ -13,8 +13,8 @@
 
 /* 对话列；右侧栏打开时并排，不挤压消息阅读列的最小宽度。 */
 .main {
-  /* 右上角 ⋯ 的绝对定位以对话列为界；否则会按 .chat 定位到右侧栏上方，
-     把侧栏的关闭按钮盖住（验收 P2-2）。 */
+  /* 群信息弹层挂在标题带的按钮组上（.settings 是 relative），
+     以对话列为界，不会盖住右侧栏的关闭按钮。 */
   position: relative;
   flex: 1;
   min-width: 0;
@@ -34,16 +34,21 @@
   text-align: center;
 }
 
-/* 花名册/邀请/接话人平时收在右上角「⋯」里，对话区不占额外一栏。 */
+/* 右侧栏与「⋯」现在住在固定标题带里（.assistant-surface-title，高 46px），
+   处于消息滚动区之外：不再 absolute 悬浮在气泡上方随滚动遮挡。 */
 .settings {
-  position: absolute;
-  top: 8px;
-  right: 16px;
-  z-index: 6;
+  position: relative;
+  margin-left: auto;
+  flex: 0 0 auto;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
   gap: 6px;
+}
+.settingsPopover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 8;
 }
 .settingsButtons {
   display: flex;
@@ -102,8 +107,9 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  /* 右上角 ⋯/侧栏按钮绝对定位在对话列顶部，给消息留出让位，避免第一条被压住。 */
-  padding: 44px 24px 8px;
+  /* 标题带独占一行、不参与滚动，消息区从它下方开始；
+     这里不再需要 44px 的悬浮按钮让位。 */
+  padding: 8px 24px 8px;
 }
 @media (max-width: 900px) {
   .timeline { padding-inline: 16px; }

@@ -68,7 +68,12 @@ describe("group and assistant composer parity", () => {
   });
 
   it("restores a fixed surface title on both surfaces without header chrome", () => {
-    expect(page.match(/data-testid="assistant-surface-title"/g)).toHaveLength(2);
+    // 单助理的标题带在 page.tsx；群聊的标题带跟着群聊组件走（群名 + 右侧栏/群信息
+    // 按钮同一条带，按钮因此不在消息滚动区里）。
+    expect(page.match(/data-testid="assistant-surface-title"/g)).toHaveLength(1);
+    expect(source("src/components/assistant-group-chat.tsx")).toContain(
+      'data-testid="assistant-surface-title"',
+    );
     const css = assistantCss.match(/\.assistant-surface-title\s*\{([^}]*)\}/)?.[1] ?? "";
     expect(css).toContain("flex: 0 0 auto");
     expect(css).not.toContain("box-shadow");
@@ -113,5 +118,21 @@ describe("group and assistant composer parity", () => {
   it("drops the assistant header and keeps the floating entries", () => {
     expect(page).toContain('className="assistant-floating-controls"');
     expect(source("src/components/task-sidebar.tsx")).toContain("task-rail-toggle");
+  });
+
+  it("keeps the single-assistant floating entries above the scrolling surface, not inside it", () => {
+    // 单助理的聊天记录/侧栏开关是 .chat-stage 的直接子节点，与
+    // .chat-surface（标题带 + 会滚动的会话列）平级：它们落在 46px 标题带同高的
+    // 顶部区域，不参与消息滚动，因此不会随滚动压到气泡上。
+    const stage = page.indexOf('className="chat-stage"');
+    const floating = page.indexOf('className="assistant-floating-controls"');
+    const surface = page.indexOf('className="chat-surface"', stage);
+    expect(stage).toBeGreaterThan(0);
+    expect(floating).toBeGreaterThan(stage);
+    expect(floating).toBeLessThan(surface);
+    // 标题带在 chat-surface 内部、会话列之前；标题带本身不滚动。
+    expect(assistantCss).toMatch(
+      /\.assistant-surface-title\s*\{[^}]*flex: 0 0 auto/,
+    );
   });
 });
