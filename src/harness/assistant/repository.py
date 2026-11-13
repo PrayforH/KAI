@@ -11,14 +11,17 @@ from typing import cast as type_cast
 from urllib.parse import urlencode
 from uuid import uuid4
 
-from sqlalchemy import DateTime, Select, and_, cast, func, literal, or_, select
+from sqlalchemy import DateTime, Select, and_, cast, delete, func, literal, or_, select, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from harness.assistant.group_library import group_document_download_url
 from harness.assistant.lifecycle import next_check, transition, validate_new_schedule
 from harness.assistant.models import (
     AssistantGroup,
+    AssistantGroupAttachment,
+    AssistantGroupDocument,
     AssistantGroupMember,
     AssistantGroupMessage,
     AssistantInboxItem,
@@ -41,6 +44,8 @@ from harness.assistant.models import (
 from harness.assistant.permissions import require_local_tools
 from harness.assistant.skill_models import PersonalSkill, SkillProposal
 from harness.assistant.storage import (
+    AssistantGroupDocumentRow,
+    AssistantGroupKnowledgeBaseRow,
     AssistantGroupMemberRow,
     AssistantGroupMessageRow,
     AssistantGroupReactionRow,
@@ -59,7 +64,7 @@ from harness.assistant.storage import (
     SpecialistRow,
     VaultItemRow,
 )
-from harness.core.errors import ConflictError, NotFoundError
+from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
 from harness.core.events import RunEvent
 from harness.core.models import Run, RunStatus
 from harness.scheduling import TimingKind
@@ -2474,6 +2479,7 @@ class PostgresAssistantRepository:
         return AssistantGroup(
             groupId=row.group_id,
             name=row.name,
+            description=row.description,
             creatorUserId=row.user_id,
             primaryPresent=bool(payload.get("primaryPresent", True)),
             replyAs=type_cast(str | None, payload.get("replyAs")),
@@ -2510,6 +2516,7 @@ class PostgresAssistantRepository:
                     tenant_id=tenant_id,
                     user_id=user_id,
                     name=group.name,
+                    description=group.description,
                     revision=1,
                     created_at=now,
                     updated_at=now,
@@ -2704,6 +2711,320 @@ class PostgresAssistantRepository:
             group = self._group(group_row)
             return await self._group_with_members(session, group)
 
+    async def group_owner(self, tenant_id: str, group_id: str) -> str | None:
+        """只回群的创建者，用来把“别人的群”判成 403 而不是 404。"""
+        async with self._context() as session:
+            return await session.scalar(
+                select(AssistantGroupRow.user_id).where(
+                    AssistantGroupRow.tenant_id == tenant_id,
+                    AssistantGroupRow.group_id == group_id,
+                )
+            )
+
+    async def update_group(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        *,
+        fields: dict[str, str | None],
+    ) -> AssistantGroup:
+        """只改显式给出的字段；未给出的保持原样。"""
+        now = datetime.now(UTC)
+        async with self._context(write=True) as session:
+            group_row = await self._require_group(
+                session, tenant_id, user_id, group_id, lock=True
+            )
+            if "name" in fields:
+                group_row.name = type_cast(str, fields["name"])
+            if "description" in fields:
+                group_row.description = fields["description"]
+            group_row.updated_at = now
+            group_row.revision += 1
+            group = self._group(group_row)
+            return await self._group_with_members(session, group)
+
+    async def delete_group(
+        self, tenant_id: str, user_id: str, group_id: str
+    ) -> None:
+        """解散群：成员/消息/表情/资料库文档与知识库绑定一起清。"""
+        async with self._context(write=True) as session:
+            await self._require_group(
+                session, tenant_id, user_id, group_id, lock=True
+            )
+            await session.execute(
+                delete(AssistantGroupReactionRow).where(
+                    AssistantGroupReactionRow.group_id == group_id
+                )
+            )
+            await session.execute(
+                delete(AssistantGroupMessageRow).where(
+                    AssistantGroupMessageRow.group_id == group_id
+                )
+            )
+            await session.execute(
+                delete(AssistantGroupMemberRow).where(
+                    AssistantGroupMemberRow.group_id == group_id
+                )
+            )
+            await session.execute(
+                delete(AssistantGroupDocumentRow).where(
+                    AssistantGroupDocumentRow.group_id == group_id
+                )
+            )
+            await session.execute(
+                delete(AssistantGroupKnowledgeBaseRow).where(
+                    AssistantGroupKnowledgeBaseRow.group_id == group_id
+                )
+            )
+            await session.execute(
+                delete(AssistantGroupRow).where(
+                    AssistantGroupRow.tenant_id == tenant_id,
+                    AssistantGroupRow.user_id == user_id,
+                    AssistantGroupRow.group_id == group_id,
+                )
+            )
+
+    async def delete_group_message(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        message_id: str,
+        *,
+        actor_user_id: str,
+    ) -> None:
+        """硬删一条消息；引用它的消息清掉引用指针，读时自然省略 replyTo。"""
+        async with self._context(write=True) as session:
+            group_row = await self._require_group(
+                session, tenant_id, user_id, group_id, lock=True
+            )
+            row = await session.scalar(
+                select(AssistantGroupMessageRow).where(
+                    AssistantGroupMessageRow.group_id == group_id,
+                    AssistantGroupMessageRow.tenant_id == tenant_id,
+                    AssistantGroupMessageRow.user_id == user_id,
+                    AssistantGroupMessageRow.message_id == message_id,
+                )
+            )
+            if row is None:
+                raise NotFoundError("message not found")
+            if row.status == "running":
+                raise ConflictError("message is running")
+            is_author = row.author == "user" and row.user_id == actor_user_id
+            if not is_author and group_row.user_id != actor_user_id:
+                raise PermissionDeniedError("not allowed to delete this message")
+            await session.execute(
+                delete(AssistantGroupReactionRow).where(
+                    AssistantGroupReactionRow.group_id == group_id,
+                    AssistantGroupReactionRow.message_id == message_id,
+                )
+            )
+            await session.execute(
+                update(AssistantGroupMessageRow)
+                .where(
+                    AssistantGroupMessageRow.group_id == group_id,
+                    AssistantGroupMessageRow.reply_to_message_id == message_id,
+                )
+                .values(reply_to_message_id=None)
+            )
+            await session.delete(row)
+
+    # --- 群资料库：文件与既有知识库的绑定 --------------------------------
+
+    @staticmethod
+    def _group_document(row: AssistantGroupDocumentRow) -> AssistantGroupDocument:
+        return AssistantGroupDocument(
+            documentId=row.document_id,
+            groupId=row.group_id,
+            name=row.name,
+            contentType=row.content_type,
+            sizeBytes=row.size_bytes,
+            uploadedBy=row.user_id,
+            uploadedByName="",
+            createdAt=row.created_at,
+            downloadUrl=group_document_download_url(row.group_id, row.document_id),
+        )
+
+    async def list_group_documents(
+        self, tenant_id: str, user_id: str, group_id: str
+    ) -> list[AssistantGroupDocument]:
+        async with self._context() as session:
+            await self._require_group(session, tenant_id, user_id, group_id)
+            rows = await session.scalars(
+                select(AssistantGroupDocumentRow)
+                .where(
+                    AssistantGroupDocumentRow.group_id == group_id,
+                    AssistantGroupDocumentRow.tenant_id == tenant_id,
+                )
+                .order_by(
+                    AssistantGroupDocumentRow.created_at,
+                    AssistantGroupDocumentRow.document_id,
+                )
+            )
+            return [self._group_document(row) for row in rows]
+
+    async def add_group_document(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        document: AssistantGroupDocument,
+        *,
+        storage_key: str,
+    ) -> AssistantGroupDocument:
+        async with self._context(write=True) as session:
+            await self._require_group(session, tenant_id, user_id, group_id)
+            session.add(
+                AssistantGroupDocumentRow(
+                    document_id=document.document_id,
+                    group_id=group_id,
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    name=document.name,
+                    content_type=document.content_type,
+                    size_bytes=document.size_bytes,
+                    storage_key=storage_key,
+                    created_at=document.created_at,
+                )
+            )
+        return document
+
+    async def get_group_document(
+        self, tenant_id: str, user_id: str, group_id: str, document_id: str
+    ) -> AssistantGroupDocument:
+        async with self._context() as session:
+            await self._require_group(session, tenant_id, user_id, group_id)
+            row = await session.scalar(
+                select(AssistantGroupDocumentRow).where(
+                    AssistantGroupDocumentRow.group_id == group_id,
+                    AssistantGroupDocumentRow.tenant_id == tenant_id,
+                    AssistantGroupDocumentRow.document_id == document_id,
+                )
+            )
+            if row is None:
+                raise NotFoundError("document not found")
+            return self._group_document(row)
+
+    async def group_document_row(
+        self, tenant_id: str, user_id: str, group_id: str, document_id: str
+    ) -> AssistantGroupDocumentRow:
+        async with self._context() as session:
+            await self._require_group(session, tenant_id, user_id, group_id)
+            row = await session.scalar(
+                select(AssistantGroupDocumentRow).where(
+                    AssistantGroupDocumentRow.group_id == group_id,
+                    AssistantGroupDocumentRow.tenant_id == tenant_id,
+                    AssistantGroupDocumentRow.document_id == document_id,
+                )
+            )
+            if row is None:
+                raise NotFoundError("document not found")
+            return row
+
+    async def group_document_rows(
+        self, tenant_id: str, user_id: str, group_id: str, document_ids: Sequence[str]
+    ) -> dict[str, AssistantGroupDocumentRow]:
+        """一次取回一组资料库文档；不属于本群的 id 直接缺席。"""
+        wanted = list(dict.fromkeys(item for item in document_ids if item))
+        if not wanted:
+            return {}
+        async with self._context() as session:
+            await self._require_group(session, tenant_id, user_id, group_id)
+            rows = await session.scalars(
+                select(AssistantGroupDocumentRow).where(
+                    AssistantGroupDocumentRow.group_id == group_id,
+                    AssistantGroupDocumentRow.tenant_id == tenant_id,
+                    AssistantGroupDocumentRow.document_id.in_(wanted),
+                )
+            )
+            return {row.document_id: row for row in rows}
+
+    async def delete_group_document(
+        self, tenant_id: str, user_id: str, group_id: str, document_id: str
+    ) -> AssistantGroupDocumentRow:
+        async with self._context(write=True) as session:
+            await self._require_group(session, tenant_id, user_id, group_id)
+            row = await session.scalar(
+                select(AssistantGroupDocumentRow).where(
+                    AssistantGroupDocumentRow.group_id == group_id,
+                    AssistantGroupDocumentRow.tenant_id == tenant_id,
+                    AssistantGroupDocumentRow.document_id == document_id,
+                )
+            )
+            if row is None:
+                raise NotFoundError("document not found")
+            await session.delete(row)
+            return row
+
+    async def list_group_knowledge_references(
+        self, tenant_id: str, user_id: str, group_id: str
+    ) -> list[str]:
+        async with self._context() as session:
+            await self._require_group(session, tenant_id, user_id, group_id)
+            rows = await session.scalars(
+                select(AssistantGroupKnowledgeBaseRow)
+                .where(
+                    AssistantGroupKnowledgeBaseRow.group_id == group_id,
+                    AssistantGroupKnowledgeBaseRow.tenant_id == tenant_id,
+                )
+                .order_by(
+                    AssistantGroupKnowledgeBaseRow.created_at,
+                    AssistantGroupKnowledgeBaseRow.knowledge_base_reference,
+                )
+            )
+            return [row.knowledge_base_reference for row in rows]
+
+    async def add_group_knowledge_reference(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        reference: str,
+    ) -> None:
+        now = datetime.now(UTC)
+        async with self._context(write=True) as session:
+            await self._require_group(
+                session, tenant_id, user_id, group_id, lock=True
+            )
+            existing = await session.scalar(
+                select(AssistantGroupKnowledgeBaseRow).where(
+                    AssistantGroupKnowledgeBaseRow.group_id == group_id,
+                    AssistantGroupKnowledgeBaseRow.knowledge_base_reference
+                    == reference,
+                )
+            )
+            if existing is not None:
+                raise ConflictError("knowledge base already bound")
+            session.add(
+                AssistantGroupKnowledgeBaseRow(
+                    group_id=group_id,
+                    knowledge_base_reference=reference,
+                    tenant_id=tenant_id,
+                    added_by=user_id,
+                    created_at=now,
+                )
+            )
+
+    async def delete_group_knowledge_reference(
+        self, tenant_id: str, user_id: str, group_id: str, reference: str
+    ) -> None:
+        async with self._context(write=True) as session:
+            await self._require_group(
+                session, tenant_id, user_id, group_id, lock=True
+            )
+            row = await session.scalar(
+                select(AssistantGroupKnowledgeBaseRow).where(
+                    AssistantGroupKnowledgeBaseRow.group_id == group_id,
+                    AssistantGroupKnowledgeBaseRow.tenant_id == tenant_id,
+                    AssistantGroupKnowledgeBaseRow.knowledge_base_reference
+                    == reference,
+                )
+            )
+            if row is None:
+                raise NotFoundError("knowledge base not bound")
+            await session.delete(row)
+
     async def mark_group_read(
         self, tenant_id: str, user_id: str, group_id: str
     ) -> AssistantGroup:
@@ -2814,6 +3135,10 @@ class PostgresAssistantRepository:
                     thread_id=thread_id,
                     reply_to_message_id=reply_to_message_id,
                     client_message_id=client_message_id,
+                    attachments=[
+                        item.model_dump(mode="json", by_alias=True)
+                        for item in message.attachments
+                    ],
                     status=message.status,
                     created_at=message.created_at,
                 )
@@ -2858,6 +3183,7 @@ class PostgresAssistantRepository:
                     runId=row.run_id,
                     replyToMessageId=row.reply_to_message_id,
                     reactions=tuple(reactions.get(row.message_id, ())),
+                    attachments=self._group_attachments(row),
                     status=row.status,
                     createdAt=row.created_at,
                 )
@@ -2892,6 +3218,7 @@ class PostgresAssistantRepository:
                 runId=row.run_id,
                 replyToMessageId=row.reply_to_message_id,
                 reactions=tuple(reactions.get(message_id, ())),
+                attachments=self._group_attachments(row),
                 status=row.status,
                 createdAt=row.created_at,
             )
@@ -2967,6 +3294,22 @@ class PostgresAssistantRepository:
             text=row.text,
             runId=row.run_id,
             replyToMessageId=row.reply_to_message_id,
+            attachments=PostgresAssistantRepository._group_attachments(row),
             status=row.status,
             createdAt=row.created_at,
         )
+
+    @staticmethod
+    def _group_attachments(
+        row: AssistantGroupMessageRow,
+    ) -> tuple[AssistantGroupAttachment, ...]:
+        """附件按发送时的快照回读；坏行跳过，不让一条历史消息读不出来。"""
+        items: list[AssistantGroupAttachment] = []
+        for raw in row.attachments or ():
+            if not isinstance(raw, dict):
+                continue
+            try:
+                items.append(AssistantGroupAttachment.model_validate(raw))
+            except ValueError:
+                continue
+        return tuple(items)

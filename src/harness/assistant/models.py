@@ -449,6 +449,7 @@ class AssistantGroup(StudioModel):
 
     group_id: str = Field(alias="groupId")
     name: str
+    description: str | None = None
     creator_user_id: str = Field(alias="creatorUserId")
     primary_present: bool = Field(alias="primaryPresent")
     reply_as: str | None = Field(default=None, alias="replyAs")
@@ -457,6 +458,16 @@ class AssistantGroup(StudioModel):
     members: tuple[AssistantGroupMember, ...] = ()
     created_at: AwareDatetime = Field(alias="createdAt")
     updated_at: AwareDatetime = Field(alias="updatedAt")
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_description(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, object]:
+        """群还没有描述时不输出 description，旧群响应字节不变。"""
+        data = handler(self)
+        if data.get("description") is None:
+            data.pop("description", None)
+        return data
 
 
 class AssistantGroupMessageAuthor(StrEnum):
@@ -475,6 +486,16 @@ class AssistantGroupMessageReference(StudioModel):
     text: str = ""
 
 
+class AssistantGroupAttachment(StudioModel):
+    """一条群消息携带的资料库文件；正文里只给展示与下载所需的最小字段。"""
+
+    document_id: str = Field(alias="documentId")
+    name: str
+    content_type: str = Field(alias="contentType")
+    size_bytes: int = Field(alias="sizeBytes")
+    download_url: str = Field(alias="downloadUrl")
+
+
 class AssistantGroupMessage(StudioModel):
     """A message in a group timeline, including pending/failed replies."""
 
@@ -488,6 +509,7 @@ class AssistantGroupMessage(StudioModel):
     reply_to_message_id: str | None = Field(default=None, alias="replyToMessageId")
     reply_to: AssistantGroupMessageReference | None = Field(default=None, alias="replyTo")
     reactions: tuple[str, ...] = ()
+    attachments: tuple[AssistantGroupAttachment, ...] = ()
     status: str = "completed"
     created_at: AwareDatetime = Field(alias="createdAt")
 
@@ -499,7 +521,40 @@ class AssistantGroupMessage(StudioModel):
         data = handler(self)
         if data.get("replyTo") is None:
             data.pop("replyTo", None)
+        if not data.get("attachments"):
+            data.pop("attachments", None)
         return data
+
+
+class AssistantGroupDocument(StudioModel):
+    """群资料库里的一份文件；storage_key 指向既有的输入附件存储。"""
+
+    document_id: str = Field(alias="documentId")
+    group_id: str = Field(alias="groupId")
+    name: str
+    content_type: str = Field(alias="contentType")
+    size_bytes: int = Field(alias="sizeBytes")
+    uploaded_by: str = Field(alias="uploadedBy")
+    uploaded_by_name: str = Field(alias="uploadedByName")
+    created_at: AwareDatetime = Field(alias="createdAt")
+    download_url: str = Field(alias="downloadUrl")
+
+
+class AssistantGroupKnowledgeBase(StudioModel):
+    """绑定到群的既有知识库摘要；群侧不复制知识库本身。"""
+
+    reference: str
+    name: str
+    type: str
+    engine: str
+    source_count: int = Field(default=0, alias="sourceCount")
+
+
+class AssistantGroupLibrary(StudioModel):
+    documents: tuple[AssistantGroupDocument, ...] = ()
+    knowledge_bases: tuple[AssistantGroupKnowledgeBase, ...] = Field(
+        default=(), alias="knowledgeBases"
+    )
 
 
 class GroupPostResult(StudioModel):

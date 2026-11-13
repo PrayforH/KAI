@@ -1,15 +1,38 @@
 """Owner-scoped assistant API, shared by Web and authenticated channel adapters."""
 
+from __future__ import annotations
+
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
-from pydantic import Field
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
+from fastapi.responses import Response
+from pydantic import Field, model_validator
 
-from harness.api.dependencies import Identity, ensure_permission, require_identity
+from harness.api.dependencies import (
+    ApiContainer,
+    Identity,
+    ensure_permission,
+    get_container,
+    require_identity,
+)
+from harness.api.downloads import attachment_content_disposition
 from harness.assistant.constants import primary_specialist_id
+from harness.assistant.group_library import GROUP_ATTACHMENT_LIMIT
 from harness.assistant.models import (
     AssistantGroup,
+    AssistantGroupDocument,
+    AssistantGroupKnowledgeBase,
+    AssistantGroupLibrary,
     AssistantGroupMessage,
     AssistantInboxItem,
     GroupPostResult,
@@ -888,6 +911,25 @@ class GroupReplyAsRequest(StudioModel):
     reply_as: str | None = Field(default=None, alias="replyAs", max_length=128)
 
 
+class GroupUpdateRequest(StudioModel):
+    """改名、改描述、改接话人共用一条 PATCH；至少要给一个字段。
+
+    description 显式给 null 表示清空；replyAs 显式给 null 表示回到默认主助理。
+    """
+
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    description: str | None = Field(default=None, max_length=500)
+    reply_as: str | None = Field(default=None, alias="replyAs", max_length=128)
+
+    @model_validator(mode="after")
+    def at_least_one_field(self) -> GroupUpdateRequest:
+        if not self.model_fields_set:
+            raise ValueError("at least one of name, description or replyAs is required")
+        if "name" in self.model_fields_set and self.name is None:
+            raise ValueError("name cannot be null")
+        return self
+
+
 class GroupMessageRequest(StudioModel):
     text: str = Field(min_length=1, max_length=8_000)
     client_message_id: str | None = Field(
@@ -896,6 +938,13 @@ class GroupMessageRequest(StudioModel):
     reply_to_message_id: str | None = Field(
         default=None, alias="replyToMessageId", min_length=1, max_length=128
     )
+    attachment_ids: tuple[str, ...] = Field(
+        default=(), alias="attachmentIds", max_length=GROUP_ATTACHMENT_LIMIT
+    )
+
+
+class GroupKnowledgeBaseRequest(StudioModel):
+    reference: str = Field(min_length=1, max_length=128)
 
 
 class GroupReactionRequest(StudioModel):
@@ -927,11 +976,147 @@ async def get_assistant_group(
 
 @router.patch("/groups/{group_id}")
 async def update_assistant_group(
-    group_id: str, body: GroupReplyAsRequest, identity: Writer, assistant: Service
+    group_id: str, body: GroupUpdateRequest, identity: Writer, assistant: Service
 ) -> AssistantGroup:
-    return await assistant.set_assistant_group_reply_as(
-        identity.tenant_id, identity.user_id, group_id, reply_as=body.reply_as
+    changes: dict[str, object] = {}
+    if "name" in body.model_fields_set:
+        changes["name"] = body.name
+    if "description" in body.model_fields_set:
+        changes["description"] = body.description
+    if "reply_as" in body.model_fields_set:
+        changes["replyAs"] = body.reply_as
+    return await assistant.update_assistant_group(
+        identity.tenant_id, identity.user_id, group_id, changes=changes
     )
+
+
+@router.delete("/groups/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_assistant_group(
+    group_id: str, identity: Writer, assistant: Service
+) -> Response:
+    await assistant.delete_assistant_group(
+        identity.tenant_id, identity.user_id, group_id
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/groups/{group_id}/messages/{message_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_assistant_group_message(
+    group_id: str, message_id: str, identity: Writer, assistant: Service
+) -> Response:
+    await assistant.delete_assistant_group_message(
+        identity.tenant_id, identity.user_id, group_id, message_id
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/groups/{group_id}/library")
+async def get_assistant_group_library(
+    group_id: str, identity: Reader, assistant: Service
+) -> AssistantGroupLibrary:
+    return await assistant.get_assistant_group_library(
+        identity.tenant_id, identity.user_id, group_id
+    )
+
+
+@router.post(
+    "/groups/{group_id}/library/documents",
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_assistant_group_document(
+    group_id: str,
+    file: UploadFile,
+    identity: Writer,
+    assistant: Service,
+    container: Annotated[ApiContainer, Depends(get_container)],
+) -> AssistantGroupDocument:
+    maximum = container.input_artifacts.file_size_limit(file.filename or "document")
+    content = await file.read(maximum + 1)
+    if len(content) > maximum:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail={
+                "code": "input_artifact_too_large",
+                "message": f"单个附件不能超过 {maximum / (1024 * 1024):g} MB，请压缩或拆分后上传。",
+            },
+        )
+    return await assistant.add_assistant_group_document(
+        identity.tenant_id,
+        identity.user_id,
+        group_id,
+        name=file.filename or "document",
+        media_type=file.content_type or "application/octet-stream",
+        content=content,
+    )
+
+
+@router.get("/groups/{group_id}/library/documents/{document_id}/content")
+async def download_assistant_group_document(
+    group_id: str,
+    document_id: str,
+    identity: Reader,
+    assistant: Service,
+    inline: bool = False,
+) -> Response:
+    name, media_type, content = await assistant.download_assistant_group_document(
+        identity.tenant_id, identity.user_id, group_id, document_id
+    )
+    base_type = media_type.split(";", 1)[0].strip().lower()
+    inline_safe = base_type.startswith(("text/", "image/")) or base_type == "application/pdf"
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": attachment_content_disposition(
+                name, inline=inline and inline_safe
+            ),
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.delete(
+    "/groups/{group_id}/library/documents/{document_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_assistant_group_document(
+    group_id: str, document_id: str, identity: Writer, assistant: Service
+) -> Response:
+    await assistant.delete_assistant_group_document(
+        identity.tenant_id, identity.user_id, group_id, document_id
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/groups/{group_id}/library/knowledge-bases",
+    status_code=status.HTTP_201_CREATED,
+)
+async def bind_assistant_group_knowledge_base(
+    group_id: str,
+    body: GroupKnowledgeBaseRequest,
+    identity: Writer,
+    assistant: Service,
+) -> AssistantGroupKnowledgeBase:
+    return await assistant.bind_assistant_group_knowledge_base(
+        identity.tenant_id, identity.user_id, group_id, body.reference
+    )
+
+
+@router.delete(
+    "/groups/{group_id}/library/knowledge-bases/{reference}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def unbind_assistant_group_knowledge_base(
+    group_id: str, reference: str, identity: Writer, assistant: Service
+) -> Response:
+    await assistant.unbind_assistant_group_knowledge_base(
+        identity.tenant_id, identity.user_id, group_id, reference
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/groups/{group_id}/read")
@@ -999,4 +1184,5 @@ async def post_assistant_group_message(
         text=body.text,
         client_message_id=body.client_message_id,
         reply_to_message_id=body.reply_to_message_id,
+        attachment_ids=body.attachment_ids,
     )

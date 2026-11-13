@@ -32,6 +32,7 @@ from harness.automations import api as automations_routes
 from harness.config import Settings
 from harness.core.errors import (
     HarnessDomainError,
+    InvalidRequestError,
     NotFoundError,
     PermissionDeniedError,
     StorageCapacityError,
@@ -100,6 +101,8 @@ async def _domain_error(_request: Request, error: Exception) -> JSONResponse:
         status_code = 404
     elif isinstance(error, PermissionDeniedError):
         status_code = 403
+    elif isinstance(error, InvalidRequestError):
+        status_code = 422
     elif isinstance(error, StorageCapacityError):
         status_code = 507
     else:
@@ -114,6 +117,8 @@ async def _domain_error(_request: Request, error: Exception) -> JSONResponse:
             if status_code == 404
             else "permission_denied"
             if status_code == 403
+            else "request_invalid"
+            if status_code == 422
             else "conflict"
         )
     return JSONResponse(

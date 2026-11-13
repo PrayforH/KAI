@@ -2034,6 +2034,8 @@ def build_production_container(
         team_spaces=team_spaces,
         personal_skills=personal_skill_service,
         skill_proposals=skill_proposal_service,
+        knowledge=knowledge,
+        input_artifacts=input_service,
     )
     assistant.set_cipher(mcp_credential_service.cipher)
     events.add_persisted_listener(assistant.observe_run_event)

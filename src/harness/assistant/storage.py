@@ -328,6 +328,7 @@ class AssistantGroupRow(Base):
     tenant_id: Mapped[str] = mapped_column(String(128))
     user_id: Mapped[str] = mapped_column(String(128))
     name: Mapped[str] = mapped_column(String(80))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     revision: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -394,5 +395,41 @@ class AssistantGroupMessageRow(Base):
     thread_id: Mapped[str | None] = mapped_column(String(256))
     reply_to_message_id: Mapped[str | None] = mapped_column(String(128))
     client_message_id: Mapped[str | None] = mapped_column(String(128))
+    # 资料库文档 id 列表；没有附件时是空数组，读接口整键省略。
+    attachments: Mapped[list[Any]] = mapped_column(JSON, default=list, server_default="[]")
     status: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AssistantGroupDocumentRow(Base):
+    """群共享资料库文件；字节存既有输入附件存储，行里只留元数据。"""
+
+    __tablename__ = "assistant_group_documents"
+    __table_args__ = (
+        Index("ix_assistant_group_documents_group", "group_id", "created_at"),
+    )
+
+    document_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    group_id: Mapped[str] = mapped_column(String(128))
+    tenant_id: Mapped[str] = mapped_column(String(128))
+    user_id: Mapped[str] = mapped_column(String(128))
+    name: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(255))
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    storage_key: Mapped[str] = mapped_column(String(512))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AssistantGroupKnowledgeBaseRow(Base):
+    """群与既有知识库的绑定；引用是知识库自己的 reference。"""
+
+    __tablename__ = "assistant_group_knowledge_bases"
+    __table_args__ = (
+        Index("ix_assistant_group_knowledge_bases_group", "group_id", "created_at"),
+    )
+
+    group_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    knowledge_base_reference: Mapped[str] = mapped_column(String(128), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(128))
+    added_by: Mapped[str] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

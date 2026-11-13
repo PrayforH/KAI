@@ -10,7 +10,7 @@ import re
 import unicodedata
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
@@ -38,6 +38,12 @@ from harness.assistant.appearance import (
     choose_appearance,
 )
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD, primary_specialist_id
+from harness.assistant.group_library import (
+    GROUP_ATTACHMENT_LIMIT,
+    group_description,
+    group_document_download_url,
+    group_document_name,
+)
 
 GROUP_PRIMARY_MEMBER_ID = "primary"
 GROUP_REACTION_EMOJIS = ("👍", "❤️", "😂", "🎉", "👀")
@@ -196,6 +202,10 @@ def _strip_group_mentions(
 from harness.assistant.lifecycle import next_check, validate_new_schedule
 from harness.assistant.models import (
     AssistantGroup,
+    AssistantGroupAttachment,
+    AssistantGroupDocument,
+    AssistantGroupKnowledgeBase,
+    AssistantGroupLibrary,
     AssistantGroupMember,
     AssistantGroupMessage,
     AssistantGroupMessageAuthor,
@@ -223,6 +233,10 @@ from harness.assistant.models import (
     SpecialistStatus,
 )
 from harness.assistant.permissions import pending_local_tools, require_local_tools
+
+if TYPE_CHECKING:
+    from harness.application.input_artifacts import InputArtifactService
+    from harness.knowledge.service import KnowledgeService
 from harness.assistant.personal_skills import PersonalSkillService
 from harness.assistant.repository import MANAGED_PROGRESS_EVENTS, PostgresAssistantRepository
 from harness.assistant.skill_models import PersonalSkill, SkillProposal
@@ -230,7 +244,12 @@ from harness.assistant.skill_proposals import SkillProposalService
 from harness.assistant.storage import VaultItemRow
 from harness.assistant.vault import VaultCategory, VaultGrant, VaultItem
 from harness.auth.service import AuthService
-from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
+from harness.core.errors import (
+    ConflictError,
+    InvalidRequestError,
+    NotFoundError,
+    PermissionDeniedError,
+)
 from harness.core.events import RunEvent
 from harness.core.models import Run, RunStatus
 from harness.core.ports import EventRepository
@@ -266,6 +285,8 @@ class AssistantService:
         team_spaces: TeamSpaceService | None = None,
         personal_skills: PersonalSkillService | None = None,
         skill_proposals: SkillProposalService | None = None,
+        knowledge: KnowledgeService | None = None,
+        input_artifacts: InputArtifactService | None = None,
     ) -> None:
         self.repository = repository
         self._agents, self._auth, self._projects = agents, auth, projects
@@ -277,6 +298,9 @@ class AssistantService:
         # 轻量 Skill 闭环是兼容性新增：未接线时保持原有执行路径。
         self._personal_skills = personal_skills
         self._skill_proposals = skill_proposals
+        # 群资料库复用既有知识库与输入附件子系统；未接线时接口明确报未配置。
+        self._knowledge = knowledge
+        self._input_artifacts = input_artifacts
 
     def with_repository(self, repository: PostgresAssistantRepository) -> AssistantService:
         return AssistantService(
@@ -300,6 +324,8 @@ class AssistantService:
                 if self._skill_proposals is not None
                 else None
             ),
+            knowledge=self._knowledge,
+            input_artifacts=self._input_artifacts,
         )
 
     async def list_skill_proposals(
@@ -2625,6 +2651,305 @@ class AssistantService:
         )
         return _group_view(updated, user_id)
 
+    async def update_assistant_group(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        *,
+        changes: dict[str, object],
+    ) -> AssistantGroup:
+        """改名/改描述/改接话人共用一条 PATCH；只落显式给出的字段。"""
+        group = await self._require_group_owner(
+            tenant_id, user_id, group_id, "only the group owner can edit it"
+        )
+        fields: dict[str, str | None] = {}
+        if "name" in changes:
+            value = changes["name"]
+            if not isinstance(value, str):
+                raise InvalidRequestError("group name must be a string")
+            fields["name"] = _group_name(value)
+        if "description" in changes:
+            value = changes["description"]
+            if value is not None and not isinstance(value, str):
+                raise InvalidRequestError("group description must be a string")
+            fields["description"] = group_description(value)
+        if "replyAs" in changes:
+            reply_as = changes["replyAs"]
+            if reply_as is not None and not isinstance(reply_as, str):
+                raise InvalidRequestError("group replyAs must be a string")
+            if reply_as not in (None, GROUP_PRIMARY_MEMBER_ID):
+                member = next(
+                    (item for item in group.members if item.member_id == reply_as), None
+                )
+                if member is None or member.kind is not GroupMemberKind.SPECIALIST:
+                    raise ConflictError("未 @ 接话人必须是本群成员")
+            # replyAs 存在 payload 里，仓储会随 PATCH 一起写。
+            updated = await self.repository.set_group_reply_as(
+                tenant_id, user_id, group_id, reply_as
+            )
+            group = updated
+        if not fields:
+            return _group_view(group, user_id)
+        updated = await self.repository.update_group(
+            tenant_id, user_id, group_id, fields=fields
+        )
+        return _group_view(updated, user_id)
+
+    async def delete_assistant_group(
+        self, tenant_id: str, user_id: str, group_id: str
+    ) -> None:
+        """解散群：仅创建者。对象存储里的文件保留，群内记录一起清空。"""
+        await self._require_group_owner(
+            tenant_id, user_id, group_id, "only the group owner can dissolve it"
+        )
+        await self.repository.delete_group(tenant_id, user_id, group_id)
+
+    async def delete_assistant_group_message(
+        self, tenant_id: str, user_id: str, group_id: str, message_id: str
+    ) -> None:
+        """本人发的消息或群创建者可删；运行中的回复先等它落定。"""
+        await self.get_assistant_group(tenant_id, user_id, group_id)
+        await self.repository.delete_group_message(
+            tenant_id,
+            user_id,
+            group_id,
+            message_id,
+            actor_user_id=user_id,
+        )
+
+    async def _require_group_owner(
+        self, tenant_id: str, user_id: str, group_id: str, message: str
+    ) -> AssistantGroup:
+        """非成员 404；同租户里别人的群明确 403，别让人误以为是群没了。"""
+        try:
+            group = await self.repository.get_group(tenant_id, user_id, group_id)
+        except NotFoundError:
+            owner = await self.repository.group_owner(tenant_id, group_id)
+            if owner is not None and owner != user_id:
+                raise PermissionDeniedError(message) from None
+            raise
+        if group.creator_user_id != user_id:
+            raise PermissionDeniedError(message)
+        return group
+
+    # --- 群资料库 ---------------------------------------------------------
+
+    async def get_assistant_group_library(
+        self, tenant_id: str, user_id: str, group_id: str
+    ) -> AssistantGroupLibrary:
+        await self.get_assistant_group(tenant_id, user_id, group_id)
+        documents = await self._with_uploader_names(
+            tenant_id,
+            await self.repository.list_group_documents(tenant_id, user_id, group_id),
+        )
+        references = await self.repository.list_group_knowledge_references(
+            tenant_id, user_id, group_id
+        )
+        return AssistantGroupLibrary(
+            documents=documents,
+            knowledgeBases=await self._group_knowledge_bases(
+                tenant_id, user_id, references
+            ),
+        )
+
+    async def add_assistant_group_document(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        *,
+        name: str,
+        media_type: str,
+        content: bytes,
+    ) -> AssistantGroupDocument:
+        """上传落到既有输入附件存储，资料库只记元数据与引用。"""
+        await self.get_assistant_group(tenant_id, user_id, group_id)
+        if self._input_artifacts is None:
+            raise ConflictError("资料库存储未配置")
+        filename = group_document_name(name)
+        artifact = await self._input_artifacts.upload(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            name=filename,
+            media_type=media_type,
+            content=content,
+        )
+        document_id = f"gdoc_{uuid4().hex}"
+        document = AssistantGroupDocument(
+            documentId=document_id,
+            groupId=group_id,
+            name=filename,
+            contentType=media_type,
+            sizeBytes=int(artifact.size_bytes or len(content)),
+            uploadedBy=user_id,
+            uploadedByName="",
+            createdAt=datetime.now(UTC),
+            downloadUrl=group_document_download_url(group_id, document_id),
+        )
+        await self.repository.add_group_document(
+            tenant_id,
+            user_id,
+            group_id,
+            document,
+            storage_key=artifact.input_artifact_id,
+        )
+        documents = await self._with_uploader_names(tenant_id, [document])
+        return documents[0]
+
+    async def delete_assistant_group_document(
+        self, tenant_id: str, user_id: str, group_id: str, document_id: str
+    ) -> None:
+        """上传者或群创建者可删；对象存储文件不回删，历史消息快照仍可读名。"""
+        group = await self.get_assistant_group(tenant_id, user_id, group_id)
+        document = await self.repository.get_group_document(
+            tenant_id, user_id, group_id, document_id
+        )
+        if document.uploaded_by != user_id and group.creator_user_id != user_id:
+            raise PermissionDeniedError("not allowed to delete this document")
+        await self.repository.delete_group_document(
+            tenant_id, user_id, group_id, document_id
+        )
+
+    async def download_assistant_group_document(
+        self, tenant_id: str, user_id: str, group_id: str, document_id: str
+    ) -> tuple[str, str, bytes]:
+        """按资料库记录取回原始字节，走上传者的输入附件所有权。"""
+        await self.get_assistant_group(tenant_id, user_id, group_id)
+        if self._input_artifacts is None:
+            raise ConflictError("资料库存储未配置")
+        row = await self.repository.group_document_row(
+            tenant_id, user_id, group_id, document_id
+        )
+        artifact, content = await self._input_artifacts.download(
+            tenant_id=tenant_id,
+            user_id=row.user_id,
+            input_artifact_id=row.storage_key,
+        )
+        return artifact.name, artifact.media_type, content
+
+    async def bind_assistant_group_knowledge_base(
+        self, tenant_id: str, user_id: str, group_id: str, reference: str
+    ) -> AssistantGroupKnowledgeBase:
+        await self.get_assistant_group(tenant_id, user_id, group_id)
+        if self._knowledge is None:
+            raise ConflictError("知识检索服务未配置")
+        try:
+            await self._knowledge.get_base(tenant_id, reference, user_id)
+        except NotFoundError:
+            raise NotFoundError("knowledge base not found") from None
+        await self.repository.add_group_knowledge_reference(
+            tenant_id, user_id, group_id, reference
+        )
+        summaries = await self._group_knowledge_bases(
+            tenant_id, user_id, [reference]
+        )
+        if not summaries:
+            raise NotFoundError("knowledge base not found")
+        return summaries[0]
+
+    async def unbind_assistant_group_knowledge_base(
+        self, tenant_id: str, user_id: str, group_id: str, reference: str
+    ) -> None:
+        await self.get_assistant_group(tenant_id, user_id, group_id)
+        await self.repository.delete_group_knowledge_reference(
+            tenant_id, user_id, group_id, reference
+        )
+
+    async def _with_uploader_names(
+        self,
+        tenant_id: str,
+        documents: Sequence[AssistantGroupDocument],
+    ) -> tuple[AssistantGroupDocument, ...]:
+        names: dict[str, str] = {}
+        for document in documents:
+            if document.uploaded_by in names:
+                continue
+            try:
+                user, _membership = await self._auth.profile(
+                    tenant_id, document.uploaded_by
+                )
+                names[document.uploaded_by] = user.display_name
+            except Exception:  # noqa: BLE001 - 名字只是展示，取不到就用 id
+                names[document.uploaded_by] = document.uploaded_by
+        return tuple(
+            document.model_copy(update={"uploaded_by_name": names[document.uploaded_by]})
+            for document in documents
+        )
+
+    async def _group_knowledge_bases(
+        self, tenant_id: str, user_id: str, references: Sequence[str]
+    ) -> tuple[AssistantGroupKnowledgeBase, ...]:
+        """绑定仍在的知识库才回给前端；被删的知识库静默跳过。"""
+        if self._knowledge is None:
+            return ()
+        summaries: list[AssistantGroupKnowledgeBase] = []
+        for reference in references:
+            try:
+                base = await self._knowledge.get_base(tenant_id, reference, user_id)
+            except NotFoundError:
+                continue
+            summaries.append(
+                AssistantGroupKnowledgeBase(
+                    reference=base.reference,
+                    name=base.display_name,
+                    type=base.kb_type,
+                    engine=base.engine,
+                    sourceCount=len(base.source_references),
+                )
+            )
+        return tuple(summaries)
+
+    async def _group_knowledge_references(
+        self, tenant_id: str, user_id: str, group_id: str
+    ) -> list[str]:
+        """群里绑定的知识库进入机器人运行；已删的知识库不拖垮回复。"""
+        if self._knowledge is None:
+            # 未接知识库的部署保持原有群聊路径，连绑定表都不查。
+            return []
+        references = await self.repository.list_group_knowledge_references(
+            tenant_id, user_id, group_id
+        )
+        if not references:
+            return []
+        valid: list[str] = []
+        for reference in references:
+            try:
+                await self._knowledge.get_base(tenant_id, reference, user_id)
+            except NotFoundError:
+                continue
+            valid.append(reference)
+        return valid
+
+    async def _resolve_group_attachments(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        document_ids: Sequence[str],
+    ) -> tuple[AssistantGroupAttachment, ...]:
+        """只接受本群资料库里的文档；顺序按发送时的选择保留。"""
+        ordered = list(dict.fromkeys(item for item in document_ids if item))
+        if not ordered:
+            return ()
+        if len(ordered) > GROUP_ATTACHMENT_LIMIT:
+            raise InvalidRequestError("too many attachments")
+        rows = await self.repository.group_document_rows(
+            tenant_id, user_id, group_id, ordered
+        )
+        if any(item not in rows for item in ordered):
+            raise InvalidRequestError("attachment not in this group")
+        return tuple(
+            AssistantGroupAttachment(
+                documentId=rows[item].document_id,
+                name=rows[item].name,
+                contentType=rows[item].content_type,
+                sizeBytes=rows[item].size_bytes,
+                downloadUrl=group_document_download_url(group_id, item),
+            )
+            for item in ordered
+        )
+
     async def list_assistant_group_messages(
         self, tenant_id: str, user_id: str, group_id: str
     ) -> list[AssistantGroupMessage]:
@@ -2708,6 +3033,7 @@ class AssistantService:
         text: str,
         client_message_id: str | None = None,
         reply_to_message_id: str | None = None,
+        attachment_ids: Sequence[str] = (),
     ) -> GroupPostResult:
         """群内发言入口：@ 谁谁回复；未 @ 时只由主助理回复。
 
@@ -2755,6 +3081,9 @@ class AssistantService:
             )
             if quoted_message.status in GROUP_QUOTE_BLOCKED_STATUSES:
                 raise ConflictError("quoted message is not ready")
+        attachments = await self._resolve_group_attachments(
+            tenant_id, user_id, group_id, attachment_ids
+        )
         now = datetime.now(UTC)
         message = AssistantGroupMessage(
             messageId=f"gmsg_{uuid4().hex}",
@@ -2762,6 +3091,7 @@ class AssistantService:
             author=AssistantGroupMessageAuthor.USER,
             authorName="我",
             text=value,
+            attachments=attachments,
             status="completed",
             createdAt=now,
         )
@@ -3014,6 +3344,32 @@ class AssistantService:
             + ("（本条消息 @ 了你）\n" if addressed else "")
             + f"现在要回复的消息：\n{prompt}"
         )
+        knowledge_references = await self._group_knowledge_references(
+            tenant_id, user_id, group.group_id
+        )
+        content: str | list[object] = body
+        if user_message.attachments:
+            rows = await self.repository.group_document_rows(
+                tenant_id,
+                user_id,
+                group.group_id,
+                [item.document_id for item in user_message.attachments],
+            )
+            parts: list[object] = [TextInputContent(text=body)]
+            for attachment in user_message.attachments:
+                row = rows.get(attachment.document_id)
+                if row is None:
+                    continue
+                parts.append(
+                    DocumentInputContent(
+                        source=InputContentDataSource(
+                            value=row.storage_key, mimeType=row.content_type
+                        ),
+                        metadata={"inputArtifactId": row.storage_key},
+                    )
+                )
+            if len(parts) > 1:
+                content = parts
         retry_suffix = "" if retry <= 0 else ("-retry" if retry == 1 else f"-retry{retry}")
         request_run_id = f"group-{reply.message_id}{retry_suffix}"
         request_message_id = f"{reply.message_id}{retry_suffix}"
@@ -3032,13 +3388,18 @@ class AssistantService:
                 thread_id=thread_id,
                 run_id=request_run_id,
                 state={},
-                messages=[UserMessage(id=request_message_id, content=body)],
+                messages=[UserMessage(id=request_message_id, content=content)],
                 tools=[],
                 context=[],
                 forwarded_props={
                     "conversationSurface": "assistant",
                     "assistantScope": True,
                     "groupChat": group.group_id,
+                    **(
+                        {"knowledgeReferences": knowledge_references}
+                        if knowledge_references
+                        else {}
+                    ),
                 },
             ),
         )
