@@ -79,12 +79,15 @@ describe("group chats live in the main assistant surface", () => {
     expect(groupChat).toContain("条新消息");
   });
 
-  it("keeps the roster behind the group settings toggle", () => {
+  it("keeps the roster behind the group info toggle", () => {
     // 花名册/邀请/接话人默认收起，对话区上方不再有一条工具条。
-    expect(groupChat).toContain('aria-label="群设置"');
-    expect(groupChat).toContain("styles.settingsPanel");
+    expect(groupChat).toContain('aria-label="群信息"');
+    expect(groupChat).toContain("<AssistantGroupInfoPanel");
     expect(groupChat).toContain("aria-expanded={settingsOpen}");
     expect(groupChat).not.toContain("styles.toolbarInner");
+    // 右侧「动态 / 任务 / 资料库」侧栏。
+    expect(groupChat).toContain("<AssistantGroupSidePanel");
+    expect(groupChat).toContain('aria-label="打开群右侧栏"');
   });
 
   it("renders messages through the shared row and composer components", () => {
@@ -113,10 +116,30 @@ describe("group chats live in the main assistant surface", () => {
 
   it("has a one-line composer with a quote bar and a capped textarea", () => {
     expect(composer).toContain("rows={1}");
-    expect(composer).toContain("MAX_LINES = 5");
+    // 5 行封顶：22 × 5 + 上下内边距 20 = 130px。
+    expect(composer).toContain("MAX_HEIGHT = 130");
     expect(composer).toContain("event.shiftKey");
     expect(composer).toContain('aria-label="取消引用"');
     expect(composer).toContain('aria-label="提到群成员"');
+    // 中文输入法选词 Enter 不能发消息。
+    expect(composer).toContain("isComposing");
+    expect(composer).toContain("keyCode === 229");
+    // 附件/知识库入口与草稿、附件随消息发送。
+    expect(composer).toContain('aria-label="添加附件或知识库"');
+    expect(groupChat).toContain("attachmentIds");
+    expect(groupChat).toContain("loadGroupComposerDraft");
+    // 提示在卡片外，不再撑高单行外框。
+    expect(composer).toContain('data-testid="group-composer-hint"');
+  });
+
+  it("supports group management and message deletion", () => {
+    expect(client).toContain("export async function updateAssistantGroup");
+    expect(client).toContain("export async function deleteAssistantGroup");
+    expect(client).toContain("export async function deleteAssistantGroupMessage");
+    expect(client).toContain("library/documents");
+    expect(messageRow).toContain('"删除这条消息"');
+    expect(messageRow).toContain("canDelete");
+    expect(groupChat).toContain("onDissolved");
   });
 
   it("accepts an optional reply snapshot from the groups API", () => {

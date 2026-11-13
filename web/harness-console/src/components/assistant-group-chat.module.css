@@ -7,8 +7,17 @@
   height: 100%;
   min-height: 0;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   color: var(--codex-ink-soft, #d2d2d2);
+}
+
+/* 对话列；右侧栏打开时并排，不挤压消息阅读列的最小宽度。 */
+.main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .empty {
@@ -33,6 +42,11 @@
   align-items: flex-end;
   gap: 6px;
 }
+.settingsButtons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 .settingsButton {
   width: 28px;
   height: 28px;
@@ -46,6 +60,7 @@
   line-height: 1;
   cursor: pointer;
 }
+.settingsButton svg { width: 17px; height: 17px; display: block; }
 .settingsButton:hover,
 .settingsButton[aria-expanded="true"] {
   border-color: var(--codex-line, #343434);
@@ -56,94 +71,6 @@
   outline: 2px solid var(--codex-ink, #f5f5f5);
   outline-offset: 2px;
 }
-.settingsPanel {
-  width: min(520px, calc(100vw - 32px));
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--codex-line-strong, #474747);
-  border-radius: 14px;
-  background: var(--codex-surface-raised, #242424);
-  box-shadow: var(--codex-shadow-soft, 0 8px 28px rgb(0 0 0 / 24%));
-}
-.settingsRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-}
-.roster {
-  flex: none;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  border: 1px solid var(--codex-line, #343434);
-  background: var(--codex-surface-raised, #242424);
-  color: var(--codex-ink-soft, #d2d2d2);
-  font-size: 12px;
-  line-height: 1.5;
-}
-.chip small { color: var(--codex-muted, #a3a3a3); font-size: 11px; }
-.chip button {
-  border: 0;
-  background: transparent;
-  color: var(--codex-faint, #727272);
-  cursor: pointer;
-  font-size: 14px;
-  line-height: 1;
-  padding: 0 2px;
-}
-.chip button:hover { color: var(--codex-danger, #e05a50); }
-.chip button:focus-visible {
-  outline: 2px solid var(--codex-ink, #f5f5f5);
-  outline-offset: 1px;
-}
-.addRow { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
-.replyAs {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--codex-muted, #a3a3a3);
-  white-space: nowrap;
-}
-
-.addRow select,
-.replyAs select {
-  border: 1px solid var(--codex-line-strong, #474747);
-  border-radius: 8px;
-  background: var(--codex-surface-raised, #242424);
-  color: var(--codex-ink, #f5f5f5);
-  font: inherit;
-  font-size: 12px;
-  padding: 4px 8px;
-  outline: none;
-}
-.addRow select:focus-visible,
-.replyAs select:focus-visible { border-color: var(--codex-muted, #a3a3a3); }
-.inviteButton {
-  border: 1px solid var(--codex-line-strong, #474747);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--codex-ink-soft, #d2d2d2);
-  font: inherit;
-  font-size: 12px;
-  padding: 4px 10px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.inviteButton:hover:not(:disabled) { background: var(--codex-surface-hover, #303030); }
-.inviteButton:disabled { opacity: 0.45; cursor: default; }
-
 .bannerStack {
   display: flex;
   flex-direction: column;
@@ -176,7 +103,7 @@
 }
 .thread {
   width: 100%;
-  max-width: var(--aui-thread-max-width, 50rem);
+  max-width: 820px;
   margin-inline: auto;
   display: flex;
   flex-direction: column;
@@ -215,7 +142,7 @@
 .composerArea { flex: none; padding: 8px 24px 14px; }
 .composerInner {
   width: 100%;
-  max-width: var(--aui-thread-max-width, 50rem);
+  max-width: 820px;
   margin-inline: auto;
   display: flex;
   flex-direction: column;

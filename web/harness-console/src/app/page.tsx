@@ -1120,8 +1120,10 @@ function AuthenticatedHome() {
                 <AssistantGroupChat
                   key={groupParam}
                   groupId={groupParam}
+                  userId={user.user_id}
                   onGroupName={setGroupTitle}
                   onGroupMembers={setGroupMembers}
+                  onDissolved={() => router.replace("/assistant", { scroll: false })}
                 />
               </div>
             ) : stageView === "trace" ? (

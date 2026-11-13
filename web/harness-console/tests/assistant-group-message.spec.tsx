@@ -183,6 +183,55 @@ describe("AssistantGroupMessage", () => {
     expect(onReact).toHaveBeenCalledWith(expect.anything(), "👍");
   });
 
+  it("deletes only after a second confirmation", async () => {
+    const onDelete = vi.fn();
+    await render(
+      <AssistantGroupMessage
+        message={message({ author: "user", authorName: "我" })}
+        tone="#6b746e"
+        onReact={vi.fn()}
+        onReply={vi.fn()}
+        canDelete
+        onDelete={onDelete}
+      />,
+    );
+    const remove = host.querySelector<HTMLButtonElement>('[aria-label="删除这条消息"]')!;
+    await act(async () => remove.click());
+    expect(onDelete).not.toHaveBeenCalled();
+    const confirm = host.querySelector<HTMLButtonElement>('[aria-label="确认删除这条消息"]')!;
+    expect(confirm.textContent).toContain("确认");
+    await act(async () => confirm.click());
+    expect(onDelete).toHaveBeenCalledWith(expect.objectContaining({ messageId: "m1" }));
+  });
+
+  it("hides the delete action when the message is not deletable", async () => {
+    await render(
+      <AssistantGroupMessage
+        message={message()}
+        tone="#38d591"
+        onReact={vi.fn()}
+        onReply={vi.fn()}
+      />,
+    );
+    expect(host.querySelector('[aria-label="删除这条消息"]')).toBeNull();
+  });
+
+  it("renders attachments as downloadable chips", async () => {
+    await render(
+      <AssistantGroupMessage
+        message={message({
+          attachments: [{ documentId: "d1", name: "需求.docx", downloadUrl: "/download/d1" }],
+        })}
+        tone="#38d591"
+        onReact={vi.fn()}
+        onReply={vi.fn()}
+      />,
+    );
+    const link = host.querySelector<HTMLAnchorElement>('[aria-label="附件"] a')!;
+    expect(link.textContent).toContain("需求.docx");
+    expect(link.getAttribute("href")).toBe("/download/d1");
+  });
+
   it("reports a reply request", async () => {
     const onReply = vi.fn();
     await render(

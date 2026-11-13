@@ -40,6 +40,22 @@ function CopyIcon() {
   );
 }
 
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+      <path d="M4.5 6h11M8 6V4.5h4V6m-5.5 0 .6 9h5.8l.6-9" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function AttachmentIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+      <path d="M12.5 6.5 7 12a2.5 2.5 0 0 0 3.5 3.5l5-5a4 4 0 0 0-5.7-5.7l-5 5a5.5 5.5 0 0 0 7.8 7.8l4-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function SmileIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
@@ -65,6 +81,9 @@ type AssistantGroupMessageProps = {
   tone: string;
   onReact: (message: GroupMessage, emoji: string) => void;
   onReply: (message: GroupMessage) => void;
+  /** 本人消息或群创建者可以删除；运行中的消息不显示删除。 */
+  canDelete?: boolean;
+  onDelete?: (message: GroupMessage) => void;
 };
 
 /**
@@ -79,8 +98,11 @@ export function AssistantGroupMessage({
   tone,
   onReact,
   onReply,
+  canDelete = false,
+  onDelete,
 }: AssistantGroupMessageProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const actionsRef = useRef<HTMLDivElement | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -123,6 +145,24 @@ export function AssistantGroupMessage({
       <span className={styles.quotedAuthor}>{message.replyTo.authorName}</span>
       <span className={styles.quotedText}>{message.replyTo.text}</span>
     </div>
+  ) : null;
+  const attachments = message.attachments && message.attachments.length > 0 ? (
+    <ul className={styles.attachments} aria-label="附件">
+      {message.attachments.map((attachment) => (
+        <li key={attachment.documentId}>
+          <a
+            className={styles.attachment}
+            href={attachment.downloadUrl ?? "#"}
+            target="_blank"
+            rel="noreferrer"
+            title={`下载 ${attachment.name}`}
+          >
+            <AttachmentIcon />
+            <span>{attachment.name}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
   ) : null;
   const reactions = message.reactions.length > 0 && (
     <div className={styles.reactionRow}>
@@ -173,6 +213,25 @@ export function AssistantGroupMessage({
         >
           <CopyIcon />
         </button>
+        {canDelete && onDelete && (
+          <button
+            type="button"
+            className={`${styles.actionButton} ${confirmDelete ? styles.actionDanger : ""}`}
+            aria-label={confirmDelete ? "确认删除这条消息" : "删除这条消息"}
+            title={confirmDelete ? "再点一次确认删除" : "删除"}
+            onBlur={() => setConfirmDelete(false)}
+            onClick={() => {
+              if (confirmDelete) {
+                setConfirmDelete(false);
+                onDelete(message);
+                return;
+              }
+              setConfirmDelete(true);
+            }}
+          >
+            {confirmDelete ? <span className={styles.confirmText}>确认？</span> : <TrashIcon />}
+          </button>
+        )}
       </div>
       {copyState !== "idle" && (
         <span className={styles.copyFeedback} role="status">
@@ -218,6 +277,7 @@ export function AssistantGroupMessage({
           </div>
           {quote}
           <div className={`${styles.userBubble} ${failed ? styles.failedBubble : ""}`}>{body}</div>
+          {attachments}
           {reactions}
           {actions}
         </div>
@@ -238,6 +298,7 @@ export function AssistantGroupMessage({
         </div>
         {quote}
         <div className={`${styles.memberBody} ${failed ? styles.failed : ""}`}>{body}</div>
+        {attachments}
         {reactions}
         {actions}
       </div>

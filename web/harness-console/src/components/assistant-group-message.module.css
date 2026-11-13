@@ -43,7 +43,7 @@
   align-items: flex-end;
   gap: 4px;
   min-width: 0;
-  max-width: min(82%, 40rem);
+  max-width: 100%;
 }
 
 .memberMeta,
@@ -89,7 +89,7 @@
 /* 用户气泡：与主助理会话同一颗蓝色。 */
 .userBubble {
   width: max-content;
-  max-width: 100%;
+  max-width: min(640px, 78%);
   min-width: 0;
   padding: 9px 13px;
   border-radius: 16px;
@@ -238,6 +238,44 @@
   font-size: 11px;
   color: var(--codex-muted, #a3a3a3);
 }
+
+/* 删除是危险操作：点一次进入确认态，再点一次才真删。 */
+.actionDanger { color: var(--codex-danger, #e05a50); }
+.confirmText { font-size: 10px; line-height: 1; white-space: nowrap; }
+
+/* 随消息发送的群资料库文件。 */
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 10px;
+  border: 1px solid var(--codex-line, #343434);
+  border-radius: 8px;
+  background: var(--codex-surface-raised, #242424);
+  color: var(--codex-ink-soft, #d2d2d2);
+  font-size: 12px;
+  line-height: 1.5;
+  text-decoration: none;
+}
+.attachment svg { flex: none; width: 14px; height: 14px; display: block; }
+.attachment span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment:hover { border-color: var(--codex-muted, #a3a3a3); }
+.attachment:focus-visible { outline: 2px solid var(--codex-ink, #f5f5f5); outline-offset: 2px; }
+.userColumn .attachments { justify-content: flex-end; }
 
 .reactionPicker {
   position: absolute;

@@ -95,6 +95,23 @@ export async function assistantRequest<T>(path: string, method = "GET", body?: u
   return response.status === 204 ? undefined as T : response.json();
 }
 
+/** 上传走 multipart，不能再带 Content-Type: application/json。 */
+async function assistantFormRequest<T>(path: string, form: FormData): Promise<T> {
+  const response = await fetch(`/api/studio/assistant/${path}`, {
+    method: "POST", body: form, cache: "no-store",
+  });
+  if (!response.ok) {
+    if (response.status === 401) throw new Error("登录已过期，请重新登录。");
+    const value = await response.json().catch(() => null);
+    const message = value?.error?.message ?? value?.detail?.message
+      ?? (typeof value?.detail === "string" ? value.detail : undefined);
+    if (typeof message === "string" && message) throw new Error(message);
+    if (response.status === 413) throw new Error("文件超过大小上限，请换一个小一些的文件。");
+    throw new Error(`上传未完成（${response.status}），请稍后重试。`);
+  }
+  return response.json() as Promise<T>;
+}
+
 /**
  * 轻量 Skill 闭环：建议来自重复成功任务，保存后仍保持停用，必须显式启用才注入运行。
  */
@@ -171,6 +188,8 @@ export type GroupMember = {
 export type AssistantGroup = {
   groupId: string;
   name: string;
+  /** 群描述；未填写时服务端整键省略。 */
+  description?: string;
   creatorUserId: string;
   primaryPresent: boolean;
   replyAs: string | null;
@@ -198,9 +217,40 @@ export type GroupMessage = {
   replyToMessageId: string | null;
   /** 仅当这条消息显式引用了另一条消息时才出现；机器人自动回链不带。 */
   replyTo?: GroupMessageReply;
+  /** 随消息发送的群资料库文件；无附件时服务端整键省略。 */
+  attachments?: GroupMessageAttachment[];
   reactions: string[];
   status: "running" | "waiting" | "completed" | "failed" | "stopped";
   createdAt: string;
+};
+export type GroupMessageAttachment = {
+  documentId: string;
+  name: string;
+  contentType?: string;
+  sizeBytes?: number;
+  downloadUrl?: string;
+};
+/** 群资料库：群共享的文档与绑定的知识库。 */
+export type GroupLibraryDocument = {
+  documentId: string;
+  name: string;
+  contentType: string;
+  sizeBytes: number;
+  uploadedBy: string;
+  uploadedByName: string;
+  createdAt: string;
+  downloadUrl: string;
+};
+export type GroupLibraryKnowledgeBase = {
+  reference: string;
+  name: string;
+  type: string;
+  engine: string;
+  sourceCount: number;
+};
+export type AssistantGroupLibrary = {
+  documents: GroupLibraryDocument[];
+  knowledgeBases: GroupLibraryKnowledgeBase[];
 };
 export type GroupPostResult = {
   message: GroupMessage;
@@ -237,10 +287,22 @@ export async function setAssistantGroupReplyAs(
   groupId: string,
   replyAs: string | null,
 ): Promise<AssistantGroup> {
+  return updateAssistantGroup(groupId, { replyAs });
+}
+export async function updateAssistantGroup(
+  groupId: string,
+  fields: { name?: string; description?: string | null; replyAs?: string | null },
+): Promise<AssistantGroup> {
   return assistantRequest<AssistantGroup>(
     `groups/${encodeURIComponent(groupId)}`,
     "PATCH",
-    { replyAs },
+    fields,
+  );
+}
+export async function deleteAssistantGroup(groupId: string): Promise<void> {
+  return assistantRequest<void>(
+    `groups/${encodeURIComponent(groupId)}`,
+    "DELETE",
   );
 }
 export async function listAssistantGroupMessages(
@@ -255,11 +317,72 @@ export async function postAssistantGroupMessage(
   text: string,
   clientMessageId: string,
   replyToMessageId?: string | null,
+  attachmentIds?: string[],
 ): Promise<GroupPostResult> {
   return assistantRequest<GroupPostResult>(
     `groups/${encodeURIComponent(groupId)}/messages`,
     "POST",
-    { text, clientMessageId, replyToMessageId: replyToMessageId ?? undefined },
+    {
+      text,
+      clientMessageId,
+      replyToMessageId: replyToMessageId ?? undefined,
+      attachmentIds: attachmentIds?.length ? attachmentIds : undefined,
+    },
+  );
+}
+export async function deleteAssistantGroupMessage(
+  groupId: string,
+  messageId: string,
+): Promise<void> {
+  return assistantRequest<void>(
+    `groups/${encodeURIComponent(groupId)}/messages/${encodeURIComponent(messageId)}`,
+    "DELETE",
+  );
+}
+export async function getAssistantGroupLibrary(
+  groupId: string,
+): Promise<AssistantGroupLibrary> {
+  return assistantRequest<AssistantGroupLibrary>(
+    `groups/${encodeURIComponent(groupId)}/library`,
+  );
+}
+export async function uploadAssistantGroupDocument(
+  groupId: string,
+  file: File,
+): Promise<GroupLibraryDocument> {
+  const form = new FormData();
+  form.append("file", file);
+  return assistantFormRequest<GroupLibraryDocument>(
+    `groups/${encodeURIComponent(groupId)}/library/documents`,
+    form,
+  );
+}
+export async function deleteAssistantGroupDocument(
+  groupId: string,
+  documentId: string,
+): Promise<void> {
+  return assistantRequest<void>(
+    `groups/${encodeURIComponent(groupId)}/library/documents/${encodeURIComponent(documentId)}`,
+    "DELETE",
+  );
+}
+export async function bindAssistantGroupKnowledgeBase(
+  groupId: string,
+  reference: string,
+): Promise<void> {
+  return assistantRequest<void>(
+    `groups/${encodeURIComponent(groupId)}/library/knowledge-bases`,
+    "POST",
+    { reference },
+  );
+}
+export async function unbindAssistantGroupKnowledgeBase(
+  groupId: string,
+  reference: string,
+): Promise<void> {
+  return assistantRequest<void>(
+    `groups/${encodeURIComponent(groupId)}/library/knowledge-bases/${encodeURIComponent(reference)}`,
+    "DELETE",
   );
 }
 export async function markAssistantGroupRead(
