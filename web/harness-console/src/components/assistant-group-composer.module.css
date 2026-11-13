@@ -92,6 +92,16 @@
 .input::placeholder { color: var(--codex-faint, #727272); }
 .input:disabled { color: var(--codex-faint, #727272); }
 
+/* 语音紧挨在发送左边；录音条就地替换麦克风按钮，不撑开外框。 */
+.voice {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* 「+」里直接上传文件：用隐藏 input 接系统文件选择器。 */
+.fileInput { display: none; }
+
 .send {
   flex: none;
   width: 30px;

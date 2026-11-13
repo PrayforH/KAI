@@ -362,7 +362,8 @@ it("does not assign a newer run to an older durable assistant", () => {
 
 it("keeps the task agent switcher separate from the shared add control", () => {
   expect(agentThreadSource.match(/<TaskAgentSwitcher/g)).toHaveLength(1);
-  const guard = agentThreadSource.indexOf("!conversationScope?.compactComposer && !assistantSurface");
+  // 助理面走单行 composer 分支，任务面才在这里渲染 agent switcher。
+  const guard = agentThreadSource.indexOf("{!conversationScope?.compactComposer && (");
   expect(guard).toBeGreaterThan(-1);
   expect(agentThreadSource.indexOf("<TaskAgentSwitcher")).toBeGreaterThan(guard);
   expect(agentThreadSource).toContain("<ComposerAddControl filesOnly={filesOnly}");

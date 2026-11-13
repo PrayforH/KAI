@@ -1142,6 +1142,10 @@ function AuthenticatedHome() {
             )}
             {groupParam ? (
               <div className="chat-surface">
+                {/* 左上角固定标识：只有名称，没有右侧图标、分隔线、阴影和渐变。 */}
+                <div className="assistant-surface-title" data-testid="assistant-surface-title">
+                  <span className="task-context-title">{groupTitle ?? "群聊"}</span>
+                </div>
                 <AssistantGroupChat
                   key={groupParam}
                   groupId={groupParam}
@@ -1164,6 +1168,20 @@ function AuthenticatedHome() {
               />
             ) : (
             <div className="chat-surface">
+              {/* 单助理同样保留左上角固定名称；来源与页头一致，点击仍打开资料。 */}
+              {assistantView && (
+                <div className="assistant-surface-title" data-testid="assistant-surface-title">
+                  <button
+                    type="button"
+                    className="task-context-title task-context-bot-name"
+                    aria-label={bot ? `编辑 ${bot.name} 资料` : "我的助理"}
+                    disabled={!bot}
+                    onClick={() => bot && setBotSettingsId(bot.specialistId)}
+                  >
+                    {bot?.name ?? "我的助理"}
+                  </button>
+                </div>
+              )}
               <ConversationSurfaceProvider surface={conversationSurface}>
               <AssistantBotProvider bot={botParam ? bot : null}>
               {bot && botSettingsId === bot.specialistId && (

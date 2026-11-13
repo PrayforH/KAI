@@ -100,6 +100,13 @@ body.codex-theme-v1:has(.console-shell) .task-content-shell { isolation: isolate
 /* 助理面没有顶栏：只剩一行，对话区直接占满整个高度。 */
 body.codex-theme-v1:has(.console-shell) .console-shell[data-conversation-surface="assistant"] .task-content-shell { grid-template-rows: minmax(0, 1fr); }
 body.codex-theme-v1:has(.console-shell) .task-content-shell[data-assistant-rail-open] { grid-template-columns: minmax(0, 1fr) min(420px, 44%); }
+/* 窄屏（Mac 笔记本/分屏）：助理右栏改成覆盖式抽屉，不再把对话列挤窄。 */
+@media (max-width: 1100px) {
+  body.codex-theme-v1:has(.console-shell) .task-content-shell[data-assistant-rail-open] {
+    position: relative;
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 body.codex-theme-v1:has(.console-shell) .task-content-shell > .chat-stage { min-width: 0; }
 body.codex-theme-v1 .task-content-shell .aui-thread-viewport-footer,
 body.codex-theme-v1 .task-content-shell .harness-composer-shell,

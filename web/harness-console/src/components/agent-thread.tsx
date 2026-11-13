@@ -965,7 +965,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       attachments,
     });
   }
-  // 助理输入框：发送在左（紧跟 +），语音输入保持最右；任务态维持原有顺序。
+  // 助理输入框与群聊同一套：最左 +、中间输入区、语音紧挨发送左边、发送最右。
   const composerAction = showStop && !composerText.trim() && !composerAttachments.length ? (
     <ConversationControl action="stop" aria-label={stopPending ? "正在停止运行" : "停止运行"} disabled={stopPending} onClick={() => void stopRun()} />
   ) : videoRoute ? (
@@ -975,6 +975,115 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   ) : (
     <ConversationControl action="send" aria-label={assistantSurface ? "发送消息" : busy ? followUpBehavior === "steer" && steerAvailable && !composerAttachments.length ? "补充说明" : "加入队列" : queue.length ? "加入队列" : "发送消息"} title={assistantSurface ? "发送消息" : busy ? `Enter ${followUpBehavior === "steer" ? "补充说明" : "加入队列"} · Alt Enter 切换` : "发送消息"} disabled={voiceActive || followupVoiceActive || (!composerText.trim() && !composerAttachments.length)} onClick={() => submitComposer()} />
   );
+  const composerAddControl = (
+    <ComposerAddControl filesOnly={filesOnly} knowledgeDisabled={runLocked || showStop || videoGenerating}
+      configureKnowledge={conversationScope?.onConfigureKnowledge} />
+  );
+  const composerModel = (!conversationScope?.compactComposer || conversationScope.allowModelSelection) ? (
+    <TaskModelControl disabled={Boolean(conversationScope && !conversationScope.allowModelSelection) || runLocked || showStop || videoGenerating} />
+  ) : null;
+  const composerVoice = (
+    <VoiceInput key={scope?.threadId || "new"} placement={assistantSurface ? "inline" : "composer"}
+      disabled={busy || followupVoiceActive}
+      modelRoute={overrideRouteId || ""}
+      onActive={(active) => { voiceComposer.onActive(active); setVoiceActive(active); }}
+      onInsert={voiceComposer.onRecorded} />
+  );
+  const composerInput = (
+    <ConversationInput
+      ref={inputRef}
+      onComposingChange={(value) => {
+        composingRef.current = value;
+        setMentionComposing(value);
+      }}
+      className={`${composerStyles.input} aui-composer-input`}
+      aria-label="消息输入"
+      placeholder={
+        botScope
+          ? `给 ${botScope.name} 发消息`
+          : replyAwareComposerPlaceholder(
+              replyScope?.threadId,
+              busy,
+              conversationScope?.composerPlaceholder,
+            )
+      }
+      rows={Math.min(8, Math.max(1, composerText.split("\n").length))}
+      aria-controls={mentionOpen ? mentionMenuId : options.length ? "composer-suggestions" : undefined}
+      aria-expanded={mentionOpen || options.length > 0}
+      aria-activedescendant={
+        mentionOpen
+          ? `${mentionMenuId}-${activeMention}`
+          : options.length
+            ? `composer-option-${activeSuggestion}`
+            : undefined
+      }
+      onChange={(event) => {
+        voiceComposer.onChange(event.target.value);
+        setDismissedMention(null);
+        if (!composingRef.current) { setCaret(event.target.selectionStart); setSuggestionIndex(0); }
+      }}
+      onCompositionEnd={(event) => { voiceComposer.onCompositionEnd(); setCaret(event.currentTarget.selectionStart); }}
+      onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+      onBlur={() => setDismissedMention(mention?.start ?? null)}
+      onPaste={(event) => {
+        const files = Array.from(event.clipboardData.files);
+        if (!files.length) return;
+        event.preventDefault();
+        setInputError("");
+        for (const file of files) void threadRuntime.composer.addAttachment(file).catch((error: unknown) => {
+          const reason = error instanceof Error ? error.message : "附件添加失败，请重试。";
+          setInputError((previous) => [previous, `${file.name}：${reason}`].filter(Boolean).join("\n"));
+        });
+      }}
+      onKeyDown={(event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+        if (event.nativeEvent.isComposing || composingRef.current) return;
+        if (mentionOpen && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+          event.preventDefault();
+          const step = event.key === "ArrowDown" ? 1 : -1;
+          setActiveMention((index) =>
+            mentionMatches.length
+              ? (index + step + mentionMatches.length) % mentionMatches.length
+              : 0,
+          );
+          return;
+        }
+        if (mentionOpen && (event.key === "Enter" || event.key === "Tab")) {
+          const target = mentionMatches[Math.min(activeMention, mentionMatches.length - 1)];
+          if (target) {
+            event.preventDefault();
+            chooseMentionTarget(target);
+            return;
+          }
+        }
+        if (mentionOpen && event.key === "Escape") {
+          event.preventDefault();
+          setDismissedMention(mention?.start ?? null);
+          return;
+        }
+        if (options.length && ["ArrowDown", "ArrowUp", "Escape", "Enter", "Tab"].includes(event.key) && !event.shiftKey) {
+          event.preventDefault();
+          if (event.key === "Escape") setDismissedText(composerText);
+          else if (event.key === "ArrowDown") setSuggestionIndex((activeSuggestion + 1) % options.length);
+          else if (event.key === "ArrowUp") setSuggestionIndex((activeSuggestion + options.length - 1) % options.length);
+          else chooseSuggestion(activeSuggestion);
+        } else if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          submitComposer(event.altKey);
+        }
+      }}
+    />
+  );
+  const composerMentionMenu = mentionOpen ? (
+    <MentionMenu
+      id={mentionMenuId}
+      members={mentionMatches}
+      activeIndex={activeMention}
+      onChoose={chooseMentionTarget}
+      emptyText="没有匹配的成员"
+      label="选择要提及的助理"
+      testId="assistant-mention-menu"
+    />
+  ) : null;
   return (
     <div
       className="harness-composer-shell"
@@ -1100,129 +1209,47 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
           </div>
         )}
         <Composer.Attachments components={{ Attachment: HarnessComposerAttachment }} />
-        <div
-          className={`composer-input-wrap ${composerStyles.inputWrap}`}
-        >
-        <ConversationInput
-          ref={inputRef}
-          onComposingChange={(value) => {
-            composingRef.current = value;
-            setMentionComposing(value);
-          }}
-          className={`${composerStyles.input} aui-composer-input`}
-          aria-label="消息输入"
-          placeholder={
-            botScope
-              ? `给 ${botScope.name} 发消息`
-              : replyAwareComposerPlaceholder(
-                  replyScope?.threadId,
-                  busy,
-                  conversationScope?.composerPlaceholder,
-                )
-          }
-          rows={Math.min(8, Math.max(1, composerText.split("\n").length))}
-          aria-controls={mentionOpen ? mentionMenuId : options.length ? "composer-suggestions" : undefined}
-          aria-expanded={mentionOpen || options.length > 0}
-          aria-activedescendant={
-            mentionOpen
-              ? `${mentionMenuId}-${activeMention}`
-              : options.length
-                ? `composer-option-${activeSuggestion}`
-                : undefined
-          }
-          onChange={(event) => {
-            voiceComposer.onChange(event.target.value);
-            setDismissedMention(null);
-            if (!composingRef.current) { setCaret(event.target.selectionStart); setSuggestionIndex(0); }
-          }}
-          onCompositionEnd={(event) => { voiceComposer.onCompositionEnd(); setCaret(event.currentTarget.selectionStart); }}
-          onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
-          onBlur={() => setDismissedMention(mention?.start ?? null)}
-          onPaste={(event) => {
-            const files = Array.from(event.clipboardData.files);
-            if (!files.length) return;
-            event.preventDefault();
-            setInputError("");
-            for (const file of files) void threadRuntime.composer.addAttachment(file).catch((error: unknown) => {
-              const reason = error instanceof Error ? error.message : "附件添加失败，请重试。";
-              setInputError((previous) => [previous, `${file.name}：${reason}`].filter(Boolean).join("\n"));
-            });
-          }}
-          onKeyDown={(event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-            if (event.nativeEvent.isComposing || composingRef.current) return;
-            if (mentionOpen && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
-              event.preventDefault();
-              const step = event.key === "ArrowDown" ? 1 : -1;
-              setActiveMention((index) =>
-                mentionMatches.length
-                  ? (index + step + mentionMatches.length) % mentionMatches.length
-                  : 0,
-              );
-              return;
-            }
-            if (mentionOpen && (event.key === "Enter" || event.key === "Tab")) {
-              const target = mentionMatches[Math.min(activeMention, mentionMatches.length - 1)];
-              if (target) {
-                event.preventDefault();
-                chooseMentionTarget(target);
-                return;
-              }
-            }
-            if (mentionOpen && event.key === "Escape") {
-              event.preventDefault();
-              setDismissedMention(mention?.start ?? null);
-              return;
-            }
-            if (options.length && ["ArrowDown", "ArrowUp", "Escape", "Enter", "Tab"].includes(event.key) && !event.shiftKey) {
-              event.preventDefault();
-              if (event.key === "Escape") setDismissedText(composerText);
-              else if (event.key === "ArrowDown") setSuggestionIndex((activeSuggestion + 1) % options.length);
-              else if (event.key === "ArrowUp") setSuggestionIndex((activeSuggestion + options.length - 1) % options.length);
-              else chooseSuggestion(activeSuggestion);
-            } else if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              submitComposer(event.altKey);
-            }
-          }}
-        />
-        {mentionOpen && (
-          <MentionMenu
-            id={mentionMenuId}
-            members={mentionMatches}
-            activeIndex={activeMention}
-            onChoose={chooseMentionTarget}
-            emptyText="没有匹配的成员"
-            label="选择要提及的助理"
-            testId="assistant-mention-menu"
-          />
-        )}
-        </div>
-        <div className={`composer-footer${assistantSurface ? " composer-footer--action-first" : ""}`}>
-        {assistantSurface ? composerAction : null}
-        <div className="composer-toolbar">
-          <ComposerAddControl filesOnly={filesOnly} knowledgeDisabled={runLocked || showStop || videoGenerating}
-            configureKnowledge={conversationScope?.onConfigureKnowledge} />
-
-          {!conversationScope?.compactComposer && !assistantSurface && <>
-          <TaskAgentSwitcher
-            agents={agentSelection.agents}
-            selected={agentSelection.selected}
-            loading={agentSelection.loading}
-            currentTaskBusy={agentSelection.currentTaskBusy}
-            onChange={agentSelection.onChange}
-            onRefresh={agentSelection.onRefresh}
-          />
-          </>}
-          <div className="composer-model-voice">
-          {(!conversationScope?.compactComposer || conversationScope.allowModelSelection) && <TaskModelControl disabled={Boolean(conversationScope && !conversationScope.allowModelSelection) || runLocked || showStop || videoGenerating} />}
-          <VoiceInput key={scope?.threadId || "new"} disabled={busy || followupVoiceActive}
-            modelRoute={overrideRouteId || ""}
-            onActive={(active) => { voiceComposer.onActive(active); setVoiceActive(active); }}
-            onInsert={voiceComposer.onRecorded} />
+        {assistantSurface ? (
+          <div className="composer-assistant-row">
+            {composerAddControl}
+            <div className={`composer-input-wrap ${composerStyles.inputWrap}`}>
+              {composerInput}
+              {composerMentionMenu}
+            </div>
+            <div className="composer-model-voice composer-model-voice--assistant">
+              {composerModel}
+              {composerVoice}
+            </div>
+            {composerAction}
           </div>
-        </div>
-        {!assistantSurface ? composerAction : null}
-        </div>
+        ) : (
+          <>
+            <div className={`composer-input-wrap ${composerStyles.inputWrap}`}>
+              {composerInput}
+              {composerMentionMenu}
+            </div>
+            <div className="composer-footer">
+              <div className="composer-toolbar">
+                {composerAddControl}
+                {!conversationScope?.compactComposer && (
+                  <TaskAgentSwitcher
+                    agents={agentSelection.agents}
+                    selected={agentSelection.selected}
+                    loading={agentSelection.loading}
+                    currentTaskBusy={agentSelection.currentTaskBusy}
+                    onChange={agentSelection.onChange}
+                    onRefresh={agentSelection.onRefresh}
+                  />
+                )}
+                <div className="composer-model-voice">
+                  {composerModel}
+                  {composerVoice}
+                </div>
+              </div>
+              {composerAction}
+            </div>
+          </>
+        )}
       </Composer.Root>
 
     </div>

@@ -61,9 +61,26 @@ html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell.ha
   padding: 8px;
 }
 
-/* 助理会话：发送在左（紧跟 +），工具与语音仍靠右。 */
-html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell.harness-composer-shell .composer-footer.composer-footer--action-first {
-  grid-template-columns: 32px minmax(0, 1fr);
+/* 助理会话与群聊同一套排布：+ 最左、输入区居中、语音紧挨发送左边、发送最右。
+   助理面不再用 footer 网格，而是与群聊同构的单行 composer。 */
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell.harness-composer-shell .composer-assistant-row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell.harness-composer-shell .composer-assistant-row > .composer-input-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell.harness-composer-shell .composer-assistant-row > .composer-model-voice {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
 }
 
 html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell.harness-composer-shell .composer-footer > .composer-toolbar {
