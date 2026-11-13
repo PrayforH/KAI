@@ -391,14 +391,6 @@ export function AssistantGroupChat({
     }
   };
 
-  const insertMention = (name: string) => {
-    setDraft((current) => {
-      const spacer = current && !current.endsWith(" ") ? " " : "";
-      return `${current}${spacer}@${name} `;
-    });
-    requestAnimationFrame(() => composerRef.current?.focus());
-  };
-
   const handleReaction = async (message: GroupMessage, emoji: string) => {
     const next = message.reactions.includes(emoji)
       ? message.reactions.filter((item) => item !== emoji)
@@ -715,7 +707,6 @@ export function AssistantGroupChat({
               value={draft}
               onChange={setDraft}
               onSend={() => void handleSend()}
-              onMention={insertMention}
               sending={busy}
               placeholder={
                 selected.primaryPresent
@@ -725,6 +716,7 @@ export function AssistantGroupChat({
               members={mentionTargets.map((member) => ({
                 memberId: member.memberId,
                 name: member.name,
+                role: member.kind,
               }))}
               quoted={
                 quoted
@@ -736,7 +728,6 @@ export function AssistantGroupChat({
               }
               onClearQuote={() => setQuoted(null)}
               textareaRef={composerRef}
-              hint="Enter 发送 · Shift+Enter 换行 · 消息与回复只保存在本群"
               libraryDocuments={library?.documents ?? []}
               libraryStatus={library ? "ready" : libraryError ? "unavailable" : "loading"}
               attachmentIds={attachmentIds}

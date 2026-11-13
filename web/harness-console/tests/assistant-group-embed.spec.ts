@@ -59,7 +59,7 @@ describe("group chats live in the main assistant surface", () => {
       "addAssistantGroupMember",
       "removeAssistantGroupMember",
       "setAssistantGroupReplyAs",
-      "insertMention",
+      "mentionTargets",
     ]) {
       expect(groupChat).toContain(capability);
     }
@@ -107,7 +107,7 @@ describe("group chats live in the main assistant surface", () => {
     // 成功路径先 await 发送，再清草稿和引用；失败时两者都保留。
     const send = groupChat.slice(
       groupChat.indexOf("const handleSend"),
-      groupChat.indexOf("const insertMention"),
+      groupChat.indexOf("const handleReaction"),
     );
     expect(send.indexOf("await postAssistantGroupMessage")).toBeLessThan(
       send.indexOf("setQuoted(null)"),
@@ -121,7 +121,9 @@ describe("group chats live in the main assistant surface", () => {
     expect(composer).toContain("MAX_HEIGHT = 130");
     expect(composer).toContain("event.shiftKey");
     expect(composer).toContain('aria-label="取消引用"');
-    expect(composer).toContain('aria-label="提到群成员"');
+    // 不再有 @ 按钮：输入 @ 直接弹成员选择。
+    expect(composer).toContain('data-testid="group-mention-menu"');
+    expect(composer).toContain("MENTION_TOKEN");
     // 中文输入法选词 Enter 不能发消息。
     expect(composer).toContain("isComposing");
     expect(composer).toContain("keyCode === 229");
@@ -129,8 +131,9 @@ describe("group chats live in the main assistant surface", () => {
     expect(composer).toContain('aria-label="添加附件或知识库"');
     expect(groupChat).toContain("attachmentIds");
     expect(groupChat).toContain("loadGroupComposerDraft");
-    // 提示在卡片外，不再撑高单行外框。
-    expect(composer).toContain('data-testid="group-composer-hint"');
+    // 底部键盘提示已按用户要求移除。
+    expect(groupChat).not.toContain("Shift+Enter 换行 · 消息与回复只保存在本群");
+    expect(composer).not.toContain("group-composer-hint");
   });
 
   it("supports group management and message deletion", () => {
