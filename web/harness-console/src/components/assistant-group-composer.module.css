@@ -83,6 +83,12 @@
   outline: none;
   overflow-y: hidden;
 }
+/* 全局 focus-visible 规则（styles.css / web-codex.css / codex-theme.css）特异性高于模块类，
+   深色主题下会在 textarea 上画一圈白色矩形。这里压掉内圈描边，焦点提示保留在外层胶囊
+   （.composer:focus-within 改边框色），键盘用户仍能看见焦点所在。
+   只作用于本组件的输入框，不改全局规则，也不动 + 与发送按钮的焦点环。 */
+.input:focus,
+.input:focus-visible { outline: none !important; }
 .input::placeholder { color: var(--codex-faint, #727272); }
 .input:disabled { color: var(--codex-faint, #727272); }
 

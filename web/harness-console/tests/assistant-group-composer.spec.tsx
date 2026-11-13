@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -306,5 +309,20 @@ describe("AssistantGroupComposer", () => {
         .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     });
     expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("suppresses the textarea focus ring but keeps the composer focus border", () => {
+    // jsdom 不做样式计算，这里守住修复的结构前提：内圈 outline 被压掉，
+    // 焦点提示仍由外层胶囊的 focus-within 边框承担。
+    const css = readFileSync(
+      resolve(process.cwd(), "src/components/assistant-group-composer.module.css"),
+      "utf8",
+    );
+    const inputFocusBlock =
+      css.match(/\.input:focus,\s*\.input:focus-visible\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(inputFocusBlock).toContain("outline: none !important");
+
+    const composerFocusBlock = css.match(/\.composer:focus-within\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(composerFocusBlock).toContain("border-color");
   });
 });
