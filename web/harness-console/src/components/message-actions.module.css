@@ -93,6 +93,11 @@
   background: var(--codex-surface-raised, #242424);
   box-shadow: var(--codex-shadow-soft, 0 8px 28px rgb(0 0 0 / 24%));
 }
+/* 贴着滚动区顶部时向下展开：向上会被 overflow 裁掉半截。 */
+.reactionPickerBelow {
+  top: calc(100% + 4px);
+  bottom: auto;
+}
 .pickerButton {
   border: 0;
   border-radius: 50%;

@@ -575,8 +575,13 @@ export function AssistantGroupChat({
   if (!selected) {
     return (
       <section className={styles.chat} aria-label="群聊">
-        <div className={styles.empty}>
-          {loading ? "正在加载群聊…" : "这个群聊不存在或已解散。"}
+        <div className={styles.main}>
+          <div className="assistant-surface-title" data-testid="assistant-surface-title">
+            <span className="task-context-title">群聊</span>
+          </div>
+          <div className={styles.empty}>
+            {loading ? "正在加载群聊…" : "这个群聊不存在或已解散。"}
+          </div>
         </div>
       </section>
     );
@@ -585,52 +590,60 @@ export function AssistantGroupChat({
   return (
     <section className={styles.chat} aria-label={`群聊 ${selected.name}`}>
       <div className={styles.main}>
-        <div className={styles.settings} ref={settingsRef}>
-          <div className={styles.settingsButtons}>
-            <button
-              type="button"
-              className={styles.settingsButton}
-              aria-label={sideOpen ? "关闭群右侧栏" : "打开群右侧栏"}
-              title="聊天记录 / 动态 / 任务 / 资料库"
-              aria-expanded={sideOpen}
-              onClick={() => (sideOpen ? setSideOpen(false) : openSidePanel("history"))}
-            >
-              <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                <rect x="3" y="4" width="14" height="12" rx="2.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-                <path d="M12.5 4v12" fill="none" stroke="currentColor" strokeWidth="1.5" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              className={styles.settingsButton}
-              aria-label="群信息"
-              title="群信息"
-              aria-haspopup="dialog"
-              aria-expanded={settingsOpen}
-              onClick={() => setSettingsOpen((open) => !open)}
-            >
-              ⋯
-            </button>
+        {/* 固定标题带：群名在左，右侧栏与群信息入口在右。它在消息滚动区之外，
+            所以按钮不会随滚动压到气泡上（本轮返工的核心）。 */}
+        <div className="assistant-surface-title" data-testid="assistant-surface-title">
+          <span className="task-context-title">{selected.name}</span>
+          <div className={styles.settings} ref={settingsRef}>
+            <div className={styles.settingsButtons}>
+              <button
+                type="button"
+                className={styles.settingsButton}
+                aria-label={sideOpen ? "关闭群右侧栏" : "打开群右侧栏"}
+                title="聊天记录 / 动态 / 任务 / 资料库"
+                aria-expanded={sideOpen}
+                onClick={() => (sideOpen ? setSideOpen(false) : openSidePanel("history"))}
+              >
+                <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                  <rect x="3" y="4" width="14" height="12" rx="2.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M12.5 4v12" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className={styles.settingsButton}
+                aria-label="群信息"
+                title="群信息"
+                aria-haspopup="dialog"
+                aria-expanded={settingsOpen}
+                onClick={() => setSettingsOpen((open) => !open)}
+              >
+                ⋯
+              </button>
+            </div>
+            {settingsOpen && (
+              <div className={styles.settingsPopover}>
+                <AssistantGroupInfoPanel
+                  group={selected}
+                  isCreator={isCreator}
+                  busy={busy}
+                  error={error}
+                  specialists={specialists}
+                  onUpdate={handleUpdateProfile}
+                  onAddMember={(specialistId) => void handleAdd(specialistId)}
+                  onRemoveMember={(memberId, name) => void handleRemove(memberId, name)}
+                  onReplyAs={(value) => void handleReplyAs(value)}
+                  onOpenLibrary={() => openSidePanel("library")}
+                  onDissolve={handleDissolve}
+                  onClose={() => setSettingsOpen(false)}
+                />
+              </div>
+            )}
           </div>
-          {settingsOpen && (
-            <AssistantGroupInfoPanel
-              group={selected}
-              isCreator={isCreator}
-              busy={busy}
-              error={error}
-              specialists={specialists}
-              onUpdate={handleUpdateProfile}
-              onAddMember={(specialistId) => void handleAdd(specialistId)}
-              onRemoveMember={(memberId, name) => void handleRemove(memberId, name)}
-              onReplyAs={(value) => void handleReplyAs(value)}
-              onOpenLibrary={() => openSidePanel("library")}
-              onDissolve={handleDissolve}
-              onClose={() => setSettingsOpen(false)}
-            />
-          )}
         </div>
         <div
           className={styles.timeline}
+          data-testid="group-message-timeline"
           ref={timelineRef}
           onScroll={() => {
             const node = timelineRef.current;

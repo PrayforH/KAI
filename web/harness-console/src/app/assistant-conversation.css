@@ -17,13 +17,16 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
   padding-top: 12px;
 }
 
-/* 对话区左上角固定名称：只有文字，无右图标、无分隔线/阴影/渐变，不随消息滚动。 */
+/* 对话区顶部固定标题带：名称在左、页头入口在右，高 46px；
+   没有右图标夹层、分隔线、阴影或渐变，也不随消息滚动。
+   群聊与单助理共用这一条，右侧栏/群信息按钮都住在带子里，不再悬浮到消息上。 */
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-surface-title {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  min-height: 34px;
-  padding: 8px 16px 0;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 16px;
   z-index: 6;
 }
 

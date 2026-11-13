@@ -50,6 +50,15 @@ function SmileIcon() {
   );
 }
 
+/** 最近的纵向滚动容器：用于判断弹层会不会被裁掉。 */
+function findScrollParent(node: HTMLElement | null): HTMLElement | null {
+  for (let current = node?.parentElement ?? null; current; current = current.parentElement) {
+    const overflowY = getComputedStyle(current).overflowY;
+    if (overflowY === "auto" || overflowY === "scroll") return current;
+  }
+  return null;
+}
+
 export type MessageActionsProps = {
   reactions?: readonly string[];
   onReact?: (emoji: string) => void;
@@ -88,12 +97,26 @@ export function MessageActions({
   children,
 }: MessageActionsProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  /** 消息贴着滚动区顶部时，弹层改向下展开，避免被裁掉一半。 */
+  const [pickerBelow, setPickerBelow] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const actionsRef = useRef<HTMLDivElement | null>(null);
+  const pickerRef = useRef<HTMLSpanElement | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => () => clearTimeout(copyTimer.current), []);
+
+  // 弹层默认向上展开；若操作条已在滚动区顶部，向上会被裁掉，就翻到下方。
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const picker = pickerRef.current;
+    if (!picker) return;
+    const scroller = findScrollParent(picker);
+    if (!scroller) return;
+    const pickerTop = picker.getBoundingClientRect().top;
+    setPickerBelow(pickerTop < scroller.getBoundingClientRect().top);
+  }, [pickerOpen]);
 
   useEffect(() => {
     if (!pickerOpen) return;
@@ -208,7 +231,12 @@ export function MessageActions({
           </span>
         )}
         {pickerOpen && onReact && (
-          <span className={styles.reactionPicker} role="group" aria-label="选择表情">
+          <span
+            className={`${styles.reactionPicker} ${pickerBelow ? styles.reactionPickerBelow : ""}`}
+            ref={pickerRef}
+            role="group"
+            aria-label="选择表情"
+          >
             {MESSAGE_REACTIONS.map((emoji) => (
               <button
                 key={emoji}
