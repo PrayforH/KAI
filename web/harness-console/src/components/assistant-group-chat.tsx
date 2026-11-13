@@ -5,6 +5,11 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import {
   addAssistantGroupMember,
   assistantRequest,
+  bindAssistantGroupKnowledgeBase,
+  deleteAssistantGroup,
+  deleteAssistantGroupDocument,
+  deleteAssistantGroupMessage,
+  getAssistantGroupLibrary,
   listAssistantGroupMessages,
   listAssistantGroups,
   markAssistantGroupRead,
@@ -12,19 +17,27 @@ import {
   removeAssistantGroupMember,
   setAssistantGroupReplyAs,
   toggleAssistantGroupReaction,
+  unbindAssistantGroupKnowledgeBase,
+  updateAssistantGroup,
+  uploadAssistantGroupDocument,
   type AssistantGroup,
+  type AssistantGroupLibrary,
+  type GroupLibraryDocument,
   type GroupMember,
   type GroupMessage,
   type Specialist,
 } from "../lib/assistant-client";
+import { studioClient, type StudioKnowledgeBase } from "../lib/studio-client";
+import { loadGroupComposerDraft, persistGroupComposerDraft } from "../lib/group-composer-draft";
 import { botAccent } from "./bot-rail";
 import { AssistantGroupComposer } from "./assistant-group-composer";
+import { AssistantGroupInfoPanel, type GroupProfileUpdate } from "./assistant-group-info-panel";
 import { AssistantGroupMessage } from "./assistant-group-message";
+import { AssistantGroupSidePanel, type GroupSideTab } from "./assistant-group-side-panel";
 import { groupStampLabel } from "../lib/group-chat-time";
 import styles from "./assistant-group-chat.module.css";
 
 const PRIMARY_MEMBER_ID = "primary";
-const PERSONAL_THREAD = "kai-personal-assistant-v1";
 /** 相邻两条消息超过这段时间就插一个时间分隔。 */
 const STAMP_GAP_MS = 10 * 60 * 1000;
 /** 引用条里展示的文本长度；服务端快照本身已截断到 200 字。 */
@@ -36,10 +49,14 @@ function newClientId(): string {
 
 type AssistantGroupChatProps = {
   groupId: string;
+  /** 当前登录用户：创建者才能改名/解散，草稿按用户隔离。 */
+  userId?: string;
   /** 群名回传给主界面页头；群被删或未加载时传 null。 */
   onGroupName?: (name: string | null) => void;
   /** 成员头像簇回传给页头；群被删或未加载时传空数组。 */
   onGroupMembers?: (members: GroupMember[]) => void;
+  /** 群解散后让主界面退出这个群。 */
+  onDissolved?: () => void;
 };
 
 /**
@@ -48,22 +65,38 @@ type AssistantGroupChatProps = {
  */
 export function AssistantGroupChat({
   groupId,
+  userId = "",
   onGroupName,
   onGroupMembers,
+  onDissolved,
 }: AssistantGroupChatProps) {
   const [groups, setGroups] = useState<AssistantGroup[]>([]);
   const [specialists, setSpecialists] = useState<Specialist[]>([]);
   const [messages, setMessages] = useState<GroupMessage[]>([]);
   /** 首轮消息还没回来时不要先闪一句「还没有消息」。 */
   const [messagesReady, setMessagesReady] = useState(false);
-  const [draft, setDraft] = useState("");
+  // 群切换时组件按 groupId 重挂载，草稿可直接从本地恢复。
+  const [draft, setDraft] = useState(() =>
+    // 服务端预渲染没有 window；草稿只在浏览器里恢复。
+    userId && typeof window !== "undefined"
+      ? loadGroupComposerDraft(window.localStorage, userId, groupId)
+      : "",
+  );
   /** 当前正在引用的消息；发送成功后才清空。 */
   const [quoted, setQuoted] = useState<GroupMessage | null>(null);
+  /** 将随下一条消息发送的群资料库文档。 */
+  const [attachmentIds, setAttachmentIds] = useState<string[]>([]);
+  const [library, setLibrary] = useState<AssistantGroupLibrary | null>(null);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [libraryError, setLibraryError] = useState<string | null>(null);
+  const [libraryBusy, setLibraryBusy] = useState(false);
+  const [availableKnowledgeBases, setAvailableKnowledgeBases] = useState<StudioKnowledgeBase[]>([]);
+  const [sideOpen, setSideOpen] = useState(false);
+  const [sideTab, setSideTab] = useState<GroupSideTab>("activity");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [memberToAdd, setMemberToAdd] = useState("");
   /** 进群时已有的未读条数，用来决定「新」分割线放在哪。 */
   const [unreadSeed, setUnreadSeed] = useState<number | null>(null);
   const [dividerIndex, setDividerIndex] = useState<number | null>(null);
@@ -93,19 +126,7 @@ export function AssistantGroupChat({
     () => (selected?.members ?? []).find((member) => member.kind === "primary") ?? null,
     [selected],
   );
-  const addableSpecialists = useMemo(() => {
-    const seated = new Set(
-      (selected?.members ?? [])
-        .map((member) => member.specialistId)
-        .filter((value): value is string => Boolean(value)),
-    );
-    return specialists.filter(
-      (item) =>
-        item.status !== "archived" &&
-        !seated.has(item.specialistId) &&
-        item.config?.conversation_thread_id !== PERSONAL_THREAD,
-    );
-  }, [selected, specialists]);
+  const isCreator = Boolean(userId && selected?.creatorUserId === userId);
 
   // 点面板外面或按 Esc 收起群设置。
   useEffect(() => {
@@ -130,6 +151,51 @@ export function AssistantGroupChat({
     window.addEventListener("kai:group-settings-open", open);
     return () => window.removeEventListener("kai:group-settings-open", open);
   }, []);
+
+  // 草稿按群保留：切走再回来、刷新页面都还在。
+  useEffect(() => {
+    if (!userId) return;
+    persistGroupComposerDraft(window.localStorage, userId, groupId, draft);
+  }, [draft, groupId, userId]);
+
+  const refreshLibrary = useCallback(async (quiet = false) => {
+    if (!quiet) setLibraryLoading(true);
+    try {
+      setLibrary(await getAssistantGroupLibrary(groupId));
+      setLibraryError(null);
+    } catch (reason) {
+      // 静默失败不打扰对话，但保留原因：侧栏打开时显示，composer 显示「暂时不可用」。
+      const message = reason instanceof Error ? reason.message : "";
+      setLibraryError(
+        message.includes("（404）")
+          ? "当前服务端还没有群资料库，部署后可用"
+          : message || "资料库读取失败",
+      );
+    } finally {
+      if (!quiet) setLibraryLoading(false);
+    }
+  }, [groupId]);
+
+  // 进群先静默拉一次资料库，供 composer 的「+」列出文件；失败不打扰对话。
+  useEffect(() => {
+    void refreshLibrary(true);
+  }, [refreshLibrary]);
+
+  // 打开资料库 tab 时补拉一次，并载入可绑定的知识库。
+  useEffect(() => {
+    if (!sideOpen || sideTab !== "library") return;
+    void refreshLibrary(false);
+    let cancelled = false;
+    void studioClient
+      .listKnowledgeBases()
+      .then((list) => {
+        if (!cancelled) setAvailableKnowledgeBases(list);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [sideOpen, sideTab, refreshLibrary]);
 
   const refreshGroups = useCallback(async () => {
     const list = await listAssistantGroups();
@@ -250,14 +316,13 @@ export function AssistantGroupChat({
     );
   };
 
-  const handleAdd = async () => {
-    if (!selected || !memberToAdd || busy) return;
+  const handleAdd = async (specialistId: string) => {
+    if (!selected || !specialistId || busy) return;
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      replaceGroup(await addAssistantGroupMember(selected.groupId, memberToAdd));
-      setMemberToAdd("");
+      replaceGroup(await addAssistantGroupMember(selected.groupId, specialistId));
       await refreshGroups();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "添加成员失败");
@@ -310,10 +375,12 @@ export function AssistantGroupChat({
         text,
         newClientId(),
         quoted?.messageId ?? null,
+        attachmentIds,
       );
-      // 成功才清草稿和引用；失败时两者都保留，避免用户重打。
+      // 成功才清草稿、引用和附件；失败时都保留，避免用户重选。
       setDraft("");
       setQuoted(null);
+      setAttachmentIds([]);
       if (result.notices.length > 0) setNotice(result.notices.join(" "));
       await refreshMessages(selected.groupId);
       await refreshGroups();
@@ -365,6 +432,132 @@ export function AssistantGroupChat({
     requestAnimationFrame(() => composerRef.current?.focus());
   };
 
+  const handleUpdateProfile = async (fields: GroupProfileUpdate): Promise<boolean> => {
+    if (!selected || busy) return false;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      replaceGroup(await updateAssistantGroup(selected.groupId, fields));
+      await refreshGroups();
+      // 左侧栏的群名同步刷新。
+      window.dispatchEvent(new CustomEvent("kai:groups-changed"));
+      return true;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "群资料保存失败");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDissolve = async (): Promise<boolean> => {
+    if (!selected || busy) return false;
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteAssistantGroup(selected.groupId);
+      window.dispatchEvent(new CustomEvent("kai:groups-changed"));
+      setSettingsOpen(false);
+      setSideOpen(false);
+      onGroupName?.(null);
+      onDissolved?.();
+      return true;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "解散群聊失败");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDeleteMessage = async (message: GroupMessage) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await deleteAssistantGroupMessage(message.groupId, message.messageId);
+      setMessages((current) => current.filter((item) => item.messageId !== message.messageId));
+      setNotice("消息已删除");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "删除消息失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openSidePanel = (tab: GroupSideTab = "activity") => {
+    setSideTab(tab);
+    setSideOpen(true);
+    setSettingsOpen(false);
+  };
+
+  const handleUploadDocument = async (file: File) => {
+    if (!selected || libraryBusy) return;
+    setLibraryBusy(true);
+    setLibraryError(null);
+    try {
+      await uploadAssistantGroupDocument(selected.groupId, file);
+      await refreshLibrary(false);
+    } catch (reason) {
+      setLibraryError(reason instanceof Error ? reason.message : "上传失败");
+    } finally {
+      setLibraryBusy(false);
+    }
+  };
+
+  const handleDeleteDocument = async (document: GroupLibraryDocument) => {
+    if (!selected || libraryBusy) return;
+    setLibraryBusy(true);
+    setLibraryError(null);
+    try {
+      await deleteAssistantGroupDocument(selected.groupId, document.documentId);
+      setAttachmentIds((current) => current.filter((id) => id !== document.documentId));
+      await refreshLibrary(false);
+    } catch (reason) {
+      setLibraryError(reason instanceof Error ? reason.message : "删除文件失败");
+    } finally {
+      setLibraryBusy(false);
+    }
+  };
+
+  const handleBindKnowledgeBase = async (reference: string) => {
+    if (!selected || libraryBusy) return;
+    setLibraryBusy(true);
+    setLibraryError(null);
+    try {
+      await bindAssistantGroupKnowledgeBase(selected.groupId, reference);
+      await refreshLibrary(false);
+    } catch (reason) {
+      setLibraryError(reason instanceof Error ? reason.message : "绑定知识库失败");
+    } finally {
+      setLibraryBusy(false);
+    }
+  };
+
+  const handleUnbindKnowledgeBase = async (reference: string) => {
+    if (!selected || libraryBusy) return;
+    setLibraryBusy(true);
+    setLibraryError(null);
+    try {
+      await unbindAssistantGroupKnowledgeBase(selected.groupId, reference);
+      await refreshLibrary(false);
+    } catch (reason) {
+      setLibraryError(reason instanceof Error ? reason.message : "解绑知识库失败");
+    } finally {
+      setLibraryBusy(false);
+    }
+  };
+
+  const toggleAttachment = (documentId: string) => {
+    setAttachmentIds((current) => {
+      if (current.includes(documentId)) return current.filter((id) => id !== documentId);
+      if (current.length >= 10) return current;
+      return [...current, documentId];
+    });
+  };
+
   const mentionTargets = useMemo(
     () => [...(primaryMember ? [primaryMember] : []), ...activeSpecialists],
     [primaryMember, activeSpecialists],
@@ -395,199 +588,183 @@ export function AssistantGroupChat({
 
   return (
     <section className={styles.chat} aria-label={`群聊 ${selected.name}`}>
-      <div className={styles.settings} ref={settingsRef}>
-        <button
-          type="button"
-          className={styles.settingsButton}
-          aria-label="群设置"
-          title="群设置"
-          aria-expanded={settingsOpen}
-          onClick={() => setSettingsOpen((open) => !open)}
+      <div className={styles.main}>
+        <div className={styles.settings} ref={settingsRef}>
+          <div className={styles.settingsButtons}>
+            <button
+              type="button"
+              className={styles.settingsButton}
+              aria-label="打开群右侧栏"
+              title="动态 / 任务 / 资料库"
+              aria-expanded={sideOpen}
+              onClick={() => openSidePanel("activity")}
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                <rect x="3" y="4" width="14" height="12" rx="2.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                <path d="M12.5 4v12" fill="none" stroke="currentColor" strokeWidth="1.5" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className={styles.settingsButton}
+              aria-label="群信息"
+              title="群信息"
+              aria-haspopup="dialog"
+              aria-expanded={settingsOpen}
+              onClick={() => setSettingsOpen((open) => !open)}
+            >
+              ⋯
+            </button>
+          </div>
+          {settingsOpen && (
+            <AssistantGroupInfoPanel
+              group={selected}
+              isCreator={isCreator}
+              busy={busy}
+              error={error}
+              specialists={specialists}
+              onUpdate={handleUpdateProfile}
+              onAddMember={(specialistId) => void handleAdd(specialistId)}
+              onRemoveMember={(memberId, name) => void handleRemove(memberId, name)}
+              onReplyAs={(value) => void handleReplyAs(value)}
+              onOpenLibrary={() => openSidePanel("library")}
+              onDissolve={handleDissolve}
+              onClose={() => setSettingsOpen(false)}
+            />
+          )}
+        </div>
+        <div
+          className={styles.timeline}
+          ref={timelineRef}
+          onScroll={() => {
+            const node = timelineRef.current;
+            if (!node) return;
+            atBottom.current =
+              node.scrollHeight - node.scrollTop - node.clientHeight < 48;
+            if (atBottom.current) setNewPill(0);
+          }}
         >
-          ⋯
-        </button>
-        {settingsOpen && (
-          <div className={styles.settingsPanel} role="dialog" aria-label="群设置">
-            <div className={styles.roster}>
-              {selected.members.map((member) => {
-                const role =
-                  member.kind === "creator"
-                    ? "创建者"
-                    : member.kind === "primary"
-                      ? "主助理"
-                      : "子助理";
-                return (
-                <span key={member.memberId} className={styles.chip}>
-                  {member.name}
-                  {/* 花名册里的名字本身就叫「创建者/主助理」时不再重复角色。 */}
-                  {member.name !== role && <small>{role}</small>}
-                  {member.kind !== "creator" && (
-                    <button
-                      type="button"
-                      title={`移出 ${member.name}`}
-                      aria-label={`移出 ${member.name}`}
-                      disabled={busy}
-                      onClick={() => void handleRemove(member.memberId, member.name)}
-                    >
-                      ×
-                    </button>
+          <div className={styles.thread}>
+            {(notice || error) && (
+              <div className={styles.bannerStack}>
+                {notice && <div className={styles.notice}>{notice}</div>}
+                {error && !settingsOpen && <div className={styles.error} role="alert">{error}</div>}
+              </div>
+            )}
+            {messagesReady && orderedMessages.length === 0 && (
+              <div className={styles.empty}>还没有消息，打个招呼吧。</div>
+            )}
+            {orderedMessages.map((message, index) => {
+              const previous = orderedMessages[index - 1];
+              const stamp = groupStampLabel(message.createdAt);
+              const gap = previous
+                ? Date.parse(message.createdAt) - Date.parse(previous.createdAt)
+                : Number.POSITIVE_INFINITY;
+              // 首条、隔了 10 分钟以上、跨天，都插一条时间分隔。
+              const showStamp = !previous || gap > STAMP_GAP_MS || gap < 0;
+              const member = selected.members.find(
+                (item) => item.name === message.authorName,
+              );
+              const tone =
+                message.author === "user"
+                  ? "#6b746e"
+                  : botAccent(member?.specialistId ?? message.authorName);
+              const canDelete =
+                message.status !== "running" &&
+                (message.author === "user" || isCreator);
+              return (
+                <Fragment key={message.messageId}>
+                  {showStamp && <div className={styles.stamp}>{stamp}</div>}
+                  {dividerIndex === index && (
+                    <div className={styles.unreadLine} role="separator" aria-label="新消息分隔">
+                      <span>新消息</span>
+                    </div>
                   )}
-                </span>
-                );
-              })}
-            </div>
-            <div className={styles.settingsRow}>
-              <span className={styles.addRow}>
-                <select
-                  value={memberToAdd}
-                  disabled={busy || addableSpecialists.length === 0}
-                  onChange={(event) => setMemberToAdd(event.target.value)}
-                >
-                  <option value="">
-                    {addableSpecialists.length ? "选择子助理…" : "无可添加的子助理"}
-                  </option>
-                  {addableSpecialists.map((item) => (
-                    <option key={item.specialistId} value={item.specialistId}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
+                  <AssistantGroupMessage
+                    message={message}
+                    tone={tone}
+                    onReact={(target, emoji) => void handleReaction(target, emoji)}
+                    onReply={handleQuote}
+                    canDelete={canDelete}
+                    onDelete={(target) => void handleDeleteMessage(target)}
+                  />
+                </Fragment>
+              );
+            })}
+          </div>
+        </div>
+        <footer className={styles.composerArea}>
+          <div className={styles.composerInner}>
+            {newPill > 0 && (
+              <div className={styles.newPill}>
+                <button type="button" className={styles.newPillJump} onClick={scrollToBottom}>
+                  ↓ {newPill} 条新消息
+                </button>
                 <button
                   type="button"
-                  className={styles.inviteButton}
-                  disabled={!memberToAdd || busy}
-                  onClick={() => void handleAdd()}
+                  className={styles.newPillClose}
+                  aria-label="收起新消息提示"
+                  onClick={() => setNewPill(0)}
                 >
-                  邀请
+                  ×
                 </button>
-              </span>
-              <label className={styles.replyAs}>
-                未 @ 接话人
-                <select
-                  value={selected.replyAs ?? PRIMARY_MEMBER_ID}
-                  disabled={busy}
-                  onChange={(event) => void handleReplyAs(event.target.value)}
-                >
-                  <option value={PRIMARY_MEMBER_ID}>
-                    主助理{selected.primaryPresent ? "" : "（已移出）"}
-                  </option>
-                  {selected.replyAs &&
-                    selected.replyAs !== PRIMARY_MEMBER_ID &&
-                    !activeSpecialists.some((member) => member.memberId === selected.replyAs) && (
-                      <option value={selected.replyAs}>{selected.replyAs}（已移出）</option>
-                    )}
-                  {activeSpecialists.map((member) => (
-                    <option key={member.memberId} value={member.memberId}>
-                      {member.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
+              </div>
+            )}
+            <AssistantGroupComposer
+              value={draft}
+              onChange={setDraft}
+              onSend={() => void handleSend()}
+              onMention={insertMention}
+              sending={busy}
+              placeholder={
+                selected.primaryPresent
+                  ? `给 ${selected.name} 发消息`
+                  : "主助理已移出：未 @ 的消息不会改派，请 @ 子助理"
+              }
+              members={mentionTargets.map((member) => ({
+                memberId: member.memberId,
+                name: member.name,
+              }))}
+              quoted={
+                quoted
+                  ? {
+                      authorName: quoted.authorName,
+                      text: quoted.text.slice(0, QUOTE_PREVIEW_CHARS),
+                    }
+                  : null
+              }
+              onClearQuote={() => setQuoted(null)}
+              textareaRef={composerRef}
+              hint="Enter 发送 · Shift+Enter 换行 · 消息与回复只保存在本群"
+              libraryDocuments={library?.documents ?? []}
+              libraryStatus={library ? "ready" : libraryError ? "unavailable" : "loading"}
+              attachmentIds={attachmentIds}
+              onToggleAttachment={toggleAttachment}
+              onOpenLibrary={() => openSidePanel("library")}
+            />
           </div>
-        )}
+        </footer>
       </div>
-      <div
-        className={styles.timeline}
-        ref={timelineRef}
-        onScroll={() => {
-          const node = timelineRef.current;
-          if (!node) return;
-          atBottom.current =
-            node.scrollHeight - node.scrollTop - node.clientHeight < 48;
-          if (atBottom.current) setNewPill(0);
-        }}
-      >
-        <div className={styles.thread}>
-          {(notice || error) && (
-            <div className={styles.bannerStack}>
-              {notice && <div className={styles.notice}>{notice}</div>}
-              {error && <div className={styles.error} role="alert">{error}</div>}
-            </div>
-          )}
-          {messagesReady && orderedMessages.length === 0 && (
-            <div className={styles.empty}>还没有消息，打个招呼吧。</div>
-          )}
-          {orderedMessages.map((message, index) => {
-            const previous = orderedMessages[index - 1];
-            const stamp = groupStampLabel(message.createdAt);
-            const gap = previous
-              ? Date.parse(message.createdAt) - Date.parse(previous.createdAt)
-              : Number.POSITIVE_INFINITY;
-            // 首条、隔了 10 分钟以上、跨天，都插一条时间分隔。
-            const showStamp = !previous || gap > STAMP_GAP_MS || gap < 0;
-            const member = selected.members.find(
-              (item) => item.name === message.authorName,
-            );
-            const tone =
-              message.author === "user"
-                ? "#6b746e"
-                : botAccent(member?.specialistId ?? message.authorName);
-            return (
-              <Fragment key={message.messageId}>
-                {showStamp && <div className={styles.stamp}>{stamp}</div>}
-                {dividerIndex === index && (
-                  <div className={styles.unreadLine} role="separator" aria-label="新消息分隔">
-                    <span>新消息</span>
-                  </div>
-                )}
-                <AssistantGroupMessage
-                  message={message}
-                  tone={tone}
-                  onReact={(target, emoji) => void handleReaction(target, emoji)}
-                  onReply={handleQuote}
-                />
-              </Fragment>
-            );
-          })}
-        </div>
-      </div>
-      <footer className={styles.composerArea}>
-        <div className={styles.composerInner}>
-          {newPill > 0 && (
-            <div className={styles.newPill}>
-              <button type="button" className={styles.newPillJump} onClick={scrollToBottom}>
-                ↓ {newPill} 条新消息
-              </button>
-              <button
-                type="button"
-                className={styles.newPillClose}
-                aria-label="收起新消息提示"
-                onClick={() => setNewPill(0)}
-              >
-                ×
-              </button>
-            </div>
-          )}
-          <AssistantGroupComposer
-            value={draft}
-            onChange={setDraft}
-            onSend={() => void handleSend()}
-            onMention={insertMention}
-            sending={busy}
-            placeholder={
-              selected.primaryPresent
-                ? `给 ${selected.name} 发消息`
-                : "主助理已移出：未 @ 的消息不会改派，请 @ 子助理"
-            }
-            members={mentionTargets.map((member) => ({
-              memberId: member.memberId,
-              name: member.name,
-            }))}
-            quoted={
-              quoted
-                ? {
-                    authorName: quoted.authorName,
-                    text: quoted.text.slice(0, QUOTE_PREVIEW_CHARS),
-                  }
-                : null
-            }
-            onClearQuote={() => setQuoted(null)}
-            textareaRef={composerRef}
-            hint="Enter 发送 · Shift+Enter 换行 · 消息与回复只保存在本群"
-          />
-        </div>
-      </footer>
+      {sideOpen && (
+        <AssistantGroupSidePanel
+          group={selected}
+          messages={orderedMessages}
+          currentUserId={userId}
+          isCreator={isCreator}
+          tab={sideTab}
+          onTabChange={setSideTab}
+          onClose={() => setSideOpen(false)}
+          library={library}
+          libraryLoading={libraryLoading}
+          libraryError={libraryError}
+          availableKnowledgeBases={availableKnowledgeBases}
+          libraryBusy={libraryBusy}
+          onUpload={(file) => void handleUploadDocument(file)}
+          onDeleteDocument={(document) => void handleDeleteDocument(document)}
+          onBind={(reference) => void handleBindKnowledgeBase(reference)}
+          onUnbind={(base) => void handleUnbindKnowledgeBase(base.reference)}
+        />
+      )}
     </section>
   );
 }

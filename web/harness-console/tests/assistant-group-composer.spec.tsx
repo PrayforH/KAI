@@ -34,6 +34,7 @@ type HarnessProps = {
   onSend?: () => void;
   onMention?: (name: string) => void;
   onClearQuote?: () => void;
+  hint?: string;
 };
 
 function Harness({
@@ -43,6 +44,7 @@ function Harness({
   onSend = vi.fn(),
   onMention,
   onClearQuote = vi.fn(),
+  hint,
 }: HarnessProps) {
   const [value, setValue] = useState(initial);
   return (
@@ -56,6 +58,7 @@ function Harness({
       members={members}
       quoted={quoted}
       onClearQuote={onClearQuote}
+      hint={hint}
     />
   );
 }
@@ -139,6 +142,84 @@ describe("AssistantGroupComposer", () => {
     expect(items).toHaveLength(2);
     await act(async () => items[1].click());
     expect(onMention).toHaveBeenCalledWith("Agent 内核");
+  });
+
+  it("ignores Enter while a Chinese IME is composing", async () => {
+    const onSend = vi.fn();
+    await act(async () => root!.render(<Harness onSend={onSend} />));
+    await type("你好");
+    const input = host.querySelector("textarea")!;
+    await act(async () => {
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true }),
+      );
+    });
+    await act(async () => {
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", keyCode: 229, bubbles: true }),
+      );
+    });
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("keeps the hint outside the composer card", async () => {
+    await act(async () => root!.render(<Harness hint="Enter 发送" />));
+    const hint = host.querySelector('[data-testid="group-composer-hint"]')!;
+    expect(hint.textContent).toBe("Enter 发送");
+    expect(hint.closest('[data-testid="group-composer-card"]')).toBeNull();
+  });
+
+  it("lists group library documents in the + menu and toggles them", async () => {
+    const onToggleAttachment = vi.fn();
+    const onOpenLibrary = vi.fn();
+    await act(async () =>
+      root!.render(
+        <AssistantGroupComposer
+          value=""
+          onChange={vi.fn()}
+          onSend={vi.fn()}
+          sending={false}
+          placeholder="发消息"
+          members={members}
+          quoted={null}
+          onClearQuote={vi.fn()}
+          libraryDocuments={[
+            {
+              documentId: "d1",
+              name: "方案.pdf",
+              contentType: "application/pdf",
+              sizeBytes: 1024,
+              uploadedBy: "u1",
+              uploadedByName: "我",
+              createdAt: "2026-11-13T05:00:00Z",
+              downloadUrl: "/download/d1",
+            },
+          ]}
+          attachmentIds={["d1"]}
+          onToggleAttachment={onToggleAttachment}
+          onOpenLibrary={onOpenLibrary}
+        />,
+      ),
+    );
+    // 已选附件显示为可移除的 chip。
+    expect(host.textContent).toContain("方案.pdf");
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[aria-label="移除附件 方案.pdf"]')!.click(),
+    );
+    expect(onToggleAttachment).toHaveBeenCalledWith("d1");
+
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[aria-label^="添加附件或知识库"]')!.click(),
+    );
+    const item = host.querySelector('[role="menuitemcheckbox"]')!;
+    expect(item.getAttribute("aria-checked")).toBe("true");
+    await act(async () => (item as HTMLButtonElement).click());
+    expect(onToggleAttachment).toHaveBeenCalledTimes(2);
+
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[role="menuitem"]')!.click(),
+    );
+    expect(onOpenLibrary).toHaveBeenCalledTimes(1);
   });
 
   it("does not send while a send is in flight", async () => {

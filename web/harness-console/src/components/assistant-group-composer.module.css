@@ -1,16 +1,27 @@
-/* 一行式输入框：左侧 @、中间单行 textarea、右侧发送，整体一颗圆角卡片。
-   长到 5 行后内部滚动，不把输入区继续撑高。 */
+/* 一行式输入框：左侧 @ 与 +、中间单行 textarea、右侧发送，整体一颗 44px 圆角卡片。
+   提示文字在卡片外，长到约 5 行后内部滚动，不把输入区继续撑高。 */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  max-width: 820px;
+  margin-inline: auto;
+}
 
 .composer {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 6px;
-  border: 1px solid var(--codex-line-strong, #474747);
-  border-radius: 16px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 6px 0 8px;
+  border: 1px solid var(--codex-line);
+  border-radius: 22px;
   background: var(--codex-surface-raised, #242424);
   transition: border-color 120ms ease;
 }
+/* 聚焦只改边框色，避免外框 + textarea 两层描边。 */
 .composer:focus-within { border-color: var(--codex-muted, #a3a3a3); }
 @media (prefers-reduced-motion: reduce) {
   .composer { transition: none; }
@@ -18,16 +29,17 @@
 
 .row {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 4px;
   min-width: 0;
+  min-height: 42px;
 }
 
-.mentionWrap { position: relative; flex: none; }
+.toolWrap { position: relative; flex: none; }
 
 .toolButton {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -41,6 +53,7 @@
   line-height: 1;
   cursor: pointer;
 }
+.toolButton svg { width: 18px; height: 18px; display: block; }
 .toolButton:hover:not(:disabled),
 .toolButton[aria-expanded="true"] {
   background: var(--codex-surface-hover, #303030);
@@ -55,9 +68,10 @@
 .input {
   flex: 1;
   min-width: 0;
-  height: 22px;
-  max-height: 130px;
-  padding: 4px 6px;
+  height: 42px;
+  max-height: 110px;
+  box-sizing: border-box;
+  padding: 10px 6px;
   border: 0;
   background: transparent;
   color: var(--codex-ink, #f5f5f5);
@@ -69,6 +83,7 @@
   overflow-y: hidden;
 }
 .input::placeholder { color: var(--codex-faint, #727272); }
+.input:disabled { color: var(--codex-faint, #727272); }
 
 .send {
   flex: none;
@@ -92,11 +107,12 @@
 }
 .send:disabled { opacity: 0.35; cursor: default; }
 
-/* 引用条：输入框上方一行，作者 + 截断文本 + 关闭。 */
+/* 引用条：输入框上方一行，作者 + 截断文本 + 关闭；不贴卡片边缘。 */
 .quoteBar {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin: 6px 2px 0;
   padding: 5px 8px 5px 10px;
   border-left: 3px solid var(--codex-line-strong, #474747);
   border-radius: 0 8px 8px 0;
@@ -137,13 +153,55 @@
 .quoteClose:hover { background: var(--codex-surface-hover, #303030); color: var(--codex-ink, #f5f5f5); }
 .quoteClose:focus-visible { outline: 2px solid var(--codex-ink, #f5f5f5); outline-offset: 1px; }
 
-.mentionMenu {
+/* 已选附件：随发送的群资料库文件。 */
+.attachmentBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 2px 0;
+}
+.attachmentChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 4px 3px 9px;
+  border: 1px solid var(--codex-line, #343434);
+  border-radius: 999px;
+  background: var(--codex-surface-subtle, #1b1b1b);
+  color: var(--codex-ink-soft, #d2d2d2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.attachmentName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachmentRemove {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--codex-muted, #a3a3a3);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.attachmentRemove:hover { background: var(--codex-surface-hover, #303030); color: var(--codex-ink, #f5f5f5); }
+.attachmentRemove:focus-visible { outline: 2px solid var(--codex-ink, #f5f5f5); outline-offset: 1px; }
+
+.menu {
   position: absolute;
   bottom: calc(100% + 6px);
   left: 0;
   z-index: 9;
-  min-width: 140px;
-  max-height: 220px;
+  min-width: 160px;
+  max-height: 260px;
   overflow-y: auto;
   padding: 4px;
   border: 1px solid var(--codex-line-strong, #474747);
@@ -151,8 +209,22 @@
   background: var(--codex-surface-raised, #242424);
   box-shadow: var(--codex-shadow-soft, 0 8px 28px rgb(0 0 0 / 24%));
 }
-.mentionItem {
-  display: block;
+.addMenu { min-width: 220px; }
+.menuTitle {
+  margin: 4px 8px 2px;
+  color: var(--codex-faint, #727272);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.menuEmpty {
+  margin: 2px 8px 6px;
+  color: var(--codex-muted, #a3a3a3);
+  font-size: 12px;
+}
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   width: 100%;
   padding: 6px 10px;
   border: 0;
@@ -165,16 +237,39 @@
   white-space: nowrap;
   cursor: pointer;
 }
-.mentionItem:hover,
-.mentionItem:focus-visible {
+.menuItem:hover:not(:disabled),
+.menuItem:focus-visible {
   background: var(--codex-surface-hover, #303030);
   color: var(--codex-ink, #f5f5f5);
   outline: none;
 }
+.menuItem:disabled { opacity: 0.4; cursor: default; }
+.menuItem[aria-checked="true"] { color: var(--codex-ink, #f5f5f5); }
+.menuCheck {
+  flex: none;
+  width: 14px;
+  color: var(--codex-accent, #8ab4f8);
+  font-size: 12px;
+  text-align: center;
+}
+.menuName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.menuAction {
+  margin-top: 2px;
+  border-top: 1px solid var(--codex-line, #343434);
+  border-radius: 0 0 7px 7px;
+  color: var(--codex-muted, #a3a3a3);
+  font-size: 12px;
+}
 
+/* 提示在卡片外，左对齐缩进，不参与输入框高度。 */
 .hint {
-  padding: 0 8px 2px;
+  padding-left: 12px;
   color: var(--codex-faint, #727272);
   font-size: 11px;
-  text-align: center;
+  line-height: 1.5;
+  text-align: left;
 }
