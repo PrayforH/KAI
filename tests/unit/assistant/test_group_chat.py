@@ -915,3 +915,112 @@ async def test_quoting_a_bot_reply_hydrates_its_text() -> None:
     assert result.message.reply_to is not None
     assert result.message.reply_to.author is AssistantGroupMessageAuthor.PRIMARY
     assert result.message.reply_to.text == "机器人原话"
+
+
+# --- 全角标点保留：落库侧不做 NFKC -----------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_group_message_keeps_full_width_punctuation_and_markdown() -> None:
+    """消息正文按原文落库：全角标点与 Markdown 结构不得被 NFKC 改写。"""
+    service, repo, _ = _service()
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    body = (
+        "版本说明：一期已验收，二期待定！还有「引用」与《规范》（附注）？\n\n"
+        "# 一级标题\n\n"
+        "- 列表项 A；列表项 B。\n\n"
+        "| 列A | 列B |\n| --- | --- |\n| 1 | 2 |\n\n"
+        '```python\nprint("hi：全角")\n```'
+    )
+    result = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text=body
+    )
+    assert result.message.text == body
+    assert repo.messages[group.group_id][0].text == body
+
+    _settle_runs(service)
+    history = await service.list_assistant_group_messages("t", "u", group.group_id)
+    stored = next(
+        item for item in history if item.message_id == result.message.message_id
+    )
+    assert stored.text == body
+
+
+@pytest.mark.asyncio
+async def test_quote_snapshot_keeps_full_width_punctuation() -> None:
+    """引用快照从存文本派生，全角标点同样不能被改写。"""
+    service, _, _ = _service()
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    original = "结论：一期「可以」上线！（附：验收单）"
+    first = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text=original
+    )
+    quoted = await service.post_assistant_group_message(
+        "t",
+        "u",
+        group.group_id,
+        text="引用一下：看这条",
+        reply_to_message_id=first.message.message_id,
+    )
+    assert quoted.message.reply_to is not None
+    assert quoted.message.reply_to.text == original
+    assert quoted.message.text == "引用一下：看这条"
+
+    _settle_runs(service)
+    messages = await service.list_assistant_group_messages("t", "u", group.group_id)
+    restored = next(
+        item for item in messages if item.message_id == quoted.message.message_id
+    )
+    assert restored.reply_to is not None
+    assert restored.reply_to.text == original
+
+
+@pytest.mark.asyncio
+async def test_mention_matching_still_normalizes_full_width_names() -> None:
+    """匹配侧 NFKC 必须保留：成员名含全角字母时 @ 仍能识别。"""
+    specialist = _specialist("specialist_fw", "助理Ｂｏｔ")
+    service, _, agui = _service([specialist])
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    await service.add_assistant_group_member(
+        "t", "u", group.group_id, specialist_id=specialist.specialist_id
+    )
+    result = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="@助理Bot 查一下：全角"
+    )
+    assert len(result.replies) == 1
+    assert result.replies[0].author is AssistantGroupMessageAuthor.SPECIALIST
+    assert agui.create_run_with_result.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text", ["", "   \n\t ", "含零字节\x00的消息", "长" * 8001])
+async def test_invalid_group_message_text_is_still_refused(text: str) -> None:
+    service, _, _ = _service()
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    with pytest.raises(ConflictError):
+        await service.post_assistant_group_message(
+            "t", "u", group.group_id, text=text
+        )
+
+
+@pytest.mark.asyncio
+async def test_group_name_keeps_full_width_punctuation() -> None:
+    service, repo, _ = _service()
+    name = "项目：一期（终稿）"
+    group = await service.create_assistant_group("t", "u", name=name)
+    assert group.name == name
+    assert repo.groups[group.group_id].name == name
+
+
+@pytest.mark.asyncio
+async def test_group_name_validation_is_unchanged() -> None:
+    service, _, _ = _service()
+    with pytest.raises(ConflictError):
+        await service.create_assistant_group("t", "u", name="   ")
+    with pytest.raises(ConflictError):
+        await service.create_assistant_group("t", "u", name="群" * 41)
+    with pytest.raises(ConflictError):
+        await service.create_assistant_group("t", "u", name="项目\x07群")
+    # 既有口径：换行等空白折叠成单个空格，不报错。
+    group = await service.create_assistant_group("t", "u", name="项目\n群")
+    assert group.name == "项目 群"

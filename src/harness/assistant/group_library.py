@@ -28,8 +28,8 @@ def group_document_download_url(group_id: str, document_id: str) -> str:
 
 def group_document_name(value: str) -> str:
     """文件名只做展示与去控制字符；保留扩展名，误删会让下载类型失真。"""
-    text = unicodedata.normalize("NFKC", value or "").strip()
-    text = re.sub(r"\s+", " ", text)
+    # 文件名按用户上传时的原名保留（全角括号/标点不改写），只折叠连续空白。
+    text = re.sub(r"\s+", " ", value or "").strip()
     if not text:
         raise ConflictError("文件名为空")
     if len(text) > GROUP_DOCUMENT_NAME_LIMIT:
@@ -43,7 +43,8 @@ def group_description(value: str | None) -> str | None:
     """描述可按空串清除；超长直接拒绝，不静默截断群资料。"""
     if value is None:
         return None
-    text = unicodedata.normalize("NFKC", value).strip()
+    # 描述保留原文全角标点，不做 NFKC。
+    text = value.strip()
     if not text:
         return None
     if len(text) > GROUP_DESCRIPTION_LIMIT:

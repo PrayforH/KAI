@@ -7,7 +7,10 @@ from unittest.mock import AsyncMock
 import pytest
 from ag_ui.core import DocumentInputContent, TextInputContent
 
-from harness.assistant.group_library import group_document_download_url
+from harness.assistant.group_library import (
+    group_document_download_url,
+    group_document_name,
+)
 from harness.assistant.models import (
     AssistantGroup,
     AssistantGroupDocument,
@@ -563,3 +566,51 @@ async def test_deleted_knowledge_base_is_skipped_without_failing_the_reply() -> 
 
     request = agui.create_run_with_result.await_args.kwargs["request"]
     assert "knowledgeReferences" not in request.forwarded_props
+
+
+# --- 全角标点保留：改名/描述/文件名不做 NFKC -------------------------------
+
+
+@pytest.mark.asyncio
+async def test_renaming_keeps_full_width_punctuation() -> None:
+    service, repo, _ = _service()
+    repo.seed_group()
+    name = "项目：一期（终稿）"
+    description = "验收口径：一期「已定」，二期再看。"
+
+    updated = await service.update_assistant_group(
+        "t", "u", "group_a", changes={"name": name, "description": description}
+    )
+    assert updated.name == name
+    assert updated.description == description
+    assert repo.groups["group_a"].name == name
+    assert repo.groups["group_a"].description == description
+
+    reread = await service.get_assistant_group("t", "u", "group_a")
+    assert reread.name == name
+    assert reread.description == description
+
+
+@pytest.mark.asyncio
+async def test_group_description_limits_are_unchanged() -> None:
+    service, repo, _ = _service()
+    repo.seed_group()
+    with pytest.raises(ConflictError):
+        await service.update_assistant_group(
+            "t", "u", "group_a", changes={"description": "述" * 501}
+        )
+    with pytest.raises(ConflictError):
+        await service.update_assistant_group(
+            "t", "u", "group_a", changes={"description": "描述\x07内容"}
+        )
+
+
+def test_group_document_name_keeps_full_width_punctuation() -> None:
+    name = "报告（终稿）：第一版.pdf"
+    assert group_document_name(name) == name
+    assert group_document_name("  方案  说明.txt  ") == "方案 说明.txt"
+    with pytest.raises(ConflictError):
+        group_document_name("坏\x07名字.pdf")
+    with pytest.raises(ConflictError):
+        group_document_name("   ")
+    assert len(group_document_name("文" * 300)) == 255

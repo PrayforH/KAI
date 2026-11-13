@@ -85,7 +85,8 @@ def _group_retry_attempts(idempotency_key: str, message_id: str) -> int:
 
 
 def _group_name(value: str) -> str:
-    text = re.sub(r"\s+", " ", unicodedata.normalize("NFKC", value or "")).strip()
+    # 群名按用户输入原样保留全角标点；只折叠连续空白。
+    text = re.sub(r"\s+", " ", value or "").strip()
     if not text:
         raise ConflictError("群聊名称不能为空")
     if len(text) > 40:
@@ -3040,7 +3041,9 @@ class AssistantService:
         群线程各自独立，回复只回写本群时间线；不做内容级自动分派（P0 范围外）。
         引用只能是本群、本租户、已经落定的消息；快照随消息一起读回。
         """
-        value = unicodedata.normalize("NFKC", text or "").strip()
+        # 只做去除首尾空白；不做 NFKC —— 归一化会把中文全角标点（：，。！？「」）写成半角，
+        # 用户写进群里的原文会被永久改写。匹配/检索侧的 NFKC 不受影响。
+        value = (text or "").strip()
         if not value:
             raise ConflictError("消息不能为空")
         if len(value) > 8_000:
