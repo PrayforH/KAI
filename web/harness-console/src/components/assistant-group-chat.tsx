@@ -486,15 +486,18 @@ export function AssistantGroupChat({
     setSettingsOpen(false);
   };
 
-  const handleUploadDocument = async (file: File) => {
-    if (!selected || libraryBusy) return;
+  /** 上传到群资料库；返回新文档，输入框「+」据此把它选进本条消息。 */
+  const handleUploadDocument = async (file: File): Promise<GroupLibraryDocument | null> => {
+    if (!selected || libraryBusy) return null;
     setLibraryBusy(true);
     setLibraryError(null);
     try {
-      await uploadAssistantGroupDocument(selected.groupId, file);
+      const document = await uploadAssistantGroupDocument(selected.groupId, file);
       await refreshLibrary(false);
+      return document;
     } catch (reason) {
       setLibraryError(reason instanceof Error ? reason.message : "上传失败");
+      return null;
     } finally {
       setLibraryBusy(false);
     }
@@ -732,6 +735,7 @@ export function AssistantGroupChat({
               libraryStatus={library ? "ready" : libraryError ? "unavailable" : "loading"}
               attachmentIds={attachmentIds}
               onToggleAttachment={toggleAttachment}
+              onUploadDocument={handleUploadDocument}
               onOpenLibrary={() => openSidePanel("library")}
             />
           </div>

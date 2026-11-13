@@ -82,14 +82,17 @@ describe("AssistantGroupComposer", () => {
     expect(host.querySelector<HTMLButtonElement>('[aria-label="发送"]')!.disabled).toBe(true);
   });
 
-  it("puts the send button on the left, right after the + control", async () => {
+  it("keeps + leftmost and the send button rightmost after the input", async () => {
     await act(async () => root!.render(<Harness />));
     const input = host.querySelector<HTMLTextAreaElement>("textarea")!;
     const send = host.querySelector<HTMLButtonElement>('[aria-label="发送"]')!;
-    expect(send.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // 发送在输入框之后（最右），不再是紧跟 + 的第二个按钮。
+    expect(input.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const buttons = [...input.parentElement!.querySelectorAll("button")];
     expect(buttons[0]!.getAttribute("aria-label")).toContain("添加附件或知识库");
-    expect(buttons[1]!.getAttribute("aria-label")).toBe("发送");
+    expect(buttons.at(-1)!.getAttribute("aria-label")).toBe("发送");
+    // 语音紧挨发送左边：没有麦克风权限时按钮不渲染，但容器仍在同一位置。
+    expect(input.parentElement!.lastElementChild!.getAttribute("aria-label")).toBe("发送");
   });
 
   it("grows to five lines and then scrolls internally at 130px", async () => {
@@ -303,10 +306,51 @@ describe("AssistantGroupComposer", () => {
     await act(async () => (item as HTMLButtonElement).click());
     expect(onToggleAttachment).toHaveBeenCalledTimes(2);
 
-    await act(async () =>
-      host.querySelector<HTMLButtonElement>('[role="menuitem"]')!.click(),
-    );
+    // 「+」里第一项是真上传，第二项才是打开资料库。
+    expect(host.textContent).toContain("上传文件");
+    const openLibrary = [...host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      .find((button) => button.textContent === "打开资料库")!;
+    await act(async () => openLibrary.click());
     expect(onOpenLibrary).toHaveBeenCalledTimes(1);
+  });
+
+  it("uploads a chosen file from the + menu and attaches the new document", async () => {
+    const onUploadDocument = vi.fn(async (file: File) => ({
+      documentId: "d2",
+      name: file.name,
+      contentType: "text/plain",
+      sizeBytes: file.size,
+      uploadedBy: "u1",
+      uploadedByName: "我",
+      createdAt: "2026-11-13T05:00:00Z",
+      downloadUrl: "/download/d2",
+    }));
+    const onToggleAttachment = vi.fn();
+    await act(async () =>
+      root!.render(
+        <AssistantGroupComposer
+          value=""
+          onChange={vi.fn()}
+          onSend={vi.fn()}
+          sending={false}
+          placeholder="发消息"
+          members={members}
+          quoted={null}
+          onClearQuote={vi.fn()}
+          onUploadDocument={onUploadDocument}
+          onToggleAttachment={onToggleAttachment}
+        />,
+      ),
+    );
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[aria-label^="添加附件或知识库"]')!.click(),
+    );
+    const file = new File(["hello"], "会议纪要.txt", { type: "text/plain" });
+    const picker = host.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(picker, "files", { configurable: true, value: [file] });
+    await act(async () => picker.dispatchEvent(new Event("change", { bubbles: true })));
+    expect(onUploadDocument).toHaveBeenCalledWith(file);
+    expect(onToggleAttachment).toHaveBeenCalledWith("d2");
   });
 
   it("does not send while a send is in flight", async () => {

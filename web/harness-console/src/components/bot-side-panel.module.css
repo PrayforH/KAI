@@ -11,6 +11,18 @@
   border-left: 1px solid var(--codex-line);
 }
 
+/* 窄屏：抽屉式覆盖，保持对话列原有宽度，关闭后回到整列。 */
+@media (max-width: 1100px) {
+  .panel {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    z-index: 30;
+    width: min(380px, calc(100% - 32px));
+    box-shadow: -16px 0 40px rgb(0 0 0 / 32%);
+  }
+}
+
 .close {
   position: absolute;
   top: 14px;

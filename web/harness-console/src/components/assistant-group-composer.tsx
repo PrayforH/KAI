@@ -17,6 +17,7 @@ import {
   mentionTrigger,
   type MentionTarget,
 } from "./mention-picker";
+import { VoiceInput } from "./voice-input";
 import styles from "./assistant-group-composer.module.css";
 
 /** 引用条只展示作者与截断后的文本，真正的引用 id 由父组件持有。 */
@@ -43,6 +44,8 @@ type AssistantGroupComposerProps = {
   /** 已选、将随下一条消息发送的文档 id。 */
   attachmentIds?: string[];
   onToggleAttachment?: (documentId: string) => void;
+  /** 从「+」直接上传文件到群资料库；返回上传后的文档，父组件据此选中随消息发送。 */
+  onUploadDocument?: (file: File) => Promise<GroupLibraryDocument | null>;
   /** 打开右侧资料库面板。 */
   onOpenLibrary?: () => void;
 };
@@ -64,7 +67,8 @@ function PlusIcon() {
 
 /**
  * 群聊输入框：单行 44px 外框，Shift+Enter 换行，长到约 5 行后内部滚动。
- * 发送在最左（紧跟 +），中间是 textarea；@、+、引用条、附件都在同一块里。
+ * 排布与单助理同一套：+ 最左、textarea 居中、语音紧挨发送左边、发送最右；
+ * @、引用条、附件、上传都在同一块里。
  */
 export function AssistantGroupComposer({
   value,
@@ -81,15 +85,19 @@ export function AssistantGroupComposer({
   libraryStatus = "ready",
   attachmentIds = [],
   onToggleAttachment,
+  onUploadDocument,
   onOpenLibrary,
 }: AssistantGroupComposerProps) {
   const ownRef = useRef<HTMLTextAreaElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
   const [menu, setMenu] = useState<"add" | null>(null);
   const [caret, setCaret] = useState(0);
   const [activeMention, setActiveMention] = useState(0);
   const [dismissedMention, setDismissedMention] = useState<number | null>(null);
   const [composing, setComposing] = useState(false);
+  const [voiceActive, setVoiceActive] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const mentionListId = useId();
 
   const setTextarea = (node: HTMLTextAreaElement | null) => {
@@ -148,6 +156,31 @@ export function AssistantGroupComposer({
     });
   };
 
+  // 语音转写插到光标处，和输入法插入同一套：不覆盖已写内容，插完回焦。
+  const insertDictation = (text: string) => {
+    const at = Math.min(caret, value.length);
+    const nextCaret = at + text.length;
+    onChange(`${value.slice(0, at)}${text}${value.slice(at)}`);
+    setCaret(nextCaret);
+    setDismissedMention(null);
+    requestAnimationFrame(() => {
+      const node = ownRef.current;
+      node?.focus();
+      node?.setSelectionRange(nextCaret, nextCaret);
+    });
+  };
+
+  const uploadFile = async (file: File) => {
+    if (!onUploadDocument || uploading) return;
+    setUploading(true);
+    try {
+      const document = await onUploadDocument(file);
+      if (document) onToggleAttachment?.(document.documentId);
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     const next = event.target.value;
     const nextCaret = event.target.selectionStart ?? next.length;
@@ -182,7 +215,7 @@ export function AssistantGroupComposer({
     }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      if (!sending && !disabled) onSend();
+      if (!sending && !disabled && !voiceActive) onSend();
     }
   };
 
@@ -248,6 +281,28 @@ export function AssistantGroupComposer({
             </button>
             {menu === "add" && (
               <div className={`${styles.menu} ${styles.addMenu}`} role="menu" aria-label="添加附件或知识库">
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={styles.menuItem}
+                  disabled={uploading}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  <span className={styles.menuCheck} aria-hidden="true">↑</span>
+                  <span className={styles.menuName}>{uploading ? "正在上传…" : "上传文件"}</span>
+                </button>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  className={styles.fileInput}
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (file) void uploadFile(file);
+                  }}
+                />
                 <p className={styles.menuTitle}>群资料库</p>
                 {libraryStatus !== "ready" ? (
                   <p className={styles.menuEmpty}>
@@ -288,25 +343,6 @@ export function AssistantGroupComposer({
               </div>
             )}
           </div>
-          <button
-            type="button"
-            className={styles.send}
-            aria-label="发送"
-            title="发送"
-            aria-busy={sending}
-            disabled={!value.trim() || sending || disabled}
-            onClick={() => onSend()}
-          >
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M12 19V5M12 5l-6 6M12 5l6 6"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
           <textarea
             ref={setTextarea}
             className={styles.input}
@@ -330,6 +366,34 @@ export function AssistantGroupComposer({
             onCompositionEnd={() => setComposing(false)}
             onKeyDown={handleKeyDown}
           />
+          <div className={styles.voice}>
+            <VoiceInput
+              placement="inline"
+              disabled={disabled}
+              modelRoute=""
+              onActive={setVoiceActive}
+              onInsert={insertDictation}
+            />
+          </div>
+          <button
+            type="button"
+            className={styles.send}
+            aria-label="发送"
+            title="发送"
+            aria-busy={sending}
+            disabled={!value.trim() || sending || disabled || voiceActive}
+            onClick={() => onSend()}
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M12 19V5M12 5l-6 6M12 5l6 6"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
         </div>
         {mentionOpen && (
           <MentionMenu

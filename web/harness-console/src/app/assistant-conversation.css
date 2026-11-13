@@ -17,6 +17,27 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
   padding-top: 12px;
 }
 
+/* 对话区左上角固定名称：只有文字，无右图标、无分隔线/阴影/渐变，不随消息滚动。 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-surface-title {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-height: 34px;
+  padding: 8px 16px 0;
+  z-index: 6;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-surface-title .task-context-title {
+  color: var(--codex-ink, #efefef);
+}
+
+/* 群聊栏在标题行下方继续占满剩余高度，不让标题把输入框挤出视口。 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .chat-surface > section {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+
 
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message {
   padding: 6px 0 2px;
@@ -270,14 +291,59 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
   margin-bottom: 0;
 }
 
-/* 输入框：更大的圆角、更轻的边框，像聊天输入条 */
-body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-composer-shell .aui-composer-root {
+/* 输入框与群聊同构：一颗 44px 高的胶囊，+ 最左、输入居中、语音紧挨发送左边、发送最右。
+   不用单独一套皮肤，也不加阴影/渐变。 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-composer-shell .aui-composer-root,
+html[data-color-mode="light"] body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-composer-shell .aui-composer-root {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: stretch;
+  gap: 0;
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid var(--codex-line, #343434);
   border-radius: 22px;
-  background: #1d1d1d;
+  color: var(--codex-ink, #f5f5f5);
+  background: var(--codex-surface-raised, #242424);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-composer-shell .aui-composer-root:focus-within {
+  border-color: var(--codex-muted, #a3a3a3);
+  box-shadow: none;
 }
 
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-composer-shell .aui-composer-input {
-  border-radius: 22px 22px 0 0;
+  box-sizing: border-box;
+  min-height: 42px;
+  max-height: 130px;
+  padding: 10px 6px;
+  border: 0;
+  border-radius: 22px;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+/* 对话区加宽：收窄 viewport 两侧的 72px 留白，输入区实际落在 1100–1200。 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .aui-thread-viewport {
+  padding-inline: clamp(16px, 2vw, 24px);
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .aui-thread-viewport-footer,
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-composer-shell {
+  box-sizing: border-box;
+  width: min(1100px, 100%);
+  max-width: 1100px;
+}
+
+/* 窄屏（Mac 笔记本、分屏、右侧栏打开）不让输入区贴边或溢出。 */
+@media (max-width: 1240px) {
+  body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .aui-thread-viewport {
+    padding-inline: 16px;
+  }
 }
 
 /* Assistant live status: text only, with a restrained light sweep. */

@@ -102,7 +102,12 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 24px 24px 8px;
+  /* 右上角 ⋯/侧栏按钮绝对定位在对话列顶部，给消息留出让位，避免第一条被压住。 */
+  padding: 44px 24px 8px;
+}
+@media (max-width: 900px) {
+  .timeline { padding-inline: 16px; }
+  .composerArea { padding-inline: 16px; }
 }
 .thread {
   width: 100%;

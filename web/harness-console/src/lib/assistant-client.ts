@@ -75,7 +75,14 @@ export async function assistantRequest<T>(path: string, method = "GET", body?: u
   });
   if (!response.ok) {
     if (response.status === 401) throw new Error("登录已过期，请重新登录。");
-    if (response.status === 403 && path.startsWith("feishu/")) throw new Error("此操作需要工作区管理员权限。");
+    if (response.status === 403) {
+      // 飞书沿用固定文案；其它 403（如解散群聊无权限）优先展示服务端原文。
+      if (path.startsWith("feishu/")) throw new Error("此操作需要工作区管理员权限。");
+      const value = await response.json().catch(() => null);
+      const message = value?.detail?.message ?? value?.error?.message ?? value?.message
+        ?? (typeof value?.detail === "string" ? value.detail : undefined);
+      throw new Error(typeof message === "string" && message ? message : "没有权限执行这个操作。");
+    }
     if (response.status === 409) {
       // 服务端的冲突理由（缺项、无职责、版本过期…）比通用文案更有用，优先展示。
       const value = await response.json().catch(() => null);
