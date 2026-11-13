@@ -106,7 +106,7 @@
 }
 .thread {
   width: 100%;
-  max-width: 820px;
+  max-width: 1100px;
   margin-inline: auto;
   display: flex;
   flex-direction: column;
@@ -145,7 +145,7 @@
 .composerArea { flex: none; padding: 8px 24px 14px; }
 .composerInner {
   width: 100%;
-  max-width: 820px;
+  max-width: 1100px;
   margin-inline: auto;
   display: flex;
   flex-direction: column;

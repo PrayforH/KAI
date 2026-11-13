@@ -1,0 +1,8 @@
+/* 单助理输入框：压掉 textarea 内圈的白色焦点矩形（全局 focus-visible 规则特异性更高，
+   需要 !important）；焦点提示保留在外层 composer 胶囊的 :focus-within 边框上。
+   只作用于本组件的 textarea，不改全局规则，也不动 + 与发送按钮的焦点环。 */
+.input:focus,
+.input:focus-visible { outline: none !important; }
+
+/* @ 选择菜单的定位上下文：菜单贴在输入行上方。 */
+.inputWrap { position: relative; }

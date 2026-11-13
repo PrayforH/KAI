@@ -2,8 +2,8 @@
 .drawer {
   position: fixed;
   z-index: 55;
-  /* 顶栏（z-index 60）留在抽屉上方，标题与关闭按钮不被遮住。 */
-  top: var(--shell-header-height, 46px);
+  /* 助理面已取消顶栏，抽屉从视口顶部开始。 */
+  top: 0;
   right: 0;
   bottom: 0;
   width: min(400px, calc(100vw - 32px));

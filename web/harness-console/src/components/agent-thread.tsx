@@ -158,6 +158,10 @@ import { createRandomId } from "../lib/random-id";
 import { ComposerAssist, composerOptions } from "./composer-assist";
 import { TaskKnowledgeSelection } from "./task-knowledge-context";
 import { ComposerAddControl } from "./composer-add-control";
+import { MentionMenu, filterMentionTargets, mentionTrigger } from "./mention-picker";
+import { MessageActions } from "./message-actions";
+import { useLocalMessageState } from "../lib/local-message-state";
+import composerStyles from "./agent-composer.module.css";
 import { composerTrigger, queueAttachments, queueMayDispatch, releaseUncertainSends, restorePromptQueue, settleAssistantFollowup, nextQueuedPrompt, nextSteeringPrompt, reconcilePromptHistory, type QueuedPrompt } from "../lib/composer-interactions";
 
 import { writeTextToClipboard } from "../lib/clipboard";
@@ -445,10 +449,13 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const [inputError, setInputError] = useState("");
   const [voiceActive, setVoiceActive] = useState(false);
   const [followupVoiceActive, setFollowupVoiceActive] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
   const [caret, setCaret] = useState(0);
   const [suggestionIndex, setSuggestionIndex] = useState(0);
   const [dismissedText, setDismissedText] = useState<string | null>(null);
+  const [mentionComposing, setMentionComposing] = useState(false);
+  const [activeMention, setActiveMention] = useState(0);
+  const [dismissedMention, setDismissedMention] = useState<number | null>(null);
+  const mentionMenuId = "composer-mention-menu";
   const dispatching = useRef(false);
   const [steerAvailable, setSteerAvailable] = useState(false);
   const [steeringIds, setSteeringIds] = useState<string[]>([]);
@@ -471,6 +478,24 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     () => parseMentions(composerText, mentionableAssistants),
     [composerText, mentionableAssistants],
   );
+  // 单助理没有群成员，@ 弹的是可提及的助理清单；与群聊共用同一套选择器。
+  const mentionTargets = useMemo(
+    () => mentionableAssistants.map((item) => ({
+      memberId: item.specialistId,
+      name: item.name,
+      role: "specialist" as const,
+      tone: item.appearance?.color,
+      shape: item.appearance?.avatar,
+    })),
+    [mentionableAssistants],
+  );
+  const mention = mentionComposing ? null : mentionTrigger(composerText, Math.min(caret, composerText.length));
+  const mentionOpen =
+    Boolean(mention) && mention!.start !== dismissedMention && mentionTargets.length > 0;
+  const mentionMatches = mention ? filterMentionTargets(mentionTargets, mention.query) : [];
+  useEffect(() => {
+    setActiveMention(0);
+  }, [mention?.start, mention?.query]);
   const [wikiSlug, setWikiSlug] = useState<string | null>(null);
   useEffect(() => {
     const onOpenWiki = (event: Event) => {
@@ -480,7 +505,8 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     window.addEventListener("harness:open-wiki", onOpenWiki);
     return () => window.removeEventListener("harness:open-wiki", onOpenWiki);
   }, []);
-  const options = dismissedText === composerText ? [] : composerOptions(
+  // @ 由共享选择器负责，不再走 ComposerAssist 的 @ 分支，避免同屏两套菜单。
+  const options = dismissedText === composerText || mention ? [] : composerOptions(
     composerText, caret, mentionableAssistants, agentSelection.selected?.skills,
   );
   const activeSuggestion = Math.max(0, Math.min(suggestionIndex, options.length - 1));
@@ -549,7 +575,6 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   function command(value: string) {
     if (value === "/stop") { void stopRun(); }
     else if (value === "/files") {if (conversationScope) conversationScope.onOpenFiles();else window.dispatchEvent(new Event("harness:open-files"));}
-    else if (value === "/help") setHelpOpen((current) => !current);
     else if (value === "/new") {if (conversationScope) conversationScope.onNew();else window.dispatchEvent(new Event("harness:new-task"));}
     else if (value !== "/clear") return false;
     aui.composer().setText("");
@@ -566,6 +591,12 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       if (input?.value === next) input.setSelectionRange(position, position);
     });
     return next;
+  }
+  function chooseMentionTarget(target: { memberId: string; name: string }) {
+    if (!mention) return;
+    // 替换光标前的 @ 词，不留旧查询文本。
+    replaceSuggestionText(mention.start, mention.end, `@${target.name} `);
+    setDismissedMention(null);
   }
   function chooseSuggestion(index: number) {
     const option = options[index];
@@ -934,6 +965,16 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       attachments,
     });
   }
+  // 助理输入框：发送在左（紧跟 +），语音输入保持最右；任务态维持原有顺序。
+  const composerAction = showStop && !composerText.trim() && !composerAttachments.length ? (
+    <ConversationControl action="stop" aria-label={stopPending ? "正在停止运行" : "停止运行"} disabled={stopPending} onClick={() => void stopRun()} />
+  ) : videoRoute ? (
+    <ConversationControl action="send" disabled={voiceActive || followupVoiceActive || videoGenerating || !composerText.trim()}
+      aria-label={videoGenerating ? "视频生成中" : "生成视频"}
+      onClick={() => void generateVideo()} />
+  ) : (
+    <ConversationControl action="send" aria-label={assistantSurface ? "发送消息" : busy ? followUpBehavior === "steer" && steerAvailable && !composerAttachments.length ? "补充说明" : "加入队列" : queue.length ? "加入队列" : "发送消息"} title={assistantSurface ? "发送消息" : busy ? `Enter ${followUpBehavior === "steer" ? "补充说明" : "加入队列"} · Alt Enter 切换` : "发送消息"} disabled={voiceActive || followupVoiceActive || (!composerText.trim() && !composerAttachments.length)} onClick={() => submitComposer()} />
+  );
   return (
     <div
       className="harness-composer-shell"
@@ -1049,11 +1090,6 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
             onClose={() => setWikiSlug(null)}
           />
         ) : null}
-        {helpOpen && <div className="composer-assist composer-help-popover" role="dialog" aria-label="输入帮助">
-          <button type="button" onClick={() => setHelpOpen(false)}>关闭</button>
-          <p>{assistantSurface ? "/ 执行命令 · @ 提及助理 · $ 引用技能" : "/ 执行命令 · @ 提及助理 · + 添加附件或知识库 · $ 引用技能"}</p>
-          <p>{assistantSurface ? "Enter 发送消息，Shift Enter 换行。运行中发送的文字会直接补充到当前工作；附件在当前回复结束后发送。" : <>运行中 Enter {followUpBehavior === "steer" ? "补充说明" : "加入队列"}，Alt Enter 使用另一种方式，Shift Enter 换行。可在个人设置的配置中更改默认行为。</>}</p>
-        </div>}
         {activeSkillLaunch && selectedSkill && (
           <div className="composer-skill-context" aria-label="已识别的 Skill 提示" title="直接输入 $技能名 即可，无需额外点选；也可以直接描述需求。">
             <span aria-hidden="true">$</span><strong>{selectedSkill}</strong>
@@ -1065,12 +1101,15 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
         )}
         <Composer.Attachments components={{ Attachment: HarnessComposerAttachment }} />
         <div
-          className="composer-input-wrap"
+          className={`composer-input-wrap ${composerStyles.inputWrap}`}
         >
         <ConversationInput
           ref={inputRef}
-          onComposingChange={(value) => { composingRef.current = value; }}
-          className="aui-composer-input"
+          onComposingChange={(value) => {
+            composingRef.current = value;
+            setMentionComposing(value);
+          }}
+          className={`${composerStyles.input} aui-composer-input`}
           aria-label="消息输入"
           placeholder={
             botScope
@@ -1081,12 +1120,24 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
                   conversationScope?.composerPlaceholder,
                 )
           }
-          rows={Math.min(8, Math.max(2, composerText.split("\n").length))}
-          aria-controls={options.length ? "composer-suggestions" : undefined}
-          aria-activedescendant={options.length ? `composer-option-${activeSuggestion}` : undefined}
-          onChange={(event) => { voiceComposer.onChange(event.target.value); if (!composingRef.current) { setCaret(event.target.selectionStart); setSuggestionIndex(0); } }}
+          rows={Math.min(8, Math.max(1, composerText.split("\n").length))}
+          aria-controls={mentionOpen ? mentionMenuId : options.length ? "composer-suggestions" : undefined}
+          aria-expanded={mentionOpen || options.length > 0}
+          aria-activedescendant={
+            mentionOpen
+              ? `${mentionMenuId}-${activeMention}`
+              : options.length
+                ? `composer-option-${activeSuggestion}`
+                : undefined
+          }
+          onChange={(event) => {
+            voiceComposer.onChange(event.target.value);
+            setDismissedMention(null);
+            if (!composingRef.current) { setCaret(event.target.selectionStart); setSuggestionIndex(0); }
+          }}
           onCompositionEnd={(event) => { voiceComposer.onCompositionEnd(); setCaret(event.currentTarget.selectionStart); }}
           onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+          onBlur={() => setDismissedMention(mention?.start ?? null)}
           onPaste={(event) => {
             const files = Array.from(event.clipboardData.files);
             if (!files.length) return;
@@ -1099,6 +1150,29 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
           }}
           onKeyDown={(event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
             if (event.nativeEvent.isComposing || composingRef.current) return;
+            if (mentionOpen && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+              event.preventDefault();
+              const step = event.key === "ArrowDown" ? 1 : -1;
+              setActiveMention((index) =>
+                mentionMatches.length
+                  ? (index + step + mentionMatches.length) % mentionMatches.length
+                  : 0,
+              );
+              return;
+            }
+            if (mentionOpen && (event.key === "Enter" || event.key === "Tab")) {
+              const target = mentionMatches[Math.min(activeMention, mentionMatches.length - 1)];
+              if (target) {
+                event.preventDefault();
+                chooseMentionTarget(target);
+                return;
+              }
+            }
+            if (mentionOpen && event.key === "Escape") {
+              event.preventDefault();
+              setDismissedMention(mention?.start ?? null);
+              return;
+            }
             if (options.length && ["ArrowDown", "ArrowUp", "Escape", "Enter", "Tab"].includes(event.key) && !event.shiftKey) {
               event.preventDefault();
               if (event.key === "Escape") setDismissedText(composerText);
@@ -1111,8 +1185,20 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
             }
           }}
         />
+        {mentionOpen && (
+          <MentionMenu
+            id={mentionMenuId}
+            members={mentionMatches}
+            activeIndex={activeMention}
+            onChoose={chooseMentionTarget}
+            emptyText="没有匹配的成员"
+            label="选择要提及的助理"
+            testId="assistant-mention-menu"
+          />
+        )}
         </div>
-        <div className="composer-footer">
+        <div className={`composer-footer${assistantSurface ? " composer-footer--action-first" : ""}`}>
+        {assistantSurface ? composerAction : null}
         <div className="composer-toolbar">
           <ComposerAddControl filesOnly={filesOnly} knowledgeDisabled={runLocked || showStop || videoGenerating}
             configureKnowledge={conversationScope?.onConfigureKnowledge} />
@@ -1135,15 +1221,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
             onInsert={voiceComposer.onRecorded} />
           </div>
         </div>
-        {showStop && !composerText.trim() && !composerAttachments.length ? (
-          <ConversationControl action="stop" aria-label={stopPending ? "正在停止运行" : "停止运行"} disabled={stopPending} onClick={() => void stopRun()} />
-        ) : videoRoute ? (
-          <ConversationControl action="send" disabled={voiceActive || followupVoiceActive || videoGenerating || !composerText.trim()}
-            aria-label={videoGenerating ? "视频生成中" : "生成视频"}
-            onClick={() => void generateVideo()} />
-        ) : (
-          <ConversationControl action="send" aria-label={assistantSurface ? "发送消息" : busy ? followUpBehavior === "steer" && steerAvailable && !composerAttachments.length ? "补充说明" : "加入队列" : queue.length ? "加入队列" : "发送消息"} title={assistantSurface ? "发送消息" : busy ? `Enter ${followUpBehavior === "steer" ? "补充说明" : "加入队列"} · Alt Enter 切换` : "发送消息"} disabled={voiceActive || followupVoiceActive || (!composerText.trim() && !composerAttachments.length)} onClick={() => submitComposer()} />
-        )}
+        {!assistantSurface ? composerAction : null}
         </div>
       </Composer.Root>
 
@@ -1803,6 +1881,9 @@ export function HarnessAssistantMessage() {
     }).catch(() => { /* persisted history remains available on refresh */ });
   }, [actionHistory, threadRuntime]);
   const actionBusy = ["running", "queued", "waiting_approval"].includes(runView?.phase ?? "");
+  // 助理层的表情与删除目前没有服务端接口，按线程持久化在本机；群聊仍走服务端。
+  const localMessage = useLocalMessageState(draftScope?.threadId, messageId);
+  if (localMessage.hidden) return null;
   // 历史/重试偶尔把同一条回答写成相邻两条 assistant；只保留第一条。
   if (sourceNotice?.direction === "sent") {
     if (!assistantSurface) return null;
@@ -1816,12 +1897,22 @@ export function HarnessAssistantMessage() {
   const responseActions = !hasVideoGeneration ? (
     <div className="assistant-message-controls">
       <AssistantActionBar.Root className="assistant-feedback-actions" hideWhenRunning>
-        <MessageCopyButton className="assistant-message-copy" label="复制回答" text={actionText} />
         {assistantSurface ? (
-          <MessageReplyButton className="assistant-message-copy" label="回复这条回答"
-            excerptOverride={compactMain || controlSummary || showingInputCard ? actionText : undefined} />
+          <MessageActions
+            reactions={localMessage.reactions}
+            onReact={localMessage.toggleReaction}
+            copyText={actionText}
+            canDelete
+            onDelete={localMessage.hide}
+            deleteTitle="删除这条回答"
+            className="assistant-shared-actions"
+          >
+            <MessageReplyButton className="assistant-message-copy" label="回复这条回答"
+              excerptOverride={compactMain || controlSummary || showingInputCard ? actionText : undefined} />
+          </MessageActions>
         ) : (
           <>
+            <MessageCopyButton className="assistant-message-copy" label="复制回答" text={actionText} />
             <MessageFeedbackButtons runId={feedbackRun} />
             <TurnCompletion />
           </>
@@ -1865,8 +1956,12 @@ export function HarnessAssistantMessage() {
           <AssistantResponse text={reply.text} streaming={reply.streaming} />
           <div className="assistant-message-controls">
             <AssistantActionBar.Root className="assistant-feedback-actions" hideWhenRunning>
-              <MessageCopyButton className="assistant-message-copy" label="复制回答" text={reply.text} />
-              <MessageReplyButton className="assistant-message-copy" label="回复这条回答" excerptOverride={reply.text} />
+              <MessageActions
+                copyText={reply.text}
+                className="assistant-shared-actions"
+              >
+                <MessageReplyButton className="assistant-message-copy" label="回复这条回答" excerptOverride={reply.text} />
+              </MessageActions>
             </AssistantActionBar.Root>
           </div>
         </div>
@@ -2006,6 +2101,7 @@ function useMessageEditor() {
 function HarnessUserMessage() {
   const redact = useConversationRedactor();
   const assistantSurface = useAssistantSurface();
+  const draftScope = useContext(ComposerDraftContext);
   const message = useAuiState((state) => state.message);
   const isLastMessage = useAuiState((state) => state.message.isLast);
   const threadRunning = useAuiState((state) => state.thread.isRunning);
@@ -2060,12 +2156,27 @@ function HarnessUserMessage() {
       ? activity
       : undefined;
 
+  const localMessage = useLocalMessageState(draftScope?.threadId, message.id);
+  if (localMessage.hidden) return null;
   const messageContent = <SentUserContent key={message.id} text={sensitive ? displayText : undefined} />;
-  const messageActions = (
+  const messageActions = assistantSurface ? (
+    <ActionBarPrimitive.Root className="harness-user-action-bar" autohide="never">
+      <MessageActions
+        reactions={localMessage.reactions}
+        onReact={localMessage.toggleReaction}
+        copyText={displayText}
+        canDelete
+        onDelete={localMessage.hide}
+        deleteTitle="删除这条消息"
+        className="assistant-shared-actions"
+      >
+        <MessageReplyButton label="回复消息" />
+      </MessageActions>
+    </ActionBarPrimitive.Root>
+  ) : (
     <ActionBarPrimitive.Root className="harness-user-action-bar" autohide="never">
       <MessageCopyButton className="user-message-action" label="复制消息" text={displayText} />
-      {assistantSurface && <MessageReplyButton label="回复消息" />}
-      {!assistantSurface && isLatestUserMessage && !threadRunning && !sensitive ? (
+      {isLatestUserMessage && !threadRunning && !sensitive ? (
         <button className="user-message-action" type="button" aria-label="编辑消息" title="编辑消息" onClick={beginEdit}>
           <EditMessageIcon />
         </button>
@@ -2092,7 +2203,7 @@ function HarnessUserMessage() {
                     if (event.key === "Escape") setEditor(null);
                   }}
                   autoFocus
-                  rows={Math.min(8, Math.max(2, draft.split("\n").length))}
+                  rows={Math.min(8, Math.max(1, draft.split("\n").length))}
                 />
                 <div className="user-message-editor-actions">
                   <button type="button" onClick={() => setEditor(null)}>取消</button>

@@ -6,7 +6,6 @@ export const COMPOSER_COMMANDS = [
   { name: "/stop", label: "停止运行", description: "停止当前任务，并暂停后续队列" },
   { name: "/files", label: "任务文件", description: "打开右侧文件分栏" },
   { name: "/clear", label: "清空输入", description: "保留对话历史与队列" },
-  { name: "/help", label: "输入帮助", description: "/ 命令 · @ 智能体 · $ 技能" },
 ];
 export function composerTrigger(text: string, caret: number) {
   const before = text.slice(0, caret);

@@ -1,15 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-
 import type { GroupMessage } from "../lib/assistant-client";
 import { resolveDownloadUrl } from "../lib/assistant-download-url";
-import { writeTextToClipboard } from "../lib/clipboard";
 import { groupTimeLabel } from "../lib/group-chat-time";
 import { AssistantGroupMarkdown } from "./assistant-group-markdown";
+import { MESSAGE_REACTIONS, MessageActions } from "./message-actions";
 import styles from "./assistant-group-message.module.css";
 
-export const GROUP_REACTIONS = ["👍", "❤️", "😂", "🎉", "👀"];
+export const GROUP_REACTIONS = MESSAGE_REACTIONS;
 
 const ROLE_LABEL: Record<GroupMessage["author"], string> = {
   user: "我",
@@ -18,52 +16,10 @@ const ROLE_LABEL: Record<GroupMessage["author"], string> = {
   system: "",
 };
 
-function ReplyIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-      <path
-        d="M8.5 5.5 3.5 10l5 4.5V12c4 0 6.5 1 8 4-.5-4-2.5-7-8-7V5.5Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function CopyIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-      <rect x="7" y="7" width="9" height="9" rx="2" fill="none" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M13 7V5.5A1.5 1.5 0 0 0 11.5 4H5.5A1.5 1.5 0 0 0 4 5.5v6A1.5 1.5 0 0 0 5.5 13H7" fill="none" stroke="currentColor" strokeWidth="1.6" />
-    </svg>
-  );
-}
-
-function TrashIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-      <path d="M4.5 6h11M8 6V4.5h4V6m-5.5 0 .6 9h5.8l.6-9" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 function AttachmentIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
       <path d="M12.5 6.5 7 12a2.5 2.5 0 0 0 3.5 3.5l5-5a4 4 0 0 0-5.7-5.7l-5 5a5.5 5.5 0 0 0 7.8 7.8l4-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function SmileIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-      <circle cx="10" cy="10" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M7.2 11.4a3.2 3.2 0 0 0 5.6 0" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      <circle cx="7.7" cy="8.3" r="0.9" fill="currentColor" />
-      <circle cx="12.3" cy="8.3" r="0.9" fill="currentColor" />
     </svg>
   );
 }
@@ -102,37 +58,6 @@ export function AssistantGroupMessage({
   canDelete = false,
   onDelete,
 }: AssistantGroupMessageProps) {
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
-  const actionsRef = useRef<HTMLDivElement | null>(null);
-  const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  useEffect(() => () => clearTimeout(copyTimer.current), []);
-
-  useEffect(() => {
-    if (!pickerOpen) return;
-    const onPointerDown = (event: MouseEvent) => {
-      if (!actionsRef.current?.contains(event.target as Node)) setPickerOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setPickerOpen(false);
-    };
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [pickerOpen]);
-
-  const copy = async () => {
-    const ok = await writeTextToClipboard(message.text);
-    setCopyState(ok ? "copied" : "failed");
-    clearTimeout(copyTimer.current);
-    copyTimer.current = setTimeout(() => setCopyState("idle"), 1600);
-  };
-
   const mine = message.author === "user";
   const system = message.author === "system";
   const failed = message.status === "failed";
@@ -176,100 +101,17 @@ export function AssistantGroupMessage({
       })}
     </ul>
   ) : null;
-  const reactions = message.reactions.length > 0 && (
-    <div className={styles.reactionRow}>
-      {message.reactions.map((emoji) => (
-        <button
-          key={emoji}
-          type="button"
-          className={`${styles.reactionChip} ${styles.reactionChipOn}`}
-          title={`取消 ${emoji}`}
-          aria-pressed="true"
-          onClick={() => onReact(message, emoji)}
-        >
-          {emoji}
-        </button>
-      ))}
-    </div>
-  );
   const actions = (
-    <div className={styles.actions} ref={actionsRef}>
-      <div className={styles.actionButtons}>
-        <button
-          type="button"
-          className={styles.actionButton}
-          aria-label="给这条消息加表情"
-          title="加表情"
-          aria-haspopup="menu"
-          aria-expanded={pickerOpen}
-          onClick={() => setPickerOpen((open) => !open)}
-        >
-          <SmileIcon />
-        </button>
-        <button
-          type="button"
-          className={styles.actionButton}
-          aria-label="引用这条消息"
-          title="引用"
-          onClick={() => onReply(message)}
-        >
-          <ReplyIcon />
-        </button>
-        <button
-          type="button"
-          className={styles.actionButton}
-          aria-label="复制这条消息"
-          title={copyState === "copied" ? "已复制" : copyState === "failed" ? "复制失败" : "复制"}
-          disabled={!message.text}
-          onClick={() => void copy()}
-        >
-          <CopyIcon />
-        </button>
-        {canDelete && onDelete && (
-          <button
-            type="button"
-            className={`${styles.actionButton} ${confirmDelete ? styles.actionDanger : ""}`}
-            aria-label={confirmDelete ? "确认删除这条消息" : "删除这条消息"}
-            title={confirmDelete ? "再点一次确认删除" : "删除"}
-            onBlur={() => setConfirmDelete(false)}
-            onClick={() => {
-              if (confirmDelete) {
-                setConfirmDelete(false);
-                onDelete(message);
-                return;
-              }
-              setConfirmDelete(true);
-            }}
-          >
-            {confirmDelete ? <span className={styles.confirmText}>确认？</span> : <TrashIcon />}
-          </button>
-        )}
-      </div>
-      {copyState !== "idle" && (
-        <span className={styles.copyFeedback} role="status">
-          {copyState === "copied" ? "已复制" : "复制失败"}
-        </span>
-      )}
-      {pickerOpen && (
-        <span className={styles.reactionPicker} role="group" aria-label="选择表情">
-          {GROUP_REACTIONS.map((emoji) => (
-            <button
-              key={emoji}
-              type="button"
-              className={`${styles.pickerButton} ${
-                message.reactions.includes(emoji) ? styles.pickerButtonOn : ""
-              }`}
-              onClick={() => {
-                setPickerOpen(false);
-                onReact(message, emoji);
-              }}
-            >
-              {emoji}
-            </button>
-          ))}
-        </span>
-      )}
-    </div>
+    <MessageActions
+      reactions={message.reactions}
+      onReact={(emoji) => onReact(message, emoji)}
+      onReply={() => onReply(message)}
+      copyText={message.text}
+      canDelete={canDelete}
+      onDelete={onDelete ? () => onDelete(message) : undefined}
+      className={styles.actions}
+      reactionsClassName={styles.reactionRow}
+    />
   );
 
   if (system) {
@@ -290,7 +132,6 @@ export function AssistantGroupMessage({
           {quote}
           <div className={`${styles.userBubble} ${failed ? styles.failedBubble : ""}`}>{body}</div>
           {attachments}
-          {reactions}
           {actions}
         </div>
       </article>
@@ -311,7 +152,6 @@ export function AssistantGroupMessage({
         {quote}
         <div className={`${styles.memberBody} ${failed ? styles.failed : ""}`}>{body}</div>
         {attachments}
-        {reactions}
         {actions}
       </div>
     </article>

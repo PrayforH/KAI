@@ -2,14 +2,17 @@
 
 import { useEffect, useId, useState } from "react";
 import { requireAuthenticatedResponse } from "../lib/client-auth";
+import { loadFullThreadHistory } from "../lib/task-history";
 import type { ArtifactDetails } from "./artifact-list";
 import { AssistantComputerLink } from "./assistant-computer-link";
 import { AssistantResults } from "./assistant-results";
 import { BotRailAvatar } from "./bot-rail";
 import { BotTasks } from "./bot-tasks";
+import { ChatHistoryList, type ChatHistoryItem } from "./chat-history-list";
 import styles from "./bot-side-panel.module.css";
 
 const TABS = [
+  { key: "history", label: "聊天记录" },
   { key: "activity", label: "动态" },
   { key: "tasks", label: "任务" },
   { key: "library", label: "资料库" },
@@ -38,6 +41,44 @@ function BotLibrary({ threadId }: { threadId: string }) {
     {files && <AssistantResults artifacts={files} />}
     {error && <p role="alert">{error}</p>}
   </section>;
+}
+
+function BotHistory({ threadId, assistantName }: { threadId: string; assistantName: string }) {
+  const [items, setItems] = useState<ChatHistoryItem[] | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (!threadId) {
+      setItems([]);
+      return;
+    }
+    let cancelled = false;
+    setItems(null);
+    setError("");
+    void loadFullThreadHistory(threadId)
+      .then((messages) => {
+        if (cancelled) return;
+        setItems(messages.map((message) => ({
+          id: message.id,
+          author: message.role === "user" ? "我" : assistantName,
+          text: typeof message.content === "string" ? message.content : "",
+          time: "",
+        })));
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setError(cause instanceof Error && cause.message ? cause.message : "聊天记录暂时无法读取");
+      });
+    return () => { cancelled = true; };
+  }, [threadId, assistantName]);
+  return (
+    <ChatHistoryList
+      items={items ?? []}
+      loading={items === null && !error}
+      error={error || null}
+      emptyText="还没有聊天记录"
+      searchPlaceholder="搜索聊天记录"
+      label={`${assistantName}的聊天记录`}
+    />
+  );
 }
 
 function BotComputerCard({ botId, ready, onOpen }: { botId?: string; ready: boolean; onOpen: () => void }) {
@@ -110,9 +151,10 @@ export function BotSidePanel({ botId, primary = false, name, tone, shape, thread
       </div>
     </header>
     <div className={styles.content} role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-${tab}`}>
-      {tab === "activity" ? <BotComputerCard botId={primary ? undefined : botId} ready={ready} onOpen={onComputer} />
-        : tab === "tasks" ? <BotTasks specialistId={primary ? undefined : botId} />
-          : <BotLibrary threadId={threadId} />}
+      {tab === "history" ? <BotHistory threadId={threadId} assistantName={name} />
+        : tab === "activity" ? <BotComputerCard botId={primary ? undefined : botId} ready={ready} onOpen={onComputer} />
+          : tab === "tasks" ? <BotTasks specialistId={primary ? undefined : botId} />
+            : <BotLibrary threadId={threadId} />}
     </div>
   </aside>;
 }

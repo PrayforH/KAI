@@ -28,6 +28,10 @@ const markdown = readFileSync(
   join(process.cwd(), "src/components/assistant-group-markdown.tsx"),
   "utf8",
 );
+const sharedActions = readFileSync(
+  join(process.cwd(), "src/components/message-actions.tsx"),
+  "utf8",
+);
 const client = readFileSync(join(process.cwd(), "src/lib/assistant-client.ts"), "utf8");
 
 describe("group chats live in the main assistant surface", () => {
@@ -85,19 +89,22 @@ describe("group chats live in the main assistant surface", () => {
     expect(groupChat).toContain("<AssistantGroupInfoPanel");
     expect(groupChat).toContain("aria-expanded={settingsOpen}");
     expect(groupChat).not.toContain("styles.toolbarInner");
-    // 右侧「动态 / 任务 / 资料库」侧栏；入口是真正的开关，开着再点会关。
+    // 右侧「聊天记录 / 动态 / 任务 / 资料库」侧栏；入口是真正的开关，开着再点会关。
     expect(groupChat).toContain("<AssistantGroupSidePanel");
     expect(groupChat).toContain('aria-label={sideOpen ? "关闭群右侧栏" : "打开群右侧栏"}');
-    expect(groupChat).toContain('sideOpen ? setSideOpen(false) : openSidePanel("activity")');
+    expect(groupChat).toContain('sideOpen ? setSideOpen(false) : openSidePanel("history")');
+    expect(groupChat).toContain("onOpenInfo");
   });
 
   it("renders messages through the shared row and composer components", () => {
     expect(groupChat).toContain("<AssistantGroupMessage");
     expect(groupChat).toContain("<AssistantGroupComposer");
     expect(groupChat).toContain("onReply={handleQuote}");
-    // 悬停操作放在消息行里，不再由群会话拼表情按钮。
-    expect(messageRow).toContain('aria-label="引用这条消息"');
-    expect(messageRow).toContain('aria-label="复制这条消息"');
+    // 悬停操作与单助理共用同一套操作条，群会话不再各写一份表情/复制/删除。
+    expect(messageRow).toContain('from "./message-actions"');
+    expect(messageRow).toContain("<MessageActions");
+    expect(sharedActions).toContain('aria-label="引用这条消息"');
+    expect(sharedActions).toContain('aria-label="复制这条消息"');
     expect(markdown).toContain("remarkMentions");
     expect(markdown).toContain("remarkGfm");
   });
@@ -121,9 +128,9 @@ describe("group chats live in the main assistant surface", () => {
     expect(composer).toContain("MAX_HEIGHT = 130");
     expect(composer).toContain("event.shiftKey");
     expect(composer).toContain('aria-label="取消引用"');
-    // 不再有 @ 按钮：输入 @ 直接弹成员选择。
-    expect(composer).toContain('data-testid="group-mention-menu"');
-    expect(composer).toContain("MENTION_TOKEN");
+    // 不再有 @ 按钮：输入 @ 直接弹成员选择，与单助理共用同一套选择器。
+    expect(composer).toContain('testId="group-mention-menu"');
+    expect(composer).toContain("mentionTrigger");
     // 中文输入法选词 Enter 不能发消息。
     expect(composer).toContain("isComposing");
     expect(composer).toContain("keyCode === 229");
@@ -141,7 +148,7 @@ describe("group chats live in the main assistant surface", () => {
     expect(client).toContain("export async function deleteAssistantGroup");
     expect(client).toContain("export async function deleteAssistantGroupMessage");
     expect(client).toContain("library/documents");
-    expect(messageRow).toContain('"删除这条消息"');
+    expect(sharedActions).toContain('"删除这条消息"');
     expect(messageRow).toContain("canDelete");
     expect(groupChat).toContain("onDissolved");
   });

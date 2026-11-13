@@ -37,6 +37,32 @@ it("collapses the whole directory and reveals all Bot groups on request", async 
   expect(host.querySelector('[id][hidden]')).not.toBeNull();
   expect(host.querySelector('[aria-label="展开机器人分组"]')).not.toBeNull();
 });
+it("shows group chats with a creator-only delete menu and persisted collapse", async () => {
+  const group = (n: number, creatorUserId: string) => ({
+    groupId: `g-${n}`, name: `群 ${n}`, creatorUserId, unreadCount: 0,
+  });
+  request.mockImplementation(async (path: unknown) => path === "groups"
+    ? [group(1, "u1"), group(2, "u2"), group(3, "u2"), group(4, "u2"), group(5, "u2"), group(6, "u1"), group(7, "u2")]
+    : [bot(1)]);
+  await act(async () => root.render(<BotRail currentThreadId="kai-personal-assistant-v1" userId="u1" />));
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  // 默认只展示 5 个群，创建者之外没有删除入口。
+  expect(host.querySelectorAll('a[href^="/assistant?group="]')).toHaveLength(5);
+  expect(host.querySelectorAll('button[aria-label^="群 "][aria-label$="的更多操作"]')).toHaveLength(1);
+  expect(host.querySelector('button[aria-label="群 1 的更多操作"]')).not.toBeNull();
+  expect(host.querySelector('button[aria-label="群 2 的更多操作"]')).toBeNull();
+
+  const more = host.querySelector<HTMLButtonElement>('button[aria-label="展开群聊"]')!;
+  expect(more.querySelector(".task-list-title")?.textContent).toBe("展开显示（2）");
+  await act(async () => more.click());
+  expect(host.querySelectorAll('a[href^="/assistant?group="]')).toHaveLength(7);
+  expect(host.querySelector('button[aria-label="群 6 的更多操作"]')).not.toBeNull();
+
+  const collapse = host.querySelector<HTMLButtonElement>('button[aria-label="收起群聊分组"]')!;
+  await act(async () => collapse.click());
+  expect(host.querySelector('[aria-label="展开群聊分组"]')).not.toBeNull();
+});
+
 it("main contact has the same menu and stored appearance without another main conversation", async () => {
   request.mockResolvedValue([bot(1), bot(0, {specialistId: "specialist_primary_abc", name: "我的总管", config: {sidebar: {pinned: true}, appearance: {avatar: "leaf", color: "#0d9381"}}})]);
   await mount();

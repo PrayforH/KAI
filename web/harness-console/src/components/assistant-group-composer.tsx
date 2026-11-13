@@ -11,19 +11,18 @@ import {
 } from "react";
 
 import type { GroupLibraryDocument } from "../lib/assistant-client";
-import { BotRailAvatar, botAccent } from "./bot-rail";
+import {
+  MentionMenu,
+  filterMentionTargets,
+  mentionTrigger,
+  type MentionTarget,
+} from "./mention-picker";
 import styles from "./assistant-group-composer.module.css";
 
 /** 引用条只展示作者与截断后的文本，真正的引用 id 由父组件持有。 */
 export type GroupQuotePreview = {
   authorName: string;
   text: string;
-};
-
-type MentionTarget = {
-  memberId: string;
-  name: string;
-  role?: "creator" | "primary" | "specialist";
 };
 
 type AssistantGroupComposerProps = {
@@ -55,21 +54,6 @@ const MIN_HEIGHT = LINE_HEIGHT + PADDING_Y;
 const MAX_HEIGHT = 130;
 const MAX_ATTACHMENTS = 10;
 
-/** 光标前最近的一段 @ 词：任意位置都能唤出选择面板，不要求前面是空格。 */
-const MENTION_TOKEN = /@([^\s@]*)$/u;
-
-const MEMBER_ROLE_LABEL: Record<NonNullable<MentionTarget["role"]>, string> = {
-  creator: "创建者",
-  primary: "主助理",
-  specialist: "子助理",
-};
-
-function mentionTrigger(text: string, caret: number) {
-  const match = MENTION_TOKEN.exec(text.slice(0, caret));
-  if (!match) return null;
-  return { start: caret - match[0].length, end: caret, query: match[1].toLowerCase() };
-}
-
 function PlusIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
@@ -80,7 +64,7 @@ function PlusIcon() {
 
 /**
  * 群聊输入框：单行 44px 外框，Shift+Enter 换行，长到约 5 行后内部滚动。
- * 提示文字在卡片外，不占输入框高度；@、+、引用条、附件都在同一块里。
+ * 发送在最左（紧跟 +），中间是 textarea；@、+、引用条、附件都在同一块里。
  */
 export function AssistantGroupComposer({
   value,
@@ -145,13 +129,7 @@ export function AssistantGroupComposer({
     trigger!.start !== dismissedMention &&
     members.length > 0 &&
     !disabled;
-  const filteredMembers = trigger
-    ? members.filter((member) =>
-        `${member.name} ${member.role ? MEMBER_ROLE_LABEL[member.role] : ""}`
-          .toLowerCase()
-          .includes(trigger.query),
-      )
-    : [];
+  const filteredMembers = trigger ? filterMentionTargets(members, trigger.query) : [];
 
   useEffect(() => {
     setActiveMention(0);
@@ -310,6 +288,25 @@ export function AssistantGroupComposer({
               </div>
             )}
           </div>
+          <button
+            type="button"
+            className={styles.send}
+            aria-label="发送"
+            title="发送"
+            aria-busy={sending}
+            disabled={!value.trim() || sending || disabled}
+            onClick={() => onSend()}
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M12 19V5M12 5l-6 6M12 5l6 6"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
           <textarea
             ref={setTextarea}
             className={styles.input}
@@ -333,56 +330,15 @@ export function AssistantGroupComposer({
             onCompositionEnd={() => setComposing(false)}
             onKeyDown={handleKeyDown}
           />
-          <button
-            type="button"
-            className={styles.send}
-            aria-label="发送"
-            title="发送"
-            aria-busy={sending}
-            disabled={!value.trim() || sending || disabled}
-            onClick={() => onSend()}
-          >
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M12 19V5M12 5l-6 6M12 5l6 6"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
         </div>
         {mentionOpen && (
-          <div
-            className={styles.mentionMenu}
+          <MentionMenu
             id={mentionListId}
-            role="listbox"
-            aria-label="选择要提到的助理"
-            data-testid="group-mention-menu"
-          >
-            {filteredMembers.length === 0 ? (
-              <p className={styles.mentionEmpty}>没有匹配的成员</p>
-            ) : (
-              filteredMembers.map((member, index) => (
-                <div
-                  key={member.memberId}
-                  id={`${mentionListId}-${index}`}
-                  role="option"
-                  aria-selected={index === activeMention}
-                  className={styles.mentionItem}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => chooseMention(member)}
-                >
-                  <BotRailAvatar tone={botAccent(member.memberId)} />
-                  <span className={styles.mentionName}>{member.name}</span>
-                  <span className={styles.mentionRole}>
-                    {member.role ? MEMBER_ROLE_LABEL[member.role] : ""}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
+            members={filteredMembers}
+            activeIndex={activeMention}
+            onChoose={chooseMention}
+            testId="group-mention-menu"
+          />
         )}
       </div>
     </div>

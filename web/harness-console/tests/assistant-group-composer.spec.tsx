@@ -82,6 +82,16 @@ describe("AssistantGroupComposer", () => {
     expect(host.querySelector<HTMLButtonElement>('[aria-label="发送"]')!.disabled).toBe(true);
   });
 
+  it("puts the send button on the left, right after the + control", async () => {
+    await act(async () => root!.render(<Harness />));
+    const input = host.querySelector<HTMLTextAreaElement>("textarea")!;
+    const send = host.querySelector<HTMLButtonElement>('[aria-label="发送"]')!;
+    expect(send.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const buttons = [...input.parentElement!.querySelectorAll("button")];
+    expect(buttons[0]!.getAttribute("aria-label")).toContain("添加附件或知识库");
+    expect(buttons[1]!.getAttribute("aria-label")).toBe("发送");
+  });
+
   it("grows to five lines and then scrolls internally at 130px", async () => {
     await act(async () => root!.render(<Harness />));
     const input = host.querySelector<HTMLTextAreaElement>("textarea")!;

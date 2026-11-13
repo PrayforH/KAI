@@ -1,4 +1,4 @@
-/* 群右侧栏：与 1:1 助理侧栏同宽同形，三个 tab 内容各自滚动。 */
+/* 群右侧栏：与 1:1 助理侧栏同宽同形，聊天记录/动态/任务/资料库各自滚动。 */
 
 .panel {
   flex: none;
@@ -249,3 +249,17 @@ a.docName:focus-visible { outline: 2px solid var(--codex-ink, #f5f5f5); outline-
   outline: none;
 }
 .bindRow select:focus-visible { border-color: var(--codex-muted, #a3a3a3); }
+
+.infoButton {
+  flex: none;
+  padding: 4px 8px;
+  border: 1px solid var(--codex-line, #343434);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--codex-muted, #a3a3a3);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.infoButton:hover { background: var(--codex-surface-hover, #303030); color: var(--codex-ink, #f5f5f5); }
+.infoButton:focus-visible { outline: 2px solid var(--codex-ink, #f5f5f5); outline-offset: 1px; }

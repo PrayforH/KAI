@@ -193,11 +193,12 @@ describe("full-page agent workbench", () => {
     expect(page).not.toContain("<DeveloperDrawer");
   });
 
-  it("keeps collapse in the rail and moves expand into the header", () => {
+  it("keeps both collapse and expand in the sidebar itself", () => {
     expect(page).not.toContain('className="icon-button task-sidebar-toggle"');
     expect(page).toContain("collapsed={!taskSidebarOpen}");
     expect(taskSidebar).toContain('className="task-sidebar-rail"');
-    expect(taskSidebar).not.toContain('task-rail-toggle');
+    // 助理面取消顶栏后，收起状态由侧栏自己的按钮再展开。
+    expect(taskSidebar).toContain('task-rail-toggle');
     expect(taskSidebar).not.toContain('task-rail-action');
     expect(taskSidebar).not.toContain('task-rail-brand');
     expect(taskSidebar).not.toContain('task-rail-account');

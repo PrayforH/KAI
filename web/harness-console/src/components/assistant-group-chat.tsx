@@ -92,7 +92,7 @@ export function AssistantGroupChat({
   const [libraryBusy, setLibraryBusy] = useState(false);
   const [availableKnowledgeBases, setAvailableKnowledgeBases] = useState<StudioKnowledgeBase[]>([]);
   const [sideOpen, setSideOpen] = useState(false);
-  const [sideTab, setSideTab] = useState<GroupSideTab>("activity");
+  const [sideTab, setSideTab] = useState<GroupSideTab>("history");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
@@ -480,7 +480,7 @@ export function AssistantGroupChat({
     }
   };
 
-  const openSidePanel = (tab: GroupSideTab = "activity") => {
+  const openSidePanel = (tab: GroupSideTab = "history") => {
     setSideTab(tab);
     setSideOpen(true);
     setSettingsOpen(false);
@@ -588,9 +588,9 @@ export function AssistantGroupChat({
               type="button"
               className={styles.settingsButton}
               aria-label={sideOpen ? "关闭群右侧栏" : "打开群右侧栏"}
-              title="动态 / 任务 / 资料库"
+              title="聊天记录 / 动态 / 任务 / 资料库"
               aria-expanded={sideOpen}
-              onClick={() => (sideOpen ? setSideOpen(false) : openSidePanel("activity"))}
+              onClick={() => (sideOpen ? setSideOpen(false) : openSidePanel("history"))}
             >
               <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
                 <rect x="3" y="4" width="14" height="12" rx="2.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
@@ -746,6 +746,11 @@ export function AssistantGroupChat({
           tab={sideTab}
           onTabChange={setSideTab}
           onClose={() => setSideOpen(false)}
+          onOpenInfo={() => {
+            // 侧栏收起后再开群信息；两者同占右侧，不同时叠着。
+            setSideOpen(false);
+            setSettingsOpen(true);
+          }}
           library={library}
           libraryLoading={libraryLoading}
           libraryError={libraryError}

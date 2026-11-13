@@ -758,7 +758,26 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
 /* The live status sits above the composer, so it shares the composer's column
    (`width: min(800px, 100%); margin-inline: auto`). Full viewport width left it
    hugging the far-left gutter as soon as the window got wide. */
-.console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-message-tail-slot { flex-shrink: 0; width: min(800px, 100%); max-width: 800px; margin-inline: auto; padding-bottom: 12px; }
+.console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-message-tail-slot { flex-shrink: 0; width: min(1100px, 100%); max-width: 1100px; margin-inline: auto; padding-bottom: 12px; }
+
+/* 助理消息与用户消息共用同一套操作条：桌面端常驻可见，触屏同样可点。 */
+.console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-shared-actions {
+  opacity: 1 !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 取消顶栏后，聊天记录与右侧栏入口悬浮在对话区右上角。 */
+.console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-floating-controls {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 
 /* The @ message shows in the conversation it was typed in (user bubble, right
    aligned, bot accent) with the handover receipt line underneath. */

@@ -1,0 +1,48 @@
+/* 输入 @ 后的选择菜单：贴在输入区上方，不挤压对话列。
+   群聊和单助理共用，位置由最近的定位祖先决定。 */
+.menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 8px;
+  z-index: 9;
+  width: min(320px, calc(100% - 16px));
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--codex-line-strong, #474747);
+  border-radius: 10px;
+  background: var(--codex-surface-raised, #242424);
+  box-shadow: var(--codex-shadow-soft, 0 8px 28px rgb(0 0 0 / 24%));
+}
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  color: var(--codex-ink-soft, #d2d2d2);
+  font-size: 13px;
+  cursor: pointer;
+}
+.item:hover,
+.item[aria-selected="true"] {
+  background: var(--codex-surface-hover, #303030);
+  color: var(--codex-ink, #f5f5f5);
+}
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.role {
+  flex: none;
+  color: var(--codex-faint, #727272);
+  font-size: 11px;
+}
+.empty {
+  margin: 2px 8px 6px;
+  color: var(--codex-muted, #a3a3a3);
+  font-size: 12px;
+}
