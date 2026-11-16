@@ -337,15 +337,6 @@ export async function postAssistantGroupMessage(
     },
   );
 }
-export async function deleteAssistantGroupMessage(
-  groupId: string,
-  messageId: string,
-): Promise<void> {
-  return assistantRequest<void>(
-    `groups/${encodeURIComponent(groupId)}/messages/${encodeURIComponent(messageId)}`,
-    "DELETE",
-  );
-}
 export async function getAssistantGroupLibrary(
   groupId: string,
 ): Promise<AssistantGroupLibrary> {

@@ -36,14 +36,6 @@ function CopyIcon() {
   );
 }
 
-function TrashIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-      <path d="M4.5 6h11M8 6V4.5h4V6m-5.5 0 .6 9h5.8l.6-9" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 function SmileIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
@@ -62,11 +54,6 @@ export type MessageActionsProps = {
   /** 传了文本就显示复制；自己处理复制时用 onCopy。 */
   copyText?: string;
   onCopy?: () => void;
-  canDelete?: boolean;
-  onDelete?: () => void;
-  /** 删除是危险操作，文案可随场景调整。 */
-  deleteTitle?: string;
-  deleteConfirmHint?: string;
   /** 群聊沿用既有操作条的浮现时机与尺寸。 */
   className?: string;
   reactionsClassName?: string;
@@ -75,8 +62,8 @@ export type MessageActionsProps = {
 };
 
 /**
- * 消息操作条：表情、引用、复制、删除。群聊和单助理共用一套实现。
- * 删除点一次进入确认态，再点一次才真正删除；失败由调用方给可读错误。
+ * 消息操作条：表情、引用、复制。群聊和单助理共用一套实现。
+ * 单条消息删除已统一取消，解散群、删会话、删文件不属于这里。
  */
 export function MessageActions({
   reactions = [],
@@ -84,10 +71,6 @@ export function MessageActions({
   onReply,
   copyText,
   onCopy,
-  canDelete = false,
-  onDelete,
-  deleteTitle = "删除",
-  deleteConfirmHint = "再点一次确认删除",
   className,
   reactionsClassName,
   children,
@@ -95,7 +78,6 @@ export function MessageActions({
   const [pickerOpen, setPickerOpen] = useState(false);
   /** 消息贴着滚动区顶部时，弹层改向下展开，避免被裁掉一半。 */
   const [pickerBelow, setPickerBelow] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const actionsRef = useRef<HTMLDivElement | null>(null);
   const pickerRef = useRef<HTMLSpanElement | null>(null);
@@ -255,25 +237,6 @@ export function MessageActions({
             </button>
           )}
           {children}
-          {canDelete && onDelete && (
-            <button
-              type="button"
-              className={`${styles.actionButton} ${confirmDelete ? styles.actionDanger : ""}`}
-              aria-label={confirmDelete ? "确认删除这条消息" : "删除这条消息"}
-              title={confirmDelete ? deleteConfirmHint : deleteTitle}
-              onBlur={() => setConfirmDelete(false)}
-              onClick={() => {
-                if (confirmDelete) {
-                  setConfirmDelete(false);
-                  onDelete();
-                  return;
-                }
-                setConfirmDelete(true);
-              }}
-            >
-              {confirmDelete ? <span className={styles.confirmText}>确认？</span> : <TrashIcon />}
-            </button>
-          )}
         </div>
         {copyState !== "idle" && (
           <span className={styles.copyFeedback} role="status">

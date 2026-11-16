@@ -32,7 +32,7 @@ async function renderInScroller() {
   root = createRoot(mount);
   await act(async () =>
     root!.render(
-      <MessageActions reactions={[]} onReact={() => undefined} copyText="hi" canDelete />,
+      <MessageActions reactions={[]} onReact={() => undefined} copyText="hi" />,
     ),
   );
   return scroller;
@@ -43,6 +43,12 @@ function picker(): HTMLElement | null {
 }
 
 describe("message actions emoji picker", () => {
+  it("never renders a single-message delete action", async () => {
+    await renderInScroller();
+    expect(host.querySelector('[aria-label="删除这条消息"]')).toBeNull();
+    expect(host.querySelector('[aria-label="确认删除这条消息"]')).toBeNull();
+  });
+
   it("opening the picker does not shift the action bar", async () => {
     await renderInScroller();
     const button = host.querySelector<HTMLButtonElement>('[aria-label="给这条消息加表情"]')!;

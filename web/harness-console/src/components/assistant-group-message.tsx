@@ -38,9 +38,6 @@ type AssistantGroupMessageProps = {
   tone: string;
   onReact: (message: GroupMessage, emoji: string) => void;
   onReply: (message: GroupMessage) => void;
-  /** 本人消息或群创建者可以删除；运行中的消息不显示删除。 */
-  canDelete?: boolean;
-  onDelete?: (message: GroupMessage) => void;
 };
 
 /**
@@ -55,8 +52,6 @@ export function AssistantGroupMessage({
   tone,
   onReact,
   onReply,
-  canDelete = false,
-  onDelete,
 }: AssistantGroupMessageProps) {
   const mine = message.author === "user";
   const system = message.author === "system";
@@ -109,8 +104,6 @@ export function AssistantGroupMessage({
       onReact={canReact ? (emoji) => onReact(message, emoji) : undefined}
       onReply={() => onReply(message)}
       copyText={message.text}
-      canDelete={canDelete}
-      onDelete={onDelete ? () => onDelete(message) : undefined}
       className={styles.actions}
       reactionsClassName={styles.reactionRow}
     />

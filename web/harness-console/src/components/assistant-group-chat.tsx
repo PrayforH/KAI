@@ -8,7 +8,6 @@ import {
   bindAssistantGroupKnowledgeBase,
   deleteAssistantGroup,
   deleteAssistantGroupDocument,
-  deleteAssistantGroupMessage,
   getAssistantGroupLibrary,
   listAssistantGroupMessages,
   listAssistantGroups,
@@ -464,22 +463,6 @@ export function AssistantGroupChat({
     }
   };
 
-  const handleDeleteMessage = async (message: GroupMessage) => {
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      await deleteAssistantGroupMessage(message.groupId, message.messageId);
-      setMessages((current) => current.filter((item) => item.messageId !== message.messageId));
-      setNotice("消息已删除");
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "删除消息失败");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const openSidePanel = (tab: GroupSideTab = "history") => {
     setSideTab(tab);
     setSideOpen(true);
@@ -678,9 +661,6 @@ export function AssistantGroupChat({
                 message.author === "user"
                   ? "#6b746e"
                   : botAccent(member?.specialistId ?? message.authorName);
-              const canDelete =
-                message.status !== "running" &&
-                (message.author === "user" || isCreator);
               return (
                 <Fragment key={message.messageId}>
                   {showStamp && <div className={styles.stamp}>{stamp}</div>}
@@ -694,8 +674,6 @@ export function AssistantGroupChat({
                     tone={tone}
                     onReact={(target, emoji) => void handleReaction(target, emoji)}
                     onReply={handleQuote}
-                    canDelete={canDelete}
-                    onDelete={(target) => void handleDeleteMessage(target)}
                   />
                 </Fragment>
               );

@@ -143,13 +143,16 @@ describe("group chats live in the main assistant surface", () => {
     expect(composer).not.toContain("group-composer-hint");
   });
 
-  it("supports group management and message deletion", () => {
+  it("supports group management without single-message deletion", () => {
     expect(client).toContain("export async function updateAssistantGroup");
+    // 只有解散群，消息级删除已统一取消。
     expect(client).toContain("export async function deleteAssistantGroup");
-    expect(client).toContain("export async function deleteAssistantGroupMessage");
+    expect(client).not.toContain("deleteAssistantGroupMessage");
     expect(client).toContain("library/documents");
-    expect(sharedActions).toContain('"删除这条消息"');
-    expect(messageRow).toContain("canDelete");
+    expect(sharedActions).not.toContain('"删除这条消息"');
+    expect(sharedActions).not.toContain("onDelete");
+    expect(messageRow).not.toContain("canDelete");
+    expect(groupChat).not.toContain("deleteAssistantGroupMessage");
     expect(groupChat).toContain("onDissolved");
   });
 

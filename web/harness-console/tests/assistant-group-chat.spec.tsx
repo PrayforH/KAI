@@ -16,7 +16,6 @@ const mocks = vi.hoisted(() => ({
   toggleAssistantGroupReaction: vi.fn(),
   updateAssistantGroup: vi.fn(),
   deleteAssistantGroup: vi.fn(async () => undefined),
-  deleteAssistantGroupMessage: vi.fn(async () => undefined),
   addAssistantGroupMember: vi.fn(),
   removeAssistantGroupMember: vi.fn(),
   setAssistantGroupReplyAs: vi.fn(),
@@ -158,20 +157,13 @@ describe("AssistantGroupChat", () => {
     );
   });
 
-  it("deletes a message after confirmation and removes it locally", async () => {
+  it("keeps the message and offers no delete action", async () => {
     await act(async () =>
       root!.render(<AssistantGroupChat groupId="g1" userId="u1" />),
     );
     await flush();
-    await act(async () => {
-      host.querySelector<HTMLButtonElement>('[aria-label="删除这条消息"]')!.click();
-    });
-    await act(async () => {
-      host.querySelector<HTMLButtonElement>('[aria-label="确认删除这条消息"]')!.click();
-    });
-    await flush();
-    expect(mocks.deleteAssistantGroupMessage).toHaveBeenCalledWith("g1", "m1");
-    expect(host.textContent).not.toContain("我自己的消息");
+    expect(host.querySelector('[aria-label="删除这条消息"]')).toBeNull();
+    expect(host.textContent).toContain("我自己的消息");
   });
 
   it("renames the group from the info panel and updates the header", async () => {

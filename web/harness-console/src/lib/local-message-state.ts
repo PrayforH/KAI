@@ -3,17 +3,17 @@
 import { useEffect, useState } from "react";
 
 /**
- * 单助理会话的表情与删除目前没有对应的服务端接口（群聊才持久化）。
+ * 单助理会话的表情目前没有对应的服务端接口（群聊才持久化）。
  * 为了让助理层拥有同一套消息操作，这里按线程把选择存在本机：
  * 刷新后仍保留，但换设备/清缓存会丢失。接口补齐后可直接替换本模块。
+ * 单条消息删除已统一取消；旧版本存下的 hidden 列表直接忽略，消息恢复可见。
  */
 
 type LocalMessageState = {
   reactions: Record<string, string[]>;
-  hidden: string[];
 };
 
-const EMPTY: LocalMessageState = { reactions: {}, hidden: [] };
+const EMPTY: LocalMessageState = { reactions: {} };
 const EVENT = "kai:local-message-state";
 const keyOf = (threadId: string) => `kai:assistant-message-local:${threadId}`;
 
@@ -31,12 +31,8 @@ function read(threadId: string): LocalMessageState {
         }
       }
     }
-    return {
-      reactions,
-      hidden: Array.isArray(record.hidden)
-        ? record.hidden.filter((item): item is string => typeof item === "string")
-        : [],
-    };
+    // 旧版记录里的 hidden 不再读取：被本机隐藏的消息统一恢复可见。
+    return { reactions };
   } catch {
     return EMPTY;
   }
@@ -65,13 +61,6 @@ export function toggleLocalReaction(threadId: string, messageId: string, emoji: 
   });
 }
 
-export function hideLocalMessage(threadId: string, messageId: string) {
-  if (!threadId) return;
-  const current = read(threadId);
-  if (current.hidden.includes(messageId)) return;
-  write(threadId, { ...current, hidden: [...current.hidden, messageId] });
-}
-
 export function useLocalMessageState(threadId: string | undefined, messageId: string) {
   const [state, setState] = useState<LocalMessageState>(EMPTY);
 
@@ -92,16 +81,12 @@ export function useLocalMessageState(threadId: string | undefined, messageId: st
   if (!threadId) {
     return {
       reactions: [] as string[],
-      hidden: false,
       toggleReaction: (_emoji: string) => undefined,
-      hide: () => undefined,
     };
   }
 
   return {
     reactions: state.reactions[messageId] ?? [],
-    hidden: state.hidden.includes(messageId),
     toggleReaction: (emoji: string) => toggleLocalReaction(threadId, messageId, emoji),
-    hide: () => hideLocalMessage(threadId, messageId),
   };
 }
