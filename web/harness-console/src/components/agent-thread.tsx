@@ -1574,6 +1574,35 @@ export function isIntermediateAssistantTextPart(
 // must update props, not unmount Markdown (which also resets expanded blocks).
 function HiddenAssistantText() { return null; }
 
+/**
+ * 单助理逐气泡答复的操作条：表情按气泡自身的稳定 ID 存在本机，
+ * 与普通回答共用同一份状态规则，不会把表情串到别的气泡。
+ */
+export function ChatReplyActions({
+  threadId,
+  messageId,
+  text,
+  children,
+}: {
+  threadId: string | undefined;
+  messageId: string;
+  text: string;
+  /** 额外的气泡操作（引用按钮）由调用方提供，跟随该气泡的消息上下文。 */
+  children?: React.ReactNode;
+}) {
+  const localMessage = useLocalMessageState(threadId, messageId);
+  return (
+    <MessageActions
+      reactions={localMessage.reactions}
+      onReact={localMessage.toggleReaction}
+      copyText={text}
+      className="assistant-shared-actions"
+    >
+      {children}
+    </MessageActions>
+  );
+}
+
 export function AssistantResponse({ text, streaming }: { text: string; streaming: boolean }) {
   const response = useRef<HTMLDivElement>(null);
   useResponseMotion(response, Boolean(text));
@@ -1910,7 +1939,6 @@ export function HarnessAssistantMessage() {
   const actionBusy = ["running", "queued", "waiting_approval"].includes(runView?.phase ?? "");
   // 助理层的表情与删除目前没有服务端接口，按线程持久化在本机；群聊仍走服务端。
   const localMessage = useLocalMessageState(draftScope?.threadId, messageId);
-  if (localMessage.hidden) return null;
   // 历史/重试偶尔把同一条回答写成相邻两条 assistant；只保留第一条。
   if (sourceNotice?.direction === "sent") {
     if (!assistantSurface) return null;
@@ -1929,9 +1957,6 @@ export function HarnessAssistantMessage() {
             reactions={localMessage.reactions}
             onReact={localMessage.toggleReaction}
             copyText={actionText}
-            canDelete
-            onDelete={localMessage.hide}
-            deleteTitle="删除这条回答"
             className="assistant-shared-actions"
           >
             <MessageReplyButton className="assistant-message-copy" label="回复这条回答"
@@ -1983,12 +2008,9 @@ export function HarnessAssistantMessage() {
           <AssistantResponse text={reply.text} streaming={reply.streaming} />
           <div className="assistant-message-controls">
             <AssistantActionBar.Root className="assistant-feedback-actions" hideWhenRunning>
-              <MessageActions
-                copyText={reply.text}
-                className="assistant-shared-actions"
-              >
+              <ChatReplyActions threadId={draftScope?.threadId} messageId={reply.id} text={reply.text}>
                 <MessageReplyButton className="assistant-message-copy" label="回复这条回答" excerptOverride={reply.text} />
-              </MessageActions>
+              </ChatReplyActions>
             </AssistantActionBar.Root>
           </div>
         </div>
@@ -2128,7 +2150,6 @@ function useMessageEditor() {
 function HarnessUserMessage() {
   const redact = useConversationRedactor();
   const assistantSurface = useAssistantSurface();
-  const draftScope = useContext(ComposerDraftContext);
   const message = useAuiState((state) => state.message);
   const isLastMessage = useAuiState((state) => state.message.isLast);
   const threadRunning = useAuiState((state) => state.thread.isRunning);
@@ -2183,18 +2204,11 @@ function HarnessUserMessage() {
       ? activity
       : undefined;
 
-  const localMessage = useLocalMessageState(draftScope?.threadId, message.id);
-  if (localMessage.hidden) return null;
   const messageContent = <SentUserContent key={message.id} text={sensitive ? displayText : undefined} />;
   const messageActions = assistantSurface ? (
     <ActionBarPrimitive.Root className="harness-user-action-bar" autohide="never">
       <MessageActions
-        reactions={localMessage.reactions}
-        onReact={localMessage.toggleReaction}
         copyText={displayText}
-        canDelete
-        onDelete={localMessage.hide}
-        deleteTitle="删除这条消息"
         className="assistant-shared-actions"
       >
         <MessageReplyButton label="回复消息" />

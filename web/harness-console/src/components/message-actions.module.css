@@ -85,9 +85,6 @@
   color: var(--codex-muted, #a3a3a3);
 }
 
-.actionDanger { color: var(--codex-danger, #e05a50); }
-.confirmText { font-size: 10px; line-height: 1; white-space: nowrap; }
-
 .reactionPicker {
   position: absolute;
   bottom: calc(100% + 4px);

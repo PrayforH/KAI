@@ -167,6 +167,19 @@ describe("AssistantGroupMessage", () => {
     expect(onReact).toHaveBeenCalledWith(expect.objectContaining({ messageId: "m1" }), GROUP_REACTIONS[0]);
   });
 
+  it("does not offer reactions on my own sent message", async () => {
+    await render(
+      <AssistantGroupMessage
+        message={message({ author: "user", authorName: "我", reactions: ["👍"] })}
+        tone="#6b746e"
+        onReact={vi.fn()}
+        onReply={vi.fn()}
+      />,
+    );
+    expect(host.querySelector('[aria-label="给这条消息加表情"]')).toBeNull();
+    expect(host.querySelector('[aria-pressed="true"]')).toBeNull();
+  });
+
   it("cancels a selected reaction chip", async () => {
     const onReact = vi.fn();
     await render(
@@ -183,37 +196,19 @@ describe("AssistantGroupMessage", () => {
     expect(onReact).toHaveBeenCalledWith(expect.anything(), "👍");
   });
 
-  it("deletes only after a second confirmation", async () => {
-    const onDelete = vi.fn();
+  it("never renders a single-message delete action", async () => {
     await render(
       <AssistantGroupMessage
         message={message({ author: "user", authorName: "我" })}
         tone="#6b746e"
         onReact={vi.fn()}
         onReply={vi.fn()}
-        canDelete
-        onDelete={onDelete}
-      />,
-    );
-    const remove = host.querySelector<HTMLButtonElement>('[aria-label="删除这条消息"]')!;
-    await act(async () => remove.click());
-    expect(onDelete).not.toHaveBeenCalled();
-    const confirm = host.querySelector<HTMLButtonElement>('[aria-label="确认删除这条消息"]')!;
-    expect(confirm.textContent).toContain("确认");
-    await act(async () => confirm.click());
-    expect(onDelete).toHaveBeenCalledWith(expect.objectContaining({ messageId: "m1" }));
-  });
-
-  it("hides the delete action when the message is not deletable", async () => {
-    await render(
-      <AssistantGroupMessage
-        message={message()}
-        tone="#38d591"
-        onReact={vi.fn()}
-        onReply={vi.fn()}
       />,
     );
     expect(host.querySelector('[aria-label="删除这条消息"]')).toBeNull();
+    expect(host.querySelector('[aria-label="确认删除这条消息"]')).toBeNull();
+    // 引用与复制仍在，只有删除被统一取消。
+    expect(host.querySelector('[aria-label="复制这条消息"]')).not.toBeNull();
   });
 
   it("renders attachments as downloadable chips", async () => {
