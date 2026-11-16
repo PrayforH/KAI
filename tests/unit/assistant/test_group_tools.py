@@ -145,7 +145,10 @@ class FakeEvents:
 
 
 async def _overlay(
-    assistant: FakeAssistant, member_id: str = GROUP_PRIMARY_MEMBER_ID
+    assistant: FakeAssistant,
+    member_id: str = GROUP_PRIMARY_MEMBER_ID,
+    *,
+    context_member_id: str | None = None,
 ) -> tuple[dict[str, Any], FakeEvents]:
     run = Run(
         run_id="group-gmsg_1",
@@ -176,6 +179,8 @@ async def _overlay(
         group_id="group_1",
         member_id=member_id,
     )
+    if context_member_id is not None:
+        run.input["group_context"]["memberId"] = context_member_id
     return {tool.name: tool.handler for tool in overlay.tools}, events
 
 
@@ -256,7 +261,7 @@ async def test_primary_sets_reply_as():
 @pytest.mark.asyncio
 async def test_sub_assistant_is_denied_explicitly_and_changes_nothing():
     assistant = FakeAssistant(_group())
-    tools, events = await _overlay(assistant, member_id="specialist_pm")
+    tools, events = await _overlay(assistant, context_member_id="specialist_pm")
 
     result = await tools["assistant_group_remove_member"]({"member": "项目助理"})
 
@@ -266,7 +271,7 @@ async def test_sub_assistant_is_denied_explicitly_and_changes_nothing():
     assert "主助理" in payload["error"]
     assert assistant.calls == []
     assert events.appended[-1]["payload"]["status"] == "failed"
-    assert events.appended[-1]["payload"]["actorMemberId"] == "specialist_pm"
+    assert events.appended[-1]["payload"]["actorMemberId"] == "primary"
 
 
 @pytest.mark.asyncio
@@ -397,7 +402,10 @@ ADMIN_CASES = [
 async def test_each_admin_tool_denies_specialist_with_403_and_no_writes(tool, arguments):
     service, repo, _ = _service()
     repo.seed_group()
-    tools, events = await admin_overlay(service, *admin_identity(member_id="specialist_pm"))
+    run, session = admin_identity()
+    tools, events = await admin_overlay(service, run, session)
+    # A cached primary handler must still reject a now-specialist run context.
+    run.input["group_context"]["memberId"] = "specialist_pm"
     before = dict(repo.groups)
     result = await tools[tool](arguments)
     assert result["isError"] is True
@@ -628,3 +636,41 @@ async def test_each_admin_tool_denies_absent_primary(tool, arguments):
     assert result["statusCode"] == 403
     assert "group_a" in repo.groups
     assert len(repo.groups) == 1
+
+
+@pytest.mark.asyncio
+async def test_specialist_overlay_exposes_no_group_tools_but_explains_primary_boundary():
+    service, _, _ = _service()
+    run, session = admin_identity(member_id="specialist_pm")
+    overlay = await assistant_group_management_overlay(
+        service,
+        FakeEvents(),
+        run,
+        session,
+        group_id="group_a",
+        member_id="specialist_pm",
+    )
+    assert overlay.tools == ()
+    assert "请让本群主助理处理" in overlay.instructions
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("tool", "arguments"), ADMIN_CASES)
+async def test_service_denies_direct_specialist_admin_calls_even_without_tool_discovery(
+    tool, arguments
+):
+    service, repo, _ = _service()
+    repo.seed_group()
+    run, session = admin_identity(member_id="specialist_pm")
+    with pytest.raises(PermissionDeniedError):
+        if tool == "assistant_group_create":
+            await service.admin_create_assistant_group(run, session, name=arguments["name"])
+        elif tool == "assistant_group_update":
+            await service.admin_update_assistant_group(run, session, changes=arguments)
+        else:
+            await service.admin_dissolve_assistant_group(
+                run,
+                session,
+                confirm_name=arguments["confirmName"],
+            )
+    assert repo.groups["group_a"].name == "项目群"

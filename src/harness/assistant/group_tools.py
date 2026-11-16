@@ -1,9 +1,7 @@
 """Member-management tools for the group coordinator (the primary seat).
 
-Every group-member run receives these tools, but the handler is the authority
-check: only the primary seat may change the roster. A sub-assistant that calls
-one gets an explicit permission error instead of an unknown-tool failure, which
-keeps the failure mode readable for the model and the person.
+Only primary-seat runs receive these tools. Handler and service guards remain
+the authority check if a stale or forged call bypasses tool discovery.
 
 The group and seat identity come from a server-authored run input
 (`group_context`); clients cannot claim a seat through forwarded props.
@@ -84,6 +82,10 @@ async def assistant_group_management_overlay(
     """Tools scoped to one group seat; the primary seat is the only writer."""
 
     tenant_id, user_id = run.tenant_id, session.user_id
+    if member_id != GROUP_PRIMARY_MEMBER_ID:
+        return PlatformToolOverlay(
+            instructions="你不是本群主助理，不能管理群聊或成员；请让本群主助理处理。",
+        )
 
     async def _audit(
         operation: str,
