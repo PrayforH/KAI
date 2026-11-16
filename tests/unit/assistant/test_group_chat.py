@@ -380,7 +380,7 @@ async def test_configured_responder_handles_plain_messages() -> None:
 
 
 @pytest.mark.asyncio
-async def test_removed_responder_is_not_rerouted_to_primary() -> None:
+async def test_removed_responder_falls_back_to_primary_with_group_context() -> None:
     specialist = _specialist("specialist_a", "资料 Bot")
     service, _, agui = _service([specialist])
     group = await service.create_assistant_group("t", "u", name="项目群")
@@ -397,9 +397,52 @@ async def test_removed_responder_is_not_rerouted_to_primary() -> None:
     result = await service.post_assistant_group_message(
         "t", "u", group.group_id, text="继续"
     )
+    assert agui.create_run_with_result.await_count == 1
+    assert not result.notices
+    assert len(result.replies) == 1
+    assert result.replies[0].author is AssistantGroupMessageAuthor.PRIMARY
+    call = agui.create_run_with_result.await_args.kwargs
+    assert call["request"].thread_id == group_thread_id(group.group_id, "primary")
+    assert call["group_context"] == {
+        "groupId": group.group_id,
+        "memberId": "primary",
+        "triggerMessageId": result.message.message_id,
+        "triggerAuthor": "user",
+    }
+
+
+@pytest.mark.asyncio
+async def test_legacy_dangling_responder_falls_back_without_rewriting_group() -> None:
+    service, repo, agui = _service()
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    repo.groups[group.group_id] = group.model_copy(update={"reply_as": "legacy_missing"})
+    result = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="改个群名，新技术预研"
+    )
+    assert len(result.replies) == 1
+    assert result.replies[0].author is AssistantGroupMessageAuthor.PRIMARY
+    assert not result.notices
+    assert agui.create_run_with_result.await_count == 1
+    assert repo.groups[group.group_id].reply_as == "legacy_missing"
+
+
+@pytest.mark.asyncio
+async def test_missing_responder_and_removed_primary_do_not_wake_another_specialist() -> None:
+    specialist = _specialist("specialist_b", "资料 Bot")
+    service, repo, agui = _service([specialist])
+    group = await service.create_assistant_group("t", "u", name="项目群")
+    await service.add_assistant_group_member(
+        "t", "u", group.group_id, specialist_id=specialist.specialist_id
+    )
+    repo.groups[group.group_id] = group.model_copy(update={"reply_as": "legacy_missing"})
+    await service.remove_assistant_group_member("t", "u", group.group_id, member_id="primary")
+    result = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="继续"
+    )
     assert agui.create_run_with_result.await_count == 0
-    assert any("不会自动改派" in notice for notice in result.notices)
+    assert len(result.replies) == 1
     assert result.replies[0].author is AssistantGroupMessageAuthor.SYSTEM
+    assert any("主助理已被移出" in notice for notice in result.notices)
 
 
 @pytest.mark.asyncio

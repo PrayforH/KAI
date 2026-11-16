@@ -3288,22 +3288,21 @@ class AssistantService:
                 )
             )
         else:
-            # P1：未 @ 的接话人可配置，默认主助理。接话人被移出后不自动改派。
-            responder: AssistantGroupMember | None
-            missing_notice: str | None = None
+            # 未 @ 默认主助理；失效的历史接话配置不能阻断本群主助理接话。
+            responder = primary_member
             if group.reply_as not in (None, GROUP_PRIMARY_MEMBER_ID):
-                responder = active_roster.get(group.reply_as)
-                if responder is None:
-                    missing_notice = (
-                        "配置的接话人已不在本群：这条消息不会自动改派给其他成员。"
+                configured_responder = active_roster.get(group.reply_as)
+                if configured_responder is not None:
+                    responder = configured_responder
+                else:
+                    logger.info(
+                        "group responder unavailable group=%s configured=%s fallback=%s",
+                        group_id,
+                        group.reply_as,
+                        GROUP_PRIMARY_MEMBER_ID if primary_member is not None else None,
                     )
-            else:
-                responder = primary_member
-                if responder is None:
-                    missing_notice = (
-                        "主助理已被移出本群：未 @ 的消息不会改派给其他成员。"
-                    )
-            if missing_notice is not None:
+            if responder is None:
+                missing_notice = "主助理已被移出本群：未 @ 的消息不会改派给其他成员。"
                 notices.append(missing_notice)
                 replies.append(
                     await self._append_group_notice(
