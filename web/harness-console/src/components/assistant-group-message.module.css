@@ -37,11 +37,15 @@
   max-width: min(100%, 44rem);
 }
 
+/* 占满整行，给气泡的百分比 max-width 一个确定的参照物：
+   否则 78% 会相对气泡自身的 max-content 结算，任何消息都会被压窄折行。
+   视觉宽度仍由下方 .userBubble 的 max-width 决定。 */
 .userColumn {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 4px;
+  width: 100%;
   min-width: 0;
   max-width: 100%;
 }
@@ -119,7 +123,8 @@
   font-size: 12px;
   line-height: 1.5;
 }
-.userColumn .quoted { align-self: stretch; }
+/* 引用条与气泡同宽上限，靠右；不再 stretch 横贯整行。 */
+.userColumn .quoted { align-self: flex-end; max-width: min(640px, 78%); }
 .quotedAuthor {
   flex: none;
   max-width: 40%;
@@ -273,7 +278,7 @@
 /* 缺少下载链接时展示为不可点的文件块，不留空链接或 # 链接。 */
 .attachmentStatic { cursor: default; }
 .attachmentStatic:hover { border-color: var(--codex-line, #343434); }
-.userColumn .attachments { justify-content: flex-end; }
+.userColumn .attachments { justify-content: flex-end; max-width: min(640px, 78%); }
 
 .reactionPicker {
   position: absolute;

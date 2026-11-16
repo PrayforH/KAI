@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -279,5 +281,30 @@ describe("AssistantGroupMessage", () => {
       host.querySelector<HTMLButtonElement>('[aria-label="引用这条消息"]')!.click(),
     );
     expect(onReply).toHaveBeenCalledWith(expect.objectContaining({ messageId: "m1" }));
+  });
+
+  it("gives the user column a definite width so short messages stay on one line", () => {
+    // jsdom 不做布局：守住「百分比 max-width 有确定参照物」的前提。
+    // 列必须是满宽的 flex item，气泡的 78% 才会相对整行结算，而不是相对自身 max-content。
+    // 真实渲染宽度见 diag/bubble-wrap-20261116/render-measure-*.log。
+    const css = readFileSync(
+      resolve(process.cwd(), "src/components/assistant-group-message.module.css"),
+      "utf8",
+    );
+    const columnBlock = css.match(/\.userColumn\s*\{([^}]*)\}/)?.[1] ?? "";
+    const bubbleBlock = css.match(/\.userBubble\s*\{([^}]*)\}/)?.[1] ?? "";
+    const quotedBlock = css.match(/\.userColumn \.quoted\s*\{([^}]*)\}/)?.[1] ?? "";
+    const attachmentsBlock = css.match(/\.userColumn \.attachments\s*\{([^}]*)\}/)?.[1] ?? "";
+
+    expect(columnBlock).toContain("width: 100%");
+    expect(columnBlock).toContain("align-items: flex-end");
+    // 气泡本身仍按内容收缩，只封顶，不铺满。
+    expect(bubbleBlock).toContain("width: max-content");
+    expect(bubbleBlock).toContain("max-width: min(640px, 78%)");
+    // 引用条和附件跟着气泡的宽度上限，不能横贯整行。
+    expect(quotedBlock).toContain("align-self: flex-end");
+    expect(quotedBlock).not.toContain("align-self: stretch");
+    expect(quotedBlock).toContain("max-width: min(640px, 78%)");
+    expect(attachmentsBlock).toContain("max-width: min(640px, 78%)");
   });
 });
