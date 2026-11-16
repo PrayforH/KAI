@@ -92,8 +92,8 @@ def _group_name(value: str) -> str:
     text = re.sub(r"\s+", " ", value or "").strip()
     if not text:
         raise ConflictError("群聊名称不能为空")
-    if len(text) > 40:
-        raise ConflictError("群聊名称不能超过 40 个字")
+    if len(text) > 80:
+        raise ConflictError("群聊名称不能超过 80 个字")
     if any(unicodedata.category(char).startswith("C") for char in text):
         raise ConflictError("群聊名称不能包含换行或控制字符")
     return text
@@ -216,6 +216,8 @@ from harness.assistant.models import (
     AssistantGroupMessageReference,
     AssistantInboxItem,
     DelegationMode,
+    GroupMemberKind,
+    GroupPostResult,
     HandoverStatus,
     ManagedTask,
     ManagedTaskRole,
@@ -227,8 +229,6 @@ from harness.assistant.models import (
     ObjectiveExecutionStatus,
     ObjectiveSchedule,
     ObjectiveStatus,
-    GroupMemberKind,
-    GroupPostResult,
     Specialist,
     SpecialistActivity,
     SpecialistConversation,
@@ -255,7 +255,7 @@ from harness.core.errors import (
     PermissionDeniedError,
 )
 from harness.core.events import RunEvent
-from harness.core.models import Run, RunStatus
+from harness.core.models import Run, RunStatus, Session
 from harness.core.ports import EventRepository
 from harness.projects.service import ProjectService
 from harness.sharing.service import TeamSpaceService
@@ -2709,18 +2709,104 @@ class AssistantService:
         )
         await self.repository.delete_group(tenant_id, user_id, group_id)
 
+    async def _require_group_tool_primary(
+        self, run: Run, session: Session, *, allow_direct: bool = False,
+        dissolving: bool = False,
+    ) -> AssistantGroup | None:
+        """Tool authority comes only from durable session / server-authored Run input.
+
+        HTTP owner checks stay separate. Neither tool arguments nor forwarded
+        client props can select a group, seat, trigger author or owning user.
+        """
+        if (run.tenant_id != session.tenant_id or run.session_id != session.session_id
+                or not session.user_id or run.business_project_id is not None):
+            raise PermissionDeniedError("群管理身份不匹配。")
+        context = run.input.get("group_context")
+        if context is None and allow_direct:
+            if (run.input.get("conversation_surface") != "assistant"
+                    or run.input.get("assistant_dispatch")):
+                raise PermissionDeniedError("只有主助理对话可以创建群聊。")
+            record = await self._agui.get_thread_record_for_session(
+                tenant_id=session.tenant_id, user_id=session.user_id,
+                session_id=session.session_id,
+            )
+            if record.thread_id != PERSONAL_ASSISTANT_THREAD:
+                raise PermissionDeniedError("只有主助理对话可以创建群聊。")
+            return None
+        if not isinstance(context, dict) or context.get("memberId") != GROUP_PRIMARY_MEMBER_ID:
+            raise PermissionDeniedError("只有本群主助理可以管理群聊；子助理无权操作。")
+        if (context.get("triggerAuthor") != AssistantGroupMessageAuthor.USER.value
+                or not isinstance(context.get("triggerMessageId"), str)
+                or not context["triggerMessageId"]):
+            raise PermissionDeniedError(
+                "解散群需要你本人提出" if dissolving else "群管理需要你本人提出"
+            )
+        group_id = context.get("groupId")
+        if not isinstance(group_id, str) or not group_id:
+            raise PermissionDeniedError("缺少本群身份。")
+        group = await self.repository.get_group(session.tenant_id, session.user_id, group_id)
+        if not any(
+            item.member_id == GROUP_PRIMARY_MEMBER_ID
+            and item.kind is GroupMemberKind.PRIMARY and item.status == "active"
+            for item in group.members
+        ):
+            raise PermissionDeniedError("主助理当前不在本群，无法管理群聊。")
+        return group
+
+    async def admin_create_assistant_group(
+        self, run: Run, session: Session, *, name: str,
+    ) -> AssistantGroup:
+        await self._require_group_tool_primary(run, session, allow_direct=True)
+        if not isinstance(name, str) or not 1 <= len(name) <= 80:
+            raise InvalidRequestError("群聊名称须为 1..80 字。")
+        return await self.create_assistant_group(session.tenant_id, session.user_id, name=name)
+
+    async def admin_update_assistant_group(
+        self, run: Run, session: Session, *, changes: dict[str, object],
+    ) -> tuple[AssistantGroup, str]:
+        group = await self._require_group_tool_primary(run, session)
+        assert group is not None
+        if changes.keys() - {"name", "description"}:
+            raise InvalidRequestError("只能修改本群名称或描述。")
+        fields: dict[str, str | None] = {}
+        if "name" in changes:
+            name = changes["name"]
+            if not isinstance(name, str) or not 1 <= len(name) <= 80:
+                raise InvalidRequestError("群聊名称须为 1..80 字。")
+            fields["name"] = _group_name(name)
+        if "description" in changes:
+            description = changes["description"]
+            if description is not None and not isinstance(description, str):
+                raise InvalidRequestError("group description must be a string")
+            if isinstance(description, str) and len(description) > 500:
+                raise InvalidRequestError("群描述不能超过 500 个字")
+            fields["description"] = group_description(description)
+        if not fields:
+            return _group_view(group, session.user_id), group.name
+        updated = await self.repository.update_group(
+            session.tenant_id, session.user_id, group.group_id, fields=fields,
+        )
+        return _group_view(updated, session.user_id), group.name
+
+    async def admin_dissolve_assistant_group(
+        self, run: Run, session: Session, *, confirm_name: str,
+    ) -> AssistantGroup:
+        group = await self._require_group_tool_primary(run, session, dissolving=True)
+        assert group is not None
+        if (not isinstance(confirm_name, str)
+                or unicodedata.normalize("NFKC", confirm_name)
+                != unicodedata.normalize("NFKC", group.name)):
+            raise ConflictError(f"群名不一致，未解散；当前群名是『{group.name}』")
+        await self.repository.delete_group(
+            session.tenant_id, session.user_id, group.group_id, expected_name=group.name,
+        )
+        return group
+
     async def delete_assistant_group_message(
         self, tenant_id: str, user_id: str, group_id: str, message_id: str
     ) -> None:
-        """本人发的消息或群创建者可删；运行中的回复先等它落定。"""
-        await self.get_assistant_group(tenant_id, user_id, group_id)
-        await self.repository.delete_group_message(
-            tenant_id,
-            user_id,
-            group_id,
-            message_id,
-            actor_user_id=user_id,
-        )
+        """Compatibility tombstone: single-message deletion is no longer supported."""
+        raise PermissionDeniedError("已取消单条消息删除，消息会保留。")
 
     async def _require_group_owner(
         self, tenant_id: str, user_id: str, group_id: str, message: str
@@ -3392,7 +3478,12 @@ class AssistantService:
             bot_specialist_id=bot_specialist_id,
             # Server-authored seat identity for member-management tools. Clients
             # never supply this, so a sub-assistant cannot claim the primary seat.
-            group_context={"groupId": group.group_id, "memberId": member.member_id},
+            group_context={
+                "groupId": group.group_id,
+                "memberId": member.member_id,
+                "triggerMessageId": user_message.message_id,
+                "triggerAuthor": user_message.author.value,
+            },
             request=RunAgentInput(
                 thread_id=thread_id,
                 run_id=request_run_id,

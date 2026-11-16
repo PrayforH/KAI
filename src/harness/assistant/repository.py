@@ -11,7 +11,7 @@ from typing import cast as type_cast
 from urllib.parse import urlencode
 from uuid import uuid4
 
-from sqlalchemy import DateTime, Select, and_, cast, delete, func, literal, or_, select, update
+from sqlalchemy import DateTime, Select, and_, cast, delete, func, literal, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,7 +64,7 @@ from harness.assistant.storage import (
     SpecialistRow,
     VaultItemRow,
 )
-from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
+from harness.core.errors import ConflictError, NotFoundError
 from harness.core.events import RunEvent
 from harness.core.models import Run, RunStatus
 from harness.scheduling import TimingKind
@@ -2745,13 +2745,15 @@ class PostgresAssistantRepository:
             return await self._group_with_members(session, group)
 
     async def delete_group(
-        self, tenant_id: str, user_id: str, group_id: str
+        self, tenant_id: str, user_id: str, group_id: str, *, expected_name: str | None = None,
     ) -> None:
         """解散群：成员/消息/表情/资料库文档与知识库绑定一起清。"""
         async with self._context(write=True) as session:
-            await self._require_group(
+            group = await self._require_group(
                 session, tenant_id, user_id, group_id, lock=True
             )
+            if expected_name is not None and group.name != expected_name:
+                raise ConflictError(f"群名不一致，未解散；当前群名是『{group.name}』")
             await session.execute(
                 delete(AssistantGroupReactionRow).where(
                     AssistantGroupReactionRow.group_id == group_id
@@ -2784,51 +2786,6 @@ class PostgresAssistantRepository:
                     AssistantGroupRow.group_id == group_id,
                 )
             )
-
-    async def delete_group_message(
-        self,
-        tenant_id: str,
-        user_id: str,
-        group_id: str,
-        message_id: str,
-        *,
-        actor_user_id: str,
-    ) -> None:
-        """硬删一条消息；引用它的消息清掉引用指针，读时自然省略 replyTo。"""
-        async with self._context(write=True) as session:
-            group_row = await self._require_group(
-                session, tenant_id, user_id, group_id, lock=True
-            )
-            row = await session.scalar(
-                select(AssistantGroupMessageRow).where(
-                    AssistantGroupMessageRow.group_id == group_id,
-                    AssistantGroupMessageRow.tenant_id == tenant_id,
-                    AssistantGroupMessageRow.user_id == user_id,
-                    AssistantGroupMessageRow.message_id == message_id,
-                )
-            )
-            if row is None:
-                raise NotFoundError("message not found")
-            if row.status == "running":
-                raise ConflictError("message is running")
-            is_author = row.author == "user" and row.user_id == actor_user_id
-            if not is_author and group_row.user_id != actor_user_id:
-                raise PermissionDeniedError("not allowed to delete this message")
-            await session.execute(
-                delete(AssistantGroupReactionRow).where(
-                    AssistantGroupReactionRow.group_id == group_id,
-                    AssistantGroupReactionRow.message_id == message_id,
-                )
-            )
-            await session.execute(
-                update(AssistantGroupMessageRow)
-                .where(
-                    AssistantGroupMessageRow.group_id == group_id,
-                    AssistantGroupMessageRow.reply_to_message_id == message_id,
-                )
-                .values(reply_to_message_id=None)
-            )
-            await session.delete(row)
 
     # --- 群资料库：文件与既有知识库的绑定 --------------------------------
 

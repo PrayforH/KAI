@@ -1000,19 +1000,6 @@ async def delete_assistant_group(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.delete(
-    "/groups/{group_id}/messages/{message_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-)
-async def delete_assistant_group_message(
-    group_id: str, message_id: str, identity: Writer, assistant: Service
-) -> Response:
-    await assistant.delete_assistant_group_message(
-        identity.tenant_id, identity.user_id, group_id, message_id
-    )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
 @router.get("/groups/{group_id}/library")
 async def get_assistant_group_library(
     group_id: str, identity: Reader, assistant: Service
