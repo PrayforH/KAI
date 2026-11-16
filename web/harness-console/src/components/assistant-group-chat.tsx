@@ -41,9 +41,36 @@ const PRIMARY_MEMBER_ID = "primary";
 const STAMP_GAP_MS = 10 * 60 * 1000;
 /** 引用条里展示的文本长度；服务端快照本身已截断到 200 字。 */
 const QUOTE_PREVIEW_CHARS = 120;
+/** 消息轮询间隔；同一轮里顺带确认群元数据，助理在服务端改名/解散后能跟上。 */
+const GROUP_POLL_MS = 2500;
 
 function newClientId(): string {
   return `web-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** assistantRequest 对 404 的固定文案；只有它算「群可能不存在」，5xx/网络错误不算。 */
+function isNotFoundError(reason: unknown): boolean {
+  return reason instanceof Error && /（404）|\(404\)/.test(reason.message);
+}
+
+/** 群元数据指纹：决定标题、成员簇和左侧栏要不要跟着刷新，不含未读数。 */
+function groupMetadataKey(list: AssistantGroup[]): string {
+  return JSON.stringify(
+    list.map((group) => [
+      group.groupId,
+      group.name,
+      group.description ?? null,
+      group.creatorUserId,
+      group.primaryPresent,
+      group.replyAs,
+      group.members.map((member) => [
+        member.memberId,
+        member.kind,
+        member.name,
+        member.status,
+      ]),
+    ]),
+  );
 }
 
 type AssistantGroupChatProps = {
@@ -96,6 +123,10 @@ export function AssistantGroupChat({
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** 已确认群不存在：停止轮询、移除输入框，并通知主界面离场。 */
+  const [dissolved, setDissolved] = useState(false);
+  /** 群列表暂时读不到时，区分「未知」与「不存在」，不误导成已解散。 */
+  const [metadataError, setMetadataError] = useState<string | null>(null);
   /** 进群时已有的未读条数，用来决定「新」分割线放在哪。 */
   const [unreadSeed, setUnreadSeed] = useState<number | null>(null);
   const [dividerIndex, setDividerIndex] = useState<number | null>(null);
@@ -109,6 +140,17 @@ export function AssistantGroupChat({
   const dividerPlaced = useRef(false);
   const lastMessageCount = useRef(0);
   const atBottom = useRef(true);
+  /** 解散只处理一次：轮询与手动解散可能同时发现群已不存在。 */
+  const dissolvedRef = useRef(false);
+  /** 最近一次群元数据指纹，用来决定要不要刷新页面和通知左栏。 */
+  const groupsKeyRef = useRef("");
+  const unreadSeeded = useRef(false);
+  /** 轮询里读最新的回调，避免页面每次渲染都重启定时器。 */
+  const callbacksRef = useRef({ onGroupName, onGroupMembers, onDissolved });
+
+  useEffect(() => {
+    callbacksRef.current = { onGroupName, onGroupMembers, onDissolved };
+  }, [onGroupName, onGroupMembers, onDissolved]);
 
   const selected = useMemo(
     () => groups.find((group) => group.groupId === groupId) ?? null,
@@ -126,6 +168,38 @@ export function AssistantGroupChat({
     [selected],
   );
   const isCreator = Boolean(userId && selected?.creatorUserId === userId);
+
+  /** 吸收服务端的群列表；元数据有变化才重绘并通知左侧栏，避免每轮轮询抖动。 */
+  const applyGroupList = useCallback((list: AssistantGroup[]) => {
+    const key = groupMetadataKey(list);
+    const previous = groupsKeyRef.current;
+    if (previous === key) return;
+    groupsKeyRef.current = key;
+    setGroups(list);
+    if (previous) window.dispatchEvent(new CustomEvent("kai:groups-changed"));
+  }, []);
+
+  /** 服务端确认群已不存在：停轮询、清活动群与输入框，再交给主界面离场。 */
+  const markDissolved = useCallback(() => {
+    if (dissolvedRef.current) return;
+    dissolvedRef.current = true;
+    setDissolved(true);
+    setGroups([]);
+    setMessages([]);
+    setMessagesReady(false);
+    setError(null);
+    setMetadataError(null);
+    setNotice(null);
+    setQuoted(null);
+    setBusy(false);
+    setSettingsOpen(false);
+    setSideOpen(false);
+    window.dispatchEvent(new CustomEvent("kai:groups-changed"));
+    const callbacks = callbacksRef.current;
+    callbacks.onGroupName?.(null);
+    callbacks.onGroupMembers?.([]);
+    callbacks.onDissolved?.();
+  }, []);
 
   // 点面板外面或按 Esc 收起群设置。
   useEffect(() => {
@@ -197,88 +271,150 @@ export function AssistantGroupChat({
   }, [sideOpen, sideTab, refreshLibrary]);
 
   const refreshGroups = useCallback(async () => {
-    const list = await listAssistantGroups();
-    setGroups(list);
-  }, []);
+    applyGroupList(await listAssistantGroups());
+  }, [applyGroupList]);
 
   const refreshMessages = useCallback(async (target: string) => {
     setMessages(await listAssistantGroupMessages(target));
   }, []);
 
+  // 子助理目录进群加载一次；群列表交给下面的轮询统一取，进群不重复请求。
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    void (async () => {
-      try {
-        const [groupList, specialistList] = await Promise.all([
-          listAssistantGroups(),
-          assistantRequest<Specialist[]>("specialists").catch(() => [] as Specialist[]),
-        ]);
-        if (cancelled) return;
-        setGroups(groupList);
-        setSpecialists(specialistList);
-        setUnreadSeed(
-          groupList.find((group) => group.groupId === groupId)?.unreadCount ?? 0,
-        );
-        setError(null);
-      } catch (reason) {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : "群聊加载失败");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
+    void assistantRequest<Specialist[]>("specialists")
+      .catch(() => [] as Specialist[])
+      .then((specialistList) => {
+        if (!cancelled) setSpecialists(specialistList);
+      });
     return () => {
       cancelled = true;
     };
   }, [groupId]);
 
+  // 换群时先清掉上一个群的残留，避免旧消息/旧标题短暂盖住新群。
   useEffect(() => {
+    setLoading(true);
+    setMessages([]);
+    setMessagesReady(false);
+    setError(null);
+    setMetadataError(null);
+    lastMessageCount.current = 0;
+    unreadSeeded.current = false;
+    atBottom.current = true;
+  }, [groupId]);
+
+  useEffect(() => {
+    if (dissolved) return undefined;
     let cancelled = false;
-    const load = async () => {
+    // 单次加载未返回前不叠加下一轮；切群/卸载后旧请求的结果一律丢弃。
+    let inFlight = false;
+    // 消息 404 时先暂停消息请求，等同一轮的群列表确认，避免每 2.5 秒重复报错。
+    let missingMessages = false;
+    let first = true;
+
+    const applyMessages = (list: GroupMessage[]) => {
+      setMessages(list);
+      setMessagesReady(true);
+      setError(null);
+      if (
+        !atBottom.current &&
+        lastMessageCount.current > 0 &&
+        list.length > lastMessageCount.current
+      ) {
+        setNewPill((count) => count + (list.length - lastMessageCount.current));
+      }
+      lastMessageCount.current = list.length;
+      const seen = seenCounts.current[groupId];
+      // 首次进入或群里有新消息时清未读；轮询无变化不写库。
+      if (seen === undefined || list.length > seen) {
+        seenCounts.current[groupId] = list.length;
+        void markAssistantGroupRead(groupId)
+          .then(() => {
+            setGroups((current) =>
+              current.map((group) =>
+                group.groupId === groupId ? { ...group, unreadCount: 0 } : group,
+              ),
+            );
+            // 让左侧栏立刻刷新未读徽章，不必等下一次轮询。
+            window.dispatchEvent(new CustomEvent("kai:groups-changed"));
+          })
+          .catch(() => undefined);
+      }
+    };
+
+    const poll = async () => {
+      if (inFlight || dissolvedRef.current) return;
+      inFlight = true;
       try {
-        const list = await listAssistantGroupMessages(groupId);
+        const [groupsResult, messagesResult] = await Promise.allSettled([
+          listAssistantGroups(),
+          missingMessages
+            ? Promise.resolve<GroupMessage[] | null>(null)
+            : listAssistantGroupMessages(groupId),
+        ]);
         if (cancelled) return;
-        setMessages(list);
-        setMessagesReady(true);
-        setError(null);
-        if (
-          !atBottom.current &&
-          lastMessageCount.current > 0 &&
-          list.length > lastMessageCount.current
-        ) {
-          setNewPill((count) => count + (list.length - lastMessageCount.current));
+
+        if (groupsResult.status === "fulfilled") {
+          const groupList = groupsResult.value;
+          if (!groupList.some((group) => group.groupId === groupId)) {
+            // 群列表是权威来源：只有确认不存在才离场；网络/5xx 不走到这里。
+            markDissolved();
+            return;
+          }
+          applyGroupList(groupList);
+          setMetadataError(null);
+          missingMessages = false;
+          if (!unreadSeeded.current) {
+            unreadSeeded.current = true;
+            setUnreadSeed(
+              groupList.find((group) => group.groupId === groupId)?.unreadCount ?? 0,
+            );
+          }
+        } else {
+          // 读不到群列表只是「未知」：保留当前页面继续重试，不说成已解散。
+          setMetadataError("群聊信息暂时无法加载，正在重试…");
         }
-        lastMessageCount.current = list.length;
-        const seen = seenCounts.current[groupId];
-        // 首次进入或群里有新消息时清未读；轮询无变化不写库。
-        if (seen === undefined || list.length > seen) {
-          seenCounts.current[groupId] = list.length;
-          void markAssistantGroupRead(groupId)
-            .then(() => {
-              setGroups((current) =>
-                current.map((group) =>
-                  group.groupId === groupId ? { ...group, unreadCount: 0 } : group,
-                ),
-              );
-              // 让左侧栏立刻刷新未读徽章，不必等下一次轮询。
-              window.dispatchEvent(new CustomEvent("kai:groups-changed"));
-            })
-            .catch(() => undefined);
+
+        if (messagesResult.status === "fulfilled") {
+          if (messagesResult.value) applyMessages(messagesResult.value);
+        } else {
+          setMessagesReady(true);
+          if (isNotFoundError(messagesResult.reason)) {
+            missingMessages = true;
+            // 群列表这轮也没拿到时给一次提示；不在每个 tick 重复 404。
+            if (groupsResult.status !== "fulfilled") {
+              setError((current) => current ?? "消息暂时无法加载，正在重新确认群聊状态…");
+            }
+          } else {
+            setError(
+              messagesResult.reason instanceof Error
+                ? messagesResult.reason.message
+                : "消息加载失败",
+            );
+          }
         }
       } catch (reason) {
+        // allSettled 不会 reject；兜底也绝不在未知错误时判定解散。
         if (!cancelled) {
           setMessagesReady(true);
           setError(reason instanceof Error ? reason.message : "消息加载失败");
         }
+      } finally {
+        inFlight = false;
+        if (first && !cancelled) {
+          first = false;
+          setLoading(false);
+        }
       }
     };
-    void load();
-    const timer = window.setInterval(load, 2500);
+
+    void poll();
+    const timer = window.setInterval(() => void poll(), GROUP_POLL_MS);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [groupId]);
+  }, [groupId, dissolved, applyGroupList, markDissolved]);
 
   useEffect(() => {
     // 用户往上翻历史时不抢滚动位置，只在贴底时跟随新消息。
@@ -449,10 +585,16 @@ export function AssistantGroupChat({
     setError(null);
     try {
       await deleteAssistantGroup(selected.groupId);
+      // 先立标记，轮询同一刻发现群消失时不会再触发一次离场。
+      dissolvedRef.current = true;
+      setDissolved(true);
+      setGroups([]);
+      setQuoted(null);
       window.dispatchEvent(new CustomEvent("kai:groups-changed"));
       setSettingsOpen(false);
       setSideOpen(false);
       onGroupName?.(null);
+      onGroupMembers?.([]);
       onDissolved?.();
       return true;
     } catch (reason) {
@@ -555,7 +697,7 @@ export function AssistantGroupChat({
     });
   }, [messages]);
 
-  if (!selected) {
+  if (dissolved || !selected) {
     return (
       <section className={styles.chat} aria-label="群聊">
         <div className={styles.main}>
@@ -563,7 +705,13 @@ export function AssistantGroupChat({
             <span className="task-context-title">群聊</span>
           </div>
           <div className={styles.empty}>
-            {loading ? "正在加载群聊…" : "这个群聊不存在或已解散。"}
+            {loading && !dissolved
+              ? "正在加载群聊…"
+              : dissolved
+                ? "这个群聊已解散。"
+                : metadataError
+                  ? metadataError
+                  : "这个群聊不存在或已解散。"}
           </div>
         </div>
       </section>

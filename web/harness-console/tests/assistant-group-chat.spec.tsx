@@ -264,6 +264,7 @@ describe("AssistantGroupChat", () => {
   });
 
   it("lays the title band out above a scrolling timeline at 1440 and 1024", () => {
+
     // jsdom 不做布局：这里守住几何不相交的布局前提——
     // 标题带 flex:0 0 auto 且不在 overflow 容器内；消息列 flex:1 + overflow:auto，
     // 其内容被裁在自己的矩形里。两档宽度共用同一套分栏，没有宽度分支。
@@ -293,5 +294,218 @@ describe("AssistantGroupChat", () => {
     // 只有 900px 以下的横向内边距收窄，两档桌面宽度没有分栏变化。
     expect(css).not.toContain("@media (max-width: 1024px)");
     expect(css).not.toContain("@media (min-width: 1200px)");
+  });
+});
+
+/** 轮询会先过 allSettled 再落地状态，单个微任务不够。 */
+async function flushPoll() {
+  await act(async () => {
+    for (let index = 0; index < 10; index += 1) await Promise.resolve();
+  });
+}
+
+describe("AssistantGroupChat: server-side group admin sync", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("syncs a group renamed or redescribed by an assistant tool", async () => {
+    vi.useFakeTimers();
+    const onGroupName = vi.fn();
+    const groupsChanged = vi.fn();
+    window.addEventListener("kai:groups-changed", groupsChanged);
+    try {
+      await act(async () =>
+        root!.render(<AssistantGroupChat groupId="g1" userId="u1" onGroupName={onGroupName} />),
+      );
+      await flushPoll();
+      expect(onGroupName).toHaveBeenLastCalledWith("产品评审群");
+      groupsChanged.mockClear();
+
+      // 助理在服务端工具里改名并补了描述：页面下一轮轮询应自行跟上。
+      stateGroup = { ...stateGroup, name: "助理改的新群名", description: "助理补充的描述" };
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+      await flushPoll();
+
+      expect(onGroupName).toHaveBeenLastCalledWith("助理改的新群名");
+      expect(host.querySelector(".task-context-title")?.textContent).toBe("助理改的新群名");
+      expect(groupsChanged).toHaveBeenCalled();
+
+      // 描述来自同一份刷新后的群元数据，打开群信息就能看到。
+      await act(async () => {
+        host.querySelector<HTMLButtonElement>('[aria-label="群信息"]')!.click();
+      });
+      const description = host.querySelector<HTMLTextAreaElement>(
+        'section[aria-label="群资料"] textarea',
+      )!;
+      expect(description.value).toBe("助理补充的描述");
+    } finally {
+      window.removeEventListener("kai:groups-changed", groupsChanged);
+    }
+  });
+
+  it("leaves the page and stops polling after an assistant tool dissolves the group", async () => {
+    vi.useFakeTimers();
+    const onDissolved = vi.fn();
+    await act(async () =>
+      root!.render(<AssistantGroupChat groupId="g1" userId="u1" onDissolved={onDissolved} />),
+    );
+    await flushPoll();
+    expect(host.querySelector("textarea")).not.toBeNull();
+
+    mocks.listAssistantGroups.mockResolvedValue([]);
+    mocks.listAssistantGroupMessages.mockRejectedValue(
+      new Error("操作未完成（404），请检查输入或稍后重试。"),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    await flushPoll();
+
+    expect(onDissolved).toHaveBeenCalledTimes(1);
+    expect(host.querySelector("textarea")).toBeNull();
+    expect(host.textContent).toContain("这个群聊已解散");
+
+    // 离场后不再请求这个群，也不会重复离场。
+    const messageReads = mocks.listAssistantGroupMessages.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10000);
+    });
+    expect(mocks.listAssistantGroupMessages.mock.calls.length).toBe(messageReads);
+    expect(onDissolved).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the group on network failures and recovers when the server returns", async () => {
+    vi.useFakeTimers();
+    const onDissolved = vi.fn();
+    await act(async () =>
+      root!.render(<AssistantGroupChat groupId="g1" userId="u1" onDissolved={onDissolved} />),
+    );
+    await flushPoll();
+
+    const offline = new Error("操作未完成（503），请检查输入或稍后重试。");
+    mocks.listAssistantGroups.mockRejectedValue(offline);
+    mocks.listAssistantGroupMessages.mockRejectedValue(offline);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    await flushPoll();
+
+    expect(onDissolved).not.toHaveBeenCalled();
+    expect(host.querySelector("textarea")).not.toBeNull();
+    expect(host.textContent).toContain("我自己的消息");
+
+    mocks.listAssistantGroups.mockImplementation(async () => [{ ...stateGroup }]);
+    mocks.listAssistantGroupMessages.mockImplementation(async () => [...stateMessages]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    await flushPoll();
+
+    expect(onDissolved).not.toHaveBeenCalled();
+    expect(host.querySelector("textarea")).not.toBeNull();
+    expect(host.textContent).toContain("我自己的消息");
+  });
+
+  it("does not dissolve while the message route 404s but the group still exists", async () => {
+    vi.useFakeTimers();
+    const onDissolved = vi.fn();
+    await act(async () =>
+      root!.render(<AssistantGroupChat groupId="g1" userId="u1" onDissolved={onDissolved} />),
+    );
+    await flushPoll();
+
+    mocks.listAssistantGroupMessages.mockRejectedValue(
+      new Error("操作未完成（404），请检查输入或稍后重试。"),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    await flushPoll();
+    expect(onDissolved).not.toHaveBeenCalled();
+    expect(host.querySelector("textarea")).not.toBeNull();
+
+    mocks.listAssistantGroupMessages.mockImplementation(async () => [...stateMessages]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    await flushPoll();
+    expect(onDissolved).not.toHaveBeenCalled();
+    expect(host.textContent).toContain("我自己的消息");
+  });
+
+  it("ignores a late 404 from the previous group after switching", async () => {
+    vi.useFakeTimers();
+    const onDissolved = vi.fn();
+    await act(async () =>
+      root!.render(<AssistantGroupChat groupId="g1" userId="u1" onDissolved={onDissolved} />),
+    );
+    await flushPoll();
+
+    // g1 的下一轮消息请求卡住不返回，模拟切群后才到的旧响应。
+    let rejectOld: ((reason: Error) => void) | undefined;
+    mocks.listAssistantGroupMessages.mockImplementation((target: string) =>
+      target === "g1"
+        ? new Promise<GroupMessage[]>((_resolve, reject) => {
+            rejectOld = reject;
+          })
+        : Promise.resolve([...stateMessages]),
+    );
+    await act(async () => {
+      vi.advanceTimersByTime(2500);
+      await Promise.resolve();
+    });
+    await flushPoll();
+
+    stateGroup = group({ groupId: "g2", name: "新群" });
+    await act(async () =>
+      root!.render(<AssistantGroupChat groupId="g2" userId="u1" onDissolved={onDissolved} />),
+    );
+    await flushPoll();
+    expect(host.textContent).toContain("新群");
+
+    await act(async () => {
+      rejectOld?.(new Error("操作未完成（404），请检查输入或稍后重试。"));
+    });
+    await flushPoll();
+
+    expect(onDissolved).not.toHaveBeenCalled();
+    expect(host.querySelector("textarea")).not.toBeNull();
+    expect(host.textContent).toContain("新群");
+  });
+
+  it("still dissolves from the info panel after the confirmation", async () => {
+    const onDissolved = vi.fn();
+    await act(async () =>
+      root!.render(<AssistantGroupChat groupId="g1" userId="u1" onDissolved={onDissolved} />),
+    );
+    await flush();
+
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[aria-label="群信息"]')!.click();
+    });
+    const dissolveButton = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "解散群聊",
+    )!;
+    await act(async () => dissolveButton.click());
+
+    const input = host.querySelector<HTMLInputElement>('[aria-label="输入群名确认解散"]')!;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      setter.call(input, "产品评审群");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const confirm = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "确认解散",
+    )!;
+    await act(async () => confirm.click());
+    await flush();
+
+    expect(mocks.deleteAssistantGroup).toHaveBeenCalledWith("g1");
+    expect(onDissolved).toHaveBeenCalledTimes(1);
+    expect(host.querySelector("textarea")).toBeNull();
+    expect(host.textContent).toContain("这个群聊已解散");
   });
 });
