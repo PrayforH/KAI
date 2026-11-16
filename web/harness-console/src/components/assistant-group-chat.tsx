@@ -142,6 +142,11 @@ export function AssistantGroupChat({
   const atBottom = useRef(true);
   /** 解散只处理一次：轮询与手动解散可能同时发现群已不存在。 */
   const dissolvedRef = useRef(false);
+  /** 组件是否仍挂载：卸载后在途的解散响应不得再导航或改父界面状态。 */
+  const mountedRef = useRef(true);
+  /** 本实例当前仍有效的群；切群后旧群的在途响应必须作废。 */
+  const groupIdRef = useRef(groupId);
+  groupIdRef.current = groupId;
   /** 最近一次群元数据指纹，用来决定要不要刷新页面和通知左栏。 */
   const groupsKeyRef = useRef("");
   const unreadSeeded = useRef(false);
@@ -179,8 +184,12 @@ export function AssistantGroupChat({
     if (previous) window.dispatchEvent(new CustomEvent("kai:groups-changed"));
   }, []);
 
-  /** 服务端确认群已不存在：停轮询、清活动群与输入框，再交给主界面离场。 */
-  const markDissolved = useCallback(() => {
+  /** 服务端确认群已不存在：停轮询、清活动群与输入框，再交给主界面离场。
+   *  轮询与手动解散共用这一条幂等路径；targetGroupId 由发起方传入，
+   *  旧群或已卸载的晚到响应不得改写新群，也不得再次导航。 */
+  const markDissolved = useCallback((targetGroupId?: string) => {
+    if (!mountedRef.current) return;
+    if (targetGroupId && targetGroupId !== groupIdRef.current) return;
     if (dissolvedRef.current) return;
     dissolvedRef.current = true;
     setDissolved(true);
@@ -199,6 +208,13 @@ export function AssistantGroupChat({
     callbacks.onGroupName?.(null);
     callbacks.onGroupMembers?.([]);
     callbacks.onDissolved?.();
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   // 点面板外面或按 Esc 收起群设置。
@@ -358,7 +374,7 @@ export function AssistantGroupChat({
           const groupList = groupsResult.value;
           if (!groupList.some((group) => group.groupId === groupId)) {
             // 群列表是权威来源：只有确认不存在才离场；网络/5xx 不走到这里。
-            markDissolved();
+            markDissolved(groupId);
             return;
           }
           applyGroupList(groupList);
@@ -581,28 +597,26 @@ export function AssistantGroupChat({
 
   const handleDissolve = async (): Promise<boolean> => {
     if (!selected || busy) return false;
+    const targetGroupId = selected.groupId;
+    // DELETE 返回时只有仍挂载、仍是本次发起的群、且尚未离场，才允许改写界面或导航。
+    const isLiveTarget = () =>
+      mountedRef.current && groupIdRef.current === targetGroupId && !dissolvedRef.current;
     setBusy(true);
     setError(null);
     try {
-      await deleteAssistantGroup(selected.groupId);
-      // 先立标记，轮询同一刻发现群消失时不会再触发一次离场。
-      dissolvedRef.current = true;
-      setDissolved(true);
-      setGroups([]);
-      setQuoted(null);
-      window.dispatchEvent(new CustomEvent("kai:groups-changed"));
-      setSettingsOpen(false);
-      setSideOpen(false);
-      onGroupName?.(null);
-      onGroupMembers?.([]);
-      onDissolved?.();
-      return true;
+      await deleteAssistantGroup(targetGroupId);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "解散群聊失败");
+      // 失败不写离场标记：群页保留，用户可以修正后重试；切群/卸载后的旧失败不打扰新群。
+      if (isLiveTarget()) {
+        setBusy(false);
+        setError(reason instanceof Error ? reason.message : "解散群聊失败");
+      }
       return false;
-    } finally {
-      setBusy(false);
     }
+    // 成功与轮询确认走同一条幂等离场，先到者只离场一次；晚到的旧响应不再导航。
+    markDissolved(targetGroupId);
+    if (isLiveTarget()) setBusy(false);
+    return true;
   };
 
   const openSidePanel = (tab: GroupSideTab = "history") => {

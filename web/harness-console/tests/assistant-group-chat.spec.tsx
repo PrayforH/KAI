@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
   postAssistantGroupMessage: vi.fn(),
   toggleAssistantGroupReaction: vi.fn(),
   updateAssistantGroup: vi.fn(),
-  deleteAssistantGroup: vi.fn(async () => undefined),
+  deleteAssistantGroup: vi.fn<() => Promise<void>>(async () => undefined),
   addAssistantGroupMember: vi.fn(),
   removeAssistantGroupMember: vi.fn(),
   setAssistantGroupReplyAs: vi.fn(),
@@ -304,6 +304,33 @@ async function flushPoll() {
   });
 }
 
+/** 走真实群信息面板：解散群聊 → 输入群名 → 确认解散。 */
+async function startManualDissolve(confirmName = "产品评审群") {
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('[aria-label="群信息"]')!.click();
+  });
+  await act(async () => {
+    [...host.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "解散群聊")!
+      .click();
+  });
+  const input = host.querySelector<HTMLInputElement>('[aria-label="输入群名确认解散"]')!;
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+  await act(async () => {
+    setter.call(input, confirmName);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => {
+    [...host.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "确认解散")!
+      .click();
+  });
+}
+
+function group2() {
+  return group({ groupId: "g2", name: "新的项目群" });
+}
+
 describe("AssistantGroupChat: server-side group admin sync", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -504,6 +531,180 @@ describe("AssistantGroupChat: server-side group admin sync", () => {
     await flush();
 
     expect(mocks.deleteAssistantGroup).toHaveBeenCalledWith("g1");
+    expect(onDissolved).toHaveBeenCalledTimes(1);
+    expect(host.querySelector("textarea")).toBeNull();
+    expect(host.textContent).toContain("这个群聊已解散");
+  });
+
+  it("leaves once when polling confirms the dissolve before the manual response", async () => {
+    vi.useFakeTimers();
+    const onDissolved = vi.fn();
+    await act(async () =>
+      root!.render(
+        <AssistantGroupChat key="g1" groupId="g1" userId="u1" onDissolved={onDissolved} />,
+      ),
+    );
+    await flushPoll();
+
+    // DELETE 已提交，但响应还在路上。
+    let finishDelete: (() => void) | undefined;
+    mocks.deleteAssistantGroup.mockReset();
+    mocks.deleteAssistantGroup.mockImplementation(
+      () => new Promise<void>((resolve) => { finishDelete = resolve; }),
+    );
+    await startManualDissolve();
+    expect(mocks.deleteAssistantGroup).toHaveBeenCalledWith("g1");
+
+    // 下一轮轮询先确认群已不存在，只离场一次。
+    mocks.listAssistantGroups.mockResolvedValue([]);
+    mocks.listAssistantGroupMessages.mockRejectedValue(
+      new Error("操作未完成（404），请检查输入或稍后重试。"),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2500);
+    });
+    await flushPoll();
+    expect(onDissolved).toHaveBeenCalledTimes(1);
+
+    // 用户已打开 g2，按生产页面的 key={groupParam} 重挂载。
+    stateGroup = group2();
+    mocks.listAssistantGroups.mockImplementation(async () => [stateGroup]);
+    mocks.listAssistantGroupMessages.mockImplementation(async () => [message({ groupId: "g2" })]);
+    await act(async () =>
+      root!.render(
+        <AssistantGroupChat key="g2" groupId="g2" userId="u1" onDissolved={onDissolved} />,
+      ),
+    );
+    await flushPoll();
+    expect(host.textContent).toContain("新的项目群");
+
+    // g1 的 DELETE 这时才成功返回：不得再次导航，也不得清掉新群。
+    await act(async () => { finishDelete?.(); });
+    await flushPoll();
+    expect(onDissolved).toHaveBeenCalledTimes(1);
+    expect(host.textContent).toContain("新的项目群");
+    expect(host.querySelector("textarea")).not.toBeNull();
+  });
+
+  it("leaves once when the manual dissolve finishes before polling", async () => {
+    vi.useFakeTimers();
+    const onDissolved = vi.fn();
+    await act(async () =>
+      root!.render(<AssistantGroupChat groupId="g1" userId="u1" onDissolved={onDissolved} />),
+    );
+    await flushPoll();
+
+    mocks.deleteAssistantGroup.mockReset();
+    mocks.deleteAssistantGroup.mockImplementation(async () => undefined);
+    await startManualDissolve();
+    await flushPoll();
+    expect(onDissolved).toHaveBeenCalledTimes(1);
+    expect(host.querySelector("textarea")).toBeNull();
+    expect(host.textContent).toContain("这个群聊已解散");
+
+    // 离场后轮询停止：服务端后续返回「群已删除」也不会再离场或再请求。
+    mocks.listAssistantGroups.mockResolvedValue([]);
+    mocks.listAssistantGroupMessages.mockRejectedValue(
+      new Error("操作未完成（404），请检查输入或稍后重试。"),
+    );
+    const groupReads = mocks.listAssistantGroups.mock.calls.length;
+    const messageReads = mocks.listAssistantGroupMessages.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10000);
+    });
+    await flushPoll();
+    expect(onDissolved).toHaveBeenCalledTimes(1);
+    expect(mocks.listAssistantGroups.mock.calls.length).toBe(groupReads);
+    expect(mocks.listAssistantGroupMessages.mock.calls.length).toBe(messageReads);
+  });
+
+  it("ignores a late dissolve failure after switching to another group", async () => {
+    vi.useFakeTimers();
+    const onDissolved = vi.fn();
+    await act(async () =>
+      root!.render(
+        <AssistantGroupChat key="g1" groupId="g1" userId="u1" onDissolved={onDissolved} />,
+      ),
+    );
+    await flushPoll();
+
+    let failDelete: ((reason: Error) => void) | undefined;
+    mocks.deleteAssistantGroup.mockReset();
+    mocks.deleteAssistantGroup.mockImplementation(
+      () => new Promise<void>((_resolve, reject) => { failDelete = reject; }),
+    );
+    await startManualDissolve();
+
+    stateGroup = group2();
+    mocks.listAssistantGroups.mockImplementation(async () => [stateGroup]);
+    mocks.listAssistantGroupMessages.mockImplementation(async () => [message({ groupId: "g2" })]);
+    await act(async () =>
+      root!.render(
+        <AssistantGroupChat key="g2" groupId="g2" userId="u1" onDissolved={onDissolved} />,
+      ),
+    );
+    await flushPoll();
+    expect(host.textContent).toContain("新的项目群");
+
+    // g1 的 DELETE 晚到失败：不能让新群显示旧错误，更不能离场。
+    await act(async () => { failDelete?.(new Error("解散失败，请稍后重试。")); });
+    await flushPoll();
+    expect(onDissolved).not.toHaveBeenCalled();
+    expect(host.textContent).toContain("新的项目群");
+    expect(host.textContent).not.toContain("解散失败，请稍后重试。");
+    expect(host.querySelector("textarea")).not.toBeNull();
+  });
+
+  it("does not leave when an unmounted group's dissolve response arrives", async () => {
+    vi.useFakeTimers();
+    const onDissolved = vi.fn();
+    await act(async () =>
+      root!.render(<AssistantGroupChat groupId="g1" userId="u1" onDissolved={onDissolved} />),
+    );
+    await flushPoll();
+
+    let finishDelete: (() => void) | undefined;
+    mocks.deleteAssistantGroup.mockReset();
+    mocks.deleteAssistantGroup.mockImplementation(
+      () => new Promise<void>((resolve) => { finishDelete = resolve; }),
+    );
+    await startManualDissolve();
+
+    await act(async () => root!.unmount());
+    root = undefined;
+
+    await act(async () => { finishDelete?.(); });
+    await flushPoll();
+    expect(onDissolved).not.toHaveBeenCalled();
+  });
+
+  it("keeps the group page and allows a retry when the manual dissolve fails", async () => {
+    vi.useFakeTimers();
+    const onDissolved = vi.fn();
+    await act(async () =>
+      root!.render(<AssistantGroupChat groupId="g1" userId="u1" onDissolved={onDissolved} />),
+    );
+    await flushPoll();
+
+    mocks.deleteAssistantGroup.mockReset();
+    mocks.deleteAssistantGroup.mockRejectedValueOnce(new Error("解散失败，请稍后重试。"));
+    await startManualDissolve();
+    await flushPoll();
+
+    // 失败不写离场标记：群页与输入框保留，错误可见。
+    expect(onDissolved).not.toHaveBeenCalled();
+    expect(host.querySelector("textarea")).not.toBeNull();
+    expect(host.textContent).toContain("解散失败，请稍后重试。");
+
+    // 用户可以直接重试；成功后只离场一次。
+    mocks.deleteAssistantGroup.mockResolvedValue(undefined);
+    await act(async () => {
+      [...host.querySelectorAll<HTMLButtonElement>("button")]
+        .find((button) => button.textContent === "确认解散")!
+        .click();
+    });
+    await flushPoll();
+    expect(mocks.deleteAssistantGroup).toHaveBeenCalledTimes(2);
     expect(onDissolved).toHaveBeenCalledTimes(1);
     expect(host.querySelector("textarea")).toBeNull();
     expect(host.textContent).toContain("这个群聊已解散");
