@@ -232,6 +232,8 @@ async def test_plain_message_wakes_only_primary_in_group_thread() -> None:
     assert agui.create_run_with_result.await_args.kwargs["group_context"] == {
         "groupId": group.group_id,
         "memberId": "primary",
+        "triggerMessageId": result.message.message_id,
+        "triggerAuthor": "user",
     }
     assert all(
         item.author is not AssistantGroupMessageAuthor.SPECIALIST
@@ -260,6 +262,8 @@ async def test_mention_wakes_only_the_named_specialist() -> None:
     assert agui.create_run_with_result.await_args.kwargs["group_context"] == {
         "groupId": group.group_id,
         "memberId": "specialist_a",
+        "triggerMessageId": result.message.message_id,
+        "triggerAuthor": "user",
     }
     assert "查一下" in request.messages[0].content
     assert "@资料 Bot" not in request.messages[0].content
@@ -1022,14 +1026,16 @@ async def test_group_name_keeps_full_width_punctuation() -> None:
 
 
 @pytest.mark.asyncio
-async def test_group_name_validation_is_unchanged() -> None:
+async def test_group_name_validation_matches_80_character_api_contract() -> None:
     service, _, _ = _service()
     with pytest.raises(ConflictError):
         await service.create_assistant_group("t", "u", name="   ")
     with pytest.raises(ConflictError):
-        await service.create_assistant_group("t", "u", name="群" * 41)
+        await service.create_assistant_group("t", "u", name="群" * 81)
     with pytest.raises(ConflictError):
         await service.create_assistant_group("t", "u", name="项目\x07群")
+    accepted = await service.create_assistant_group("t", "u", name="群" * 80)
+    assert len(accepted.name) == 80
     # 既有口径：换行等空白折叠成单个空格，不报错。
     group = await service.create_assistant_group("t", "u", name="项目\n群")
     assert group.name == "项目 群"

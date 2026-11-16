@@ -2745,13 +2745,15 @@ class PostgresAssistantRepository:
             return await self._group_with_members(session, group)
 
     async def delete_group(
-        self, tenant_id: str, user_id: str, group_id: str
+        self, tenant_id: str, user_id: str, group_id: str, *, expected_name: str | None = None,
     ) -> None:
         """解散群：成员/消息/表情/资料库文档与知识库绑定一起清。"""
         async with self._context(write=True) as session:
-            await self._require_group(
+            group = await self._require_group(
                 session, tenant_id, user_id, group_id, lock=True
             )
+            if expected_name is not None and group.name != expected_name:
+                raise ConflictError(f"群名不一致，未解散；当前群名是『{group.name}』")
             await session.execute(
                 delete(AssistantGroupReactionRow).where(
                     AssistantGroupReactionRow.group_id == group_id

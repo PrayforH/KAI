@@ -4,10 +4,11 @@ import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
-from harness.assistant.constants import GROUP_PRIMARY_MEMBER_ID
+from harness.assistant.constants import GROUP_PRIMARY_MEMBER_ID, PERSONAL_ASSISTANT_THREAD
 from harness.assistant.group_tools import assistant_group_management_overlay
 from harness.assistant.models import (
     AssistantGroup,
@@ -16,8 +17,9 @@ from harness.assistant.models import (
     Specialist,
     SpecialistStatus,
 )
-from harness.core.errors import NotFoundError
+from harness.core.errors import NotFoundError, PermissionDeniedError
 from harness.core.models import Run, RunStatus, Session
+from tests.unit.assistant.test_group_manage_library import _service
 
 NOW = datetime(2026, 11, 13, 9, 0, tzinfo=UTC)
 
@@ -153,6 +155,7 @@ async def _overlay(
         idempotency_key="k",
         created_at=NOW,
         updated_at=NOW,
+        input={"group_context": {"groupId": "group_1", "memberId": member_id}},
     )
     session = Session(
         session_id=run.session_id,
@@ -290,3 +293,338 @@ async def test_unknown_specialist_names_the_listing_tool():
     assert payload["status"] == "failed"
     assert "assistant_group_members" in payload["error"]
     assert assistant.calls == []
+
+
+def admin_identity(*, direct=False, member_id="primary", author="user", **overrides):
+    context = {
+        "groupId": "group_a",
+        "memberId": member_id,
+        "triggerMessageId": "gmsg_user",
+        "triggerAuthor": author,
+    }
+    run = Run(
+        run_id="admin-run",
+        session_id="admin-session",
+        tenant_id="t",
+        status=RunStatus.RUNNING,
+        idempotency_key="admin",
+        created_at=NOW,
+        updated_at=NOW,
+        input={
+            "conversation_surface": "assistant",
+            **(
+                {}
+                if direct
+                else {
+                    "group_context": context,
+                }
+            ),
+        },
+        **overrides,
+    )
+    session = Session(
+        session_id=run.session_id,
+        tenant_id="t",
+        user_id="u",
+        agent_name="kai-personal-assistant",
+        agent_version="1",
+        created_at=NOW,
+        environment="production",
+        runtime_type="claude-agent-sdk",
+    )
+    return run, session
+
+
+async def admin_overlay(service, run, session, events=None):
+    events = events or FakeEvents()
+    context = run.input.get("group_context", {})
+    overlay = await assistant_group_management_overlay(
+        service,
+        events,
+        run,
+        session,
+        group_id=context.get("groupId"),
+        member_id=context.get("memberId", "primary"),
+    )
+    return {tool.name: tool.handler for tool in overlay.tools}, events
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("direct", [False, True], ids=["group-primary", "one-to-one-primary"])
+async def test_admin_creates_for_session_user_with_primary_only_and_sidebar_visibility(direct):
+    service, repo, agui = _service()
+    repo.seed_group()
+    agui.get_thread_record_for_session.return_value = SimpleNamespace(
+        thread_id=PERSONAL_ASSISTANT_THREAD,
+    )
+    run, session = admin_identity(direct=direct)
+    tools, events = await admin_overlay(service, run, session)
+    result = _payload(await tools["assistant_group_create"]({"name": "新群：项目"}))
+    assert result["status"] == "ok"
+    group_id = result["groupId"]
+    assert repo.groups[group_id].creator_user_id == session.user_id
+    assert [(m.member_id, m.kind) for m in repo.members[group_id]] == [
+        ("primary", GroupMemberKind.PRIMARY),
+    ]
+    # The creator is a virtual service-view member; only primary is stored.
+    repo.list_groups = AsyncMock(return_value=[repo.groups[group_id]])
+    listed = await service.list_assistant_groups("t", session.user_id)
+    assert listed[0].group_id == group_id
+    assert listed[0].creator_user_id == session.user_id
+    repo.list_groups.assert_awaited_once_with("t", "u")
+    assert events.appended[-1]["payload"] == {
+        "operation": "create_group",
+        "groupId": group_id,
+        "actorMemberId": "primary",
+        "actorUserId": "u",
+        "runId": run.run_id,
+        "status": "succeeded",
+        "newName": "新群：项目",
+    }
+    if direct:
+        assert set(tools) == {"assistant_group_create"}
+
+
+ADMIN_CASES = [
+    ("assistant_group_create", {"name": "新群"}),
+    ("assistant_group_update", {"name": "新名字", "description": "新描述"}),
+    ("assistant_group_dissolve", {"confirmName": "项目群"}),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("tool", "arguments"), ADMIN_CASES)
+async def test_each_admin_tool_denies_specialist_with_403_and_no_writes(tool, arguments):
+    service, repo, _ = _service()
+    repo.seed_group()
+    tools, events = await admin_overlay(service, *admin_identity(member_id="specialist_pm"))
+    before = dict(repo.groups)
+    result = await tools[tool](arguments)
+    assert result["isError"] is True
+    assert _payload(result)["statusCode"] == 403
+    assert repo.groups == before
+    assert len(events.appended) == 1
+    assert events.appended[0]["payload"]["status"] == "failed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("tool", "arguments"), ADMIN_CASES)
+@pytest.mark.parametrize("field", ["groupId", "memberId", "triggerAuthor", "userId"])
+async def test_each_admin_tool_rejects_model_supplied_group_or_identity(tool, arguments, field):
+    service, repo, _ = _service()
+    repo.seed_group()
+    repo.seed_group("other_group")
+    tools, _ = await admin_overlay(service, *admin_identity())
+    result = await tools[tool]({**arguments, field: "other_group"})
+    assert result["isError"] is True
+    assert _payload(result)["statusCode"] == 400
+    assert repo.groups["group_a"].name == "项目群"
+    assert repo.groups["other_group"].name == "项目群"
+    assert not repo.dissolved
+    assert len(repo.groups) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("tool", "arguments"), ADMIN_CASES)
+async def test_each_admin_tool_cannot_access_other_users_group(tool, arguments):
+    service, repo, _ = _service()
+    repo.seed_group(user_id="other-user")
+    tools, _ = await admin_overlay(service, *admin_identity())
+    result = await tools[tool](arguments)
+    assert _payload(result)["statusCode"] == 404
+    assert repo.groups["group_a"].creator_user_id == "other-user"
+
+
+@pytest.mark.asyncio
+async def test_update_only_explicit_fields_and_empty_patch_does_not_write():
+    service, repo, _ = _service()
+    repo.seed_group()
+    repo.update_group = AsyncMock(wraps=repo.update_group)
+    tools, events = await admin_overlay(service, *admin_identity())
+    result = _payload(await tools["assistant_group_update"]({}))
+    assert result["name"] == "项目群"
+    repo.update_group.assert_not_awaited()
+    result = _payload(await tools["assistant_group_update"]({"name": "新群：Ａ"}))
+    assert result["name"] == "新群：Ａ"
+    assert result["description"] is None
+    assert repo.update_group.await_args.kwargs == {"fields": {"name": "新群：Ａ"}}
+    result = _payload(await tools["assistant_group_update"]({"description": "描述：保留"}))
+    assert result["name"] == "新群：Ａ"
+    assert result["description"] == "描述：保留"
+    assert events.appended[-1]["payload"]["oldName"] == "新群：Ａ"
+    assert events.appended[-1]["payload"]["newName"] == "新群：Ａ"
+    result = _payload(await tools["assistant_group_update"]({"description": None}))
+    assert result["description"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"name": ""},
+        {"name": " "},
+        {"name": "字" * 81},
+        {"name": None},
+        {"description": "字" * 501},
+        {"description": 1},
+        {"description": "坏\x07字"},
+    ],
+)
+async def test_update_rejects_invalid_name_and_description_without_writes(changes):
+    service, repo, _ = _service()
+    repo.seed_group()
+    repo.update_group = AsyncMock(wraps=repo.update_group)
+    tools, events = await admin_overlay(service, *admin_identity())
+    result = await tools["assistant_group_update"](changes)
+    assert result["isError"] is True
+    repo.update_group.assert_not_awaited()
+    assert len(events.appended) == 1
+    assert events.appended[0]["payload"]["status"] == "failed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", [None, "", " ", "字" * 81, 12])
+async def test_create_validates_name_without_creating_group(name):
+    service, repo, _ = _service()
+    repo.seed_group()
+    tools, events = await admin_overlay(service, *admin_identity())
+    result = await tools["assistant_group_create"]({"name": name})
+    assert result["isError"] is True
+    assert list(repo.groups) == ["group_a"]
+    assert len(events.appended) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("author", ["specialist", "primary", None])
+async def test_dissolve_rejects_non_user_trigger_and_keeps_group(author):
+    service, repo, _ = _service()
+    repo.seed_group()
+    tools, events = await admin_overlay(service, *admin_identity(author=author))
+    result = _payload(await tools["assistant_group_dissolve"]({"confirmName": "项目群"}))
+    assert result["statusCode"] == 403
+    assert result["error"] == "解散群需要你本人提出"
+    assert "group_a" in repo.groups
+    assert len(events.appended) == 1
+
+
+@pytest.mark.asyncio
+async def test_dissolve_requires_trigger_message_id():
+    service, repo, _ = _service()
+    repo.seed_group()
+    run, session = admin_identity()
+    del run.input["group_context"]["triggerMessageId"]
+    tools, _ = await admin_overlay(service, run, session)
+    result = _payload(await tools["assistant_group_dissolve"]({"confirmName": "项目群"}))
+    assert result["statusCode"] == 403
+    assert "group_a" in repo.groups
+
+
+@pytest.mark.asyncio
+async def test_dissolve_wrong_name_then_user_confirmed_nfkc_name_deletes_and_reads_404():
+    service, repo, _ = _service()
+    repo.seed_group(name="项目群Ａ")
+    tools, events = await admin_overlay(service, *admin_identity())
+    wrong = _payload(await tools["assistant_group_dissolve"]({"confirmName": "错群"}))
+    assert wrong["error"] == "群名不一致，未解散；当前群名是『项目群Ａ』"
+    assert "group_a" in repo.groups
+    # NFKC only; extra whitespace is not an exact confirmation.
+    wrong = _payload(await tools["assistant_group_dissolve"]({"confirmName": " 项目群A"}))
+    assert wrong["status"] == "failed"
+    correct = _payload(await tools["assistant_group_dissolve"]({"confirmName": "项目群A"}))
+    assert correct["dissolved"] is True
+    assert correct["groupId"] == "group_a"
+    with pytest.raises(NotFoundError):
+        await service.get_assistant_group("t", "u", "group_a")
+    assert [e["payload"]["status"] for e in events.appended] == [
+        "failed",
+        "failed",
+        "succeeded",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_dissolve_detects_rename_between_confirmation_and_delete():
+    service, repo, _ = _service()
+    repo.seed_group()
+    original_delete = repo.delete_group
+
+    async def concurrently_renamed(*args, **kwargs):
+        repo.groups["group_a"] = repo.groups["group_a"].model_copy(update={"name": "新群名"})
+        await original_delete(*args, **kwargs)
+
+    repo.delete_group = concurrently_renamed
+    tools, _ = await admin_overlay(service, *admin_identity())
+    result = _payload(await tools["assistant_group_dissolve"]({"confirmName": "项目群"}))
+    assert result["status"] == "failed"
+    assert "新群名" in result["error"]
+    assert "group_a" in repo.groups
+
+
+@pytest.mark.asyncio
+async def test_failed_audit_does_not_turn_successful_update_into_failure():
+    service, repo, _ = _service()
+    repo.seed_group()
+    events = SimpleNamespace(append=AsyncMock(side_effect=RuntimeError("sink unavailable")))
+    tools, _ = await admin_overlay(service, *admin_identity(), events=events)
+    result = _payload(await tools["assistant_group_update"]({"name": "已改名"}))
+    assert result["status"] == "ok"
+    assert repo.groups["group_a"].name == "已改名"
+    events.append.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "bad_input",
+    [
+        {"conversation_surface": "workbench"},
+        {"conversation_surface": "assistant", "assistant_dispatch": True},
+    ],
+)
+async def test_direct_creation_rejects_non_assistant_and_delegated_runs(bad_input):
+    service, repo, _ = _service()
+    run, session = admin_identity(direct=True)
+    run = run.model_copy(update={"input": bad_input})
+    with pytest.raises(PermissionDeniedError):
+        await service.admin_create_assistant_group(run, session, name="不该创建")
+    assert not repo.groups
+
+
+@pytest.mark.asyncio
+async def test_direct_creation_rejects_specialist_thread_even_with_assistant_surface():
+    service, repo, agui = _service()
+    agui.get_thread_record_for_session.return_value = SimpleNamespace(thread_id="specialist_pm")
+    with pytest.raises(PermissionDeniedError):
+        await service.admin_create_assistant_group(*admin_identity(direct=True), name="不该创建")
+    assert not repo.groups
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "changed", [{"tenant_id": "other"}, {"session_id": "other"}, {"project": "project"}]
+)
+async def test_admin_rejects_mismatched_session_tenant_and_project_runs(changed):
+    service, repo, _ = _service()
+    repo.seed_group()
+    run, session = admin_identity()
+    if "project" in changed:
+        changed = {"input": {**run.input, "business_project_id": changed["project"]}}
+    with pytest.raises(PermissionDeniedError):
+        await service.admin_update_assistant_group(
+            run.model_copy(update=changed),
+            session,
+            changes={"name": "不该改"},
+        )
+    assert repo.groups["group_a"].name == "项目群"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("tool", "arguments"), ADMIN_CASES)
+async def test_each_admin_tool_denies_absent_primary(tool, arguments):
+    service, repo, _ = _service()
+    repo.seed_group()
+    repo.members["group_a"] = []
+    tools, _ = await admin_overlay(service, *admin_identity())
+    result = _payload(await tools[tool](arguments))
+    assert result["statusCode"] == 403
+    assert "group_a" in repo.groups
+    assert len(repo.groups) == 1

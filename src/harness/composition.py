@@ -1780,6 +1780,12 @@ def build_production_container(
                     group_id=group_id,
                     member_id=member_id,
                 )
+        elif (container.assistant is not None and raw_group_context is None
+                and coordinator and run.input.get("conversation_surface") == "assistant"
+                and run.business_project_id is None and not run.input.get("assistant_dispatch")):
+            group_overlay = await assistant_group_management_overlay(
+                container.assistant, events, run, session,
+            )
         merged = (
             overlay.tools
             + computer_overlay.tools

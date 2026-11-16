@@ -97,8 +97,10 @@ class FakeLibraryGraph:
         self.groups[group_id] = updated
         return updated
 
-    async def delete_group(self, tenant_id, user_id, group_id):
-        await self.get_group(tenant_id, user_id, group_id)
+    async def delete_group(self, tenant_id, user_id, group_id, *, expected_name=None):
+        group = await self.get_group(tenant_id, user_id, group_id)
+        if expected_name is not None and group.name != expected_name:
+            raise ConflictError(f"群名不一致，未解散；当前群名是『{group.name}』")
         self.dissolved.add(group_id)
         self.messages.pop(group_id, None)
         self.members.pop(group_id, None)
