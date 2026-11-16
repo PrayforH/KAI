@@ -167,6 +167,19 @@ describe("AssistantGroupMessage", () => {
     expect(onReact).toHaveBeenCalledWith(expect.objectContaining({ messageId: "m1" }), GROUP_REACTIONS[0]);
   });
 
+  it("does not offer reactions on my own sent message", async () => {
+    await render(
+      <AssistantGroupMessage
+        message={message({ author: "user", authorName: "我", reactions: ["👍"] })}
+        tone="#6b746e"
+        onReact={vi.fn()}
+        onReply={vi.fn()}
+      />,
+    );
+    expect(host.querySelector('[aria-label="给这条消息加表情"]')).toBeNull();
+    expect(host.querySelector('[aria-pressed="true"]')).toBeNull();
+  });
+
   it("cancels a selected reaction chip", async () => {
     const onReact = vi.fn();
     await render(
