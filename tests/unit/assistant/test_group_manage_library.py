@@ -1,4 +1,4 @@
-"""群管理（改名/解散/删消息）与群资料库（文件、知识库绑定）的行为。"""
+"""群管理（改名/解散/消息不可删除）与群资料库（文件、知识库绑定）的行为。"""
 
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -107,29 +107,6 @@ class FakeLibraryGraph:
         self.documents.pop(group_id, None)
         self.bindings.pop(group_id, None)
         self.groups.pop(group_id, None)
-
-    async def delete_group_message(
-        self, tenant_id, user_id, group_id, message_id, *, actor_user_id
-    ):
-        group = await self.get_group(tenant_id, user_id, group_id)
-        found = next(
-            (item for item in self.messages[group_id] if item.message_id == message_id),
-            None,
-        )
-        if found is None:
-            raise NotFoundError("message not found")
-        if found.status == "running":
-            raise ConflictError("message is running")
-        is_author = found.author is AssistantGroupMessageAuthor.USER and user_id == actor_user_id
-        if not is_author and group.creator_user_id != actor_user_id:
-            raise PermissionDeniedError("not allowed to delete this message")
-        self.messages[group_id] = [
-            item.model_copy(update={"reply_to_message_id": None})
-            if item.reply_to_message_id == message_id
-            else item
-            for item in self.messages[group_id]
-            if item.message_id != message_id
-        ]
 
     async def add_group_message(
         self,
@@ -396,69 +373,26 @@ async def test_dissolving_a_group_clears_every_group_table() -> None:
 
 
 @pytest.mark.asyncio
-async def test_message_delete_rules_and_quote_downgrade() -> None:
+@pytest.mark.parametrize("author", [AssistantGroupMessageAuthor.USER,
+                                    AssistantGroupMessageAuthor.PRIMARY,
+                                    AssistantGroupMessageAuthor.SPECIALIST])
+@pytest.mark.parametrize("status", ["completed", "running"])
+async def test_single_message_delete_is_disabled_and_preserves_message_and_quote(author, status):
     service, repo, _ = _service()
     repo.seed_group()
     original = AssistantGroupMessage(
-        messageId="gmsg_1",
-        groupId="group_a",
-        author=AssistantGroupMessageAuthor.USER,
-        authorName="我",
-        text="被引用的消息",
-        status="completed",
-        createdAt=NOW,
+        messageId="gmsg_1", groupId="group_a", author=author,
+        authorName="作者", text="保留消息", status=status, createdAt=NOW,
     )
-    reply = AssistantGroupMessage(
-        messageId="gmsg_2",
-        groupId="group_a",
-        author=AssistantGroupMessageAuthor.USER,
-        authorName="我",
-        text="引用一下",
-        replyToMessageId="gmsg_1",
-        status="completed",
-        createdAt=NOW,
+    quote = AssistantGroupMessage(
+        messageId="gmsg_2", groupId="group_a", author=AssistantGroupMessageAuthor.USER,
+        authorName="我", text="引用", replyToMessageId="gmsg_1", createdAt=NOW,
     )
-    running = AssistantGroupMessage(
-        messageId="gmsg_3",
-        groupId="group_a",
-        author=AssistantGroupMessageAuthor.PRIMARY,
-        authorName="主助理",
-        text="",
-        status="running",
-        createdAt=NOW,
-    )
-    repo.messages["group_a"] = [original, reply, running]
-
-    with pytest.raises(ConflictError):
-        await service.delete_assistant_group_message("t", "u", "group_a", "gmsg_3")
-    with pytest.raises(NotFoundError):
-        await service.delete_assistant_group_message("t", "u", "group_a", "gmsg_missing")
-
-    await service.delete_assistant_group_message("t", "u", "group_a", "gmsg_1")
-
-    remaining = {item.message_id: item for item in repo.messages["group_a"]}
-    assert "gmsg_1" not in remaining
-    # 引用方保留正文，但引用指针被清掉，读接口因此省略 replyTo。
-    assert remaining["gmsg_2"].reply_to_message_id is None
-
-
-@pytest.mark.asyncio
-async def test_unowned_messages_still_deletable_by_creator() -> None:
-    service, repo, _ = _service()
-    repo.seed_group()
-    repo.messages["group_a"] = [
-        AssistantGroupMessage(
-            messageId="gmsg_bot",
-            groupId="group_a",
-            author=AssistantGroupMessageAuthor.PRIMARY,
-            authorName="主助理",
-            text="机器人回复",
-            status="completed",
-            createdAt=NOW,
-        )
-    ]
-    await service.delete_assistant_group_message("t", "u", "group_a", "gmsg_bot")
-    assert repo.messages["group_a"] == []
+    repo.messages["group_a"] = [original, quote]
+    with pytest.raises(PermissionDeniedError, match="已取消单条消息删除"):
+        await service.delete_assistant_group_message("t", "u", "group_a", "gmsg_1")
+    assert repo.messages["group_a"] == [original, quote]
+    assert quote.reply_to_message_id == "gmsg_1"
 
 
 @pytest.mark.asyncio

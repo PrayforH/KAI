@@ -2805,15 +2805,8 @@ class AssistantService:
     async def delete_assistant_group_message(
         self, tenant_id: str, user_id: str, group_id: str, message_id: str
     ) -> None:
-        """本人发的消息或群创建者可删；运行中的回复先等它落定。"""
-        await self.get_assistant_group(tenant_id, user_id, group_id)
-        await self.repository.delete_group_message(
-            tenant_id,
-            user_id,
-            group_id,
-            message_id,
-            actor_user_id=user_id,
-        )
+        """Compatibility tombstone: single-message deletion is no longer supported."""
+        raise PermissionDeniedError("已取消单条消息删除，消息会保留。")
 
     async def _require_group_owner(
         self, tenant_id: str, user_id: str, group_id: str, message: str
