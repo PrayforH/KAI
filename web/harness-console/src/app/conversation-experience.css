@@ -1280,10 +1280,12 @@ html body.codex-theme-v1 :is(.execution-action, .execution-reasoning) .execution
 html body.codex-theme-v1 .execution-log > * { animation: none; }
 
 
-/* Dormant questions belong to their authored turn, with no empty composer row. */
+/* A question belongs to the answer that asked it: the card is portalled into the
+   message's own bubble as one more block, and the empty composer row collapses. */
 .followup-input-holder:empty, .followup-input-anchor:empty { display: none; }
 body.codex-theme-v1 .harness-assistant-message > .followup-input-anchor { order: 2; width: 100%; min-width: 0; }
-.followup-input-anchor .followup-input-container { margin-top: 8px; }
+.followup-input-anchor .followup-input-container { width: 100%; min-width: 0; margin-top: 8px; }
+.followup-input-anchor .followup-input-container > * { max-width: 100%; }
 
 /* Sent uploads share a bounded thumbnail row, rather than one full row per file. */
 body.codex-theme-v1 .harness-user-message .aui-user-message-attachments {

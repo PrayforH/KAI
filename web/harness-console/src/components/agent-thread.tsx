@@ -7,7 +7,7 @@ import { TerminalResponseNotice } from "./terminal-response-notice";
 import { BotRunNotice } from "./bot-run-notice";
 import { TurnCompletionControl } from "./turn-completion";
 import { FollowupInputPlacement } from "./followup-input-placement";
-import { conversationInputDisplay, conversationInputIntro, latestConversationInput } from "../lib/conversation-input";
+import { conversationInputDisplay, conversationInputForDisplay, conversationInputIntro, latestConversationInput } from "../lib/conversation-input";
 import { useConversationScope } from "../lib/conversation-scope";
 import { type TaskSummary, createThreadHistoryAdapter, notifyTaskListChanged, useAutoLoadEarlierMessages, useThreadHistoryPagination } from "../lib/task-history";
 import { startSteeringPolling } from "../lib/steering-poller";
@@ -1603,14 +1603,14 @@ export function ChatReplyActions({
   );
 }
 
-export function AssistantResponse({ text, streaming }: { text: string; streaming: boolean }) {
+export function AssistantResponse({ text, streaming, hideInputForm = false }: { text: string; streaming: boolean; hideInputForm?: boolean }) {
   const response = useRef<HTMLDivElement>(null);
   useResponseMotion(response, Boolean(text));
   if (!text) return null;
   return (
     <div ref={response} className="assistant-answer" data-streaming={streaming ? "true" : "false"} data-message-body="true" aria-busy={streaming}>
       <TextMessagePartProvider text={text} isRunning={streaming}>
-        <MarkdownText />
+        <MarkdownText hideInputForm={hideInputForm} />
       </TextMessagePartProvider>
     </div>
   );
@@ -1877,6 +1877,12 @@ export function HarnessAssistantMessage() {
     previousAssistantText,
     messageStatus?.type,
   );
+  // The answer's own bubble renders the pending question, so its text drops the
+  // protocol block instead of repeating the same questions and choices twice.
+  const hidesInputForm = useMemo(
+    () => Boolean(isLast && messageStatus?.type === "complete" && !conversationScope?.composerAccessory && conversationInputForDisplay(copyText)),
+    [isLast, messageStatus, conversationScope, copyText],
+  );
   const capturedCitations = useRef<{ messageId: string; citations: RunCitation[] }>({ messageId, citations: [] });
   const turnCitations = citationsForTurn(messageId, isLast, runView, durable?.success ? durable.data : undefined);
   if (turnCitations) capturedCitations.current = { messageId, citations: turnCitations };
@@ -2015,7 +2021,7 @@ export function HarnessAssistantMessage() {
           </div>
         </div>
       )) : <div className={assistantSurface ? "assistant-answer-row" : "task-answer-row"}>
-        <AssistantResponse key={messageId} text={displayedText} streaming={!controlSummary && (directStream ? live.status === "streaming" && !live.textComplete : messageStatus?.type === "running")} />
+        <AssistantResponse key={messageId} text={displayedText} hideInputForm={hidesInputForm} streaming={!controlSummary && (directStream ? live.status === "streaming" && !live.textComplete : messageStatus?.type === "running")} />
         {assistantSurface && responseActions}
       </div>}
       <div className="followup-input-anchor" data-followup-for={messageId} />

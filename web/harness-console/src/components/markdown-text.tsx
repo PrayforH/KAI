@@ -211,7 +211,7 @@ function markdownUrlTransform(url: string) {
   return url === "streamdown:incomplete-link" ? url : knowledgeUrlTransform(url);
 }
 
-function MarkdownTextImpl({ stabilizeFormatting = false }: { stabilizeFormatting?: boolean }) {
+function MarkdownTextImpl({ stabilizeFormatting = false, hideInputForm = false }: { stabilizeFormatting?: boolean; hideInputForm?: boolean }) {
   const part = useMessagePartText();
   const redact = useConversationRedactor();
   const published = usePublishedBlocks();
@@ -221,9 +221,10 @@ function MarkdownTextImpl({ stabilizeFormatting = false }: { stabilizeFormatting
       text: redact(conversationInputDisplay(
         normalizeMessageText(stripHarnessUiFences(part.text, published)),
         part.status.type === "running",
+        hideInputForm,
       )),
     }),
-    [part, published, redact],
+    [part, published, redact, hideInputForm],
   );
   // Render the actual stream; do not queue a second typewriter animation.
   const running = normalized.status.type === "running";
