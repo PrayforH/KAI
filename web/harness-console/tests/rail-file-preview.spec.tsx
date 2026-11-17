@@ -51,6 +51,19 @@ it("routes each file type to the right preview", () => {
   expect(previewKindFor("application/octet-stream", "db.sqlite")).toBe("none");
 });
 
+it("reads and downloads an input artifact from its own upload route", async () => {
+  const fetcher = vi.fn(async (_input: RequestInfo | URL) => new Response("# 说明\n\n正文", { status: 200 }));
+  vi.stubGlobal("fetch", fetcher);
+  const container = await render(target("说明.md", "text/markdown", {
+    content_url: "/api/input-artifacts/input_artifact_a/content?inline=1",
+    download_url: "/api/input-artifacts/input_artifact_a/content",
+  }));
+  expect(fetcher.mock.calls[0][0]).toBe("/api/input-artifacts/input_artifact_a/content?inline=1");
+  expect(container.textContent).toContain("正文");
+  expect(container.querySelector(".rail-preview-download")?.getAttribute("href"))
+    .toBe("/api/input-artifacts/input_artifact_a/content");
+});
+
 it("parses quoted csv rows without losing fields", () => {
   const rows = parseCsvRows('name,note\n"a,b","say ""hi"""\nplain,line\n');
   expect(rows[0]).toEqual(["name", "note"]);

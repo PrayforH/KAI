@@ -1,7 +1,14 @@
 "use client";
 import { useState } from "react";
-import { ConversationImageViewer, type ConversationImage } from "./conversation-image-viewer";
+import { ConversationImageViewer } from "./conversation-image-viewer";
 import type { CompleteAttachment } from "@assistant-ui/react";
+import { inputArtifactIdFromAttachment } from "../lib/input-attachment-adapter";
+import {
+  inputArtifactPreviewTarget,
+  isInputArtifactId,
+  requestArtifactPreview,
+} from "../lib/input-artifact-preview";
+
 function AttachmentFileIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -49,12 +56,24 @@ export function attachmentDetails(attachment: MessageAttachment) {
   const imageSrc = isImage
     ? href ?? (data?.startsWith("data:") || data?.startsWith("http") ? data : undefined)
     : undefined;
-  return { href, extension, isImage, imageSrc };
+  const resolvedId = inputArtifactIdFromAttachment(attachment);
+  const artifactId = isInputArtifactId(resolvedId) ? resolvedId : undefined;
+  return { href, extension, isImage, imageSrc, contentType, artifactId };
 }
 
-export function MessageAttachmentView({ attachment, onPreview }: { attachment: MessageAttachment; onPreview?: () => void }) {
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const { href, extension, isImage, imageSrc } = attachmentDetails(attachment);
+/** Sent files open in the same centered dialog as composer cards; anything the
+ * console never uploaded keeps its download link or static chip. */
+export function MessageAttachmentView({ attachment }: { attachment: MessageAttachment }) {
+  const [fallbackOpen, setFallbackOpen] = useState(false);
+  const { href, extension, isImage, imageSrc, contentType, artifactId } = attachmentDetails(attachment);
+  const openPreview = () => {
+    if (!artifactId) { setFallbackOpen(true); return; }
+    requestArtifactPreview(inputArtifactPreviewTarget({
+      artifactId,
+      name: attachment.name,
+      mediaType: contentType ?? "",
+    }));
+  };
   const content = (
     <>
       {imageSrc ? (
@@ -80,12 +99,12 @@ export function MessageAttachmentView({ attachment, onPreview }: { attachment: M
         className="message-attachment-card"
         data-kind={isImage ? "image" : "file"}
       >
-        {isImage && imageSrc ? (
+        {(isImage && imageSrc) || artifactId ? (
           <button
             className="message-attachment-open"
             type="button"
-            onClick={() => onPreview ? onPreview() : setPreviewOpen(true)}
-            title={`放大查看 ${attachment.name}`}
+            onClick={openPreview}
+            title={`预览 ${attachment.name}`}
           >
             {content}
           </button>
@@ -101,28 +120,19 @@ export function MessageAttachmentView({ attachment, onPreview }: { attachment: M
           <span className="message-attachment-static">{content}</span>
         )}
       </div>
-      {previewOpen && imageSrc && <ConversationImageViewer images={[{src: imageSrc, title: attachment.name, downloadHref: href}]} index={0} onSelect={() => {}} onClose={() => setPreviewOpen(false)} />}
+      {fallbackOpen && imageSrc && <ConversationImageViewer images={[{src: imageSrc, title: attachment.name, downloadHref: href}]} index={0} onSelect={() => {}} onClose={() => setFallbackOpen(false)} />}
     </>
   );
 }
 
 
-/** Compact sent attachments, with a bounded first view and shared image navigation. */
+/** Compact sent attachments, with a bounded first view. */
 export function MessageAttachmentGroup({ attachments }: { attachments: readonly MessageAttachment[] }) {
   const [expanded, setExpanded] = useState(false);
-  const [index, setIndex] = useState<number | null>(null);
-  const images: ConversationImage[] = attachments.flatMap(attachment => {
-    const { imageSrc, href } = attachmentDetails(attachment);
-    return imageSrc ? [{ src: imageSrc, title: attachment.name, downloadHref: href }] : [];
-  });
   if (!attachments.length) return null;
   const visible = expanded ? attachments : attachments.slice(0, 6);
   return <div className="aui-user-message-attachments message-attachment-group" aria-label={`附件 · ${attachments.length} 个`}>
-    {visible.map(attachment => {
-      const imageIndex = images.findIndex(image => image.src === attachmentDetails(attachment).imageSrc);
-      return <MessageAttachmentView key={attachment.id} attachment={attachment} onPreview={imageIndex >= 0 ? () => setIndex(imageIndex) : undefined} />;
-    })}
+    {visible.map(attachment => <MessageAttachmentView key={attachment.id} attachment={attachment} />)}
     {attachments.length > 6 && <button type="button" className="message-attachment-expand" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? "收起附件" : `+${attachments.length - 6} 个附件`}</button>}
-    {index !== null && <ConversationImageViewer images={images} index={index} onSelect={setIndex} onClose={() => setIndex(null)} />}
   </div>;
 }

@@ -255,7 +255,7 @@ it("places each run activity before its assistant answer", () => {
   expect(agentThreadSource).not.toContain("MessagesFooter: LatestActivity");
 });
 
-it("renders uploaded images in an in-app original-size preview", () => {
+it("opens uploaded files through the shared preview dialog", () => {
   expect(
     inputArtifactDownloadHref("input_artifact_123", "history-index"),
   ).toBe("/api/input-artifacts/input_artifact_123/content");
@@ -264,7 +264,10 @@ it("renders uploaded images in an in-app original-size preview", () => {
   expect(attachmentSource).toContain('data-kind={isImage ? "image" : "file"}');
   expect(attachmentSource).toContain("message-attachment-preview");
   expect(attachmentSource).toContain("message-attachment-open");
-  expect(attachmentSource).toContain("ConversationImageViewer");
+  expect(attachmentSource).toContain("requestArtifactPreview");
+  const helper = readFileSync(new URL("../src/lib/input-artifact-preview.ts", import.meta.url), "utf8");
+  expect(helper).toContain('"harness:preview-artifact"');
+  expect(helper).toContain("/api/input-artifacts/");
   const viewer = readFileSync(new URL("../src/components/conversation-image-viewer.tsx", import.meta.url), "utf8");
   expect(viewer).toContain("image-lightbox");
   expect(viewer).toContain("下载原图");

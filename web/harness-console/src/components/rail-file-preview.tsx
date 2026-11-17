@@ -17,6 +17,11 @@ export interface PreviewTarget {
   media_type: string;
   size_bytes?: number | null;
   thread_id?: string | null;
+  /** Uploaded input artifacts answer on /api/input-artifacts, not on the
+   * thread artifact route, so callers that know the file pass its resolved
+   * URLs instead of letting the dialog guess from the id. */
+  content_url?: string;
+  download_url?: string;
 }
 
 const TEXT_PREVIEW_LIMIT_BYTES = 2 * 1024 * 1024;
@@ -91,6 +96,7 @@ export function parseCsvRows(text: string, limit = CSV_PREVIEW_ROWS): string[][]
 /** The dialog chrome and the preview share these routes, so both always open
  * and download the same content the preview shows. */
 export function artifactContentUrl(target: PreviewTarget): string {
+  if (target.content_url) return target.content_url;
   const params = new URLSearchParams();
   if (target.thread_id) params.set("thread_id", target.thread_id);
   params.set("preview", "1");
@@ -98,6 +104,7 @@ export function artifactContentUrl(target: PreviewTarget): string {
 }
 
 export function artifactDownloadUrl(target: PreviewTarget): string {
+  if (target.download_url) return target.download_url;
   const params = new URLSearchParams();
   if (target.thread_id) params.set("thread_id", target.thread_id);
   const query = params.toString();
