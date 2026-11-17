@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 
 import {
+  GROUP_REPLY_PROGRESS_EMPTY,
   isTerminalEvent,
-  nextGroupReplyStage,
+  nextGroupReplyProgress,
   takeSseFrames,
-  type GroupReplyStage,
+  type GroupReplyProgress,
 } from "./group-reply-progress";
 
 /** 事件流回放一次就结束，未到终态时隔一小段再按 Last-Event-ID 续读。 */
@@ -23,21 +24,22 @@ function eventsUrl(runId: string) {
 /**
  * 跟随一条运行中的群回复。只读既有 run 事件流，不新建 Run、不写库。
  *
- * 任何失败（断流、404/403、跨群切换后 runId 变化）都静默停下：
+ * `runId` 变化（空回复自动重试会保留消息、换 runId）时整个订阅重建，
+ * 用最新 runId 继续读。任何失败（断流、404/403、跨群切换）都静默停下：
  * 调用方继续显示兜底文案，消息轮询照旧替换最终结果。
  */
 export function useGroupReplyProgress(
   runId: string | null | undefined,
   active: boolean,
-): GroupReplyStage | undefined {
-  const [stage, setStage] = useState<GroupReplyStage | undefined>(undefined);
+): GroupReplyProgress["stage"] {
+  const [progress, setProgress] = useState<GroupReplyProgress>(GROUP_REPLY_PROGRESS_EMPTY);
 
   useEffect(() => {
     if (!active || !runId) {
-      setStage(undefined);
+      setProgress(GROUP_REPLY_PROGRESS_EMPTY);
       return;
     }
-    setStage(undefined);
+    setProgress(GROUP_REPLY_PROGRESS_EMPTY);
     const controller = new AbortController();
     let lastEventId: string | undefined;
 
@@ -77,7 +79,7 @@ export function useGroupReplyProgress(
                   finished = true;
                   break;
                 }
-                setStage((current) => nextGroupReplyStage(current, event));
+                setProgress((current) => nextGroupReplyProgress(current, event));
               }
               if (finished) break;
             }
@@ -97,5 +99,5 @@ export function useGroupReplyProgress(
     return () => controller.abort();
   }, [active, runId]);
 
-  return active ? stage : undefined;
+  return active ? progress.stage : undefined;
 }

@@ -202,6 +202,73 @@ describe("AssistantGroupMessage", () => {
     expect(status?.getAttribute("aria-live")).toBe("polite");
   });
 
+  it("keeps the tool stage while a parallel tool call is still running", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      body: sseBody([
+        frame({ type: "TOOL_CALL_START", toolCallId: "a" }),
+        frame({ type: "TOOL_CALL_END", toolCallId: "a" }),
+        frame({ type: "TOOL_CALL_START", toolCallId: "b" }),
+        frame({ type: "TOOL_CALL_RESULT", toolCallId: "a" }),
+      ]),
+    })));
+    await render(
+      <AssistantGroupMessage
+        message={message({ text: "", status: "running", runId: "run-1" })}
+        tone="#38d591"
+        onReact={vi.fn()}
+        onReply={vi.fn()}
+      />,
+    );
+    await flush();
+    expect(host.textContent).toContain("正在调用工具");
+  });
+
+  it("follows the new runId when an automatic retry replaces the run", async () => {
+    const fetchMock = vi.fn(async (url: string) => ({
+      ok: true,
+      body: sseBody(
+        String(url).includes("run-2")
+          ? [
+              frame({
+                type: "ACTIVITY_SNAPSHOT",
+                activityType: "harness.run.v1",
+                content: {
+                  items: [
+                    { id: "1", event_type: "tool.request", metadata: { tool_call_id: "a" } },
+                  ],
+                },
+              }),
+              frame({ type: "RUN_FINISHED" }),
+            ]
+          : [frame({ type: "RUN_STARTED" }), frame({ type: "RUN_FINISHED" })],
+      ),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const props = {
+      tone: "#38d591",
+      onReact: vi.fn(),
+      onReply: vi.fn(),
+    };
+    await render(
+      <AssistantGroupMessage
+        message={message({ text: "", status: "running", runId: "run-1" })}
+        {...props}
+      />,
+    );
+    await flush();
+    await render(
+      <AssistantGroupMessage
+        message={message({ text: "", status: "running", runId: "run-2" })}
+        {...props}
+      />,
+    );
+    await flush();
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(urls).toContain("/api/agui/runs/run-2/events");
+    expect(host.textContent).toContain("正在调用工具");
+  });
+
   it("falls back to polling text when the event stream is unreachable", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => {
       throw new Error("offline");

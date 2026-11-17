@@ -2,23 +2,47 @@ import { describe, expect, it } from "vitest";
 
 import {
   GROUP_REPLY_FALLBACK_TEXT,
+  GROUP_REPLY_PROGRESS_EMPTY,
   GROUP_REPLY_STAGE_LABEL,
   isTerminalEvent,
-  nextGroupReplyStage,
+  nextGroupReplyProgress,
+  progressFromActivity,
   stageFromActivity,
   takeSseFrames,
+  type GroupReplyProgress,
+  type GroupReplyStreamEvent,
 } from "../src/lib/group-reply-progress";
 
-function activity(types: string[]) {
+type Item = { event_type: string; tool_call_id?: string };
+
+function item(value: Item) {
+  return {
+    event_type: value.event_type,
+    metadata: value.tool_call_id ? { tool_call_id: value.tool_call_id } : {},
+  };
+}
+
+function activity(items: Item[]) {
   return {
     run_id: "run-1",
     status: "running",
-    items: types.map((event_type, index) => ({
-      id: `item-${index}`,
-      event_type,
-      metadata: { tool_call_id: "call-1" },
-    })),
+    items: items.map((value, index) => ({ id: `item-${index}`, ...item(value) })),
   };
+}
+
+function delta(value: Item) {
+  return {
+    type: "ACTIVITY_DELTA",
+    activityType: "harness.run.v1",
+    patch: [{ op: "add", path: "/items/-", value: item(value) }],
+  };
+}
+
+function fold(events: GroupReplyStreamEvent[]): GroupReplyProgress {
+  return events.reduce<GroupReplyProgress>(
+    (state, event) => nextGroupReplyProgress(state, event),
+    GROUP_REPLY_PROGRESS_EMPTY,
+  );
 }
 
 describe("群回复进度阶段", () => {
@@ -32,52 +56,160 @@ describe("群回复进度阶段", () => {
   });
 
   it("活动快照：未完成的工具请求显示正在调用工具", () => {
-    expect(stageFromActivity(activity(["run.started", "tool.request"]))).toBe("tool");
+    expect(stageFromActivity(activity([{ event_type: "run.started" }, { event_type: "tool.request" }])))
+      .toBe("tool");
   });
 
   it("活动快照：工具已返回、还没有正文时回到正在思考", () => {
     expect(
-      stageFromActivity(activity(["run.started", "tool.request", "tool.result"])),
+      stageFromActivity(activity([
+        { event_type: "run.started" },
+        { event_type: "tool.request", tool_call_id: "a" },
+        { event_type: "tool.result", tool_call_id: "a" },
+      ])),
     ).toBe("thinking");
   });
 
   it("活动快照：正文开始后显示正在整理回复", () => {
     expect(
-      stageFromActivity(activity(["run.started", "message.delta", "message.delta"])),
+      stageFromActivity(activity([
+        { event_type: "run.started" },
+        { event_type: "message.delta" },
+        { event_type: "message.delta" },
+      ])),
     ).toBe("writing");
   });
 
-  it("活动增量按条目推进阶段", () => {
-    let stage = nextGroupReplyStage(undefined, {
-      type: "ACTIVITY_DELTA",
-      activityType: "harness.run.v1",
-      patch: [{ op: "add", path: "/items/-", value: { event_type: "tool.request" } }],
-    });
-    expect(stage).toBe("tool");
-    stage = nextGroupReplyStage(stage, {
-      type: "ACTIVITY_DELTA",
-      activityType: "harness.run.v1",
-      patch: [{ op: "add", path: "/items/-", value: { event_type: "tool.result" } }],
-    });
-    expect(stage).toBe("thinking");
-    stage = nextGroupReplyStage(stage, {
-      type: "ACTIVITY_DELTA",
-      activityType: "harness.run.v1",
-      patch: [{ op: "add", path: "/items/-", value: { event_type: "message.delta" } }],
-    });
-    expect(stage).toBe("writing");
+  it("并行工具：还有一个没返回就保持正在调用工具", () => {
+    const progress = progressFromActivity(activity([
+      { event_type: "tool.request", tool_call_id: "a" },
+      { event_type: "tool.request", tool_call_id: "b" },
+      { event_type: "tool.result", tool_call_id: "a" },
+    ]));
+    expect(progress.stage).toBe("tool");
+    expect(progress.pendingToolCalls).toEqual(["b"]);
+
+    expect(
+      progressFromActivity(activity([
+        { event_type: "tool.request", tool_call_id: "a" },
+        { event_type: "tool.request", tool_call_id: "b" },
+        { event_type: "tool.result", tool_call_id: "b" },
+        { event_type: "tool.result", tool_call_id: "a" },
+      ])).stage,
+    ).toBe("thinking");
+  });
+
+  it("增量跨帧保留并行工具集合，任一返回不掉档", () => {
+    const progress = fold([
+      delta({ event_type: "tool.request", tool_call_id: "a" }),
+      delta({ event_type: "tool.request", tool_call_id: "b" }),
+      { type: "STATE_SNAPSHOT" },
+      delta({ event_type: "tool.result", tool_call_id: "a" }),
+    ]);
+    expect(progress.stage).toBe("tool");
+
+    // 另一个工具返回后，才回到思考；随后正文到达才是整理回复。
+    expect(
+      fold([
+        delta({ event_type: "tool.request", tool_call_id: "a" }),
+        delta({ event_type: "tool.request", tool_call_id: "b" }),
+        delta({ event_type: "tool.result", tool_call_id: "a" }),
+        delta({ event_type: "tool.result", tool_call_id: "b" }),
+      ]).stage,
+    ).toBe("thinking");
+  });
+
+  it("增量按条目推进阶段", () => {
+    let progress = nextGroupReplyProgress(
+      GROUP_REPLY_PROGRESS_EMPTY,
+      delta({ event_type: "tool.request", tool_call_id: "a" }),
+    );
+    expect(progress.stage).toBe("tool");
+    progress = nextGroupReplyProgress(progress, delta({ event_type: "tool.result", tool_call_id: "a" }));
+    expect(progress.stage).toBe("thinking");
+    progress = nextGroupReplyProgress(progress, delta({ event_type: "message.delta" }));
+    expect(progress.stage).toBe("writing");
+  });
+
+  it("过程事件不误报成工具调用", () => {
+    // 运行时初始化 / 上下文压缩 / 子 Agent 阶段 / 审批等待都只是“还在处理”。
+    for (const event_type of [
+      "runtime.system",
+      "context.compaction.started",
+      "subagent.started",
+      "subagent.completed",
+      "approval.requested",
+    ]) {
+      const progress = fold([delta({ event_type })]);
+      expect(progress.stage).not.toBe("tool");
+      expect(progress.stage).toBe("thinking");
+    }
+    // 产物、界面回执、策略解析不表达进行中的工作，不改变阶段。
+    expect(fold([delta({ event_type: "artifact.ready" })]).stage).toBeUndefined();
+    expect(fold([delta({ event_type: "ui.assistant_control" })]).stage).toBeUndefined();
+    expect(fold([delta({ event_type: "policy.resolved" })]).stage).toBeUndefined();
+  });
+
+  it("工具在跑时，过程事件不会把工具档改掉", () => {
+    const progress = fold([
+      delta({ event_type: "tool.request", tool_call_id: "a" }),
+      delta({ event_type: "runtime.system" }),
+      delta({ event_type: "message.delta" }),
+    ]);
+    expect(progress.stage).toBe("tool");
   });
 
   it("没有活动投影时按 AG-UI 事件兜底", () => {
-    expect(nextGroupReplyStage(undefined, { type: "RUN_STARTED" })).toBe("thinking");
-    expect(nextGroupReplyStage("thinking", { type: "TOOL_CALL_START" })).toBe("tool");
-    expect(nextGroupReplyStage("tool", { type: "TEXT_MESSAGE_CONTENT" })).toBe("writing");
-    expect(nextGroupReplyStage("writing", { type: "TOOL_CALL_RESULT" })).toBe("thinking");
+    expect(fold([{ type: "RUN_STARTED" }]).stage).toBe("thinking");
+    expect(fold([{ type: "TOOL_CALL_START", toolCallId: "a" }]).stage).toBe("tool");
+    expect(fold([{ type: "TEXT_MESSAGE_CONTENT" }]).stage).toBe("writing");
+  });
+
+  it("TOOL_CALL_END 只是参数帧结束，不结束工具档", () => {
+    const progress = fold([
+      { type: "TOOL_CALL_START", toolCallId: "a" },
+      { type: "TOOL_CALL_ARGS", toolCallId: "a" },
+      { type: "TOOL_CALL_END", toolCallId: "a" },
+    ]);
+    expect(progress.stage).toBe("tool");
+    expect(progress.pendingToolCalls).toEqual(["a"]);
+
+    // 真正的完成信号是 TOOL_CALL_RESULT，且要按 id 匹配。
+    expect(
+      fold([
+        { type: "TOOL_CALL_START", toolCallId: "a" },
+        { type: "TOOL_CALL_END", toolCallId: "a" },
+        { type: "TOOL_CALL_START", toolCallId: "b" },
+        { type: "TOOL_CALL_RESULT", toolCallId: "a" },
+      ]).stage,
+    ).toBe("tool");
+  });
+
+  it("标准事件与活动投影重复到达时保持幂等", () => {
+    const progress = fold([
+      { type: "TOOL_CALL_START", toolCallId: "a" },
+      delta({ event_type: "tool.request", tool_call_id: "a" }),
+      { type: "TOOL_CALL_END", toolCallId: "a" },
+      delta({ event_type: "tool.result", tool_call_id: "a" }),
+    ]);
+    expect(progress.stage).toBe("thinking");
+    expect(progress.pendingToolCalls).toEqual([]);
+  });
+
+  it("缺少工具调用 id 时不会卡在工具档", () => {
+    const progress = fold([
+      delta({ event_type: "tool.request" }),
+      delta({ event_type: "tool.result" }),
+    ]);
+    expect(progress.stage).toBe("thinking");
+    expect(progress.pendingToolCalls).toEqual([]);
   });
 
   it("无关事件不改变阶段", () => {
-    expect(nextGroupReplyStage("tool", { type: "STATE_SNAPSHOT" })).toBe("tool");
-    expect(nextGroupReplyStage(undefined, { type: "ACTIVITY_DELTA", patch: [] })).toBeUndefined();
+    expect(fold([delta({ event_type: "artifact.ready" }), { type: "STATE_SNAPSHOT" }]).stage)
+      .toBeUndefined();
+    const state: GroupReplyProgress = { stage: "tool", pendingToolCalls: [] };
+    expect(nextGroupReplyProgress(state, { type: "STATE_SNAPSHOT" })).toBe(state);
   });
 
   it("只把 RUN_FINISHED / RUN_ERROR 当作终态", () => {
