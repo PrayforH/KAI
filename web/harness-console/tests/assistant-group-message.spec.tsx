@@ -40,10 +40,39 @@ afterEach(async () => {
   if (root) await act(async () => root!.unmount());
   root = undefined;
   host.remove();
+  vi.unstubAllGlobals();
 });
 
 async function render(node: ReactNode) {
   await act(async () => root!.render(node));
+}
+
+/** 让事件流的微任务与状态更新落地。 */
+async function flush() {
+  await act(async () => {
+    await new Promise((done) => setTimeout(done, 0));
+    await new Promise((done) => setTimeout(done, 0));
+  });
+}
+
+function frame(event: unknown) {
+  return `data: ${JSON.stringify(event)}\n\n`;
+}
+
+function sseBody(chunks: string[]) {
+  const encoder = new TextEncoder();
+  let index = 0;
+  return {
+    getReader() {
+      return {
+        read: async () =>
+          index < chunks.length
+            ? { value: encoder.encode(chunks[index++]), done: false }
+            : { value: undefined, done: true },
+        cancel: async () => undefined,
+      };
+    },
+  };
 }
 
 describe("AssistantGroupMessage", () => {
@@ -106,6 +135,8 @@ describe("AssistantGroupMessage", () => {
   });
 
   it("shows the running placeholder for an empty reply", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
     await render(
       <AssistantGroupMessage
         message={message({ text: "", status: "running" })}
@@ -114,7 +145,92 @@ describe("AssistantGroupMessage", () => {
         onReply={vi.fn()}
       />,
     );
+    // 没有 runId 就没有可跟随的流，不该发请求。
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(host.textContent).toContain("正在回复…");
+  });
+
+  it("shows real progress stages from the run event stream", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      body: sseBody([
+        frame({
+          type: "ACTIVITY_SNAPSHOT",
+          activityType: "harness.run.v1",
+          content: {
+            run_id: "run-1",
+            status: "running",
+            started_at: "2026-11-17T02:00:00Z",
+            items: [{ id: "1", event_type: "run.started", metadata: {} }],
+            metrics: {},
+          },
+        }),
+        frame({
+          type: "ACTIVITY_DELTA",
+          activityType: "harness.run.v1",
+          patch: [{ op: "add", path: "/items/-", value: { event_type: "tool.request", metadata: { name: "assistant_group_update_profile" } } }],
+        }),
+        frame({
+          type: "ACTIVITY_DELTA",
+          activityType: "harness.run.v1",
+          patch: [{ op: "add", path: "/items/-", value: { event_type: "tool.result", metadata: {} } }],
+        }),
+        frame({
+          type: "ACTIVITY_DELTA",
+          activityType: "harness.run.v1",
+          patch: [{ op: "add", path: "/items/-", value: { event_type: "message.delta", summary: "好的" } }],
+        }),
+        frame({ type: "RUN_FINISHED" }),
+      ]),
+    })));
+    await render(
+      <AssistantGroupMessage
+        message={message({ text: "", status: "running", runId: "run-1" })}
+        tone="#38d591"
+        onReact={vi.fn()}
+        onReply={vi.fn()}
+      />,
+    );
+    await flush();
+    expect(host.textContent).toContain("正在整理回复");
+    // 阶段文案不得泄露工具名、事件名或内部 id。
+    expect(host.textContent).not.toContain("assistant_group_update_profile");
+    expect(host.textContent).not.toContain("tool.request");
+    expect(host.textContent).not.toContain("run-1");
+    const status = host.querySelector('[role="status"]');
+    expect(status?.className).toContain("running");
+    expect(status?.getAttribute("aria-live")).toBe("polite");
+  });
+
+  it("falls back to polling text when the event stream is unreachable", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      throw new Error("offline");
+    }));
+    await render(
+      <AssistantGroupMessage
+        message={message({ text: "", status: "running", runId: "run-1" })}
+        tone="#38d591"
+        onReact={vi.fn()}
+        onReply={vi.fn()}
+      />,
+    );
+    await flush();
+    expect(host.textContent).toContain("正在回复…");
+  });
+
+  it("keeps the progress row stable and honours reduced motion", () => {
+    const css = readFileSync(
+      resolve(process.cwd(), "src/components/assistant-group-message.module.css"),
+      "utf8",
+    );
+    const placeholder = css.match(/\.placeholder\s*\{([^}]*)\}/)?.[1] ?? "";
+    const running = css.match(/\.running\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(placeholder).toContain("line-height: 1.6");
+    expect(running).toContain("animation: groupStatusSweep 2.4s linear infinite");
+    expect(running).toContain("background-clip: text");
+    // 减弱动效 / 强制配色下必须能读，且没有动画。
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\), \(forced-colors: active\)/);
+    expect(css).toMatch(/\.running \{[^}]*animation: none/s);
   });
 
   it("renders the quote snapshot when replyTo is present", async () => {

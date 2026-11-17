@@ -3,6 +3,11 @@
 import type { GroupMessage } from "../lib/assistant-client";
 import { resolveDownloadUrl } from "../lib/assistant-download-url";
 import { groupTimeLabel } from "../lib/group-chat-time";
+import {
+  GROUP_REPLY_FALLBACK_TEXT,
+  GROUP_REPLY_STAGE_LABEL,
+} from "../lib/group-reply-progress";
+import { useGroupReplyProgress } from "../lib/use-group-reply-progress";
 import { AssistantGroupMarkdown } from "./assistant-group-markdown";
 import { MESSAGE_REACTIONS, MessageActions } from "./message-actions";
 import styles from "./assistant-group-message.module.css";
@@ -26,10 +31,23 @@ function AttachmentIcon() {
 
 function statusText(status: GroupMessage["status"]): string {
   if (status === "waiting") return "等待确认后继续…";
-  if (status === "running") return "正在回复…";
+  if (status === "running") return GROUP_REPLY_FALLBACK_TEXT;
   if (status === "failed") return "回复失败";
   if (status === "stopped") return "回复已停止";
   return "…";
+}
+
+/**
+ * 运行中的回复：跟随既有 run 事件流显示「正在思考 / 正在调用工具 / 正在整理回复」。
+ * 流拿不到时退回「正在回复…」，由消息轮询负责最终结果。
+ */
+function RunningReplyStatus({ runId }: { runId: string }) {
+  const stage = useGroupReplyProgress(runId, true);
+  return (
+    <span className={`${styles.placeholder} ${styles.running}`} role="status" aria-live="polite">
+      {stage ? GROUP_REPLY_STAGE_LABEL[stage] : GROUP_REPLY_FALLBACK_TEXT}
+    </span>
+  );
 }
 
 type AssistantGroupMessageProps = {
@@ -58,8 +76,11 @@ export function AssistantGroupMessage({
   const failed = message.status === "failed";
   /** 本人发送的消息不提供表情回复；表情只给助理的答复。 */
   const canReact = !mine && !system;
+  const runningRunId = message.status === "running" ? message.runId : null;
   const body = message.text ? (
     <AssistantGroupMarkdown text={message.text} />
+  ) : runningRunId ? (
+    <RunningReplyStatus runId={runningRunId} />
   ) : (
     <span className={styles.placeholder}>{statusText(message.status)}</span>
   );

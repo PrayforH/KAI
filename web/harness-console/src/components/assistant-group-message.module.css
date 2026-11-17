@@ -88,6 +88,30 @@
   color: var(--codex-muted, #a3a3a3);
   font-size: 13px;
   font-style: italic;
+  /* 阶段文案长短不同，锁定行高，切换时不推动下方消息。 */
+  line-height: 1.6;
+  display: inline-block;
+}
+
+/* 运行中的阶段文字：与主会话 live 状态同一道扫光；只作用于这一行。 */
+.running {
+  background: linear-gradient(105deg, var(--codex-muted, #a3a3a3) 35%, var(--codex-ink, #f2f2f2) 49%, var(--codex-muted, #a3a3a3) 63%);
+  background-size: 240% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: groupStatusSweep 2.4s linear infinite;
+}
+@keyframes groupStatusSweep {
+  from { background-position: 180% 0; }
+  to { background-position: -80% 0; }
+}
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  .running {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+  }
 }
 
 /* 用户气泡：与主助理会话同一颗蓝色。 */
