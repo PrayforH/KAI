@@ -38,16 +38,13 @@ function fencedBlocks(text: string): FencedBlock[] {
     language: match[2].trim().toLowerCase(), body: match[3],
   }));
 }
-function inputBlock(text: string): InputBlock | null {
-  const blocks: InputBlock[] = [];
+type BareObject = { start: number; end: number };
+/** Complete JSON objects beginning on their own line, outside code fences. The strict
+ * scanner and the leftover cleanup share it, so a bare protocol object is always found
+ * the same way. */
+function bareObjects(text: string): BareObject[] {
+  const spans: BareObject[] = [];
   const codeBlocks = fencedBlocks(text);
-  for (const block of codeBlocks) {
-    if (!["harness-input", "harness", "json", ""].includes(block.language)) continue;
-    const input = validateInput(block.body);
-    if (input) blocks.push({start: block.start, end: block.end, input});
-  }
-  // Models sometimes omit the fence. Only accept a complete, bounded protocol
-  // object beginning on its own line, outside other code blocks.
   const starts = /(?:^|\n)[ \t]*(?=\{)/g;
   let start: RegExpExecArray | null;
   while ((start = starts.exec(text))) {
@@ -64,12 +61,27 @@ function inputBlock(text: string): InputBlock | null {
       } else if (char === '"') quoted = true;
       else if (char === "{") depth++;
       else if (char === "}" && --depth === 0) {
-        const input = validateInput(text.slice(offset, i + 1));
-        if (input) blocks.push({start: offset, end: i + 1, input});
+        spans.push({ start: offset, end: i + 1 });
         starts.lastIndex = i + 1;
         break;
       }
     }
+  }
+  return spans;
+}
+function inputBlock(text: string): InputBlock | null {
+  const blocks: InputBlock[] = [];
+  const codeBlocks = fencedBlocks(text);
+  for (const block of codeBlocks) {
+    if (!["harness-input", "harness", "json", ""].includes(block.language)) continue;
+    const input = validateInput(block.body);
+    if (input) blocks.push({start: block.start, end: block.end, input});
+  }
+  // Models sometimes omit the fence. Only accept a complete, bounded protocol
+  // object beginning on its own line, outside other code blocks.
+  for (const span of bareObjects(text)) {
+    const input = validateInput(text.slice(span.start, span.end));
+    if (input) blocks.push({...span, input});
   }
   return blocks.length === 1 ? blocks[0] : null;
 }
@@ -147,6 +159,14 @@ function looseBlock(text: string): InputBlock | null {
     const input = recoverInput(block.body);
     if (input) blocks.push({ start: block.start, end: block.end, input });
   }
+  // A bare near miss is recoverable the same way: forgetting the fence must not leave
+  // the question sitting in the answer as raw JSON.
+  for (const span of bareObjects(text)) {
+    const raw = text.slice(span.start, span.end);
+    if (!looksLikeProtocol(raw) || validateInput(raw)) continue;
+    const input = recoverInput(raw);
+    if (input) blocks.push({ ...span, input });
+  }
   return blocks.length === 1 ? blocks[0] : null;
 }
 
@@ -182,6 +202,21 @@ function replaceRemainingForms(text: string, streaming: boolean): string | null 
   }, text);
 }
 
+/** Replace protocol-shaped bare objects still in the text after the rendered block.
+ * One recoverable object keeps a readable summary (same as a fenced near miss); several
+ * of them, or one recovery gives up on, all degrade to the unrecognized notice. */
+function replaceRemainingBareForms(text: string, streaming: boolean): string | null {
+  const spans = bareObjects(text).filter(span => looksLikeProtocol(text.slice(span.start, span.end)));
+  if (!spans.length) return null;
+  const single = spans.length === 1;
+  return spans.reduceRight((value, span) => {
+    const raw = text.slice(span.start, span.end);
+    const input = single ? validateInput(raw) ?? recoverInput(raw) : null;
+    const replacement = streaming ? "" : input ? summarizeInput(input) : UNRECOGNIZED_FORM;
+    return value.slice(0, span.start) + replacement + value.slice(span.end);
+  }, text);
+}
+
 /** `hideProtocol`: the answer's own bubble already renders the form, so its summary is
  * dropped instead of shown twice. */
 export function conversationInputDisplay(text: string, streaming = false, hideProtocol = false): string {
@@ -189,14 +224,16 @@ export function conversationInputDisplay(text: string, streaming = false, hidePr
   const base = block
     ? text.slice(0, block.start) + (hideProtocol ? "" : summarizeInput(block.input)) + text.slice(block.end)
     : text;
-  const cleaned = replaceRemainingForms(base, streaming);
-  let shown = cleaned ?? base;
-  if (!block && cleaned === null && streaming) {
+  const bare = replaceRemainingBareForms(base, streaming);
+  const withBares = bare ?? base;
+  const cleaned = replaceRemainingForms(withBares, streaming);
+  let shown = cleaned ?? withBares;
+  if (!block && bare === null && cleaned === null && streaming) {
     const start = /(?:^|\n)```harness(?:-input)?(?:\s|$)/.exec(shown)
       ?? /(?:^|\n)[ \t]*\{\s*"version"\s*:\s*1\s*,\s*"title"\s*:\s*"[^"\n]*"\s*,\s*"questions"\s*:\s*\[/.exec(shown);
     if (start) shown = shown.slice(0, start.index);
   }
-  return block || cleaned !== null ? shown.trimEnd() : shown;
+  return block || bare !== null || cleaned !== null ? shown.trimEnd() : shown;
 }
 export function latestConversationInput(messages: readonly { id: string; role: string; content: readonly { type: string; text?: string; toolName?: string }[]; status?: {type: string} }[]) {
   // Background results are conversation messages, not new configuration

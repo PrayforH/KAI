@@ -45,9 +45,15 @@ it("handles quoted braces, refuses ambiguous or non-protocol JSON and suppresses
   expect(parseConversationInput(JSON.stringify(data))?.title).toBe(data.title);
   expect(parseConversationInput(JSON.stringify(payload)+'\n'+JSON.stringify(payload))).toBeNull();
   expect(parseConversationInput('```python\n'+JSON.stringify(payload)+'\n```')).toBeNull();
-  for(const data of [{version:1,title:"普通 JSON",items:[]},{...payload,execute:"command"},{...payload,version:2}]) {
+  for(const data of [{version:1,title:"普通 JSON",items:[]},{...payload,version:2}]) {
     const text=JSON.stringify(data); expect(parseConversationInput(text)).toBeNull();expect(conversationInputDisplay(text)).toBe(text);
   }
+  // Protocol-shaped with an extra key is a near miss, not ordinary JSON: the strict
+  // contract still refuses it, but display must recover it instead of echoing raw JSON.
+  const extraKey=JSON.stringify({...payload,execute:"command"});
+  expect(parseConversationInput(extraKey)).toBeNull();
+  expect(conversationInputDisplay(extraKey)).toContain("选择内容（UI / 接口）");
+  expect(conversationInputDisplay(extraKey)).not.toMatch(/"questions"|"version"/);
   const partial='请补充\n{"version":1,"title":"需要你补充","questions":[{"id":"x"';
   expect(conversationInputDisplay(partial,true)).toBe('请补充');
   expect(parseConversationInput(partial)).toBeNull();
@@ -226,5 +232,61 @@ describe("a recovered form keeps sensitive fields protected", () => {
     const question = conversationInputForDisplay(text)!.questions[0];
     expect(question.sensitive).toBeUndefined();
     expect(isSensitiveQuestion(question)).toBe(true);
+  });
+});
+
+describe("bare protocol objects never fall through as raw text", () => {
+  const bare = (data: unknown) => JSON.stringify(data);
+  const second = {version:1,title:"第二个",questions:[{id:"route",label:"走哪条路线",type:"single",options:["路线 A","路线 B"]}]};
+  const twoBares = `先说结论。\n${bare(payload)}\n第二个：\n${bare(second)}`;
+
+  it("cleans every bare form when the message carries more than one", () => {
+    expect(parseConversationInput(twoBares)).toBeNull();
+    expect(conversationInputForDisplay(twoBares)).toBeNull();
+    for (const shown of [conversationInputDisplay(twoBares), conversationInputDisplay(twoBares, false, true), conversationInputDisplay(twoBares, true)]) {
+      expect(shown).not.toMatch(/"questions"|"version"|"title"/);
+      expect(shown).not.toContain("{");
+    }
+    expect(conversationInputDisplay(twoBares).match(/表单信息未能识别/g)).toHaveLength(2);
+    expect(conversationInputDisplay(twoBares, true)).toBe("先说结论。\n\n第二个：");
+  });
+
+  it("renders a single recoverable bare form instead of raw JSON", () => {
+    const near = {version:1,title:"选择路线",extra:"x",questions:[{key:"route",label:"走哪条路线",type:"single",options:[{label:"路线 A"},{value:"路线 B"}]}]};
+    const text = "请定一下。\n" + bare(near);
+    expect(parseConversationInput(text)).toBeNull();
+    expect(conversationInputForDisplay(text)?.title).toBe("选择路线");
+    expect(conversationInputDisplay(text)).toContain("走哪条路线（路线 A / 路线 B）");
+    expect(conversationInputDisplay(text)).not.toMatch(/"questions"|"version"/);
+    expect(conversationInputDisplay(text, false, true)).toBe("请定一下。");
+    expect(latestConversationInput([{id:"bare-near",role:"assistant",status:{type:"complete"},content:[{type:"text",text}]}])?.messageId).toBe("bare-near");
+  });
+
+  it("keeps a single strict bare form working as before", () => {
+    const text = "请确认。\n" + bare(payload);
+    expect(parseConversationInput(text)?.title).toBe("确认范围");
+    expect(conversationInputForDisplay(text)?.title).toBe("确认范围");
+    expect(conversationInputDisplay(text)).toContain("选择内容（UI / 接口）");
+    expect(conversationInputDisplay(text)).not.toMatch(/"questions"|"version"/);
+  });
+
+  it("degrades a bare protocol object that recovery gives up on", () => {
+    const text = "请确认。\n" + bare({version:1,title:"坏表单",questions:[{id:"x",options:["甲","乙"]}]});
+    expect(parseConversationInput(text)).toBeNull();
+    expect(conversationInputForDisplay(text)).toBeNull();
+    expect(conversationInputDisplay(text)).toContain("请直接输入");
+    expect(conversationInputDisplay(text)).not.toMatch(/"questions"|"version"/);
+    expect(conversationInputDisplay(text, true)).not.toMatch(/"questions"|"version"/);
+  });
+
+  it("leaves ordinary bare JSON, code examples and prose untouched", () => {
+    const ordinary = '说明：\n{"name":"demo","items":[1,2]}';
+    expect(conversationInputDisplay(ordinary)).toBe(ordinary);
+    const python = '```python\nprint("questions")\n```';
+    expect(conversationInputDisplay(python)).toBe(python);
+    const prose = "正文里提到 questions 这个词，但不是表单。";
+    expect(conversationInputDisplay(prose)).toBe(prose);
+    const example = '````markdown\n```json\n{"version":1,"questions":[{"options":[]}]}\n```\n````';
+    expect(conversationInputDisplay(example)).toBe(example);
   });
 });
