@@ -3611,16 +3611,41 @@ class AssistantService:
         })
         await self.repository.acknowledge_group_delivery_notice(notice["outbox_id"])
 
+    async def record_group_tool_audit(self, run: Run, payload: dict[str, Any]) -> None:
+        """Keep one stable audit identity across retries of this tool invocation.
+
+        The caller bounds both intent persistence and immediate fan-out. Once
+        recorded, the existing maintenance loop can retry without tool execution.
+        A separate tool invocation is a separate audit, even for a deduped delivery.
+        """
+        notice = await self.repository.record_group_delivery_notice({
+            "event_id": f"group-tool-{uuid4().hex}", "tenant_id": run.tenant_id,
+            "run_id": run.run_id, "session_id": run.session_id,
+            "event_type": "assistant.group.tool",
+            "timestamp": datetime.now(UTC).isoformat(), "payload": payload,
+        })
+        await self._publish_group_delivery_notice(notice)
+
     async def _drain_group_delivery_notices(self) -> None:
         if self._event_service is None:
             return
         try:
             async with asyncio.timeout(2.0):
-                for notice in await self.repository.pending_group_delivery_notices(limit=25):
-                    try:
+                notices = await self.repository.pending_group_delivery_notices(limit=25)
+
+            async def publish(notice: dict[str, Any]) -> None:
+                try:
+                    async with asyncio.timeout(2.0):
                         await self._publish_group_delivery_notice(notice)
-                    except Exception:  # noqa: BLE001 - retry on the next maintenance pass
-                        logger.exception("group delivery audit retry: %s", notice["event_id"])
+                except Exception:  # noqa: BLE001 - retry on the next maintenance pass
+                    logger.exception("group delivery audit retry: %s", notice["event_id"])
+
+            # At most 25 bounded attempts: a slow head cannot consume another
+            # notice's budget. Fetch <=2s + concurrent attempts <=2s per pass.
+            # TaskGroup cancels and joins every attempt on outer cancellation.
+            async with asyncio.TaskGroup() as tasks:
+                for notice in notices:
+                    tasks.create_task(publish(notice))
         except Exception:  # noqa: BLE001 - execution maintenance must continue
             logger.exception("group delivery audit reconciliation deferred")
 

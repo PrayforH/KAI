@@ -359,13 +359,19 @@ async def test_group_delegate_pg_outbox_recovers_on_maintenance_without_tool_ret
     assert await invoke_pg_tool(service, group, parent, session, events) == {
         "status": "delivered", "text": "已转交 项目助理"}
     pending = await service.repository.pending_group_delivery_notices()
-    assert len(pending) == 1
-    identity = pending[0]["event_id"]
+    # Both the delivery and the wrapper's successful tool audit are durable.
+    assert len(pending) == 2
+    assert {n["event_type"] for n in pending} == {
+        "ui.assistant_delivery", "assistant.group.tool"}
+    identities = {n["event_id"] for n in pending}
+    identity = next(n["event_id"] for n in pending
+                    if n["event_type"] == "ui.assistant_delivery")
     # There really is a committed intent, even if the event store append failed.
     async with database[1]() as db:
-        row = await db.scalar(select(OutboxRow).where(OutboxRow.aggregate_id == identity))
-        assert row.published_at is None
-        assert row.payload["payload"]["groupId"] == group.group_id
+        for event_id in identities:
+            row = await db.scalar(select(OutboxRow).where(OutboxRow.aggregate_id == event_id))
+            assert row.published_at is None
+            assert row.payload["payload"]["groupId"] == group.group_id
     setattr(sink, method, original)
     # Fresh production-shaped service, no parent tool retry or reauthorization.
     # A removed specialist must not prevent auditing already accepted work.
@@ -382,10 +388,14 @@ async def test_group_delegate_pg_outbox_recovers_on_maintenance_without_tool_ret
     assert not await fresh.repository.pending_group_delivery_notices()
     audit = await raw.list_after("t", parent.run_id, 0, types=("ui.assistant_delivery",))
     assert [e.event_id for e in audit] == [identity]
-    assert [call.args[0].event_id for call in bus.publish.await_args_list] == [identity]
+    all_audits = await raw.list_after("t", parent.run_id, 0)
+    assert {e.event_id for e in all_audits} == identities
+    assert len(all_audits) == 2
+    assert {call.args[0].event_id for call in bus.publish.await_args_list} == identities
+    assert bus.publish.await_count == 2
     # Acknowledged work is not published again on the next maintenance pass.
     await fresh.process_once()
-    assert bus.publish.await_count == 1
+    assert bus.publish.await_count == 2
     service._agui.create_run_with_result.assert_awaited_once()
     fresh._agui.create_run_with_result.assert_not_awaited()
     messages = await service.repository.list_group_messages("t", "u", group.group_id)

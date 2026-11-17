@@ -2587,7 +2587,11 @@ class PostgresAssistantRepository:
             return await self._group_with_members(session, self._group(row))
 
     async def record_group_delivery_notice(self, event: dict[str, Any]) -> dict[str, Any]:
-        """Called under the dispatch guard: reply and audit intent commit together."""
+        """Reuse the audit outbox for delivery and delegation-tool notices.
+
+        Delivery intents join the dispatch guard transaction; tool outcomes are
+        recorded afterward in their own bounded transaction, including failures.
+        """
         async with self._context(write=True) as session:
             row = await session.scalar(select(OutboxRow).where(
                 OutboxRow.topic == "assistant.group_delivery",
