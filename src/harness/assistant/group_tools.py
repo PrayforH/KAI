@@ -221,6 +221,25 @@ async def assistant_group_management_overlay(
 
         return await _run("list_members", action)
 
+    async def delegate(arguments: dict[str, Any]) -> dict[str, Any]:
+        async def action() -> tuple[dict[str, Any], dict[str, Any]]:
+            _only_fields(arguments, {"specialist_id"})
+            await _primary_group()
+            target = arguments.get("specialist_id")
+            if not isinstance(target, str) or not target or len(target) > 128:
+                raise InvalidRequestError("请选择本群已有专家的 specialist_id。")
+            # The service rechecks the durable run, real origin, current roster
+            # and sharing grants, even if tool discovery/schema is bypassed.
+            receipt = await assistant.delegate_assistant_group(
+                run, session, specialist_id=target,
+            )
+            return {
+                "status": "delivered",
+                "text": f"已转交 {receipt['specialistName']}",
+            }, {"targetMemberId": target}
+
+        return await _run("delegate", action)
+
     async def add_member(arguments: dict[str, Any]) -> dict[str, Any]:
         reference = arguments.get("specialist")
         if not isinstance(reference, str) or not reference.strip():
@@ -437,6 +456,23 @@ async def assistant_group_management_overlay(
         )
     member_tools = (
         PlatformTool(
+            name="assistant_group_delegate",
+            description=(
+                "把本轮用户原始请求转交给本群已有的活跃专家；专家自己在本群回复。"
+                "仅主助理可用。不创建或拉入专家，不等待、不汇总成品；成功后仅回复已转交及专家名。"
+            ),
+            schema={
+                "type": "object",
+                "properties": {"specialist_id": {
+                    "type": "string", "minLength": 1, "maxLength": 128,
+                    "description": "本群活跃专家的 specialist_id，可先查看群成员",
+                }},
+                "required": ["specialist_id"],
+                "additionalProperties": False,
+            },
+            handler=delegate,
+        ),
+        PlatformTool(
             name="assistant_group_members",
             description="列出本群成员及其角色；用于确认名称和 member_id。仅主助理可调用。",
             schema={"type": "object", "properties": {}, "additionalProperties": False},
@@ -507,5 +543,12 @@ async def assistant_group_management_overlay(
     )
     return PlatformToolOverlay(
         tools=(member_tools + admin_tools if group_id is not None else admin_tools[:1]),
-        instructions=instructions,
+        instructions=instructions + (
+            "\n## 群主助理协调\n你只做协调，不亲自做复杂工作。复杂请求应使用 "
+            "assistant_group_delegate 转交本群已有活跃专家；没有合适专家时说明缺少哪类专家，"
+            "不自动创建或拉人。不使用个人交办、任务管理或私聊投递替代群转交。"
+            "转交成功后本轮只回复「已转交 X」（X 为专家名字），立即结束，不等待、"
+            "不汇总、不冒充专家回答。转交失败则如实说明，不能声称已转交。"
+            if group_id is not None else ""
+        ),
     )

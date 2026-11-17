@@ -3075,9 +3075,25 @@ class PostgresAssistantRepository:
         thread_id: str | None = None,
         reply_to_message_id: str | None = None,
         client_message_id: str | None = None,
+        deduplicate: bool = False,
     ) -> AssistantGroupMessage:
         async with self._context(write=True) as session:
-            await self._require_group(session, tenant_id, user_id, message.group_id)
+            await self._require_group(
+                session, tenant_id, user_id, message.group_id, lock=deduplicate,
+            )
+            if deduplicate:
+                existing = await session.get(AssistantGroupMessageRow, message.message_id)
+                if existing is not None:
+                    if (existing.tenant_id != tenant_id or existing.user_id != user_id
+                            or existing.group_id != message.group_id
+                            or existing.specialist_id != message.specialist_id
+                            or existing.run_id != message.run_id
+                            or existing.reply_to_message_id != reply_to_message_id):
+                        raise ConflictError("群回复标识已被其他请求使用")
+                    return message.model_copy(update={
+                        "created_at": existing.created_at,
+                        "reply_to_message_id": existing.reply_to_message_id,
+                    })
             session.add(
                 AssistantGroupMessageRow(
                     message_id=message.message_id,

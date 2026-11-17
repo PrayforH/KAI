@@ -3359,6 +3359,7 @@ class AssistantService:
         retry: int = 0,
         addressed: bool = False,
         quoted_message: AssistantGroupMessage | None = None,
+        delegated: bool = False,
     ) -> AssistantGroupMessage:
         """在群专属线程里起一次运行，并把占位回复写进本群时间线。
 
@@ -3366,6 +3367,8 @@ class AssistantService:
         自动重问；固定运行 id 让重复触发也只会有一条重试运行。
         """
         thread_id = group_thread_id(group.group_id, member.member_id)
+        connection_mode = "service_owned"
+        space_id: str | None = None
         bot_specialist_id: str | None
         if member.kind is GroupMemberKind.PRIMARY:
             bot_specialist_id = primary_specialist_id(tenant_id, user_id)
@@ -3390,6 +3393,8 @@ class AssistantService:
             )
             if specialist.status is SpecialistStatus.ARCHIVED:
                 raise ConflictError("该子助理已归档")
+            if delegated:
+                require_local_tools(specialist.config)
             bot_specialist_id = specialist.specialist_id
             try:
                 binding = await self._agui.get_binding(
@@ -3398,6 +3403,7 @@ class AssistantService:
                 agent_name = binding.agent_name
                 agent_version = binding.agent_version
                 agent_owner_user_id = binding.agent_owner_user_id
+                space_id = getattr(binding, "space_id", None)
             except NotFoundError:
                 target = await self.specialist_conversation(
                     tenant_id, user_id, specialist
@@ -3405,6 +3411,20 @@ class AssistantService:
                 agent_name = target.agent_name
                 agent_version = target.agent_version
                 agent_owner_user_id = target.agent_owner_user_id
+                space_id = target.space_id
+            if delegated:
+                # Same sharing admission as send_mention_message, against the
+                # actual group binding rather than the personal Bot thread.
+                if space_id is not None:
+                    if self._team_spaces is None:
+                        raise PermissionDeniedError("暂时无法核实共享助理的使用权限")
+                    release = await self._team_spaces.require_agent_access(
+                        tenant_id, user_id, space_id, agent_owner_user_id,
+                        agent_name, agent_version,
+                    )
+                    connection_mode = release.connection_mode.value
+                elif agent_owner_user_id != user_id:
+                    raise PermissionDeniedError("该助理的共享授权不可用")
 
         reply = AssistantGroupMessage(
             messageId=reply_message_id or f"gmsg_{uuid4().hex}",
@@ -3490,7 +3510,8 @@ class AssistantService:
             agent_name=agent_name,
             agent_version=agent_version,
             agent_owner_user_id=agent_owner_user_id,
-            connection_mode="service_owned",
+            connection_mode=connection_mode,
+            **({"space_id": space_id} if delegated else {}),
             append_to_history=True,
             deduplicate_active_input=False,
             assistant_dispatch=False,
@@ -3538,7 +3559,97 @@ class AssistantService:
             reply,
             thread_id=thread_id,
             reply_to_message_id=user_message.message_id,
+            **({"deduplicate": True} if delegated else {}),
         )
+
+    async def delegate_assistant_group(
+        self, run: Run, session: Session, *, specialist_id: str,
+    ) -> dict[str, Any]:
+        """A-only coordination: dispatch an existing seat, never wait for its result.
+
+        The original user request (including its owned quote/files) is the only
+        input. Deterministic message/run/event identities make repeated tool
+        calls and a crash between dispatch and audit safe to replay.
+        """
+        parent = await self._runs.get(run.tenant_id, run.run_id)
+        if (parent.session_id != run.session_id or parent.tenant_id != run.tenant_id
+                or parent.fencing_token != run.fencing_token
+                or parent.input.get("group_context") != run.input.get("group_context")):
+            raise PermissionDeniedError("群转交运行身份不匹配。")
+        if parent.status is not RunStatus.RUNNING:
+            raise ConflictError("主助理本轮已停止，不能再转交。")
+        group = await self._require_group_tool_primary(parent, session)
+        assert group is not None
+        context = parent.input["group_context"]
+        source = group_thread_id(group.group_id, GROUP_PRIMARY_MEMBER_ID)
+        origin = await self._agui.get_thread_record_for_session(
+            tenant_id=session.tenant_id, user_id=session.user_id,
+            session_id=parent.session_id,
+        )
+        if origin.thread_id != source:
+            raise PermissionDeniedError("本轮不是本群主助理线程。")
+        member = next((item for item in group.members
+                       if item.member_id == specialist_id
+                       and item.specialist_id == specialist_id
+                       and item.kind is GroupMemberKind.SPECIALIST
+                       and item.status == "active"), None)
+        if member is None:
+            raise PermissionDeniedError("只能转交给本群已有的活跃专家。")
+        # Lookup is always tenant + owner scoped; no name resolution/creation.
+        specialist = await self.repository.get_specialist(
+            session.tenant_id, session.user_id, specialist_id,
+        )
+        if specialist.status is SpecialistStatus.ARCHIVED:
+            raise ConflictError("该子助理已归档。")
+        key = hashlib.sha256(f"{parent.run_id}:{specialist_id}".encode()).hexdigest()[:32]
+        event_id = f"group-delivery-{key}"
+        prior = next((event for event in await self._events.list_after(
+            parent.tenant_id, parent.run_id, 0, types=("ui.assistant_delivery",),
+        ) if event.event_id == event_id and event.type == "ui.assistant_delivery"), None)
+        if prior is not None:
+            return prior.payload
+        trigger = await self.repository.get_group_message(
+            session.tenant_id, session.user_id, group.group_id, context["triggerMessageId"],
+        )
+        if trigger.author is not AssistantGroupMessageAuthor.USER:
+            raise PermissionDeniedError("只能转交本轮用户消息。")
+        quoted = None
+        if trigger.reply_to_message_id:
+            quoted = await self.repository.get_group_message(
+                session.tenant_id, session.user_id, group.group_id, trigger.reply_to_message_id,
+            )
+            quoted = await self._hydrate_group_message(session.tenant_id, quoted)
+            if quoted.status in GROUP_QUOTE_BLOCKED_STATUSES:
+                raise ConflictError("被引用消息尚不可用。")
+        reply_id = f"gmsg_delegate_{key}"
+        try:
+            reply = await self.repository.get_group_message(
+                session.tenant_id, session.user_id, group.group_id, reply_id,
+            )
+        except NotFoundError:
+            reply = await self._dispatch_group_reply(
+                session.tenant_id, session.user_id, group, trigger, member=member,
+                prompt=_strip_group_mentions(trigger.text, {
+                    item.member_id: item for item in group.members
+                }), now=datetime.now(UTC), reply_message_id=reply_id,
+                addressed=True, quoted_message=quoted, delegated=True,
+            )
+        payload = {
+            "deliveryKind": "group_delegate", "groupId": group.group_id,
+            "actorMemberId": GROUP_PRIMARY_MEMBER_ID,
+            "triggerMessageId": trigger.message_id,
+            "specialistId": specialist_id, "specialistName": member.name,
+            "sourceThreadId": source,
+            "targetThreadId": group_thread_id(group.group_id, member.member_id),
+            "runId": reply.run_id, "messageId": reply.message_id,
+        }
+        await self._events.append_once(
+            event_id=event_id, tenant_id=parent.tenant_id,
+            run_id=parent.run_id, session_id=parent.session_id,
+            event_type="ui.assistant_delivery", timestamp=reply.created_at.isoformat(),
+            payload=payload,
+        )
+        return payload
 
     async def _group_history_text(
         self,
@@ -3619,6 +3730,24 @@ class AssistantService:
                 update={"status": "failed", "text": message.text or "这条回复已不可读取。"}
             )
         terminal = run.status.is_terminal
+        if message.author is AssistantGroupMessageAuthor.PRIMARY:
+            try:
+                deliveries = await self._events.list_after(
+                    tenant_id, run.run_id, 0, types=("ui.assistant_delivery",),
+                )
+                names = list(dict.fromkeys(
+                    event.payload["specialistName"] for event in deliveries
+                    if event.type == "ui.assistant_delivery"
+                    and event.payload.get("deliveryKind") == "group_delegate"
+                    and event.payload.get("groupId") == message.group_id
+                    and isinstance(event.payload.get("specialistName"), str)
+                ))
+                if names:
+                    return message.model_copy(update={
+                        "text": "已转交 " + "、".join(names), "status": "completed",
+                    })
+            except Exception:  # noqa: BLE001 - preserve polling on event-store failure
+                logger.warning("group delivery hydration failed run=%s", run.run_id)
         try:
             text = await recorded_response_text(
                 self._events, tenant_id, run.run_id, terminal=terminal

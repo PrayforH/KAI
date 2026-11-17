@@ -28,7 +28,7 @@ from harness.application.memory import UserMemoryService
 from harness.application.runs import RunQuotaPlan, RunService
 from harness.application.sessions import SessionService
 from harness.application.workspaces import WorkspacePolicy, WorkspaceService
-from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
+from harness.assistant.constants import GROUP_PRIMARY_MEMBER_ID, PERSONAL_ASSISTANT_THREAD
 from harness.assistant.conversation import PersonalConversation
 from harness.assistant.delegation import (
     AssistantDelegationGateway,
@@ -1652,6 +1652,11 @@ def build_production_container(
         )
         delegation_overlay = PlatformToolOverlay()
         coordinator = False
+        group_context_for_coordination = run.input.get("group_context")
+        group_primary = (
+            isinstance(group_context_for_coordination, dict)
+            and group_context_for_coordination.get("memberId") == GROUP_PRIMARY_MEMBER_ID
+        )
         if container.assistant is not None and session.agent_name:
             coordinator = await coordinator_session(container.agui, session)
             direct_bot_id = None
@@ -1673,7 +1678,7 @@ def build_production_container(
                     container.assistant, container.agui, session
                 )
             )
-            if coordinator or observer or direct_bot_id:
+            if not group_primary and (coordinator or observer or direct_bot_id):
                 run_tenant, run_id = run.tenant_id, run.run_id
 
                 async def emit_handover(payload: dict[str, object]) -> None:

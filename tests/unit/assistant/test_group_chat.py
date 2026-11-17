@@ -123,7 +123,12 @@ class FakeGroupRepository:
     async def add_group_message(
         self, tenant_id, user_id, message, *, thread_id=None,
         reply_to_message_id=None, client_message_id=None,
+        deduplicate=False,
     ):
+        if deduplicate:
+            for existing in self.messages[message.group_id]:
+                if existing.message_id == message.message_id:
+                    return existing
         stored = message.model_copy(
             update={"reply_to_message_id": reply_to_message_id}
         )
