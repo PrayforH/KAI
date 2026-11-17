@@ -82,22 +82,121 @@ export function conversationInputIntro(text: string): string {
   return block ? [text.slice(0, block.start), text.slice(block.end)].filter(x => x.trim()).join("\n\n").trim() : text;
 }
 
-export function conversationInputDisplay(text: string, streaming = false): string {
-  const block = inputBlock(text);
-  if (block) return text.slice(0, block.start) + [block.input.title, ...block.input.questions.map(q => `${q.label}${q.options.length ? `（${q.options.join(" / ")}）` : ""}`)].join("\n\n") + text.slice(block.end);
-  // Invalid internal forms must not become code widgets. Keep ordinary code
-  // literal, and retain a readable recovery path after an interrupted response.
-  const internal = fencedBlocks(text).filter(block => ["harness-input", "harness"].includes(block.language));
-  if (internal.length) {
-    const replacement = streaming ? "" : "\n表单信息未能识别，请直接输入你的选择或补充信息。";
-    return internal.reduceRight((value, block) => value.slice(0, block.start) + replacement + value.slice(block.end), text).trimEnd();
+const INTERNAL_LANGUAGES = ["harness-input", "harness", "json", ""];
+
+/** A near-miss payload: the model had the protocol's shape but broke one of its rules
+ * (an extra key, an option list given as objects, `key` instead of `id`). Recovered for
+ * display only, so a question the person can still answer never degrades into raw JSON. */
+function recoverInput(raw: string): ConversationInput | null {
+  if (raw.length > CONVERSATION_INPUT_LIMITS.characters) return null;
+  try {
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== "object" || data.version !== 1 || !Array.isArray(data.questions) || !data.questions.length || data.questions.length > CONVERSATION_INPUT_LIMITS.questions) return null;
+    const title = shortText(data.title, 160) ? data.title.trim() : "需要你确认";
+    const ids = new Set<string>();
+    const questions: ConversationQuestion[] = [];
+    for (const item of data.questions) {
+      if (!item || typeof item !== "object") continue;
+      const label = [item.label, item.question, item.title, item.prompt].find((value): value is string => shortText(value, 500));
+      if (!label) continue;
+      const options = recoverOptions(item.options);
+      let type = recoverType(item.type, options.length >= 2);
+      if ((type === "single" || type === "multi") && options.length < 2) type = "text";
+      const named = [item.id, item.key].find((value): value is string => shortText(value, 64) && /^[\w-]+$/.test(value));
+      const base = named ?? `q${questions.length + 1}`;
+      let id = base;
+      for (let n = 2; ids.has(id); n++) id = `${base}-${n}`;
+      ids.add(id);
+      // A recovered field must stay as protected as a strict one: dropping these
+      // flags would turn a password question into a plain visible input.
+      const sensitive = item.sensitive === true || /^(?:true|yes|1)$/i.test(String(item.sensitive ?? ""));
+      const credentialType = ["login", "secret"].includes(item.credentialType) ? item.credentialType : undefined;
+      questions.push({ id, label: label.trim(), type, options: ["text", "password"].includes(type) ? [] : options, ...(sensitive ? {sensitive: true} : {}), ...(credentialType ? {credentialType} : {}) });
+      if (questions.length === CONVERSATION_INPUT_LIMITS.questions) break;
+    }
+    return questions.length ? { version: 1, title, questions } : null;
+  } catch { return null; }
+}
+
+function recoverType(value: unknown, hasOptions: boolean): ConversationQuestion["type"] {
+  const type = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (["single", "radio", "select", "choice", "one"].includes(type)) return "single";
+  if (["multi", "multiple", "checkbox", "many"].includes(type)) return "multi";
+  if (["password", "secret"].includes(type)) return "password";
+  if (["text", "textarea", "input", "string"].includes(type)) return "text";
+  return hasOptions ? "single" : "text";
+}
+
+function recoverOptions(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const options: string[] = [];
+  for (const raw of value) {
+    const label = typeof raw === "string" ? raw.trim()
+      : raw && typeof raw === "object" ? String(raw.label ?? raw.value ?? raw.text ?? "").trim() : "";
+    if (!label || label.length > 300 || options.includes(label)) continue;
+    options.push(label);
+    if (options.length === CONVERSATION_INPUT_LIMITS.options) break;
   }
-  if (streaming) {
-    const start = /(?:^|\n)```harness(?:-input)?(?:\s|$)/.exec(text)
-      ?? /(?:^|\n)[ \t]*\{\s*"version"\s*:\s*1\s*,\s*"title"\s*:\s*"[^"\n]*"\s*,\s*"questions"\s*:\s*\[/.exec(text);
-    if (start) return text.slice(0, start.index);
+  return options;
+}
+
+function looseBlock(text: string): InputBlock | null {
+  const blocks: InputBlock[] = [];
+  for (const block of fencedBlocks(text)) {
+    if (!INTERNAL_LANGUAGES.includes(block.language) || validateInput(block.body)) continue;
+    const input = recoverInput(block.body);
+    if (input) blocks.push({ start: block.start, end: block.end, input });
   }
-  return text;
+  return blocks.length === 1 ? blocks[0] : null;
+}
+
+/** The form to render for this text: the strict protocol, or a recovered near miss. */
+export function conversationInputForDisplay(text: string): ConversationInput | null {
+  return inputBlock(text)?.input ?? looseBlock(text)?.input ?? null;
+}
+
+function looksLikeProtocol(raw: string): boolean {
+  if (raw.length > CONVERSATION_INPUT_LIMITS.characters) return false;
+  try {
+    const data = JSON.parse(raw);
+    return Boolean(data && typeof data === "object" && data.version === 1 && Array.isArray(data.questions));
+  } catch { return false; }
+}
+
+function summarizeInput(input: ConversationInput): string {
+  return [input.title, ...input.questions.map(q => `${q.label}${q.options.length ? `（${q.options.join(" / ")}）` : ""}`)].join("\n\n");
+}
+
+const UNRECOGNIZED_FORM = "\n表单信息未能识别，请直接输入你的选择或补充信息。";
+
+/** Replace every internal form fence that is still in the text after the one block
+ * rendered for this message, so a second (or broken) protocol block can never fall
+ * through as raw JSON. Ordinary JSON, python and outer code examples stay literal. */
+function replaceRemainingForms(text: string, streaming: boolean): string | null {
+  const internal = fencedBlocks(text).filter(block => ["harness-input", "harness"].includes(block.language) || (block.language === "json" && looksLikeProtocol(block.body)));
+  if (!internal.length) return null;
+  return internal.reduceRight((value, block) => {
+    const input = validateInput(block.body) ?? recoverInput(block.body);
+    const replacement = streaming ? "" : input ? summarizeInput(input) : UNRECOGNIZED_FORM;
+    return value.slice(0, block.start) + replacement + value.slice(block.end);
+  }, text);
+}
+
+/** `hideProtocol`: the answer's own bubble already renders the form, so its summary is
+ * dropped instead of shown twice. */
+export function conversationInputDisplay(text: string, streaming = false, hideProtocol = false): string {
+  const block = inputBlock(text) ?? looseBlock(text);
+  const base = block
+    ? text.slice(0, block.start) + (hideProtocol ? "" : summarizeInput(block.input)) + text.slice(block.end)
+    : text;
+  const cleaned = replaceRemainingForms(base, streaming);
+  let shown = cleaned ?? base;
+  if (!block && cleaned === null && streaming) {
+    const start = /(?:^|\n)```harness(?:-input)?(?:\s|$)/.exec(shown)
+      ?? /(?:^|\n)[ \t]*\{\s*"version"\s*:\s*1\s*,\s*"title"\s*:\s*"[^"\n]*"\s*,\s*"questions"\s*:\s*\[/.exec(shown);
+    if (start) shown = shown.slice(0, start.index);
+  }
+  return block || cleaned !== null ? shown.trimEnd() : shown;
 }
 export function latestConversationInput(messages: readonly { id: string; role: string; content: readonly { type: string; text?: string; toolName?: string }[]; status?: {type: string} }[]) {
   // Background results are conversation messages, not new configuration
@@ -106,7 +205,7 @@ export function latestConversationInput(messages: readonly { id: string; role: s
   const last = messages.findLast(message => !message.id.startsWith("notice-") &&
     !message.content.some(part => part.type === "tool-call" && part.toolName === "harness_notice_source"));
   if (!last || last.role !== "assistant" || (last.status && last.status.type !== "complete")) return null;
-  const input = parseConversationInput(last.content.filter(p => p.type === "text").map(p => p.text ?? "").join("\n"));
+  const input = conversationInputForDisplay(last.content.filter(p => p.type === "text").map(p => p.text ?? "").join("\n"));
   return input ? { messageId: last.id, input } : null;
 }
 export function formatConversationAnswers(input: ConversationInput, answers: Record<string, { selected: string[]; text: string }>, skipMissing = false): string | null {

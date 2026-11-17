@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseConversationInput, conversationInputDisplay, latestConversationInput, formatConversationAnswers } from "../src/lib/conversation-input";
+import { parseConversationInput, conversationInputDisplay, conversationInputForDisplay, latestConversationInput, formatConversationAnswers } from "../src/lib/conversation-input";
 const payload = {version: 1, title: "确认范围", questions: [{id: "scope", label: "选择内容", type: "multi", options: ["UI", "接口"]}, {id: "note", label: "补充要求", type: "text"}]};
 const fence = (data: unknown) => "```harness-input\n" + JSON.stringify(data) + "\n```";
 describe("model-driven input display protocol", () => {
@@ -122,4 +122,44 @@ it("keeps a main Bot question active when a child result arrives", async () => {
     {type:"tool-call",toolName:"harness_notice_source"},{type:"text",text:"我在等待颜色"}]};
   expect(latestConversationInput([question,notice])?.messageId).toBe("main-question");
   expect(latestConversationInput([question,notice,{id:"answer",role:"user",content:[{type:"text",text:"绿色"}]}])).toBeNull();
+});
+});
+
+describe("near-miss forms still render as a question instead of raw JSON", () => {
+  const nearMiss = {
+    version: 1, title: "确认下一步", extra: "ignored",
+    questions: [
+      { id: "scope", label: "方案文档范围", type: "single", options: [{ label: "路线 A" }, { value: "路线 B" }] },
+      { key: "notes", question: "补充说明", type: "textarea" },
+      { id: "scope", label: "重复 id", type: "single", options: ["保留", "丢弃"] },
+    ],
+  };
+  const block = "```json\n" + JSON.stringify(nearMiss) + "\n```";
+  const text = "四、下一步等你定。\n\n" + block;
+
+  it("recovers the questions, ids and options a model got slightly wrong", () => {
+    expect(parseConversationInput(text)).toBeNull();
+    const input = conversationInputForDisplay(text)!;
+    expect(input.title).toBe("确认下一步");
+    expect(input.questions.map(q => [q.id, q.type])).toEqual([["scope", "single"], ["notes", "text"], ["scope-2", "single"]]);
+    expect(input.questions[0].options).toEqual(["路线 A", "路线 B"]);
+  });
+
+  it("hides the block from the answer, with or without the card", () => {
+    const shown = conversationInputDisplay(text);
+    expect(shown).not.toMatch(/"questions"|"version"|```/);
+    expect(shown).toContain("方案文档范围（路线 A / 路线 B）");
+    expect(conversationInputDisplay(text, false, true)).toBe("四、下一步等你定。");
+  });
+
+  it("offers the recovered form as the pending question", () => {
+    const message = { id: "near", role: "assistant", status: { type: "complete" }, content: [{ type: "text", text }] };
+    expect(latestConversationInput([message])?.messageId).toBe("near");
+  });
+
+  it("never prints an unrecoverable protocol-shaped fence as code", () => {
+    const broken = '```json\n{"version":1,"questions":[{"options":[]}]}\n```';
+    expect(conversationInputDisplay("请确认。\n" + broken)).not.toContain('"questions"');
+    expect(conversationInputDisplay(broken)).toContain("请直接输入");
+  });
 });
