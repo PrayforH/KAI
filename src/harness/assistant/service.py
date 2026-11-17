@@ -3523,6 +3523,7 @@ class AssistantService:
                 "memberId": member.member_id,
                 "triggerMessageId": user_message.message_id,
                 "triggerAuthor": user_message.author.value,
+                **({"deliveryKind": "group_delegate"} if delegated else {}),
             },
             request=RunAgentInput(
                 thread_id=thread_id,
@@ -3571,6 +3572,30 @@ class AssistantService:
         input. Deterministic message/run/event identities make repeated tool
         calls and a crash between dispatch and audit safe to replay.
         """
+        group = await self._require_group_tool_primary(run, session)
+        assert group is not None
+        # Roster edits use this same row lock. Re-read all authority after it is
+        # acquired and hold it until enqueue + reply have been recorded.
+        async with self.repository.group_dispatch_guard(
+            session.tenant_id, session.user_id, group.group_id,
+        ) as repository:
+            scoped = self.with_repository(repository)
+            payload, timestamp = await scoped._delegate_assistant_group_locked(
+                run, session, specialist_id=specialist_id,
+            )
+        # Commit the reply before publishing its audit. A fan-out failure must
+        # not roll back the reply while leaving a durable successful delivery.
+        key = hashlib.sha256(f"{run.run_id}:{specialist_id}".encode()).hexdigest()[:32]
+        await self._events.append_once(
+            event_id=f"group-delivery-{key}", tenant_id=run.tenant_id,
+            run_id=run.run_id, session_id=run.session_id,
+            event_type="ui.assistant_delivery", timestamp=timestamp, payload=payload,
+        )
+        return payload
+
+    async def _delegate_assistant_group_locked(
+        self, run: Run, session: Session, *, specialist_id: str,
+    ) -> tuple[dict[str, Any], str]:
         parent = await self._runs.get(run.tenant_id, run.run_id)
         if (parent.session_id != run.session_id or parent.tenant_id != run.tenant_id
                 or parent.fencing_token != run.fencing_token
@@ -3607,7 +3632,7 @@ class AssistantService:
             parent.tenant_id, parent.run_id, 0, types=("ui.assistant_delivery",),
         ) if event.event_id == event_id and event.type == "ui.assistant_delivery"), None)
         if prior is not None:
-            return prior.payload
+            return prior.payload, prior.timestamp.isoformat()
         trigger = await self.repository.get_group_message(
             session.tenant_id, session.user_id, group.group_id, context["triggerMessageId"],
         )
@@ -3638,18 +3663,12 @@ class AssistantService:
             "deliveryKind": "group_delegate", "groupId": group.group_id,
             "actorMemberId": GROUP_PRIMARY_MEMBER_ID,
             "triggerMessageId": trigger.message_id,
-            "specialistId": specialist_id, "specialistName": member.name,
+            "specialistId": specialist_id, "specialistName": reply.author_name,
             "sourceThreadId": source,
             "targetThreadId": group_thread_id(group.group_id, member.member_id),
             "runId": reply.run_id, "messageId": reply.message_id,
         }
-        await self._events.append_once(
-            event_id=event_id, tenant_id=parent.tenant_id,
-            run_id=parent.run_id, session_id=parent.session_id,
-            event_type="ui.assistant_delivery", timestamp=reply.created_at.isoformat(),
-            payload=payload,
-        )
-        return payload
+        return payload, reply.created_at.isoformat()
 
     async def _group_history_text(
         self,
@@ -3811,6 +3830,46 @@ class AssistantService:
             run = await self._runs.get(tenant_id, stored.run_id)
         except (NotFoundError, PermissionDeniedError):
             return None
+        # This marker is authored only by the group dispatch service and stored
+        # in the child run. Never infer retry authority from client props.
+        context = run.input.get("group_context")
+        marked = isinstance(context, dict) and context.get("deliveryKind") == "group_delegate"
+        # Also recognize pre-marker deliveries by their persisted, server-only
+        # message identity and matching run key; ordinary @ replies use gmsg_.
+        legacy = (re.fullmatch(r"gmsg_delegate_[0-9a-f]{32}", stored.message_id) is not None
+                  and run.idempotency_key.startswith(f"group-{stored.message_id}"))
+        delegated = marked or legacy
+        if delegated:
+            if (not isinstance(context, dict)
+                    or context.get("groupId") != group.group_id
+                    or context.get("memberId") != stored.specialist_id
+                    or context.get("triggerMessageId") != stored.reply_to_message_id
+                    or context.get("triggerAuthor") != AssistantGroupMessageAuthor.USER.value):
+                raise PermissionDeniedError("群转交重试身份不匹配。")
+            async with self.repository.group_dispatch_guard(
+                tenant_id, user_id, group.group_id,
+            ) as repository:
+                current = await repository.get_group_message(
+                    tenant_id, user_id, group.group_id, stored.message_id,
+                )
+                # A different reader may already have replaced this run.
+                if current.run_id != stored.run_id:
+                    return None
+                fresh_group = await repository.get_group(tenant_id, user_id, group.group_id)
+                if not any(item.kind is GroupMemberKind.PRIMARY and item.status == "active"
+                           for item in fresh_group.members):
+                    return None
+                return await self.with_repository(repository)._retry_empty_group_reply_run(
+                    tenant_id, user_id, fresh_group, current, run, delegated=True,
+                )
+        return await self._retry_empty_group_reply_run(
+            tenant_id, user_id, group, stored, run, delegated=False,
+        )
+
+    async def _retry_empty_group_reply_run(
+        self, tenant_id: str, user_id: str, group: AssistantGroup,
+        stored: AssistantGroupMessage, run: Run, *, delegated: bool,
+    ) -> AssistantGroupMessage | None:
         attempts = _group_retry_attempts(run.idempotency_key, stored.message_id)
         if run.status is not RunStatus.SUCCEEDED or attempts >= GROUP_EMPTY_REPLY_MAX_RETRIES:
             return None
@@ -3836,6 +3895,7 @@ class AssistantService:
                     stored.author is AssistantGroupMessageAuthor.SPECIALIST
                     and item.kind is GroupMemberKind.SPECIALIST
                     and item.specialist_id == stored.specialist_id
+                    and (not delegated or item.member_id == stored.specialist_id)
                 )
             ),
             None,
@@ -3880,6 +3940,7 @@ class AssistantService:
             retry=attempts + 1,
             addressed=_mentioned_by_name(user_message.text, member.name),
             quoted_message=quoted_message,
+            delegated=delegated,
         )
 
 

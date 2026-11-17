@@ -225,3 +225,102 @@ async def test_retry_returns_original_delivery_even_if_member_display_name_chang
     roster[-1] = roster[-1].model_copy(update={"name": "新名字"})
     assert payload(await invoke(setup)) == first
     assert service._agui.create_run_with_result.await_count == 1
+
+
+async def empty_delegated_reply(*, shared=False):
+    setup = await setup_delegate()
+    service, group, _, parent, session, _, _ = setup
+    if shared:
+        service._agui.get_binding.return_value = SimpleNamespace(
+            agent_name="shared", agent_version="1", agent_owner_user_id="owner", space_id="space")
+        service._team_spaces = SimpleNamespace(require_agent_access=AsyncMock(
+            return_value=SimpleNamespace(connection_mode=SimpleNamespace(value="caller_owned"))))
+    await service.delegate_assistant_group(parent, session, specialist_id="specialist_pm")
+    stored = next(m for m in service.repository.messages[group.group_id]
+                  if m.author is AssistantGroupMessageAuthor.SPECIALIST)
+    first = service._agui.create_run_with_result.await_args.kwargs
+    child = parent.model_copy(update={
+        "run_id": stored.run_id, "idempotency_key": first["request"].run_id,
+        "input": {"group_context": first["group_context"]}, "status": RunStatus.SUCCEEDED,
+    })
+    service._runs.get.return_value = child
+    service._agui.create_run_with_result.reset_mock()
+    if shared:
+        service._team_spaces.require_agent_access.reset_mock()
+    group = await service.repository.get_group("t", "u", group.group_id)
+    return service, group, stored, session
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("legacy", [False, True])
+async def test_empty_delegated_reply_preserves_shared_binding_and_rechecks_access(legacy):
+    import asyncio
+
+    from harness.agui.service import AguiRunService
+    from harness.core.models import AguiThreadBinding
+
+    service, group, stored, session = await empty_delegated_reply(shared=True)
+    if legacy:
+        child = service._runs.get.return_value
+        context = dict(child.input["group_context"])
+        context.pop("deliveryKind", None)
+        service._runs.get.return_value = child.model_copy(
+            update={"input": {"group_context": context}})
+    actual = object.__new__(AguiRunService)
+    actual._lock = asyncio.Lock()
+    actual._bindings = SimpleNamespace(get_by_thread=AsyncMock(return_value=AguiThreadBinding(
+        tenant_id="t", user_id="u", thread_id=group_thread_id(group.group_id, "specialist_pm"),
+        session_id="shared-session", created_at=NOW, updated_at=NOW)))
+    actual._sessions = SimpleNamespace(get=AsyncMock(return_value=session.model_copy(update={
+        "session_id": "shared-session", "agent_name": "shared", "agent_version": "1",
+        "agent_owner_user_id": "owner", "team_ids": ("space",), "connection_mode": "caller_owned",
+    })))
+
+    async def check_binding(**kwargs):
+        await actual._resolve_binding(
+            tenant_id="t", user_id="u", thread_id=kwargs["request"].thread_id,
+            agent_name=kwargs["agent_name"], agent_version=kwargs["agent_version"],
+            agent_owner_user_id=kwargs["agent_owner_user_id"], space_id=kwargs.get("space_id"),
+            connection_mode=kwargs["connection_mode"])
+        return SimpleNamespace(run=SimpleNamespace(run_id="retried"))
+
+    service._agui.create_run_with_result.side_effect = check_binding
+    retried = await service._retry_empty_group_reply("t", "u", group, stored)
+    assert retried.run_id == "retried"
+    assert retried.message_id == stored.message_id
+    service._team_spaces.require_agent_access.assert_awaited_once_with(
+        "t", "u", "space", "owner", "shared", "1")
+    kwargs = service._agui.create_run_with_result.await_args.kwargs
+    assert kwargs["space_id"] == "space"
+    assert kwargs["connection_mode"] == "caller_owned"
+    assert kwargs["group_context"]["deliveryKind"] == "group_delegate"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("revoked", ["local", "shared", "member", "primary"])
+@pytest.mark.parametrize("legacy", [False, True])
+async def test_empty_delegated_reply_rejects_revoked_authority(revoked, legacy):
+    service, group, stored, _ = await empty_delegated_reply(shared=revoked == "shared")
+    if legacy:
+        child = service._runs.get.return_value
+        context = dict(child.input["group_context"])
+        context.pop("deliveryKind", None)
+        service._runs.get.return_value = child.model_copy(
+            update={"input": {"group_context": context}})
+    if revoked == "local":
+        specialist = service.repository._specialists["specialist_pm"]
+        service.repository._specialists["specialist_pm"] = specialist.model_copy(update={
+            "config": {"required_local_tools": ["run_commands"], "local_tool_permissions": []}})
+    elif revoked == "shared":
+        service._team_spaces.require_agent_access.side_effect = PermissionDeniedError("revoked")
+    else:
+        await service.repository.remove_group_member(
+            "t", "u", group.group_id, "specialist_pm" if revoked == "member" else "primary")
+    if revoked in {"member", "primary"}:
+        assert await service._retry_empty_group_reply("t", "u", group, stored) is None
+    else:
+        error = ConflictError if revoked == "local" else PermissionDeniedError
+        reason = "待授权本地能力" if revoked == "local" else "revoked"
+        with pytest.raises(error, match=reason):
+            await service._retry_empty_group_reply("t", "u", group, stored)
+    service._agui.create_run_with_result.assert_not_awaited()

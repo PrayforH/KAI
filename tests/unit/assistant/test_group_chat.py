@@ -1,5 +1,6 @@
 """群聊 P0：花名册、@ 路由、主助理移出与隔离边界。"""
 
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -46,6 +47,12 @@ class FakeGroupRepository:
         self.client_ids: dict[tuple[str, str], str] = {}
         self.reactions: dict[tuple[str, str], list[str]] = {}
         self._specialists = {item.specialist_id: item for item in specialists}
+
+    @asynccontextmanager
+    async def group_dispatch_guard(self, tenant_id, user_id, group_id):
+        # Concurrency/transaction semantics are exercised with real PostgreSQL.
+        await self.get_group(tenant_id, user_id, group_id)
+        yield self
 
     async def create_group(self, tenant_id, user_id, group, members):
         self.groups[group.group_id] = group
@@ -618,7 +625,7 @@ async def test_continuing_member_prompt_does_not_replay_earlier_instructions() -
 
 def _run(run_id: str, status: RunStatus, idempotency_key: str):
     return SimpleNamespace(
-        run_id=run_id, status=status, idempotency_key=idempotency_key
+        run_id=run_id, status=status, idempotency_key=idempotency_key, input={}
     )
 
 

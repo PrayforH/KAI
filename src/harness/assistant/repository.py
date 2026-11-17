@@ -2573,6 +2573,21 @@ class PostgresAssistantRepository:
                 raise NotFoundError("Assistant group not found")
             return await self._group_with_members(session, self._group(row))
 
+    @asynccontextmanager
+    async def group_dispatch_guard(
+        self, tenant_id: str, user_id: str, group_id: str,
+    ) -> AsyncGenerator[PostgresAssistantRepository]:
+        """Serialize admission/run creation with roster edits, across workers.
+
+        Callers must re-read authority through the yielded repository and use
+        it for message writes, so those writes join this transaction instead of
+        trying to acquire the same group row from another connection. The guard
+        covers enqueueing only; it never waits for a model or an expert result.
+        """
+        async with self._context(write=True) as session:
+            await self._require_group(session, tenant_id, user_id, group_id, lock=True)
+            yield self.with_session(session)
+
     async def _group_with_members(
         self, session: AsyncSession, group: AssistantGroup
     ) -> AssistantGroup:
