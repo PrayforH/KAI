@@ -31,3 +31,40 @@ it("falls back to the native preview on pages without a preview host", () => {
     "noopener,noreferrer",
   );
 });
+
+it("opens raster images, video and PDF in a bare tab", () => {
+  const open = vi.spyOn(window, "open").mockImplementation(() => null);
+  for (const [name, mediaType] of [
+    ["截图.png", "image/png"],
+    ["录像.mp4", "video/mp4"],
+    ["报告.pdf", "application/pdf"],
+  ]) {
+    open.mockClear();
+    requestArtifactPreview(inputArtifactPreviewTarget({ artifactId: "input_artifact_a", name, mediaType }));
+    expect(open).toHaveBeenCalledWith(
+      "/api/input-artifacts/input_artifact_a/content?inline=1",
+      "_blank",
+      "noopener,noreferrer",
+    );
+  }
+});
+
+it("downloads HTML, SVG and unknown types instead of opening them on this origin", () => {
+  const open = vi.spyOn(window, "open").mockImplementation(() => null);
+  const clicks: HTMLAnchorElement[] = [];
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+    clicks.push(this);
+  });
+  for (const [name, mediaType] of [
+    ["页面.html", "text/html"],
+    ["图标.svg", "image/svg+xml"],
+    ["附件.bin", "application/octet-stream"],
+  ]) {
+    clicks.length = 0;
+    requestArtifactPreview(inputArtifactPreviewTarget({ artifactId: "input_artifact_a", name, mediaType }));
+    expect(open).not.toHaveBeenCalled();
+    expect(clicks).toHaveLength(1);
+    expect(clicks[0].getAttribute("href")).toBe("/api/input-artifacts/input_artifact_a/content");
+    expect(clicks[0].getAttribute("download")).toBe(name);
+  }
+});

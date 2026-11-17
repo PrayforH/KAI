@@ -1,4 +1,10 @@
-import { artifactContentUrl, type PreviewTarget } from "../components/rail-file-preview";
+import {
+  artifactContentUrl,
+  artifactDownloadUrl,
+  previewKindFor,
+  type PreviewKind,
+  type PreviewTarget,
+} from "../components/rail-file-preview";
 
 /** Uploaded files live on the input-artifact proxy route, not on a thread's
  * artifact route. Every entry point (composer card, sent bubble) builds the
@@ -35,15 +41,40 @@ export function inputArtifactPreviewTarget(input: {
   };
 }
 
+/** Kinds a plain tab can render without running artifact-supplied script on
+ * the console origin: the browser's own image/video/PDF viewers. */
+const INLINE_FALLBACK_KINDS = new Set<PreviewKind>(["image", "video", "pdf"]);
+
+/** HTML, SVG and unknown types can carry script, and the content route answers
+ * inline on this origin, so a bare tab would run it with the user's session.
+ * Only the browser-native viewers above may open inline; everything else is
+ * downloaded instead. */
+export function canOpenInlineWithoutHost(target: PreviewTarget): boolean {
+  const mediaType = (target.media_type ?? "").toLowerCase();
+  const extension = (target.name ?? "").toLowerCase().split(".").pop() ?? "";
+  // SVG is image/svg+xml but is a scriptable document, not a raster image.
+  if (mediaType.includes("svg") || extension === "svg") return false;
+  return INLINE_FALLBACK_KINDS.has(previewKindFor(mediaType, target.name ?? ""));
+}
+
 /** One event name for every preview entry, handled by the assistant surface.
- * 没有预览宿主的页面（如智能体工作台）退回浏览器原生预览，别让点击变成空操作。 */
+ * 没有预览宿主的页面（如智能体工作台）退回浏览器原生预览或下载，
+ * 别让点击变成空操作，也别让附件在这份源上执行脚本。 */
 export function requestArtifactPreview(target: PreviewTarget): void {
   if (typeof window === "undefined") return;
   const detail: PreviewTarget & { handled?: boolean } = { ...target, handled: false };
   window.dispatchEvent(new CustomEvent("harness:preview-artifact", { detail }));
   if (detail.handled) return;
   try {
-    window.open(artifactContentUrl(target), "_blank", "noopener,noreferrer");
+    if (canOpenInlineWithoutHost(target)) {
+      window.open(artifactContentUrl(target), "_blank", "noopener,noreferrer");
+      return;
+    }
+    const anchor = document.createElement("a");
+    anchor.href = artifactDownloadUrl(target);
+    anchor.download = target.name;
+    anchor.rel = "noopener";
+    anchor.click();
   } catch {
     // 无头渲染等环境没有新窗口可开：没有预览宿主时只能到此为止。
   }
