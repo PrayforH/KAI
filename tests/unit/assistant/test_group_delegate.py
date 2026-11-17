@@ -24,7 +24,11 @@ TOOL = "assistant_group_delegate"
 
 async def setup_delegate(service=None):
     if service is None:
-        service, _, _ = _service([_specialist("specialist_pm", "项目助理")])
+        raw_events = InMemoryEventRepository()
+        event_service = EventService(raw_events, InMemoryEventBus(),
+                                     clock=lambda: NOW, id_generator=lambda _: uuid4().hex)
+        service, _, _ = _service([_specialist("specialist_pm", "项目助理")],
+                                event_repository=raw_events, event_service=event_service)
     group = await service.create_assistant_group("t", "u", name="协调群")
     await service.add_assistant_group_member("t", "u", group.group_id,
                                              specialist_id="specialist_pm")
@@ -45,9 +49,7 @@ async def setup_delegate(service=None):
     service._runs.get.return_value = run
     service._agui.get_thread_record_for_session.return_value = SimpleNamespace(
         thread_id=group_thread_id(group.group_id, "primary"))
-    events = EventService(InMemoryEventRepository(), InMemoryEventBus(),
-                          clock=lambda: NOW, id_generator=lambda _: uuid4().hex)
-    service._events = events
+    events = service._event_service
     service.create_specialist = AsyncMock(side_effect=AssertionError("must not create"))
     service._agui.create_run_with_result.reset_mock()
     overlay = await assistant_group_management_overlay(
@@ -324,3 +326,70 @@ async def test_empty_delegated_reply_rejects_revoked_authority(revoked, legacy):
         with pytest.raises(error, match=reason):
             await service._retry_empty_group_reply("t", "u", group, stored)
     service._agui.create_run_with_result.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delegate_production_event_wiring_returns_delivered_and_durable_audit():
+    setup = await setup_delegate()
+    service, _, _, run, _, _, _ = setup
+    assert isinstance(service._events, InMemoryEventRepository)
+    assert not hasattr(service._events, "append_once")
+    assert payload(await invoke(setup)) == {"status": "delivered", "text": "已转交 项目助理"}
+    deliveries = await service._events.list_after(
+        "t", run.run_id, 0, types=("ui.assistant_delivery",))
+    assert len(deliveries) == 1
+    assert deliveries[0].payload["deliveryKind"] == "group_delegate"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["persist", "publish"])
+async def test_delegate_audit_failure_returns_delivered_and_replay_is_idempotent(failure):
+    setup = await setup_delegate()
+    service, group, _, run, _, events, _ = setup
+    sink = service._events if failure == "persist" else events._bus
+    method = "append" if failure == "persist" else "publish"
+    original = getattr(sink, method)
+    setattr(sink, method, AsyncMock(side_effect=RuntimeError("audit unavailable")))
+    expected = {"status": "delivered", "text": "已转交 项目助理"}
+    assert payload(await invoke(setup)) == expected
+    setattr(sink, method, original)
+    assert payload(await invoke(setup)) == expected
+    service._agui.create_run_with_result.assert_awaited_once()
+    rows = await service.repository.list_group_messages("t", "u", group.group_id)
+    assert len([r for r in rows if r.author is AssistantGroupMessageAuthor.SPECIALIST]) == 1
+    deliveries = await service._events.list_after(
+        "t", run.run_id, 0, types=("ui.assistant_delivery",))
+    assert len(deliveries) == 1
+
+
+@pytest.mark.asyncio
+async def test_delegate_rejects_missing_event_service_before_dispatch():
+    setup = await setup_delegate()
+    setup[0]._event_service = None
+    assert (await invoke(setup))["isError"] is True
+    setup[0]._agui.create_run_with_result.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delegate_slow_audit_is_bounded_and_repaired_without_dispatch():
+    import asyncio
+
+    setup = await setup_delegate()
+    service, _, _, run, _, events, _ = setup
+    publish = events._bus.publish
+
+    async def blocked_publish(event):
+        if event.type == "ui.assistant_delivery":
+            await asyncio.Event().wait()
+        await publish(event)
+
+    events._bus.publish = blocked_publish
+    async with asyncio.timeout(3):
+        assert payload(await invoke(setup)) == {"status": "delivered", "text": "已转交 项目助理"}
+    assert len(await service.repository.pending_group_delivery_notices()) == 1
+    events._bus.publish = publish
+    await service._drain_group_delivery_notices()
+    assert not await service.repository.pending_group_delivery_notices()
+    assert len(await service._events.list_after(
+        "t", run.run_id, 0, types=("ui.assistant_delivery",))) == 1
+    service._agui.create_run_with_result.assert_awaited_once()

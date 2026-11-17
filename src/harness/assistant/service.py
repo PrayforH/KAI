@@ -1467,6 +1467,8 @@ class AssistantService:
             )
 
     async def process_once(self) -> None:
+        # Audit retry only; never creates or resumes expert work.
+        await self._drain_group_delivery_notices()
         # Reconcile missed event fan-out on the existing maintenance loop.
         try:
             async with asyncio.timeout(2.0):
@@ -3572,10 +3574,12 @@ class AssistantService:
         input. Deterministic message/run/event identities make repeated tool
         calls and a crash between dispatch and audit safe to replay.
         """
+        if self._event_service is None:
+            raise ConflictError("群转交服务暂不可用。")
         group = await self._require_group_tool_primary(run, session)
         assert group is not None
-        # Roster edits use this same row lock. Re-read all authority after it is
-        # acquired and hold it until enqueue + reply have been recorded.
+        # Roster edits use this same row lock. The audit intent shares the reply
+        # transaction, so storage/fan-out failure after commit can be repaired.
         async with self.repository.group_dispatch_guard(
             session.tenant_id, session.user_id, group.group_id,
         ) as repository:
@@ -3583,15 +3587,67 @@ class AssistantService:
             payload, timestamp = await scoped._delegate_assistant_group_locked(
                 run, session, specialist_id=specialist_id,
             )
-        # Commit the reply before publishing its audit. A fan-out failure must
-        # not roll back the reply while leaving a durable successful delivery.
-        key = hashlib.sha256(f"{run.run_id}:{specialist_id}".encode()).hexdigest()[:32]
-        await self._events.append_once(
-            event_id=f"group-delivery-{key}", tenant_id=run.tenant_id,
-            run_id=run.run_id, session_id=run.session_id,
-            event_type="ui.assistant_delivery", timestamp=timestamp, payload=payload,
-        )
-        return payload
+            key = hashlib.sha256(f"{run.run_id}:{specialist_id}".encode()).hexdigest()[:32]
+            notice = await repository.record_group_delivery_notice({
+                "event_id": f"group-delivery-{key}", "tenant_id": run.tenant_id,
+                "run_id": run.run_id, "session_id": run.session_id,
+                "event_type": "ui.assistant_delivery", "timestamp": timestamp,
+                "payload": payload,
+            })
+        # Once the dispatch has committed, audit failures cannot change its
+        # outcome. Leave the notice pending for the existing maintenance loop.
+        try:
+            async with asyncio.timeout(2.0):
+                await self._publish_group_delivery_notice(notice)
+        except Exception:  # noqa: BLE001 - committed delivery must remain successful
+            logger.exception("group delivery audit deferred: %s", notice["event_id"])
+        return notice["payload"]
+
+    async def _publish_group_delivery_notice(self, notice: dict[str, Any]) -> None:
+        if self._event_service is None:
+            raise ConflictError("群转交服务暂不可用。")
+        await self._event_service.append_once(**{
+            key: value for key, value in notice.items() if key != "outbox_id"
+        })
+        await self.repository.acknowledge_group_delivery_notice(notice["outbox_id"])
+
+    async def record_group_tool_audit(self, run: Run, payload: dict[str, Any]) -> None:
+        """Keep one stable audit identity across retries of this tool invocation.
+
+        The caller bounds both intent persistence and immediate fan-out. Once
+        recorded, the existing maintenance loop can retry without tool execution.
+        A separate tool invocation is a separate audit, even for a deduped delivery.
+        """
+        notice = await self.repository.record_group_delivery_notice({
+            "event_id": f"group-tool-{uuid4().hex}", "tenant_id": run.tenant_id,
+            "run_id": run.run_id, "session_id": run.session_id,
+            "event_type": "assistant.group.tool",
+            "timestamp": datetime.now(UTC).isoformat(), "payload": payload,
+        })
+        await self._publish_group_delivery_notice(notice)
+
+    async def _drain_group_delivery_notices(self) -> None:
+        if self._event_service is None:
+            return
+        try:
+            async with asyncio.timeout(2.0):
+                notices = await self.repository.pending_group_delivery_notices(limit=25)
+
+            async def publish(notice: dict[str, Any]) -> None:
+                try:
+                    async with asyncio.timeout(2.0):
+                        await self._publish_group_delivery_notice(notice)
+                except Exception:  # noqa: BLE001 - retry on the next maintenance pass
+                    logger.exception("group delivery audit retry: %s", notice["event_id"])
+
+            # At most 25 bounded attempts: a slow head cannot consume another
+            # notice's budget. Fetch <=2s + concurrent attempts <=2s per pass.
+            # TaskGroup cancels and joins every attempt on outer cancellation.
+            async with asyncio.TaskGroup() as tasks:
+                for notice in notices:
+                    tasks.create_task(publish(notice))
+        except Exception:  # noqa: BLE001 - execution maintenance must continue
+            logger.exception("group delivery audit reconciliation deferred")
 
     async def _delegate_assistant_group_locked(
         self, run: Run, session: Session, *, specialist_id: str,

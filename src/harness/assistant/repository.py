@@ -8,13 +8,13 @@ from collections.abc import AsyncGenerator, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from time import monotonic
-from typing import Literal
+from typing import Any, Literal
 from typing import cast as type_cast
 from urllib.parse import urlencode
 from uuid import uuid4
 from weakref import WeakKeyDictionary
 
-from sqlalchemy import DateTime, Select, and_, cast, delete, func, literal, or_, select
+from sqlalchemy import DateTime, Select, and_, cast, delete, func, literal, or_, select, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
@@ -72,7 +72,8 @@ from harness.core.events import RunEvent
 from harness.core.models import Run, RunStatus
 from harness.scheduling import TimingKind
 from harness.storage.database import SessionFactory
-from harness.storage.models import AguiThreadBindingRow, EventRow, RunRow, SessionRow
+from harness.storage.models import AguiThreadBindingRow, EventRow, OutboxRow, RunRow, SessionRow
+from harness.storage.outbox import new_outbox_record
 
 # 软抢占优雅窗口：高优排队时把低优 holder 的剩余 TTL 钳到该值（秒），
 # 让既有「过期→released→队头 acquire」路径尽快交接；不中途打断任何工具。
@@ -2584,6 +2585,38 @@ class PostgresAssistantRepository:
             if row is None:
                 raise NotFoundError("Assistant group not found")
             return await self._group_with_members(session, self._group(row))
+
+    async def record_group_delivery_notice(self, event: dict[str, Any]) -> dict[str, Any]:
+        """Reuse the audit outbox for delivery and delegation-tool notices.
+
+        Delivery intents join the dispatch guard transaction; tool outcomes are
+        recorded afterward in their own bounded transaction, including failures.
+        """
+        async with self._context(write=True) as session:
+            row = await session.scalar(select(OutboxRow).where(
+                OutboxRow.topic == "assistant.group_delivery",
+                OutboxRow.aggregate_id == event["event_id"],
+            ))
+            if row is None:
+                row = new_outbox_record("assistant.group_delivery", event["event_id"], event)
+                session.add(row)
+                await session.flush()
+            return {"outbox_id": row.outbox_id, **row.payload}
+
+    async def pending_group_delivery_notices(self, *, limit: int = 25) -> list[dict[str, Any]]:
+        async with self._context() as session:
+            rows = await session.scalars(select(OutboxRow).where(
+                OutboxRow.topic == "assistant.group_delivery",
+                OutboxRow.published_at.is_(None),
+            ).order_by(OutboxRow.outbox_id).limit(limit))
+            return [{"outbox_id": row.outbox_id, **row.payload} for row in rows]
+
+    async def acknowledge_group_delivery_notice(self, outbox_id: int) -> None:
+        async with self._context(write=True) as session:
+            await session.execute(update(OutboxRow).where(
+                OutboxRow.topic == "assistant.group_delivery",
+                OutboxRow.outbox_id == outbox_id,
+            ).values(published_at=datetime.now(UTC)))
 
     @asynccontextmanager
     async def _group_write_context(

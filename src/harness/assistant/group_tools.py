@@ -9,6 +9,7 @@ The group and seat identity come from a server-authored run input
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import unicodedata
@@ -96,8 +97,8 @@ async def assistant_group_management_overlay(
     ) -> None:
         """Record who did what to which group, and the outcome.
 
-        Audit must never turn a successful roster change into a failed tool call,
-        so a broken event sink is logged rather than raised.
+        Audit must never change an action's outcome, including when its sink
+        stops responding. Delegation audits reuse the durable delivery outbox.
         """
 
         payload: dict[str, Any] = {
@@ -121,13 +122,17 @@ async def assistant_group_management_overlay(
             f" error={error}" if error is not None else "",
         )
         try:
-            await events.append(
-                tenant_id=tenant_id,
-                run_id=run.run_id,
-                session_id=run.session_id,
-                event_type=GROUP_TOOL_EVENT,
-                payload=payload,
-            )
+            async with asyncio.timeout(2.0):
+                if operation == "delegate":
+                    await assistant.record_group_tool_audit(run, payload)
+                else:
+                    await events.append(
+                        tenant_id=tenant_id,
+                        run_id=run.run_id,
+                        session_id=run.session_id,
+                        event_type=GROUP_TOOL_EVENT,
+                        payload=payload,
+                    )
         except Exception:  # noqa: BLE001 - audit failure must not break the action
             logger.exception("could not record group tool audit for %s", operation)
 

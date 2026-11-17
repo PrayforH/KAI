@@ -19,7 +19,10 @@ from tests.unit.assistant.test_group_delegate import NOW, setup_delegate
 
 
 async def setup_pg(database):
-    service, _, agui = _service()
+    raw_events = PostgresEventRepository(database[1])
+    events = EventService(raw_events, InMemoryEventBus(),
+                          clock=lambda: NOW, id_generator=lambda _: uuid4().hex)
+    service, _, agui = _service(event_repository=raw_events, event_service=events)
     service.repository = PostgresAssistantRepository(database[1])
     await service.repository.create_specialist(_specialist("specialist_pm", "项目助理"))
     setup = await setup_delegate(service)
@@ -27,9 +30,6 @@ async def setup_pg(database):
     parent = setup[3]
     await runs.add(parent)
     service._runs = runs
-    events = EventService(PostgresEventRepository(database[1]), InMemoryEventBus(),
-                          clock=lambda: NOW, id_generator=lambda _: uuid4().hex)
-    service._events = events
 
     async def create_run(**kwargs):
         # Execution boundary is stubbed; child ownership and identity really persist.
@@ -70,7 +70,7 @@ async def test_group_delegate_pg_persists_expert_reply_parent_link_and_replay(da
     assert deliveries[0].payload["groupId"] == group.group_id
     # A freshly constructed service reads confirmation from the persisted event.
     read_service, _, _ = _service()
-    read_service._runs, read_service._events = service._runs, events
+    read_service._runs, read_service._events = service._runs, service._events
     confirmation = await read_service._hydrate_group_message("t", posted.replies[0])
     assert confirmation.text == "已转交 项目助理"
     await events.append(tenant_id="t", run_id=child.run_id, session_id=child.session_id,
@@ -280,11 +280,146 @@ async def test_group_delegate_pg_publish_failure_keeps_committed_reply_for_repla
     service, group, _, parent, session, events = await setup_pg(database)
     publish = events._bus.publish
     events._bus.publish = AsyncMock(side_effect=RuntimeError("fan-out unavailable"))
-    with pytest.raises(RuntimeError, match="fan-out unavailable"):
-        await service.delegate_assistant_group(parent, session, specialist_id="specialist_pm")
+    first = await service.delegate_assistant_group(parent, session, specialist_id="specialist_pm")
     rows = await service.repository.list_group_messages("t", "u", group.group_id)
     expert = next(r for r in rows if r.author is AssistantGroupMessageAuthor.SPECIALIST)
     events._bus.publish = publish
     result = await service.delegate_assistant_group(parent, session, specialist_id="specialist_pm")
+    assert result == first
     assert result["messageId"] == expert.message_id
     service._agui.create_run_with_result.assert_awaited_once()
+
+
+async def invoke_pg_tool(service, group, run, session, events):
+    from harness.assistant.group_tools import assistant_group_management_overlay
+    from tests.unit.assistant.test_group_delegate import payload
+
+    overlay = await assistant_group_management_overlay(
+        service, events, run, session, group_id=group.group_id, member_id="primary")
+    tool = next(t for t in overlay.tools if t.name == "assistant_group_delegate")
+    return payload(await tool.handler({"specialist_id": "specialist_pm"}))
+
+
+@pytest.mark.asyncio
+async def test_group_delegate_pg_production_wiring_tool_delivered_and_audit_persisted(database):
+    service, group, _, parent, session, events = await setup_pg(database)
+    assert isinstance(service._events, PostgresEventRepository)
+    assert not hasattr(service._events, "append_once")
+    assert await invoke_pg_tool(service, group, parent, session, events) == {
+        "status": "delivered", "text": "已转交 项目助理"}
+    rows = await service._events.list_after("t", parent.run_id, 0,
+                                           types=("ui.assistant_delivery",))
+    assert len(rows) == 1
+    assert rows[0].payload["deliveryKind"] == "group_delegate"
+
+
+@pytest.mark.asyncio
+async def test_group_delegate_pg_production_publish_failure_tool_still_delivered(database):
+    from unittest.mock import AsyncMock
+
+    service, group, _, parent, session, events = await setup_pg(database)
+    publish = events._bus.publish
+    events._bus.publish = AsyncMock(side_effect=RuntimeError("fan-out unavailable"))
+    expected = {"status": "delivered", "text": "已转交 项目助理"}
+    assert await invoke_pg_tool(service, group, parent, session, events) == expected
+    # Audit is durable despite fan-out failure; recover via the same event ID.
+    before = await service._events.list_after("t", parent.run_id, 0,
+                                             types=("ui.assistant_delivery",))
+    assert len(before) == 1
+    events._bus.publish = AsyncMock(wraps=publish)
+    assert await invoke_pg_tool(service, group, parent, session, events) == expected
+    service._agui.create_run_with_result.assert_awaited_once()
+    after = await service._events.list_after("t", parent.run_id, 0,
+                                            types=("ui.assistant_delivery",))
+    assert [e.event_id for e in after] == [e.event_id for e in before]
+    assert before[0].event_id in [call.args[0].event_id
+                                  for call in events._bus.publish.await_args_list]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["persist", "publish", "acknowledge"])
+async def test_group_delegate_pg_outbox_recovers_on_maintenance_without_tool_retry(
+    database, failure,
+):
+    from unittest.mock import AsyncMock
+
+    from sqlalchemy import select
+
+    from harness.storage.models import OutboxRow
+
+    service, group, _, parent, session, events = await setup_pg(database)
+    if failure == "persist":
+        sink, method = service._events, "append"
+    elif failure == "publish":
+        sink, method = events._bus, "publish"
+    else:
+        sink, method = service.repository, "acknowledge_group_delivery_notice"
+    original = getattr(sink, method)
+    setattr(sink, method, AsyncMock(side_effect=RuntimeError("audit unavailable")))
+    assert await invoke_pg_tool(service, group, parent, session, events) == {
+        "status": "delivered", "text": "已转交 项目助理"}
+    pending = await service.repository.pending_group_delivery_notices()
+    # Both the delivery and the wrapper's successful tool audit are durable.
+    assert len(pending) == 2
+    assert {n["event_type"] for n in pending} == {
+        "ui.assistant_delivery", "assistant.group.tool"}
+    identities = {n["event_id"] for n in pending}
+    identity = next(n["event_id"] for n in pending
+                    if n["event_type"] == "ui.assistant_delivery")
+    # There really is a committed intent, even if the event store append failed.
+    async with database[1]() as db:
+        for event_id in identities:
+            row = await db.scalar(select(OutboxRow).where(OutboxRow.aggregate_id == event_id))
+            assert row.published_at is None
+            assert row.payload["payload"]["groupId"] == group.group_id
+    setattr(sink, method, original)
+    # Fresh production-shaped service, no parent tool retry or reauthorization.
+    # A removed specialist must not prevent auditing already accepted work.
+    await service.remove_assistant_group_member("t", "u", group.group_id,
+                                                 member_id="specialist_pm")
+    bus = InMemoryEventBus()
+    bus.publish = AsyncMock(wraps=bus.publish)
+    raw = PostgresEventRepository(database[1])
+    repaired_events = EventService(raw, bus, clock=lambda: NOW,
+                                    id_generator=lambda _: uuid4().hex)
+    fresh, _, _ = _service(event_repository=raw, event_service=repaired_events)
+    fresh.repository = PostgresAssistantRepository(database[1])
+    await fresh.process_once()
+    assert not await fresh.repository.pending_group_delivery_notices()
+    audit = await raw.list_after("t", parent.run_id, 0, types=("ui.assistant_delivery",))
+    assert [e.event_id for e in audit] == [identity]
+    all_audits = await raw.list_after("t", parent.run_id, 0)
+    assert {e.event_id for e in all_audits} == identities
+    assert len(all_audits) == 2
+    assert {call.args[0].event_id for call in bus.publish.await_args_list} == identities
+    assert bus.publish.await_count == 2
+    # Acknowledged work is not published again on the next maintenance pass.
+    await fresh.process_once()
+    assert bus.publish.await_count == 2
+    service._agui.create_run_with_result.assert_awaited_once()
+    fresh._agui.create_run_with_result.assert_not_awaited()
+    messages = await service.repository.list_group_messages("t", "u", group.group_id)
+    assert len([r for r in messages if r.author is AssistantGroupMessageAuthor.SPECIALIST]) == 1
+
+
+@pytest.mark.asyncio
+async def test_group_delegate_pg_outbox_intent_and_reply_share_transaction(database):
+    from contextlib import asynccontextmanager
+
+    service, group, _, parent, session, _ = await setup_pg(database)
+    guard = service.repository.group_dispatch_guard
+
+    @asynccontextmanager
+    async def fail_commit(*args):
+        async with guard(*args) as scoped:
+            yield scoped
+            raise RuntimeError("before commit")
+
+    service.repository.group_dispatch_guard = fail_commit
+    with pytest.raises(RuntimeError, match="before commit"):
+        await service.delegate_assistant_group(parent, session, specialist_id="specialist_pm")
+    assert not await service.repository.pending_group_delivery_notices()
+    assert not await service._events.list_after("t", parent.run_id, 0,
+                                               types=("ui.assistant_delivery",))
+    rows = await service.repository.list_group_messages("t", "u", group.group_id)
+    assert not [r for r in rows if r.author is AssistantGroupMessageAuthor.SPECIALIST]

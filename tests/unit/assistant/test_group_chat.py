@@ -41,6 +41,8 @@ def _specialist(specialist_id: str, name: str) -> Specialist:
 
 class FakeGroupRepository:
     def __init__(self, specialists: list[Specialist]) -> None:
+        self.delivery_notices = {}
+        self.delivery_published = set()
         self.groups: dict[str, AssistantGroup] = {}
         self.members: dict[str, list[AssistantGroupMember]] = {}
         self.messages: dict[str, list[AssistantGroupMessage]] = {}
@@ -53,6 +55,17 @@ class FakeGroupRepository:
         # Concurrency/transaction semantics are exercised with real PostgreSQL.
         await self.get_group(tenant_id, user_id, group_id)
         yield self
+
+    async def record_group_delivery_notice(self, event):
+        return self.delivery_notices.setdefault(event["event_id"], {
+            "outbox_id": len(self.delivery_notices) + 1, **event})
+
+    async def pending_group_delivery_notices(self, *, limit=25):
+        return [n for n in self.delivery_notices.values()
+                if n["outbox_id"] not in self.delivery_published][:limit]
+
+    async def acknowledge_group_delivery_notice(self, outbox_id):
+        self.delivery_published.add(outbox_id)
 
     async def create_group(self, tenant_id, user_id, group, members):
         self.groups[group.group_id] = group
@@ -192,7 +205,8 @@ class FakeGroupRepository:
         return list(self._specialists.values())
 
 
-def _service(specialists: list[Specialist] | None = None):
+def _service(specialists: list[Specialist] | None = None, *,
+             event_repository=None, event_service=None):
     repo = FakeGroupRepository(specialists or [])
     agents, auth, projects, agui, runs, events = [AsyncMock() for _ in range(6)]
     agui.get_binding.return_value = SimpleNamespace(
@@ -205,7 +219,8 @@ def _service(specialists: list[Specialist] | None = None):
     agui.create_run_with_result.side_effect = create_run_with_result
     service = AssistantService(
         repo, agents=agents, auth=auth, projects=projects, agui=agui,
-        runs=runs, events=events,
+        runs=runs, events=events if event_repository is None else event_repository,
+        event_service=event_service,
     )
     return service, repo, agui
 
