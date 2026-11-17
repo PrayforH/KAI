@@ -17,12 +17,14 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
   padding-top: 12px;
 }
 
-/* 对话列宽对齐 Grok 的 standard 档：列 60rem、气泡 35rem、正文 44rem。
-   宽屏只生长两侧留白，消息列不跟着窗口铺满；三个值只在本页生效。 */
+/* 对话列宽对齐 Grok 的 standard 档：列 60rem、助手里气泡 35rem、正文 44rem。
+   用户自己发的气泡比助手宽一档（48rem）：里面是原话，折成两行最影响扫读。
+   宽屏只生长两侧留白，消息列不跟着窗口铺满；这些值只在本页生效。 */
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] {
   --chat-column-max: 60rem;
   --chat-bubble-max: 35rem;
   --chat-prose-max: 44rem;
+  --chat-user-bubble-max: 48rem;
 }
 
 /* 对话区顶部固定标题带：名称在左、页头入口在右，高 46px；
@@ -117,7 +119,18 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
 }
 
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-user-message > .aui-user-message-content {
-  max-width: min(var(--chat-bubble-max), 80%);
+  max-width: min(var(--chat-user-bubble-max), 88%);
+}
+
+/* 用户消息这一行必须占满整列：.harness-user-message 是 align-items:flex-end 的
+   纵向 flex，行宽会缩成内容宽，气泡的 82% 再按这个窄行计算，640px 的额度
+   实际只剩 ~400px，一句普通提问就被折成两行。行宽钉成 100% 后百分比按 960px 列算。 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-user-answer-row {
+  width: 100%;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-user-answer-row > .sent-user-bubble {
+  max-width: min(var(--chat-user-bubble-max), 88%);
 }
 
 /* 状态行（已完成·耗时）居中、极小号、去掉方框感 */
