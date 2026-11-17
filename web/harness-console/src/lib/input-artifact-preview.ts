@@ -1,4 +1,4 @@
-import type { PreviewTarget } from "../components/rail-file-preview";
+import { artifactContentUrl, type PreviewTarget } from "../components/rail-file-preview";
 
 /** Uploaded files live on the input-artifact proxy route, not on a thread's
  * artifact route. Every entry point (composer card, sent bubble) builds the
@@ -35,8 +35,16 @@ export function inputArtifactPreviewTarget(input: {
   };
 }
 
-/** One event name for every preview entry, handled by the assistant surface. */
+/** One event name for every preview entry, handled by the assistant surface.
+ * 没有预览宿主的页面（如智能体工作台）退回浏览器原生预览，别让点击变成空操作。 */
 export function requestArtifactPreview(target: PreviewTarget): void {
   if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent("harness:preview-artifact", { detail: target }));
+  const detail: PreviewTarget & { handled?: boolean } = { ...target, handled: false };
+  window.dispatchEvent(new CustomEvent("harness:preview-artifact", { detail }));
+  if (detail.handled) return;
+  try {
+    window.open(artifactContentUrl(target), "_blank", "noopener,noreferrer");
+  } catch {
+    // 无头渲染等环境没有新窗口可开：没有预览宿主时只能到此为止。
+  }
 }

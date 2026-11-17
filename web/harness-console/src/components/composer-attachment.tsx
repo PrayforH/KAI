@@ -76,9 +76,10 @@ export function HarnessComposerAttachment() {
     ?? "";
   const imageFallback = attachment.content
     ?.flatMap((part) => (part.type === "image" ? [part.image] : []))[0];
+  // 只有图片才有可画的缩略图：给 PDF/文档一个 blob: 地址只会渲染成破图。
   const thumbSrc = useAttachmentThumbSrc(
-    "file" in attachment ? attachment.file : undefined,
-    imageFallback,
+    attachment.type === "image" && "file" in attachment ? attachment.file : undefined,
+    attachment.type === "image" ? imageFallback : undefined,
   );
   const previewable = state !== "error" && artifactId !== null;
   const typeLabel = attachment.type === "image" ? "图片"
@@ -122,8 +123,9 @@ export function HarnessComposerAttachment() {
           aria-label={`移除 ${attachment.name}`}
           title={`移除 ${attachment.name}`}
         >
+          {/* 没有 fill/stroke 的折线路径不会画出任何东西，叉号必须描边。 */}
           <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-            <path d="M4.4 4.4l7.2 7.2M11.6 4.4l-7.2 7.2" />
+            <path d="M4.4 4.4l7.2 7.2M11.6 4.4l-7.2 7.2" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
         </button>
       </AttachmentPrimitive.Remove>
