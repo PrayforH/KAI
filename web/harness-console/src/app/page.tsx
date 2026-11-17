@@ -428,8 +428,10 @@ function AuthenticatedHome() {
   // Artifact cards in the transcript ask the surface to show that file.
   useEffect(() => {
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent).detail as (PreviewTarget & { expanded?: boolean }) | undefined;
+      const detail = (event as CustomEvent).detail as (PreviewTarget & { expanded?: boolean; handled?: boolean }) | undefined;
       if (!detail?.artifact_id) return;
+      // 告诉派发方这次点击已经有接收方，避免它再退回浏览器原生预览。
+      detail.handled = true;
       // The dialog floats above the conversation, so the assistant keeps its
       // panels open; the task page has to clear the way for the rail.
       if (assistantView) {

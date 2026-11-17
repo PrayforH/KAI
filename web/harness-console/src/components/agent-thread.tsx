@@ -91,7 +91,7 @@ import { ApprovalCard, type ApprovalDetails } from "./approval-card";
 import { ArtifactCard, isImageArtifact, type ArtifactDetails } from "./artifact-list";
 import { AssistantResults } from "./assistant-results";
 import { assistantControlSummary } from "../lib/assistant-control-receipt";
-import { assistantCopy, assistantPresentation, compactAssistantProgress, compactAssistantReceipt } from "../lib/assistant-copy";
+import { assistantCopy, compactAssistantProgress, compactAssistantReceipt } from "../lib/assistant-copy";
 import { AssistantNoticeSource, noticeExchangeForMessage, noticeSource } from "./assistant-notice-source";
 import { replyWebImages } from "../lib/reply-web-images";
 import { ReplyWebImages } from "./reply-web-images";
@@ -1802,6 +1802,12 @@ export function responseTextForTurn(messageId: string, nativeText: string, direc
   return nativeText;
 }
 
+/** 助理页只保留回答正文与交付文件：Intelligent UI 卡片（含解析失败时的兜底卡片）
+ * 整类不渲染；任务页与工作台维持原规则。 */
+export function turnPresentationsForSurface<T>(items: T[], assistantSurface: boolean): T[] {
+  return assistantSurface ? [] : items;
+}
+
 export function HarnessAssistantMessage() {
   const redact = useConversationRedactor();
   const assistantSurface = useAssistantSurface();
@@ -1901,12 +1907,11 @@ export function HarnessAssistantMessage() {
   // so they are present live and after a reload without a second code path.
   const compactMain = assistantSurface && !assistantBot && !conversationScope;
   const allTurnPresentations = useMemo(() => turnSettled ? presentationsForMessage(content) : [], [content, turnSettled]);
-  const turnPresentations = useMemo(() => assistantSurface
-    ? allTurnPresentations.flatMap(item => {
-      const visible = assistantPresentation(item, {hasAttachments: turnArtifacts.length > 0});
-      return visible ? [visible] : [];
-    })
-    : allTurnPresentations, [allTurnPresentations, assistantSurface, turnArtifacts.length]);
+  // 助理页只留回答正文与交付文件：Intelligent UI 卡片不再出现在正文和文件之间。
+  const turnPresentations = useMemo(
+    () => turnPresentationsForSurface(allTurnPresentations, assistantSurface),
+    [allTurnPresentations, assistantSurface],
+  );
   // Only blocks the model authored came from a fence in this answer, so only that
   // many fences may be hidden from the rendered Markdown.
   const publishedBlocks = useMemo(() => modelBlockSources(allTurnPresentations), [allTurnPresentations]);

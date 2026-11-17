@@ -9,21 +9,40 @@ let host:HTMLDivElement, root:Root;
 beforeEach(()=>{host=document.createElement("div");document.body.append(host);root=createRoot(host);});
 afterEach(()=>{act(()=>root.unmount());host.remove();});
 const photo = (i:number):MessageAttachment => ({id:`input_artifact_${i}`,name:`照片${i}.jpg`,type:"image",contentType:"image/jpeg",content:[]});
-it("bounds the first view, expands mixed attachments and navigates original photos", async()=>{
+it("bounds the first view, expands mixed attachments and previews them through the shared event", async()=>{
  const files=[...Array.from({length:7},(_,i)=>photo(i)),{id:"input_artifact_pdf",name:"报告.pdf",type:"document",contentType:"application/pdf",content:[]}] as MessageAttachment[];
- act(()=>root.render(<MessageAttachmentGroup attachments={files}/>));
- expect(host.querySelectorAll('.message-attachment-card')).toHaveLength(6);
- expect(host.textContent).toContain("+2 个附件");
- act(()=>host.querySelector<HTMLButtonElement>('.message-attachment-expand')!.click());
- expect(host.querySelectorAll('.message-attachment-card')).toHaveLength(8);
- expect(host.querySelector<HTMLAnchorElement>('[download="报告.pdf"]')!.href).toContain('/api/input-artifacts/input_artifact_pdf/content');
- act(()=>host.querySelector<HTMLButtonElement>('.message-attachment-open')!.click());
- const dialog=document.querySelector('[role=dialog]')!;
- expect(dialog.textContent).toContain('1 / 7');
- act(()=>dialog.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true})));
- expect(dialog.querySelector<HTMLImageElement>('.image-lightbox-stage img')!.alt).toBe('照片1.jpg');
- await act(async()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
- expect(document.querySelector('[role=dialog]')).toBeNull();
+ const seen: unknown[] = [];
+ const listener = (event: Event) => seen.push((event as CustomEvent).detail);
+ window.addEventListener("harness:preview-artifact", listener);
+ try {
+  act(()=>root.render(<MessageAttachmentGroup attachments={files}/>));
+  expect(host.querySelectorAll('.message-attachment-card')).toHaveLength(6);
+  expect(host.textContent).toContain("+2 个附件");
+  act(()=>host.querySelector<HTMLButtonElement>('.message-attachment-expand')!.click());
+  expect(host.querySelectorAll('.message-attachment-card')).toHaveLength(8);
+  // Documents no longer download straight from the bubble: they open the dialog.
+  expect(host.querySelector('[download="报告.pdf"]')).toBeNull();
+  act(()=>host.querySelector<HTMLButtonElement>('[title="预览 报告.pdf"]')!.click());
+  expect(seen.at(-1)).toMatchObject({
+   artifact_id: "input_artifact_pdf",
+   name: "报告.pdf",
+   media_type: "application/pdf",
+   content_url: "/api/input-artifacts/input_artifact_pdf/content?inline=1",
+   download_url: "/api/input-artifacts/input_artifact_pdf/content",
+  });
+  act(()=>host.querySelector<HTMLButtonElement>('[title="预览 照片1.jpg"]')!.click());
+  expect(seen.at(-1)).toMatchObject({
+   artifact_id: "input_artifact_1",
+   content_url: "/api/input-artifacts/input_artifact_1/content?inline=1",
+  });
+ } finally {
+  window.removeEventListener("harness:preview-artifact", listener);
+ }
+});
+it("leaves files the console never uploaded as plain static chips", async()=>{
+ act(()=>root.render(<MessageAttachmentGroup attachments={[{id:"artifact_external",name:"外部.bin",type:"file",contentType:"application/octet-stream",content:[]}]}/>));
+ expect(host.querySelector(".message-attachment-card button")).toBeNull();
+ expect(host.querySelector(".message-attachment-static")).not.toBeNull();
 });
 it("groups adjacent Markdown photos without swallowing surrounding text", async()=>{
  const text='正文前。\n\n![横图](https://cdn.example.com/a.jpg)\n\n![竖图](https://cdn.example.com/b.jpg)\n\n正文后。';

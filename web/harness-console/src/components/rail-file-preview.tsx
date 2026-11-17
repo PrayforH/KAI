@@ -17,14 +17,22 @@ export interface PreviewTarget {
   media_type: string;
   size_bytes?: number | null;
   thread_id?: string | null;
+  /** Uploaded input artifacts answer on /api/input-artifacts, not on the
+   * thread artifact route, so callers that know the file pass its resolved
+   * URLs instead of letting the dialog guess from the id. */
+  content_url?: string;
+  download_url?: string;
 }
 
 const TEXT_PREVIEW_LIMIT_BYTES = 2 * 1024 * 1024;
 const CSV_PREVIEW_ROWS = 200;
 /** Kinds the browser renders on its own, so the rail never downloads the bytes. */
-const FRAMED_KINDS = new Set<PreviewKind>(["image", "pdf", "html", "none", "xlsx", "docx", "pptx", "legacy-office"]);
+const FRAMED_KINDS = new Set<PreviewKind>(["image", "video", "pdf", "html", "none", "xlsx", "docx", "pptx", "legacy-office"]);
 
-export type PreviewKind = OfficeKind | "markdown" | "csv" | "json" | "code" | "html" | "image" | "pdf" | "none";
+/** Extensions the browser can play even when the upload reports octet-stream. */
+const VIDEO_EXTENSIONS = new Set(["mp4", "webm", "m4v", "ogv", "mov"]);
+
+export type PreviewKind = OfficeKind | "markdown" | "csv" | "json" | "code" | "html" | "image" | "video" | "pdf" | "none";
 
 export function previewKindFor(mediaType: string, name: string): PreviewKind {
   const type = (mediaType || "").toLowerCase();
@@ -32,6 +40,7 @@ export function previewKindFor(mediaType: string, name: string): PreviewKind {
   const office = officeKindFor(type, name);
   if (office) return office;
   if (type.startsWith("image/")) return "image";
+  if (type.startsWith("video/") || VIDEO_EXTENSIONS.has(extension)) return "video";
   if (type === "application/pdf" || extension === "pdf") return "pdf";
   if (type === "text/html" || ["html", "htm"].includes(extension)) return "html";
   if (type.includes("markdown") || ["md", "markdown"].includes(extension)) return "markdown";
@@ -87,6 +96,7 @@ export function parseCsvRows(text: string, limit = CSV_PREVIEW_ROWS): string[][]
 /** The dialog chrome and the preview share these routes, so both always open
  * and download the same content the preview shows. */
 export function artifactContentUrl(target: PreviewTarget): string {
+  if (target.content_url) return target.content_url;
   const params = new URLSearchParams();
   if (target.thread_id) params.set("thread_id", target.thread_id);
   params.set("preview", "1");
@@ -94,6 +104,7 @@ export function artifactContentUrl(target: PreviewTarget): string {
 }
 
 export function artifactDownloadUrl(target: PreviewTarget): string {
+  if (target.download_url) return target.download_url;
   const params = new URLSearchParams();
   if (target.thread_id) params.set("thread_id", target.thread_id);
   const query = params.toString();
@@ -196,6 +207,19 @@ export function RailFilePreview({ target, hideHeader = false }: {
           <OfficeFilePreview key={url} url={url} kind={kind as OfficeKind} name={target.name} size={target.size_bytes} />
         ) : kind === "image" ? (
           <img className="rail-preview-image" src={url} alt={target.name} />
+        ) : kind === "video" ? (
+          // Same centered dialog as images and HTML; muted autoplay is the only
+          // autoplay browsers allow without a user gesture.
+          <video
+            className="rail-preview-video"
+            src={url}
+            controls
+            autoPlay
+            muted
+            playsInline
+            preload="metadata"
+            aria-label={target.name}
+          />
         ) : kind === "pdf" ? (
           <iframe className="rail-preview-pdf" src={url} title={target.name} />
         ) : kind === "html" ? (

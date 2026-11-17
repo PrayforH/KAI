@@ -320,6 +320,24 @@ describe("Codex-style activity UI", () => {
     expect(html).not.toContain("artifact-actions");
   });
 
+  it("treats a delivered video as previewable instead of a download-only file", () => {
+    const html = renderToStaticMarkup(
+      <ArtifactCard
+        details={{
+          artifact_id: "artifact-2",
+          run_id: "run-1",
+          name: "clip.mp4",
+          media_type: "video/mp4",
+          size_bytes: 4096,
+        }}
+      />,
+    );
+    expect(html).toContain("VID");
+    expect(html).toContain("预览 clip.mp4");
+    expect(html).toContain("?preview=1");
+    expect(html).toContain("在侧栏预览 clip.mp4");
+  });
+
   it("renders actionable controls for a pending inline approval", () => {
     const html = renderToStaticMarkup(
       <ApprovalCard
