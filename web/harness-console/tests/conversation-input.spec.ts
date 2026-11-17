@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseConversationInput, conversationInputDisplay, conversationInputForDisplay, latestConversationInput, formatConversationAnswers } from "../src/lib/conversation-input";
+import { parseConversationInput, conversationInputDisplay, conversationInputForDisplay, latestConversationInput, formatConversationAnswers, isSensitiveQuestion } from "../src/lib/conversation-input";
 const payload = {version: 1, title: "确认范围", questions: [{id: "scope", label: "选择内容", type: "multi", options: ["UI", "接口"]}, {id: "note", label: "补充要求", type: "text"}]};
 const fence = (data: unknown) => "```harness-input\n" + JSON.stringify(data) + "\n```";
 describe("model-driven input display protocol", () => {
@@ -161,5 +161,71 @@ describe("near-miss forms still render as a question instead of raw JSON", () =>
     const broken = '```json\n{"version":1,"questions":[{"options":[]}]}\n```';
     expect(conversationInputDisplay("请确认。\n" + broken)).not.toContain('"questions"');
     expect(conversationInputDisplay(broken)).toContain("请直接输入");
+  });
+});
+
+describe("a second form block never falls through as raw JSON", () => {
+  const strict = fence(payload);
+  // Protocol-shaped but no label the card can use, so recovery gives up on it.
+  const unrecoverable = '```json\n{"version":1,"title":"坏表单","questions":[{"id":"x","options":["甲","乙"]}]}\n```';
+  const brokenAlias = '```harness-input\n{"version":1,"questions":\n```';
+  const nearMiss = '```json\n' + JSON.stringify({version:1,title:"下一步",extra:"x",questions:[{key:"route",label:"选路线",type:"single",options:[{label:"路线 A"},{value:"路线 B"}]}]}) + '\n```';
+
+  it("cleans the rest of the message after a strict form is rendered", () => {
+    const text = "请确认。\n" + strict + "\n另外：\n" + unrecoverable;
+    expect(parseConversationInput(text)?.title).toBe("确认范围");
+    const shown = conversationInputDisplay(text);
+    expect(shown).toContain("选择内容（UI / 接口）");
+    expect(shown).toContain("请直接输入");
+    expect(shown).not.toMatch(/"questions"|"version"|```/);
+    const hidden = conversationInputDisplay(text, false, true);
+    expect(hidden).toBe("请确认。\n另外：\n表单信息未能识别，请直接输入你的选择或补充信息。");
+    expect(hidden).not.toContain('"questions"');
+  });
+
+  it("cleans the rest after a recovered form is rendered", () => {
+    const text = "请确认。\n" + nearMiss + "\n另外：\n" + brokenAlias;
+    expect(parseConversationInput(text)).toBeNull();
+    expect(conversationInputForDisplay(text)?.title).toBe("下一步");
+    const shown = conversationInputDisplay(text);
+    expect(shown).toContain("选路线（路线 A / 路线 B）");
+    expect(shown).toContain("请直接输入");
+    expect(shown).not.toMatch(/"questions"|"version"|```/);
+    const hidden = conversationInputDisplay(text, false, true);
+    expect(hidden).toContain("请直接输入");
+    expect(hidden).not.toMatch(/"questions"|"version"|```/);
+    expect(conversationInputDisplay(text, true, true)).toBe("请确认。\n另外：");
+  });
+
+  it("drops a trailing broken block while streaming and keeps ordinary code literal", () => {
+    const ordinary = '```python\nprint("questions")\n```';
+    expect(conversationInputDisplay("说明。\n" + strict + "\n" + ordinary, true, true)).toBe("说明。\n" + ordinary);
+    expect(conversationInputDisplay(ordinary, false, true)).toBe(ordinary);
+    expect(conversationInputDisplay('```json\n{"version":1,"items":[1]}\n```', false, true)).toBe('```json\n{"version":1,"items":[1]}\n```');
+  });
+});
+
+describe("a recovered form keeps sensitive fields protected", () => {
+  it("preserves the sensitive flag and the password type through recovery", () => {
+    const text = '```json\n' + JSON.stringify({version:1,title:"配置",questions:[
+      {key:"tok",label:"API Token",type:"text",sensitive:true},
+      {id:"pwd",label:"访问密码",type:"secret"},
+      {id:"hint",label:"备注",type:"textarea"},
+    ]}) + '\n```';
+    expect(parseConversationInput(text)).toBeNull();
+    const input = conversationInputForDisplay(text)!;
+    expect(input.questions.map(q => [q.id, q.type, q.sensitive])).toEqual([["tok","text",true],["pwd","password",undefined],["hint","text",undefined]]);
+    expect(isSensitiveQuestion(input.questions[0])).toBe(true);
+    expect(isSensitiveQuestion(input.questions[1])).toBe(true);
+    expect(isSensitiveQuestion(input.questions[2])).toBe(false);
+    expect(formatConversationAnswers(input, {tok:{selected:[],text:"s3cret"},pwd:{selected:[],text:"hunter2"},hint:{selected:[],text:"普通"}}))
+      .toContain("API Token（敏感信息）");
+  });
+
+  it("treats a text question whose label names a secret as sensitive after recovery", () => {
+    const text = '```json\n' + JSON.stringify({version:1,title:"凭据",questions:[{key:"db",label:"数据库密码",type:"input"}]}) + '\n```';
+    const question = conversationInputForDisplay(text)!.questions[0];
+    expect(question.sensitive).toBeUndefined();
+    expect(isSensitiveQuestion(question)).toBe(true);
   });
 });
