@@ -89,3 +89,40 @@ async def test_resolved_bot_role_survives_overlay_composition(monkeypatch, role,
             assert "assistant_delegate_to_specialist" not in {tool.name for tool in overlay.tools}
     finally:
         await container.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("member", ["primary", "specialist_pm"])
+async def test_group_primary_receives_only_narrow_coordination_not_old_task_tools(
+    monkeypatch, member,
+):
+    from harness.runtime.platform_tools import PlatformTool
+
+    monkeypatch.setattr("harness.composition.coordinator_session", AsyncMock(return_value=False))
+    monkeypatch.setattr("harness.composition.session_specialist", AsyncMock(return_value=None))
+    monkeypatch.setattr("harness.composition.objective_observer_session",
+                        AsyncMock(return_value=False))
+    monkeypatch.setattr("harness.studio.runtime_builder.builder_overlay",
+                        AsyncMock(return_value=PlatformToolOverlay()))
+    monkeypatch.setattr(
+        "harness.storage.platform_repositories.PostgresAguiThreadBindingRepository.get_by_session",
+        AsyncMock(return_value=SimpleNamespace(kind="bot", specialist_id=member)))
+    old = AsyncMock(return_value={})
+    legacy = PlatformToolOverlay(tools=(PlatformTool(
+        name="assistant_create_task", description="legacy task", schema={}, handler=old),))
+    monkeypatch.setattr("harness.composition.assistant_delegation_overlay", lambda *a, **k: legacy)
+    container = build_production_container(production_settings())
+    now = datetime.now(UTC)
+    try:
+        overlay = await container.worker._platform_tools_factory(
+            Run(run_id="group-run", session_id="group-session", tenant_id="t",
+                status=RunStatus.RUNNING, idempotency_key="k", created_at=now, updated_at=now,
+                input={"conversation_surface": "assistant", "group_context": {
+                    "groupId": "group_1", "memberId": member}}),
+            Session(session_id="group-session", tenant_id="t", user_id="u",
+                    agent_name="agent", agent_version="1", created_at=now), None, None)
+        names = {tool.name for tool in overlay.tools}
+        assert ("assistant_group_delegate" in names) is (member == "primary")
+        assert ("assistant_create_task" in names) is (member != "primary")
+    finally:
+        await container.close()

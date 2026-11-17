@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import hashlib
+from asyncio import Lock, sleep, wait_for
 from collections.abc import AsyncGenerator, Sequence
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from time import monotonic
 from typing import Literal
 from typing import cast as type_cast
 from urllib.parse import urlencode
 from uuid import uuid4
+from weakref import WeakKeyDictionary
 
 from sqlalchemy import DateTime, Select, and_, cast, delete, func, literal, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import DBAPIError, IntegrityError
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from harness.assistant.group_library import group_document_download_url
 from harness.assistant.lifecycle import next_check, transition, validate_new_schedule
@@ -74,6 +77,15 @@ from harness.storage.models import AguiThreadBindingRow, EventRow, RunRow, Sessi
 # 软抢占优雅窗口：高优排队时把低优 holder 的剩余 TTL 钳到该值（秒），
 # 让既有「过期→released→队头 acquire」路径尽快交接；不中途打断任何工具。
 DESKTOP_PREEMPT_GRACE_SECONDS = 30
+
+GROUP_LOCK_TIMEOUT_SECONDS = 5.0
+GROUP_LOCK_RETRY_SECONDS = 0.05
+
+# The admission body uses collaborators on the same pool. Reserve at most one
+# such owner per pool/process, including across different groups/factories,
+# so independent group owners cannot consume each other's progress connection.
+# Other processes have their own pools; the PG row lock still fences the roster.
+_GROUP_DISPATCH_ADMISSIONS: WeakKeyDictionary[object, Lock] = WeakKeyDictionary()
 
 MANAGED_PROGRESS_EVENTS = (
     "run.succeeded",
@@ -2573,6 +2585,72 @@ class PostgresAssistantRepository:
                 raise NotFoundError("Assistant group not found")
             return await self._group_with_members(session, self._group(row))
 
+    @asynccontextmanager
+    async def _group_write_context(
+        self, tenant_id: str, user_id: str, group_id: str,
+        *, deadline: float | None = None,
+    ) -> AsyncGenerator[tuple[AsyncSession, AssistantGroupRow]]:
+        """Wait for admission without reserving a pooled database connection.
+
+        A lock owner may use other repositories on the shared pool. Blocking
+        row-lock waiters must not exhaust that pool and prevent its progress.
+        Retry only a NOWAIT admission failure, after rollback/connection return;
+        never replay a caller's writes or roll back a caller-owned transaction.
+        """
+        if deadline is None:
+            deadline = monotonic() + GROUP_LOCK_TIMEOUT_SECONDS
+        while True:
+            admitted = False
+            try:
+                async with self._context(write=True) as session:
+                    group = await self._require_group(
+                        session, tenant_id, user_id, group_id, lock=True,
+                    )
+                    admitted = True
+                    yield session, group
+                    return
+            except DBAPIError as exc:
+                if (admitted or self._bound_session is not None
+                        or getattr(exc.orig, "sqlstate", None) != "55P03"):
+                    raise
+                remaining = deadline - monotonic()
+                if remaining <= 0:
+                    raise ConflictError("群正在处理其他操作，请稍后重试。") from exc
+            # The failed transaction is closed before suspension. Cancellation
+            # here cannot leave a lock or connection reserved by this waiter.
+            await sleep(min(GROUP_LOCK_RETRY_SECONDS, remaining))
+
+    @asynccontextmanager
+    async def group_dispatch_guard(
+        self, tenant_id: str, user_id: str, group_id: str,
+    ) -> AsyncGenerator[PostgresAssistantRepository]:
+        """Serialize admission/run creation with roster edits, across workers.
+
+        Callers must re-read authority through the yielded repository and use
+        it for message writes, so those writes join this transaction instead of
+        trying to acquire the same group row from another connection. The guard
+        covers enqueueing only; it never waits for a model or an expert result.
+        """
+        if self._bound_session is not None:
+            # Waiting for the process admission while already holding a
+            # caller's connection/locks would recreate the resource cycle.
+            raise ConflictError("群转交需要独立的准入事务。")
+        bind = self._sessions.kw.get("bind")
+        pool_owner = bind.sync_engine.pool if isinstance(bind, AsyncEngine) else self._sessions
+        admission = _GROUP_DISPATCH_ADMISSIONS.setdefault(pool_owner, Lock())
+        deadline = monotonic() + GROUP_LOCK_TIMEOUT_SECONDS
+        try:
+            await wait_for(admission.acquire(), timeout=GROUP_LOCK_TIMEOUT_SECONDS)
+        except TimeoutError as exc:
+            raise ConflictError("群转交正在处理其他请求，请稍后重试。") from exc
+        try:
+            async with self._group_write_context(
+                tenant_id, user_id, group_id, deadline=deadline,
+            ) as (session, _):
+                yield self.with_session(session)
+        finally:
+            admission.release()
+
     async def _group_with_members(
         self, session: AsyncSession, group: AssistantGroup
     ) -> AssistantGroup:
@@ -2611,8 +2689,7 @@ class PostgresAssistantRepository:
         member: AssistantGroupMember,
     ) -> None:
         now = member.joined_at
-        async with self._context(write=True) as session:
-            await self._require_group(session, tenant_id, user_id, group_id, lock=True)
+        async with self._group_write_context(tenant_id, user_id, group_id) as (session, _):
             existing = await session.scalar(
                 select(AssistantGroupMemberRow).where(
                     AssistantGroupMemberRow.group_id == group_id,
@@ -2648,10 +2725,7 @@ class PostgresAssistantRepository:
         self, tenant_id: str, user_id: str, group_id: str, member_id: str
     ) -> AssistantGroup:
         now = datetime.now(UTC)
-        async with self._context(write=True) as session:
-            group_row = await self._require_group(
-                session, tenant_id, user_id, group_id, lock=True
-            )
+        async with self._group_write_context(tenant_id, user_id, group_id) as (session, group_row):
             member_row = await session.scalar(
                 select(AssistantGroupMemberRow).where(
                     AssistantGroupMemberRow.group_id == group_id,
@@ -2685,7 +2759,7 @@ class PostgresAssistantRepository:
             AssistantGroupRow.user_id == user_id,
             AssistantGroupRow.group_id == group_id,
         )
-        row = await session.scalar(query.with_for_update() if lock else query)
+        row = await session.scalar(query.with_for_update(nowait=True) if lock else query)
         if row is None:
             raise NotFoundError("Assistant group not found")
         return row
@@ -2699,10 +2773,7 @@ class PostgresAssistantRepository:
     ) -> AssistantGroup:
         """设置未 @ 时的接话人；None 表示默认主助理。"""
         now = datetime.now(UTC)
-        async with self._context(write=True) as session:
-            group_row = await self._require_group(
-                session, tenant_id, user_id, group_id, lock=True
-            )
+        async with self._group_write_context(tenant_id, user_id, group_id) as (session, group_row):
             payload = dict(type_cast(dict[str, object], group_row.payload or {}))
             payload["replyAs"] = reply_as
             group_row.payload = payload
@@ -2731,10 +2802,7 @@ class PostgresAssistantRepository:
     ) -> AssistantGroup:
         """只改显式给出的字段；未给出的保持原样。"""
         now = datetime.now(UTC)
-        async with self._context(write=True) as session:
-            group_row = await self._require_group(
-                session, tenant_id, user_id, group_id, lock=True
-            )
+        async with self._group_write_context(tenant_id, user_id, group_id) as (session, group_row):
             if "name" in fields:
                 group_row.name = type_cast(str, fields["name"])
             if "description" in fields:
@@ -2748,10 +2816,7 @@ class PostgresAssistantRepository:
         self, tenant_id: str, user_id: str, group_id: str, *, expected_name: str | None = None,
     ) -> None:
         """解散群：成员/消息/表情/资料库文档与知识库绑定一起清。"""
-        async with self._context(write=True) as session:
-            group = await self._require_group(
-                session, tenant_id, user_id, group_id, lock=True
-            )
+        async with self._group_write_context(tenant_id, user_id, group_id) as (session, group):
             if expected_name is not None and group.name != expected_name:
                 raise ConflictError(f"群名不一致，未解散；当前群名是『{group.name}』")
             await session.execute(
@@ -2940,10 +3005,7 @@ class PostgresAssistantRepository:
         reference: str,
     ) -> None:
         now = datetime.now(UTC)
-        async with self._context(write=True) as session:
-            await self._require_group(
-                session, tenant_id, user_id, group_id, lock=True
-            )
+        async with self._group_write_context(tenant_id, user_id, group_id) as (session, _):
             existing = await session.scalar(
                 select(AssistantGroupKnowledgeBaseRow).where(
                     AssistantGroupKnowledgeBaseRow.group_id == group_id,
@@ -2966,10 +3028,7 @@ class PostgresAssistantRepository:
     async def delete_group_knowledge_reference(
         self, tenant_id: str, user_id: str, group_id: str, reference: str
     ) -> None:
-        async with self._context(write=True) as session:
-            await self._require_group(
-                session, tenant_id, user_id, group_id, lock=True
-            )
+        async with self._group_write_context(tenant_id, user_id, group_id) as (session, _):
             row = await session.scalar(
                 select(AssistantGroupKnowledgeBaseRow).where(
                     AssistantGroupKnowledgeBaseRow.group_id == group_id,
@@ -2986,10 +3045,7 @@ class PostgresAssistantRepository:
         self, tenant_id: str, user_id: str, group_id: str
     ) -> AssistantGroup:
         now = datetime.now(UTC)
-        async with self._context(write=True) as session:
-            group_row = await self._require_group(
-                session, tenant_id, user_id, group_id, lock=True
-            )
+        async with self._group_write_context(tenant_id, user_id, group_id) as (session, group_row):
             payload = dict(type_cast(dict[str, object], group_row.payload or {}))
             payload["lastReadAt"] = now.isoformat()
             group_row.payload = payload
@@ -3075,9 +3131,31 @@ class PostgresAssistantRepository:
         thread_id: str | None = None,
         reply_to_message_id: str | None = None,
         client_message_id: str | None = None,
+        deduplicate: bool = False,
     ) -> AssistantGroupMessage:
-        async with self._context(write=True) as session:
-            await self._require_group(session, tenant_id, user_id, message.group_id)
+        async with AsyncExitStack() as stack:
+            if deduplicate:
+                session, _ = await stack.enter_async_context(
+                    self._group_write_context(tenant_id, user_id, message.group_id)
+                )
+            else:
+                session = await stack.enter_async_context(self._context(write=True))
+            await self._require_group(
+                session, tenant_id, user_id, message.group_id,
+            )
+            if deduplicate:
+                existing = await session.get(AssistantGroupMessageRow, message.message_id)
+                if existing is not None:
+                    if (existing.tenant_id != tenant_id or existing.user_id != user_id
+                            or existing.group_id != message.group_id
+                            or existing.specialist_id != message.specialist_id
+                            or existing.run_id != message.run_id
+                            or existing.reply_to_message_id != reply_to_message_id):
+                        raise ConflictError("群回复标识已被其他请求使用")
+                    return message.model_copy(update={
+                        "created_at": existing.created_at,
+                        "reply_to_message_id": existing.reply_to_message_id,
+                    })
             session.add(
                 AssistantGroupMessageRow(
                     message_id=message.message_id,

@@ -245,6 +245,16 @@ def _item(
 
 
 def _activity_item(event: RunEvent) -> dict[str, Any] | None:
+    if (event.type == "ui.assistant_delivery"
+            and event.payload.get("deliveryKind") == "group_delegate"):
+        name = event.payload.get("specialistName")
+        if not isinstance(name, str) or not name.strip():
+            return None
+        name = redact_text(name, limit=80)
+        return _item(
+            event, kind="result", status="succeeded", title=f"已转交 {name}",
+            metadata={"deliveryKind": "group_delegate", "specialistName": name},
+        )
     if event.type == "ui.assistant_control":
         try:
             receipt = AssistantControlReceipt.model_validate(event.payload)
