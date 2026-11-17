@@ -123,7 +123,6 @@ it("keeps a main Bot question active when a child result arrives", async () => {
   expect(latestConversationInput([question,notice])?.messageId).toBe("main-question");
   expect(latestConversationInput([question,notice,{id:"answer",role:"user",content:[{type:"text",text:"绿色"}]}])).toBeNull();
 });
-});
 
 describe("near-miss forms still render as a question instead of raw JSON", () => {
   const nearMiss = {
