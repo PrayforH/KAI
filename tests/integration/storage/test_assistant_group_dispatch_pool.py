@@ -59,7 +59,7 @@ async def test_group_lock_contenders_do_not_starve_owner(database, capacity, ope
                 update={"status": RunStatus.SUCCEEDED, "fencing_token": child.fencing_token + 1}))
 
         # Pause the lock owner immediately before it needs a second connection.
-        collaborator = events if operation == "retry" else service._runs
+        collaborator = service._events if operation == "retry" else service._runs
         method = "list_after" if operation == "retry" else "get"
         original = getattr(collaborator, method)
         first = True
