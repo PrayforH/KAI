@@ -94,6 +94,7 @@
 .body :global(.rail-preview) { flex: 1 1 auto; height: auto; min-height: 0; }
 .body :global(.rail-preview-body) { padding-top: 0; }
 .body :global(.rail-preview[data-kind="image"] .rail-preview-body) { display: flex; }
+.body :global(.rail-preview[data-kind="video"] .rail-preview-body) { display: flex; }
 .body :global(.rail-preview-image) { display: block; margin: auto; max-height: 100%; object-fit: contain; }
 
 @keyframes preview-fade { from { opacity: 0; } to { opacity: 1; } }

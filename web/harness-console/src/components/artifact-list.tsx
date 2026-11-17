@@ -32,6 +32,7 @@ export function ArtifactCard({ details }: { details: ArtifactDetails }) {
   const previewable =
     mediaType.startsWith("text/") ||
     mediaType.startsWith("image/") ||
+    mediaType.startsWith("video/") ||
     mediaType === "application/json" ||
     mediaType === "application/pdf";
   const primaryUrl = previewable ? `${contentUrl}?preview=1` : contentUrl;
@@ -58,7 +59,9 @@ export function ArtifactCard({ details }: { details: ArtifactDetails }) {
       ? "PDF"
       : mediaType.startsWith("image/")
         ? "IMG"
-        : "FILE";
+        : mediaType.startsWith("video/")
+          ? "VID"
+          : "FILE";
   return (
     <section className="domain-card artifact-domain-card">
       <a

@@ -39,6 +39,25 @@ it("excludes inputs and intermediate clips, deduplicates events, and recognizes 
   expect(replyVideoArtifacts(files).map(file => file.artifact_id)).toEqual([video.artifact_id, "webm"]);
 });
 
+it("opens the same centered preview as images from the inline player", () => {
+  const seen: CustomEvent[] = [];
+  const listener = (event: Event) => seen.push(event as CustomEvent);
+  window.addEventListener("harness:preview-artifact", listener);
+  act(() => root.render(<ReplyArtifactVideos artifacts={[video]} />));
+  act(() => host.querySelector<HTMLButtonElement>('button[aria-label="放大预览 海上日出.mp4"]')!.click());
+  window.removeEventListener("harness:preview-artifact", listener);
+
+  expect(seen).toHaveLength(1);
+  expect(seen[0].detail).toMatchObject({
+    artifact_id: "视频/1",
+    name: "海上日出.mp4",
+    media_type: "video/mp4",
+    thread_id: "task/1",
+  });
+  // The inline player stays so a short clip is still watchable without a click.
+  expect(host.querySelector("video")).not.toBeNull();
+});
+
 it("retains download access when a codec or media request cannot be played", () => {
   act(() => root.render(<ReplyArtifactVideos artifacts={[video]} />));
   act(() => host.querySelector("video")!.dispatchEvent(new Event("error")));
