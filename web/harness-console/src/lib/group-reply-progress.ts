@@ -29,6 +29,8 @@ export type GroupReplyStreamEvent = {
   patch?: unknown;
   /** AG-UI 标准工具事件用 camelCase 的工具调用 id。 */
   toolCallId?: string;
+  /** 工具名只用于判断“是不是真的在调工具”，界面上绝不展示。 */
+  toolCallName?: string;
 };
 
 /**
@@ -49,12 +51,21 @@ const TOOL_REQUEST = "tool.request";
 const TOOL_RESULT = "tool.result";
 
 /**
+ * 后端把 `approval.requested` 同时投影成一帧标准工具调用
+ * （mapper.py:157-176，工具名见下），审批通过 / 拒绝才补 TOOL_CALL_RESULT。
+ * 照单收进 pending 会让“等人审批”一直被显示成“正在调用工具”，所以按名排除。
+ */
+const APPROVAL_TOOL_NAMES: ReadonlySet<string> = new Set(["harness_request_approval"]);
+
+/** 审批相关活动条目：等待、通过、拒绝、过期、取消。 */
+const APPROVAL_ITEM = /^approval\./;
+
+/**
  * 其余过程事件只说明“还在处理”，归入思考：
- * 运行时初始化、上下文压缩、子 Agent 阶段、审批等待等都不是工具调用。
+ * 运行时初始化、上下文压缩、子 Agent 阶段等都不是工具调用。
  * 刻意不含 `runtime.result`（收尾时会把“整理回复”打回思考）与 `artifact.*`。
  */
-const PROCESS_ITEM =
-  /^(?:reasoning\.|run\.(?:queued|started|resumed)|runtime\.system|context\.compaction|subagent\.|approval\.)/;
+const PROCESS_ITEM = /^(?:reasoning\.|run\.(?:queued|started|resumed)|runtime\.system|context\.compaction|subagent\.)/;
 
 /** 模型开始 / 正在 / 完成输出；`message.delta` 也可能是过程中的进展说明。 */
 const OUTPUT_ITEM = /^message\.(?:start|delta|completed)$/;
@@ -96,6 +107,22 @@ function removePending(
   return pending.filter((entry) => entry !== key);
 }
 
+/**
+ * 审批帧落回思考：审批条目自带的 tool_call_id 若是真实工具，
+ * 说明这个工具正卡在等人审批，不该继续按“执行中”显示；其余并行工具照常保持工具档。
+ */
+function settleApproval(
+  state: GroupReplyProgress,
+  key: string | undefined,
+): GroupReplyProgress {
+  const pending = removePending(state.pendingToolCalls, key);
+  return { stage: pending.length > 0 ? "tool" : "thinking", pendingToolCalls: pending };
+}
+
+function isApprovalToolCall(name: unknown): boolean {
+  return typeof name === "string" && APPROVAL_TOOL_NAMES.has(name);
+}
+
 /** 把一条活动条目并入状态。工具未全部返回时，过程事件不得改档。 */
 function applyItem(
   state: GroupReplyProgress,
@@ -104,6 +131,7 @@ function applyItem(
   const type = String(item.event_type ?? "");
   if (!type) return state;
 
+  if (APPROVAL_ITEM.test(type)) return settleApproval(state, itemToolCallKey(item));
   if (type === TOOL_REQUEST) {
     return {
       stage: "tool",
@@ -176,6 +204,8 @@ export function nextGroupReplyProgress(
       return isRunActivity(event) ? applyDelta(event.patch, state) : state;
     case "TOOL_CALL_START": {
       const key = toolCallKey(event.toolCallId);
+      // 审批被投影成标准工具帧，但它不是工具执行，不能进 pending。
+      if (isApprovalToolCall(event.toolCallName)) return settleApproval(state, key);
       return { stage: "tool", pendingToolCalls: addPending(state.pendingToolCalls, key) };
     }
     case "TOOL_CALL_RESULT": {

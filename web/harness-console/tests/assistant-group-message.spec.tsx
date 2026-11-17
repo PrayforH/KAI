@@ -285,6 +285,132 @@ describe("AssistantGroupMessage", () => {
     expect(host.textContent).toContain("正在回复…");
   });
 
+  it("does not report an approval request as a running tool", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      body: sseBody([
+        frame({ type: "RUN_STARTED" }),
+        // 后端把 approval.requested 投影成一帧标准工具调用（mapper.py:157-176）。
+        frame({
+          type: "TOOL_CALL_START",
+          toolCallId: "harness-approval-a1",
+          toolCallName: "harness_request_approval",
+        }),
+        frame({ type: "TOOL_CALL_ARGS", toolCallId: "harness-approval-a1" }),
+        frame({ type: "TOOL_CALL_END", toolCallId: "harness-approval-a1" }),
+        frame({
+          type: "ACTIVITY_DELTA",
+          activityType: "harness.run.v1",
+          patch: [{
+            op: "add",
+            path: "/items/-",
+            value: { event_type: "approval.requested", metadata: { approval_id: "a1" } },
+          }],
+        }),
+      ]),
+    })));
+    await render(
+      <AssistantGroupMessage
+        message={message({ text: "", status: "running", runId: "run-1" })}
+        tone="#38d591"
+        onReact={vi.fn()}
+        onReply={vi.fn()}
+      />,
+    );
+    await flush();
+    expect(host.textContent).toContain("正在思考");
+    expect(host.textContent).not.toContain("正在调用工具");
+    // 界面绝不展示工具名、事件名或内部 id。
+    expect(host.textContent).not.toContain("harness_request_approval");
+    expect(host.textContent).not.toContain("approval.requested");
+    expect(host.textContent).not.toContain("harness-approval-a1");
+  });
+
+  it("clears a stale stage when reading the stream fails mid-way", async () => {
+    const encoder = new TextEncoder();
+    let reads = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: async () => {
+            if (reads++ === 0) {
+              return {
+                value: encoder.encode(frame({ type: "TOOL_CALL_START", toolCallId: "a" })),
+                done: false,
+              };
+            }
+            throw new Error("stream broke");
+          },
+          cancel: async () => undefined,
+        }),
+      },
+    })));
+    await render(
+      <AssistantGroupMessage
+        message={message({ text: "", status: "running", runId: "run-1" })}
+        tone="#38d591"
+        onReact={vi.fn()}
+        onReply={vi.fn()}
+      />,
+    );
+    await flush();
+    expect(host.textContent).toContain("正在回复…");
+    expect(host.textContent).not.toContain("正在调用工具");
+  });
+
+  // 403 / 404 / 网络错误 / 空响应体都发生在续读时：占位必须回兜底，且不反复重试。
+  it.each([
+    ["403", { ok: false, status: 403, body: null }],
+    ["404", { ok: false, status: 404, body: null }],
+    ["empty body", { ok: true, body: null }],
+    ["network error", new Error("offline")],
+  ])("clears a stale stage when a resumed read fails: %s", async (_name, failure) => {
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      const fetchMock = vi.fn(async () => {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            ok: true,
+            body: sseBody([frame({ type: "TOOL_CALL_START", toolCallId: "a" })]),
+          };
+        }
+        if (failure instanceof Error) throw failure;
+        return failure;
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      await render(
+        <AssistantGroupMessage
+          message={message({ text: "", status: "running", runId: "run-1" })}
+          tone="#38d591"
+          onReact={vi.fn()}
+          onReply={vi.fn()}
+        />,
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10);
+      });
+      expect(host.textContent).toContain("正在调用工具");
+
+      // 事件流回放结束，1.2s 后带 Last-Event-ID 续读，这一次失败。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+      expect(host.textContent).toContain("正在回复…");
+      expect(host.textContent).not.toContain("正在调用工具");
+
+      // 失败后不再续读，避免重试风暴；最终结果仍由消息轮询替换。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps the progress row stable and honours reduced motion", () => {
     const css = readFileSync(
       resolve(process.cwd(), "src/components/assistant-group-message.module.css"),

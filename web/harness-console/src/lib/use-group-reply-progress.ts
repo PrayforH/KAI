@@ -26,7 +26,7 @@ function eventsUrl(runId: string) {
  *
  * `runId` 变化（空回复自动重试会保留消息、换 runId）时整个订阅重建，
  * 用最新 runId 继续读。任何失败（断流、404/403、跨群切换）都静默停下：
- * 调用方继续显示兜底文案，消息轮询照旧替换最终结果。
+ * 进度清回兜底文案，消息轮询照旧替换最终结果。
  */
 export function useGroupReplyProgress(
   runId: string | null | undefined,
@@ -43,6 +43,11 @@ export function useGroupReplyProgress(
     const controller = new AbortController();
     let lastEventId: string | undefined;
 
+    /** 订阅异常终止时退回兜底文案：占位不能停在过期的阶段上。 */
+    const reset = () => {
+      if (!controller.signal.aborted) setProgress(GROUP_REPLY_PROGRESS_EMPTY);
+    };
+
     void (async () => {
       while (!controller.signal.aborted) {
         try {
@@ -54,7 +59,11 @@ export function useGroupReplyProgress(
               ...(lastEventId ? { "Last-Event-ID": lastEventId } : {}),
             },
           });
-          if (!response.ok || !response.body) return;
+          if (!response.ok || !response.body) {
+            // 403/404/空响应体：不再续读，阶段退回兜底，等轮询替换最终消息。
+            reset();
+            return;
+          }
 
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
@@ -88,8 +97,8 @@ export function useGroupReplyProgress(
           }
           if (finished || controller.signal.aborted) return;
         } catch {
-          // 断流、权限或网络问题：停止细化阶段，轮询仍然是权威来源。
-          if (controller.signal.aborted) return;
+          // 网络错误、读取中断：停止细化阶段并清回兜底，轮询仍然是权威来源。
+          reset();
           return;
         }
         await sleep(RESUME_DELAY_MS);

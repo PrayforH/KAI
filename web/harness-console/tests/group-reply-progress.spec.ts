@@ -205,6 +205,63 @@ describe("群回复进度阶段", () => {
     expect(progress.pendingToolCalls).toEqual([]);
   });
 
+  it("真实后端审批帧序列全程不出现工具档", () => {
+    // mapper.py:157-176 / :178-190：审批请求是一帧标准工具调用，
+    // 审批结论才补 TOOL_CALL_RESULT，工具名为 harness_request_approval。
+    const events: GroupReplyStreamEvent[] = [
+      { type: "RUN_STARTED" },
+      { type: "TOOL_CALL_START", toolCallId: "harness-approval-a1", toolCallName: "harness_request_approval" },
+      { type: "TOOL_CALL_ARGS", toolCallId: "harness-approval-a1" },
+      { type: "TOOL_CALL_END", toolCallId: "harness-approval-a1" },
+      delta({ event_type: "approval.requested", tool_call_id: "call-1" }),
+      delta({ event_type: "approval.approved" }),
+      { type: "TOOL_CALL_RESULT", toolCallId: "harness-approval-a1" },
+      delta({ event_type: "message.delta" }),
+    ];
+    const stages: Array<string | undefined> = [];
+    let progress = GROUP_REPLY_PROGRESS_EMPTY;
+    for (const event of events) {
+      progress = nextGroupReplyProgress(progress, event);
+      stages.push(progress.stage);
+    }
+    expect(stages).not.toContain("tool");
+    expect(progress.pendingToolCalls).toEqual([]);
+    expect(progress.stage).toBe("writing");
+  });
+
+  it("审批条目把卡住的工具从 pending 摘掉，其余并行工具仍算执行中", () => {
+    // 真实工具在等审批：approval.requested 的 metadata.tool_call_id 指向它。
+    expect(
+      fold([
+        delta({ event_type: "tool.request", tool_call_id: "call-1" }),
+        delta({ event_type: "approval.requested", tool_call_id: "call-1" }),
+      ]).stage,
+    ).toBe("thinking");
+
+    // 另一个工具确实还在跑：审批不掩盖它。
+    const parallel = fold([
+      delta({ event_type: "tool.request", tool_call_id: "call-1" }),
+      delta({ event_type: "tool.request", tool_call_id: "call-2" }),
+      delta({ event_type: "approval.requested", tool_call_id: "call-1" }),
+    ]);
+    expect(parallel.stage).toBe("tool");
+    expect(parallel.pendingToolCalls).toEqual(["call-2"]);
+  });
+
+  it("审批工具帧不进入 pending，真实工具帧照旧进入", () => {
+    const approval = fold([
+      { type: "TOOL_CALL_START", toolCallId: "harness-approval-a1", toolCallName: "harness_request_approval" },
+    ]);
+    expect(approval.stage).toBe("thinking");
+    expect(approval.pendingToolCalls).toEqual([]);
+
+    const real = fold([
+      { type: "TOOL_CALL_START", toolCallId: "a", toolCallName: "assistant_group_update_profile" },
+    ]);
+    expect(real.stage).toBe("tool");
+    expect(real.pendingToolCalls).toEqual(["a"]);
+  });
+
   it("无关事件不改变阶段", () => {
     expect(fold([delta({ event_type: "artifact.ready" }), { type: "STATE_SNAPSHOT" }]).stage)
       .toBeUndefined();
