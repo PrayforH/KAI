@@ -22,7 +22,7 @@ import { BotProfileDialog } from "../components/bot-profile-dialog";
 import { BotSidePanel } from "../components/bot-side-panel";
 import { AuthProvider, useAuth } from "../components/auth-provider";
 import { AssistantChannelStatus } from "../components/assistant-channel-status";
-import { assistantRequest, type GroupMember } from "../lib/assistant-client";
+import { assistantRequest } from "../lib/assistant-client";
 import { readClientResource } from "../lib/client-read-cache";
 import { prefetchThreadHistory } from "../lib/task-history";
 import {
@@ -210,8 +210,6 @@ function AuthenticatedHome() {
   // 群聊和普通会话一样在主界面打开：?group=<id> 只切换聊天区，不再进独立页。
   const groupParam = assistantEntry ? searchParams.get("group") : null;
   const [groupTitle, setGroupTitle] = useState<string | null>(null);
-  // 页头只显示成员头像簇；花名册本体仍在群设置面板里。
-  const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
   const routeRunId = searchParams.get("run");
   const routeTrace = searchParams.get("trace") === "1";
   const leaveAssistantForTask = useCallback((nextThreadId: string) => {
@@ -1012,37 +1010,7 @@ function AuthenticatedHome() {
                 >
                   {groupParam ? (groupTitle ?? "群聊") : bot ? bot.name : "我的助理"}
                 </button>
-                {/* 群聊页头右侧是成员头像簇：最多 3 个，其余折成 +N；
-                    点击打开群设置里的花名册。 */}
-                {groupParam && groupMembers.length > 0 && (
-                  <button
-                    type="button"
-                    className="group-member-faces"
-                    title="群成员"
-                    aria-label={`群成员 ${groupMembers.length} 人，打开群设置`}
-                    onClick={() =>
-                      window.dispatchEvent(new CustomEvent("kai:group-settings-open"))
-                    }
-                  >
-                    {groupMembers.slice(0, 3).map((member) => (
-                      <span
-                        key={member.memberId}
-                        className="group-member-face"
-                        style={{
-                          background:
-                            member.kind === "creator"
-                              ? "#6b746e"
-                              : botAccent(member.specialistId ?? member.name),
-                        }}
-                      >
-                        {member.name.slice(0, 1)}
-                      </span>
-                    ))}
-                    {groupMembers.length > 3 && (
-                      <span className="group-member-more">+{groupMembers.length - 3}</span>
-                    )}
-                  </button>
-                )}
+                {/* 群成员头像簇在群聊自己的固定标题带里（助理面无顶栏，这里以前是死代码）。 */}
                 {/* 主助理页头保留 IM 通道状态（飞书/微信）：它属于主助理的跨渠道会话，
                     与资料记录在不在无关；只进某个子 Bot 会话（?bot=）或群聊时不显示。 */}
                 {!botParam && !groupParam && readyConversation === threadId && <AssistantChannelStatus />}
@@ -1081,18 +1049,8 @@ function AuthenticatedHome() {
             </div>
             <div className="header-utilities">
               {assistantView && !groupParam && computerOpen && <DesktopOccupancyChip />}
-              {assistantView && !groupParam && (
-                <button
-                  type="button"
-                  className="header-icon-button"
-                  aria-label="聊天记录"
-                  aria-expanded={historyOpen}
-                  title="聊天记录"
-                  onClick={() => setHistoryOpen((current) => !current)}
-                >
-                  <SidebarIcon name="history" />
-                </button>
-              )}
+              {/* 聊天记录入口只有消息区浮动控制条那一颗：整块 header 只在任务面渲染
+                  （助理面自 27abde72 起无顶栏），这里原来那颗永远不可见，已删。 */}
               {!groupParam && <SidebarPanelToggle
                 expanded={assistantView ? botSideOpen : taskRailOpen}
                 surface={assistantView ? (botParam ? "bot" : "primary") : "task"}
@@ -1111,7 +1069,16 @@ function AuthenticatedHome() {
             </div>
           </header>}
           <AssistantComputerPane open={assistantView && computerOpen}
-            botId={botParam ?? null} onClose={() => showComputer(false)}>
+            botId={botParam ?? null} onClose={() => showComputer(false)}
+            historyOpen={assistantView && !groupParam && historyOpen}
+            history={assistantView && !groupParam ? (
+              <AssistantHistoryPanel
+                open={historyOpen}
+                threadId={bot?.threadId ?? threadId}
+                assistantName={bot?.name ?? "主助理"}
+                onClose={() => setHistoryOpen(false)}
+              />
+            ) : null}>
           <section
             className="chat-stage"
             data-surface={conversationSurface}
@@ -1120,6 +1087,7 @@ function AuthenticatedHome() {
           >
             {assistantView && !groupParam && (
               <div className="assistant-floating-controls">
+                {/* 助理面无顶栏，这是聊天记录的唯一入口；面板现在是聊天区里的一列。 */}
                 <button
                   type="button"
                   className="header-icon-button"
@@ -1151,7 +1119,6 @@ function AuthenticatedHome() {
                   groupId={groupParam}
                   userId={user.user_id}
                   onGroupName={setGroupTitle}
-                  onGroupMembers={setGroupMembers}
                   onDissolved={() => router.replace("/assistant", { scroll: false })}
                 />
               </div>
@@ -1278,14 +1245,6 @@ function AuthenticatedHome() {
             )}
           </section>
           </AssistantComputerPane>
-          {assistantView && !groupParam && (
-            <AssistantHistoryPanel
-              open={historyOpen}
-              threadId={bot?.threadId ?? threadId}
-              assistantName={bot?.name ?? "主助理"}
-              onClose={() => setHistoryOpen(false)}
-            />
-          )}
           {assistantRailOpen && (
             <BotSidePanel
               key={botParam ?? PERSONAL_ASSISTANT_THREAD}

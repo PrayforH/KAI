@@ -31,6 +31,7 @@ import { loadGroupComposerDraft, persistGroupComposerDraft } from "../lib/group-
 import { botAccent } from "./bot-rail";
 import { AssistantGroupComposer } from "./assistant-group-composer";
 import { AssistantGroupInfoPanel, type GroupProfileUpdate } from "./assistant-group-info-panel";
+import { AssistantGroupMembersDialog, type MemberChange } from "./assistant-group-members-dialog";
 import { AssistantGroupMessage } from "./assistant-group-message";
 import { AssistantGroupSidePanel, type GroupSideTab } from "./assistant-group-side-panel";
 import { groupStampLabel } from "../lib/group-chat-time";
@@ -133,6 +134,8 @@ export function AssistantGroupChat({
   const [newPill, setNewPill] = useState(0);
   /** 花名册/邀请/接话人平时收起，点右上角「⋯」才展开，不占对话区。 */
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** 页头头像簇直接拉起成员管理弹窗，群设置面板里不再重复这一节。 */
+  const [membersOpen, setMembersOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -233,13 +236,6 @@ export function AssistantGroupChat({
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [settingsOpen]);
-
-  // 页头的成员头像簇被点击时打开同一块群设置面板。
-  useEffect(() => {
-    const open = () => setSettingsOpen(true);
-    window.addEventListener("kai:group-settings-open", open);
-    return () => window.removeEventListener("kai:group-settings-open", open);
-  }, []);
 
   // 草稿按群保留：切走再回来、刷新页面都还在。
   useEffect(() => {
@@ -467,33 +463,28 @@ export function AssistantGroupChat({
     );
   };
 
-  const handleAdd = async (specialistId: string) => {
-    if (!selected || !specialistId || busy) return;
+  /** 弹窗一次性保存：按差集逐个调已有的加/减接口，失败就停并返回原因。 */
+  const applyMembers = async (change: MemberChange): Promise<string | null> => {
+    if (!selected) return "群聊不存在";
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      replaceGroup(await addAssistantGroupMember(selected.groupId, specialistId));
+      let group = selected;
+      for (const specialistId of change.add) {
+        group = await addAssistantGroupMember(group.groupId, specialistId);
+      }
+      for (const member of change.remove) {
+        group = await removeAssistantGroupMember(group.groupId, member.memberId);
+      }
+      replaceGroup(group);
       await refreshGroups();
+      await refreshMessages(group.groupId);
+      return null;
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "添加成员失败");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleRemove = async (memberId: string, name: string) => {
-    if (!selected || busy) return;
-    if (!window.confirm(`把「${name}」移出本群？移出后 TA 不能再发言或被 @。`)) return;
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      replaceGroup(await removeAssistantGroupMember(selected.groupId, memberId));
-      await refreshGroups();
-      await refreshMessages(selected.groupId);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "移除成员失败");
+      // 可能已经改了一部分：重新拉一次花名册，别让界面和服务端继续不一致。
+      void refreshGroups();
+      return reason instanceof Error ? reason.message : "保存成员失败";
     } finally {
       setBusy(false);
     }
@@ -740,6 +731,33 @@ export function AssistantGroupChat({
         <div className="assistant-surface-title" data-testid="assistant-surface-title">
           <span className="task-context-title">{selected.name}</span>
           <div className={styles.settings} ref={settingsRef}>
+            {/* 成员头像簇：最多 3 个，其余折成 +N；点它直接打开成员管理弹窗。
+                助理面无顶栏，所以入口放在群聊自己的固定标题带里。 */}
+            <button
+              type="button"
+              className="group-member-faces"
+              title="成员管理"
+              aria-label={`群成员 ${selected.members.length} 人，打开成员管理`}
+              aria-haspopup="dialog"
+              onClick={() => setMembersOpen(true)}
+            >
+              {selected.members.slice(0, 3).map((member) => (
+                <span
+                  key={member.memberId}
+                  className="group-member-face"
+                  style={{
+                    background: member.kind === "creator"
+                      ? "#6b746e"
+                      : botAccent(member.specialistId ?? member.name),
+                  }}
+                >
+                  {member.name.slice(0, 1)}
+                </span>
+              ))}
+              {selected.members.length > 3 && (
+                <span className="group-member-more">+{selected.members.length - 3}</span>
+              )}
+            </button>
             <div className={styles.settingsButtons}>
               <button
                 type="button"
@@ -773,10 +791,7 @@ export function AssistantGroupChat({
                   isCreator={isCreator}
                   busy={busy}
                   error={error}
-                  specialists={specialists}
                   onUpdate={handleUpdateProfile}
-                  onAddMember={(specialistId) => void handleAdd(specialistId)}
-                  onRemoveMember={(memberId, name) => void handleRemove(memberId, name)}
                   onReplyAs={(value) => void handleReplyAs(value)}
                   onOpenLibrary={() => openSidePanel("library")}
                   onDissolve={handleDissolve}
@@ -917,6 +932,14 @@ export function AssistantGroupChat({
           onDeleteDocument={(document) => void handleDeleteDocument(document)}
           onBind={(reference) => void handleBindKnowledgeBase(reference)}
           onUnbind={(base) => void handleUnbindKnowledgeBase(base.reference)}
+        />
+      )}
+      {membersOpen && (
+        <AssistantGroupMembersDialog
+          group={selected}
+          specialists={specialists}
+          onApply={applyMembers}
+          onClose={() => setMembersOpen(false)}
         />
       )}
     </section>

@@ -2,11 +2,10 @@
 
 import { useEffect, useState } from "react";
 
-import type { AssistantGroup, Specialist } from "../lib/assistant-client";
+import type { AssistantGroup } from "../lib/assistant-client";
 import styles from "./assistant-group-info-panel.module.css";
 
 const PRIMARY_MEMBER_ID = "primary";
-const PERSONAL_THREAD = "kai-personal-assistant-v1";
 /** 服务端上限 40 个字（见 service.py 的群名校验），前端按同一口径拦。 */
 const MAX_NAME = 40;
 const MAX_DESCRIPTION = 500;
@@ -21,11 +20,8 @@ type AssistantGroupInfoPanelProps = {
   isCreator: boolean;
   busy: boolean;
   error: string | null;
-  specialists: Specialist[];
   /** 成功返回 null；失败返回可读文案（服务端原文优先）。 */
   onUpdate: (fields: GroupProfileUpdate) => Promise<string | null>;
-  onAddMember: (specialistId: string) => void;
-  onRemoveMember: (memberId: string, name: string) => void;
   onReplyAs: (value: string) => void;
   onOpenLibrary: () => void;
   onDissolve: () => Promise<boolean>;
@@ -39,18 +35,16 @@ function formatDate(value: string): string {
 }
 
 /**
- * 右上角「⋯」里的群信息：群资料（改名 / 描述）、成员管理、资料库入口、
+ * 右上角「⋯」里的群信息：群资料（改名 / 描述）、接话人、资料库入口、
  * 解散群（仅创建者，需输入群名二次确认）。保存失败保留输入并给一行错误。
+ * 成员管理不在这里：页头头像簇直接打开成员管理弹窗。
  */
 export function AssistantGroupInfoPanel({
   group,
   isCreator,
   busy,
   error,
-  specialists,
   onUpdate,
-  onAddMember,
-  onRemoveMember,
   onReplyAs,
   onOpenLibrary,
   onDissolve,
@@ -58,7 +52,6 @@ export function AssistantGroupInfoPanel({
 }: AssistantGroupInfoPanelProps) {
   const [name, setName] = useState(group.name);
   const [description, setDescription] = useState(group.description ?? "");
-  const [memberToAdd, setMemberToAdd] = useState("");
   const [saving, setSaving] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [dissolveStep, setDissolveStep] = useState<"idle" | "confirm">("idle");
@@ -72,17 +65,6 @@ export function AssistantGroupInfoPanel({
   const creator = group.members.find((member) => member.kind === "creator");
   const activeSpecialists = group.members.filter(
     (member) => member.kind === "specialist" && member.status === "active",
-  );
-  const seated = new Set(
-    group.members
-      .map((member) => member.specialistId)
-      .filter((value): value is string => Boolean(value)),
-  );
-  const addableSpecialists = specialists.filter(
-    (item) =>
-      item.status !== "archived" &&
-      !seated.has(item.specialistId) &&
-      item.config?.conversation_thread_id !== PERSONAL_THREAD,
   );
   const dirty = name !== group.name || description !== (group.description ?? "");
   const message = localError ?? error;
@@ -169,58 +151,9 @@ export function AssistantGroupInfoPanel({
         )}
       </section>
 
-      <section className={styles.section} aria-label="成员管理">
-        <h4>成员管理</h4>
-        <div className={styles.roster}>
-          {group.members.map((member) => {
-            const role = member.kind === "creator" ? "创建者" : member.kind === "primary" ? "主助理" : "子助理";
-            return (
-              <span key={member.memberId} className={styles.chip}>
-                {member.name}
-                {member.name !== role && <small>{role}</small>}
-                {member.kind !== "creator" && (
-                  <button
-                    type="button"
-                    title={`移出 ${member.name}`}
-                    aria-label={`移出 ${member.name}`}
-                    disabled={busy}
-                    onClick={() => onRemoveMember(member.memberId, member.name)}
-                  >
-                    ×
-                  </button>
-                )}
-              </span>
-            );
-          })}
-        </div>
-        <div className={styles.inviteRow}>
-          <select
-            value={memberToAdd}
-            aria-label="选择要邀请的子助理"
-            disabled={busy || addableSpecialists.length === 0}
-            onChange={(event) => setMemberToAdd(event.target.value)}
-          >
-            <option value="">
-              {addableSpecialists.length ? "选择子助理…" : "无可添加的子助理"}
-            </option>
-            {addableSpecialists.map((item) => (
-              <option key={item.specialistId} value={item.specialistId}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            className={styles.secondaryButton}
-            disabled={!memberToAdd || busy}
-            onClick={() => {
-              onAddMember(memberToAdd);
-              setMemberToAdd("");
-            }}
-          >
-            邀请
-          </button>
-        </div>
+      {/* 成员管理已改为页头头像簇直接打开的弹窗，面板里不再重复这一节。 */}
+      <section className={styles.section} aria-label="接话人">
+        <h4>接话人</h4>
         <label className={styles.replyAs}>
           未 @ 接话人
           <select

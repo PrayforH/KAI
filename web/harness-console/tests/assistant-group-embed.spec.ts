@@ -163,10 +163,12 @@ describe("group chats live in the main assistant surface", () => {
     expect(client).toContain("replyToMessageId: replyToMessageId ?? undefined");
   });
 
-  it("shows the member avatar cluster in the group header", () => {
-    expect(page).toContain("onGroupMembers={setGroupMembers}");
-    expect(page).toContain("group-member-faces");
-    expect(page).toContain("kai:group-settings-open");
-    expect(groupChat).toContain('window.addEventListener("kai:group-settings-open"');
+  it("opens the members dialog from the avatar cluster in the group title strip", () => {
+    // 助理面无顶栏，所以头像簇放在群聊自己的固定标题带里，而不是 page 的 header。
+    expect(groupChat).toContain("group-member-faces");
+    expect(groupChat).toContain("setMembersOpen(true)");
+    expect(page).not.toContain("group-member-faces");
+    expect(page).not.toContain("kai:group-settings-open");
+    expect(page).not.toContain("kai:group-members-open");
   });
 });
