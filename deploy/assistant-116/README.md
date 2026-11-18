@@ -1,6 +1,6 @@
 # 116 助理部署
 
-`compose.asr.yaml` 使用小树 2.0 的 Qwen 批量识别服务。`compose.computer.yaml` 为已登记的机主运行一台 8 GiB VM，并为 QEMU 保留额外容器内存。Control 和 Viewer 走同一 Compose 内网。
+`compose.asr.yaml` 使用小树 2.0 的 Qwen 批量识别服务。`compose.computer.yaml` 为已登记的机主声明一台 4 GiB VM，QEMU 容器上限为 6 GiB。Control 和 Viewer 走同一 Compose 内网。
 
 `compose.web-tools.yaml` 为通用助手启用豆包搜索。API 和 Worker 的私有配置提供 `HARNESS_WEB_DOUBAO_API_KEY`。
 

@@ -58,7 +58,7 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     restart: unless-stopped
-    mem_limit: 10g
+    mem_limit: 6g
     cpus: 2
     pids_limit: 128
     devices:
@@ -76,7 +76,7 @@ services:
       - -smp
       - "2"
       - -m
-      - "8192"
+      - "4096"
       - -display
       - none
       - -monitor

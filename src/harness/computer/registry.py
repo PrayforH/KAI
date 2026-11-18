@@ -522,7 +522,7 @@ class ComputerRegistry:
                     select(Computer)
                     .where(
                         Computer.provider == "vm-computer",
-                        Computer.state == ComputerState.IDLE.value,
+                        Computer.state.in_((ComputerState.IDLE.value, ComputerState.RUNNING.value)),
                         Computer.provider_ref.is_not(None),
                         func.coalesce(Computer.last_active_at, Computer.updated_at) <= cutoff,
                     )
@@ -550,7 +550,9 @@ class ComputerRegistry:
             moment = await _now(session)
             if computer.provider != provider:
                 raise ConflictError("computer is not managed by this host")
-            if computer.state != ComputerState.IDLE.value or computer.provider_ref is None:
+            if computer.state not in {ComputerState.IDLE, ComputerState.RUNNING} or (
+                computer.provider_ref is None
+            ):
                 raise ConflictError("computer is not idle")
             live = await session.scalar(
                 select(Lease).where(
@@ -575,15 +577,16 @@ class ComputerRegistry:
             )
             if control:
                 raise ConflictError("desktop control is active")
-            # A slot that is starting or busy is imminent occupancy even before
-            # its execution lease row lands.
+            # A reserved display and an expired Run do not hold the VM.
+            # Give a desktop still starting time to acquire its lease.
             starting = await session.scalar(
                 select(func.count())
                 .select_from(Desktop)
                 .where(
                     Desktop.tenant_id == tenant,
                     Desktop.user_id == user,
-                    Desktop.state.in_(("created", "starting", "busy")),
+                    Desktop.state == DesktopState.STARTING.value,
+                    Desktop.updated_at > moment - self._ttl,
                 )
             )
             if starting:

@@ -13,7 +13,13 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from harness.computer.models import AssistantComputer, ComputerDesktop, ComputerState, DesktopState
+from harness.computer.models import (
+    AssistantComputer,
+    ComputerDesktop,
+    ComputerState,
+    DesktopState,
+    LeaseState,
+)
 from harness.computer.storage import AssistantComputerRow as Computer
 from harness.computer.storage import ComputerDesktopLeaseRow as Control
 from harness.computer.storage import ComputerDesktopRow as Desktop
@@ -302,14 +308,32 @@ class DesktopRegistry:
             row = await self._get_or_none(session, computer.tenant_id, computer.user_id, desktop_id)
             if row is None or row.display is None or row.computer_id != target.computer_id:
                 raise ConflictError("desktop slot changed during startup")
-            if row.state in {DesktopState.BUSY.value, DesktopState.STARTING.value}:
+            if target.state not in {
+                ComputerState.REGISTERED, ComputerState.SUSPENDED,
+                ComputerState.IDLE, ComputerState.RUNNING,
+            }:
+                raise ConflictError("computer is recovering or unavailable")
+            moment = await _now(session)
+            live = await session.scalar(
+                select(Lease.lease_id).where(
+                    Lease.tenant_id == row.tenant_id,
+                    Lease.user_id == row.user_id,
+                    Lease.desktop_id == row.desktop_id,
+                    Lease.state == LeaseState.ACTIVE.value,
+                    Lease.expires_at > moment,
+                ).limit(1)
+            )
+            if live is not None:
                 return ComputerDesktop.model_validate(row)
             provider_ref = await ensure_guest(ComputerDesktop.model_validate(row))
             moment = await _now(session)
-            if target.provider_ref is None:
-                target.provider_ref = provider_ref
-                target.revision += 1
-                target.updated_at = moment
+            if target.provider_ref not in {None, provider_ref}:
+                raise ConflictError("computer instance changed during desktop startup")
+            target.provider_ref = provider_ref
+            if target.state in {ComputerState.REGISTERED, ComputerState.SUSPENDED}:
+                target.state = ComputerState.IDLE.value
+            target.last_active_at = target.updated_at = moment
+            target.revision += 1
             row.state = DesktopState.IDLE.value
             row.last_active_at = row.updated_at = moment
             row.revision += 1

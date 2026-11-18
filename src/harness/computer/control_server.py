@@ -40,6 +40,7 @@ from harness.computer.models import (
     ComputerLease,
     ComputerLeaseLostError,
     ComputerStartRejectedError,
+    ComputerState,
     LeasePurpose,
 )
 from harness.computer.registry import ComputerRegistry
@@ -57,7 +58,6 @@ from harness.computer.vm_host import (
     VmComputerLifecycle,
     VmComputerSpec,
     VmDesktopService,
-    verify_vm_instance,
 )
 from harness.core.errors import ConflictError, NotFoundError
 from harness.storage.database import create_database
@@ -476,16 +476,15 @@ def create_app(settings: ControllerSettings) -> FastAPI:
             spec = vm_specs.get(computer.volume_ref)
             if spec is None or spec.guest_base_digest != computer.image:
                 raise RuntimeError("computer VM is not declared on this node")
+            desktop_id = command.payload.get("desktopId")
+            if command.operation == "stop" and computer.state is ComputerState.SUSPENDED:
+                if isinstance(desktop_id, str):
+                    await desktop_screen.close_slot(computer.volume_ref, desktop_id)
+                return {"op": "stop", "state": "inactive"}
             provider_ref = None
             if command.operation == "ensure" and access is not None:
-                found = await docker.get(f"/containers/{spec.container_name}/json")
-                found.raise_for_status()
-                info = found.json()
-                provider_ref = verify_vm_instance(info, spec)
-                if computer.provider_ref not in {None, provider_ref}:
-                    raise RuntimeError("computer VM instance changed")
-                if info.get("State", {}).get("Running") is not True:
-                    raise RuntimeError("computer VM runner is not running")
+                assert vm_lifecycle is not None
+                provider_ref = await vm_lifecycle.ensure_preview(computer)
             result = await GuestGate(spec).call(
                 "desktop_session",
                 {**command.payload, "op": command.operation},
@@ -496,7 +495,6 @@ def create_app(settings: ControllerSettings) -> FastAPI:
             answer = json.loads(result.stdout)
             if not isinstance(answer, dict) or answer.get("op") != command.operation:
                 raise RuntimeError("guest desktop maintenance acknowledgement is invalid")
-            desktop_id = command.payload.get("desktopId")
             if command.operation == "stop" and isinstance(desktop_id, str):
                 await desktop_screen.close_slot(computer.volume_ref, desktop_id)
             return {

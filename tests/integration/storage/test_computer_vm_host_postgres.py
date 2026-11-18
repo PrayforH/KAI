@@ -11,9 +11,11 @@ from typing import Any
 
 import httpx
 import pytest
+from sqlalchemy import update
 
 from harness.computer.control_server import ControllerSettings
-from harness.computer.models import ComputerLease, ComputerState
+from harness.computer.desktop_registry import DesktopRegistry
+from harness.computer.models import ComputerDesktop, ComputerLease, ComputerState, DesktopState
 from harness.computer.registry import ComputerRegistry
 from harness.computer.storage import (
     AssistantComputerRow,
@@ -215,8 +217,6 @@ async def started_computer(database: DatabaseFixture, state: dict[str, Any]) -> 
 async def backdate_activity(database: DatabaseFixture, idle_seconds: float) -> None:
     """Make the configured idle window already elapsed for the fixture VM."""
 
-    from sqlalchemy import update
-
     moment = datetime.now(UTC) - timedelta(seconds=idle_seconds + 60)
     async with database[1].begin() as db:
         await db.execute(
@@ -244,6 +244,41 @@ async def test_idle_vm_is_halted_in_place_and_marked_suspended(
 
 
 @pytest.mark.asyncio
+async def test_stale_desktop_does_not_block_suspend_or_preview_wake(
+    database: DatabaseFixture, gate_stub: type[FakeGate],
+) -> None:
+    state: dict[str, Any] = {"exists": True, "inspect": inspect_payload(running=True)}
+    host = await started_computer(database, state)
+    tenant, user = "tenant-a", "user-a"
+    installed = await host.registry.get(tenant, user)
+    desktops = DesktopRegistry(database[1])
+    desktop = await desktops.ensure(tenant, user, "bot-a", computer_id=installed.computer_id)
+    await desktops.ensure(tenant, user, "bot-b", computer_id=installed.computer_id)
+    async with database[1].begin() as db:
+        await db.execute(update(ComputerDesktopRow).where(
+            ComputerDesktopRow.desktop_id == desktop.desktop_id,
+        ).values(state=DesktopState.BUSY.value))
+    await backdate_activity(database, 1800)
+    await host.suspend_idle(tenant, user, idle_seconds=1800)
+    suspended = await host.registry.get(tenant, user)
+    assert suspended.state is ComputerState.SUSPENDED
+
+    async def start_guest(slot: ComputerDesktop) -> str:
+        assert slot.profile_ref == desktop.profile_ref
+        assert slot.workspace_ref == desktop.workspace_ref
+        return await host.ensure_preview(suspended)
+
+    ready = await desktops.start(suspended, desktop.desktop_id, start_guest)
+    computer = await host.registry.get(tenant, user)
+    assert ready.state is DesktopState.IDLE
+    assert computer.state is ComputerState.IDLE
+    assert computer.provider_ref == CONTAINER
+    assert state["inspect"]["State"]["Running"] is True
+    with pytest.raises(ConflictError, match="not idle long enough"):
+        await host.suspend_idle(tenant, user, idle_seconds=1800)
+
+
+@pytest.mark.asyncio
 async def test_recently_used_vm_is_not_halted(
     database: DatabaseFixture, gate_stub: type[FakeGate]
 ) -> None:
@@ -264,7 +299,7 @@ async def test_a_busy_execution_keeps_the_vm_running(
     await host.registry.claim_execution(
         "tenant-a", "user-a", owner="run-fixture", run_id="run-a", session_id="session-a"
     )
-    with pytest.raises(ConflictError, match="not idle"):
+    with pytest.raises(ConflictError, match="live lease"):
         await host.suspend_idle("tenant-a", "user-a", idle_seconds=0.1)
     assert state["inspect"]["State"]["Running"] is True
 
@@ -358,8 +393,6 @@ async def start_execution(sessions: Any, registry: ComputerRegistry) -> Computer
     )
     # Recovery only claims what expired: force the TTL into the past like the
     # registry tests do, then take the recovery lease that fences it.
-    from sqlalchemy import update
-
     from harness.computer.storage import ComputerLeaseRow
 
     async with sessions.begin() as db:

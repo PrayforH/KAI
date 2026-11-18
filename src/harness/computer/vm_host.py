@@ -414,7 +414,11 @@ class VmComputerLifecycle:
             raise RuntimeError("computer VM is not declared on this node")
         return spec
 
-    async def _ensure(self, spec: VmComputerSpec) -> str:
+    async def ensure_preview(self, computer: AssistantComputer) -> str:
+        # The API holds the owner row lock until the desktop is confirmed.
+        return await self._ensure(self._spec(computer), expected_ref=computer.provider_ref)
+
+    async def _ensure(self, spec: VmComputerSpec, *, expected_ref: str | None = None) -> str:
         # Fresh VM creation is deliberate maintenance; a Run never builds disks.
         found = await self.docker.get(f"/containers/{spec.container_name}/json")
         if found.status_code == 404:
@@ -422,9 +426,12 @@ class VmComputerLifecycle:
         found.raise_for_status()
         info = found.json()
         identifier = verify_vm_instance(info, spec)
+        if expected_ref is not None and identifier != expected_ref:
+            raise RuntimeError("computer VM instance changed")
         if info.get("State", {}).get("Running") is not True:
             started = await self.docker.post(f"/containers/{identifier}/start")
-            started.raise_for_status()
+            if started.status_code != 304:
+                started.raise_for_status()
             # Only a fresh start needs the readiness probe; an already running
             # instance was confirmed when its provider reference was recorded.
             await wait_for_ssh(spec, float(spec.wait_ssh_seconds))
