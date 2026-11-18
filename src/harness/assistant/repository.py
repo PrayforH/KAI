@@ -19,6 +19,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
+from harness.assistant.group_delivery import GroupArtifact, GroupArtifactPage, GroupDeliveryBatch
 from harness.assistant.group_library import group_document_download_url
 from harness.assistant.lifecycle import next_check, transition, validate_new_schedule
 from harness.assistant.models import (
@@ -47,6 +48,7 @@ from harness.assistant.models import (
 from harness.assistant.permissions import require_local_tools
 from harness.assistant.skill_models import PersonalSkill, SkillProposal
 from harness.assistant.storage import (
+    AssistantGroupDeliveryRow,
     AssistantGroupDocumentRow,
     AssistantGroupKnowledgeBaseRow,
     AssistantGroupMemberRow,
@@ -67,12 +69,19 @@ from harness.assistant.storage import (
     SpecialistRow,
     VaultItemRow,
 )
-from harness.core.errors import ConflictError, NotFoundError
+from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
 from harness.core.events import RunEvent
 from harness.core.models import Run, RunStatus
 from harness.scheduling import TimingKind
 from harness.storage.database import SessionFactory
-from harness.storage.models import AguiThreadBindingRow, EventRow, OutboxRow, RunRow, SessionRow
+from harness.storage.models import (
+    AguiThreadBindingRow,
+    ArtifactRow,
+    EventRow,
+    OutboxRow,
+    RunRow,
+    SessionRow,
+)
 from harness.storage.outbox import new_outbox_record
 
 # 软抢占优雅窗口：高优排队时把低优 holder 的剩余 TTL 钳到该值（秒），
@@ -2852,6 +2861,10 @@ class PostgresAssistantRepository:
         async with self._group_write_context(tenant_id, user_id, group_id) as (session, group):
             if expected_name is not None and group.name != expected_name:
                 raise ConflictError(f"群名不一致，未解散；当前群名是『{group.name}』")
+            await session.execute(delete(AssistantGroupDeliveryRow).where(
+                AssistantGroupDeliveryRow.group_id == group_id,
+                AssistantGroupDeliveryRow.tenant_id == tenant_id,
+            ))
             await session.execute(
                 delete(AssistantGroupReactionRow).where(
                     AssistantGroupReactionRow.group_id == group_id
@@ -3381,3 +3394,234 @@ class PostgresAssistantRepository:
             except ValueError:
                 continue
         return tuple(items)
+
+    async def require_group_member(
+        self, tenant_id: str, user_id: str, group_id: str
+    ) -> AssistantGroup:
+        """The current group model has one human member: its creator.
+
+        Tenant membership or knowing a group/run id never grants access. The
+        synthetic creator seat in the UI is not evidence of membership.
+        """
+        try:
+            group = await self.get_group(tenant_id, user_id, group_id)
+        except NotFoundError:
+            raise PermissionDeniedError("你不是本群成员。") from None
+        if group.creator_user_id != user_id:
+            raise PermissionDeniedError("你不是本群成员。")
+        return group
+
+    async def get_group_delivery(
+        self, tenant_id: str, user_id: str, group_id: str, batch_id: str
+    ) -> GroupDeliveryBatch | None:
+        await self.require_group_member(tenant_id, user_id, group_id)
+        async with self._context() as session:
+            row = await session.scalar(
+                select(AssistantGroupDeliveryRow).where(
+                    AssistantGroupDeliveryRow.tenant_id == tenant_id,
+                    AssistantGroupDeliveryRow.user_id == user_id,
+                    AssistantGroupDeliveryRow.group_id == group_id,
+                    AssistantGroupDeliveryRow.batch_id == batch_id,
+                )
+            )
+            return GroupDeliveryBatch.model_validate(row.payload) if row else None
+
+    async def save_group_delivery(
+        self, tenant_id: str, user_id: str, batch: GroupDeliveryBatch
+    ) -> None:
+        # Callers hold group_dispatch_guard: batch + placeholders commit together.
+        await self.require_group_member(tenant_id, user_id, batch.group_id)
+        async with self._context(write=True) as session:
+            row = await session.get(AssistantGroupDeliveryRow, batch.batch_id)
+            if row is None:
+                row = AssistantGroupDeliveryRow(
+                    batch_id=batch.batch_id,
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    group_id=batch.group_id,
+                    trigger_message_id=batch.trigger_message_id,
+                    created_at=batch.created_at,
+                )
+                session.add(row)
+            elif (row.tenant_id, row.user_id, row.group_id) != (tenant_id, user_id, batch.group_id):
+                raise PermissionDeniedError("群转交批次身份不匹配。")
+            row.summary_state = batch.summary_state
+            row.updated_at = datetime.now(UTC)
+            row.payload = batch.model_dump(mode="json", by_alias=True)
+
+    async def pending_group_summaries(
+        self, *, limit: int = 25
+    ) -> list[tuple[str, str, GroupDeliveryBatch]]:
+        # Rotate in a short transaction BEFORE attempting external work. A later
+        # timeout/rollback/cancellation must not put broken batches back at head.
+        async with self._context(write=True) as session:
+            rows = list(await session.scalars(
+                select(AssistantGroupDeliveryRow)
+                .where(
+                    AssistantGroupDeliveryRow.summary_state == "pending",
+                )
+                .order_by(AssistantGroupDeliveryRow.updated_at, AssistantGroupDeliveryRow.batch_id)
+                .limit(min(max(limit, 1), 25))
+                .with_for_update(skip_locked=True)
+            ))
+            checked_at = datetime.now(UTC)
+            for row in rows:
+                row.updated_at = checked_at
+            return [
+                (r.tenant_id, r.user_id, GroupDeliveryBatch.model_validate(r.payload)) for r in rows
+            ]
+
+    async def find_group_delivery_run(
+        self, tenant_id: str, user_id: str, batch: GroupDeliveryBatch,
+        *, member_id: str, message_id: str,
+    ) -> Run | None:
+        """Recover admission by the persisted reply's exact deterministic key.
+
+        No new run is created. Ambiguous matches (e.g. session rollover) stay
+        unknown rather than selecting an arbitrary execution. Ownership and
+        server-written group context are checked independently of the key.
+        """
+        await self.require_group_member(tenant_id, user_id, batch.group_id)
+        context = RunRow.payload["input"]["group_context"]
+        async with self._context() as session:
+            rows = list(await session.scalars(
+                select(RunRow)
+                .join(SessionRow, and_(
+                    SessionRow.tenant_id == RunRow.tenant_id,
+                    SessionRow.session_id == RunRow.session_id,
+                ))
+                .where(
+                    RunRow.tenant_id == tenant_id,
+                    RunRow.idempotency_key == f"group-{message_id}",
+                    SessionRow.user_id == user_id,
+                    context["groupId"].as_string() == batch.group_id,
+                    context["triggerMessageId"].as_string() == batch.trigger_message_id,
+                    context["memberId"].as_string() == member_id,
+                    context["deliveryKind"].as_string() == "group_broadcast",
+                )
+                .limit(2)
+            ))
+        return Run.model_validate(rows[0].payload) if len(rows) == 1 else None
+
+    async def list_group_artifacts(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        *,
+        since: datetime | None,
+        until: datetime | None,
+        limit: int,
+        offset: int,
+    ) -> GroupArtifactPage:
+        await self.require_group_member(tenant_id, user_id, group_id)
+        # Use server-written group run context, including superseded retry runs.
+        # Session ownership is checked independently of the context marker.
+        context = RunRow.payload["input"]["group_context"]
+        produced = (
+            select(func.min(EventRow.timestamp))
+            .where(
+                EventRow.tenant_id == ArtifactRow.tenant_id,
+                EventRow.run_id == ArtifactRow.run_id,
+                EventRow.payload["type"].as_string() == "artifact.ready",
+                EventRow.payload["payload"]["artifact_id"].as_string() == ArtifactRow.artifact_id,
+            )
+            .correlate(ArtifactRow)
+            .scalar_subquery()
+        )
+        query = (
+            select(ArtifactRow, produced.label("produced"), context["memberId"].as_string())
+            .join(
+                RunRow,
+                and_(
+                    RunRow.tenant_id == ArtifactRow.tenant_id, RunRow.run_id == ArtifactRow.run_id
+                ),
+            )
+            .join(
+                SessionRow,
+                and_(
+                    SessionRow.tenant_id == RunRow.tenant_id,
+                    SessionRow.session_id == RunRow.session_id,
+                ),
+            )
+            .where(
+                ArtifactRow.tenant_id == tenant_id,
+                ArtifactRow.payload["status"].as_string() == "ready",
+                SessionRow.user_id == user_id,
+                context["groupId"].as_string() == group_id,
+            )
+        )
+        if since is not None:
+            query = query.where(produced >= since)
+        if until is not None:
+            query = query.where(produced < until)
+        query = (
+            query.order_by(produced.desc().nulls_last(), ArtifactRow.artifact_id)
+            .offset(offset)
+            .limit(limit + 1)
+        )
+        async with self._context() as session:
+            rows = list(await session.execute(query))
+            # Names come from persisted seats, including removed producers.
+            producer_ids = {member_id for _, _, member_id in rows[:limit]}
+            seats = await session.execute(
+                select(
+                    AssistantGroupMemberRow.member_id,
+                    AssistantGroupMemberRow.name,
+                ).where(
+                    AssistantGroupMemberRow.group_id == group_id,
+                    AssistantGroupMemberRow.tenant_id == tenant_id,
+                    AssistantGroupMemberRow.member_id.in_(producer_ids),
+                )
+            )
+            names = {member_id: name for member_id, name in seats}
+
+        return GroupArtifactPage(
+            items=tuple(
+                GroupArtifact(
+                    artifactId=row.artifact_id,
+                    name=row.payload["name"],
+                    contentType=row.payload["media_type"],
+                    sizeBytes=row.payload.get("size_bytes"),
+                    createdAt=created,
+                    memberId=member_id,
+                    producerName=names.get(member_id, member_id),
+                    runId=row.run_id,
+                    downloadUrl=f"/v1/artifacts/{row.artifact_id}/content",
+                )
+                for row, created, member_id in rows[:limit]
+            ),
+            nextOffset=offset + limit if len(rows) > limit else None,
+        )
+
+    async def group_delivery_message_fields(
+        self, tenant_id: str, user_id: str, group_id: str, source_ids: Sequence[str]
+    ) -> dict[str, dict[str, Any]]:
+        async with self._context() as session:
+            rows = await session.scalars(
+                select(AssistantGroupDeliveryRow)
+                .where(
+                    AssistantGroupDeliveryRow.tenant_id == tenant_id,
+                    AssistantGroupDeliveryRow.user_id == user_id,
+                    AssistantGroupDeliveryRow.group_id == group_id,
+                    AssistantGroupDeliveryRow.trigger_message_id.in_(list(source_ids)[:300]),
+                )
+                .limit(300)
+            )
+            batches = [GroupDeliveryBatch.model_validate(row.payload) for row in rows]
+        fields: dict[str, dict[str, Any]] = {
+            b.trigger_message_id: {"delivery_batch_id": b.batch_id} for b in batches
+        }
+        fields.update(
+            {
+                t.message_id: {
+                    "delivery_batch_id": b.batch_id,
+                    "delivery_member_id": t.member.member_id,
+                    "delivery_order": t.order,
+                }
+                for b in batches
+                for t in b.targets
+                if t.message_id
+            }
+        )
+        return fields

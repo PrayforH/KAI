@@ -41,6 +41,7 @@ def _specialist(specialist_id: str, name: str) -> Specialist:
 
 class FakeGroupRepository:
     def __init__(self, specialists: list[Specialist]) -> None:
+        self.batches = {}
         self.delivery_notices = {}
         self.delivery_published = set()
         self.groups: dict[str, AssistantGroup] = {}
@@ -55,6 +56,46 @@ class FakeGroupRepository:
         # Concurrency/transaction semantics are exercised with real PostgreSQL.
         await self.get_group(tenant_id, user_id, group_id)
         yield self
+
+    async def require_group_member(self, tenant_id, user_id, group_id):
+        from harness.core.errors import PermissionDeniedError
+        group = await self.get_group(tenant_id, user_id, group_id)
+        if tenant_id != "t" or user_id != group.creator_user_id:
+            raise PermissionDeniedError("not a member")
+        return group
+
+    async def get_group_delivery(self, tenant_id, user_id, group_id, batch_id):
+        await self.require_group_member(tenant_id, user_id, group_id)
+        return self.batches.get(batch_id)
+
+    async def save_group_delivery(self, tenant_id, user_id, batch):
+        self.batches[batch.batch_id] = batch
+
+    async def find_group_delivery_run(self, tenant_id, user_id, batch, **kwargs):
+        await self.require_group_member(tenant_id, user_id, batch.group_id)
+        return None
+
+    async def pending_group_summaries(self, *, limit=25):
+        return [("t", "u", b) for b in self.batches.values() if b.summary_state == "pending"][
+            :limit
+        ]
+
+    async def group_delivery_message_fields(self, tenant_id, user_id, group_id, source_ids):
+        batches = [b for b in self.batches.values() if b.group_id == group_id]
+        fields = {b.trigger_message_id: {"delivery_batch_id": b.batch_id} for b in batches}
+        fields.update(
+            {
+                t.message_id: {
+                    "delivery_batch_id": b.batch_id,
+                    "delivery_member_id": t.member.member_id,
+                    "delivery_order": t.order,
+                }
+                for b in batches
+                for t in b.targets
+                if t.message_id
+            }
+        )
+        return fields
 
     async def record_group_delivery_notice(self, event):
         return self.delivery_notices.setdefault(event["event_id"], {

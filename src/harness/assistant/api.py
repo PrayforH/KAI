@@ -27,6 +27,12 @@ from harness.api.dependencies import (
 )
 from harness.api.downloads import attachment_content_disposition
 from harness.assistant.constants import primary_specialist_id
+from harness.assistant.group_delivery import (
+    GROUP_ARTIFACT_OFFSET_LIMIT,
+    GROUP_ARTIFACT_PAGE_LIMIT,
+    GroupArtifactPage,
+    GroupDeliveryBatch,
+)
 from harness.assistant.group_library import GROUP_ATTACHMENT_LIMIT
 from harness.assistant.models import (
     AssistantGroup,
@@ -1172,4 +1178,40 @@ async def post_assistant_group_message(
         client_message_id=body.client_message_id,
         reply_to_message_id=body.reply_to_message_id,
         attachment_ids=body.attachment_ids,
+    )
+
+
+@router.get("/groups/{group_id}/messages/{message_id}/deliveries")
+async def get_assistant_group_delivery(
+    group_id: str,
+    message_id: str,
+    identity: Reader,
+    assistant: Service,
+) -> GroupDeliveryBatch:
+    return await assistant.get_assistant_group_delivery(
+        identity.tenant_id,
+        identity.user_id,
+        group_id,
+        message_id,
+    )
+
+
+@router.get("/groups/{group_id}/artifacts")
+async def list_assistant_group_artifacts(
+    group_id: str,
+    identity: Reader,
+    assistant: Service,
+    since: Annotated[datetime | None, Query()] = None,
+    until: Annotated[datetime | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=GROUP_ARTIFACT_PAGE_LIMIT)] = 50,
+    offset: Annotated[int, Query(ge=0, le=GROUP_ARTIFACT_OFFSET_LIMIT)] = 0,
+) -> GroupArtifactPage:
+    return await assistant.list_assistant_group_artifacts(
+        identity.tenant_id,
+        identity.user_id,
+        group_id,
+        since=since,
+        until=until,
+        limit=limit,
+        offset=offset,
     )
