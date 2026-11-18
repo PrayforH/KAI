@@ -32,8 +32,8 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-/** 历史列固定 420px：等于右侧助理抽屉在 1440 下的实测初始宽度。 */
-const HISTORY_WIDTH = 420;
+/** 历史列宽度：1440 下等于右侧助理抽屉实测的 420px，窄屏按容器 36% 收。 */
+const HISTORY_WIDTH = "min(420px, 36%)";
 
 function render(element: ReactElement) {
   return act(async () => root!.render(element));
@@ -55,7 +55,7 @@ describe("聊天记录是聊天区里的一列，不是浮层", () => {
     expect(history.closest("body")!.querySelectorAll("[data-testid=history]")).toHaveLength(1);
     expect(workspace().dataset.history).toBe("true");
     // 聊天 | 历史 420px | 分隔条 | 电脑
-    expect(grid()).toBe(`minmax(240px, 1fr) ${HISTORY_WIDTH}px 6px minmax(0, 30%)`);
+    expect(grid()).toBe(`minmax(240px, 1fr) ${HISTORY_WIDTH} 6px minmax(0, 30%)`);
   });
 
   it("pins the history column to the right drawer's measured width", async () => {
@@ -65,7 +65,7 @@ describe("聊天记录是聊天区里的一列，不是浮层", () => {
     </AssistantComputerPane>);
 
     // 固定像素列，不再按容器百分比浮动；电脑列仍是可拖的百分比。
-    expect(grid()).toContain(`${HISTORY_WIDTH}px`);
+    expect(grid()).toContain(`${HISTORY_WIDTH}`);
     expect(grid()).toContain("minmax(0, 30%)");
     expect(grid()).not.toMatch(/\d+fr.*\d+fr 6px/);
   });
@@ -94,7 +94,7 @@ describe("聊天记录是聊天区里的一列，不是浮层", () => {
     await act(async () => {
       separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
     });
-    expect(grid()).toBe(`minmax(240px, 1fr) ${HISTORY_WIDTH}px 6px minmax(0, 34%)`);
+    expect(grid()).toBe(`minmax(240px, 1fr) ${HISTORY_WIDTH} 6px minmax(0, 34%)`);
 
     // 关掉历史回到两栏：用回两栏自己的默认 44 / 56，不会跟着变成 30 左右的窄条。
     await render(pane(false));
@@ -102,7 +102,7 @@ describe("聊天记录是聊天区里的一列，不是浮层", () => {
 
     // 再打开历史：三栏记住刚才拖到的 34，不会跳回 30。
     await render(pane(true));
-    expect(grid()).toBe(`minmax(240px, 1fr) ${HISTORY_WIDTH}px 6px minmax(0, 34%)`);
+    expect(grid()).toBe(`minmax(240px, 1fr) ${HISTORY_WIDTH} 6px minmax(0, 34%)`);
   });
 
   it("history alone is 420px and leaves chat the rest", async () => {
@@ -112,7 +112,7 @@ describe("聊天记录是聊天区里的一列，不是浮层", () => {
     </AssistantComputerPane>);
 
     // 只开历史时同样固定 420px，不再走 46/54 折算。
-    expect(grid()).toBe(`minmax(280px, 1fr) ${HISTORY_WIDTH}px`);
+    expect(grid()).toBe(`minmax(280px, 1fr) ${HISTORY_WIDTH}`);
   });
 
   it("the divider still drags the computer column in three-pane mode", async () => {
@@ -130,17 +130,18 @@ describe("聊天记录是聊天区里的一列，不是浮层", () => {
     });
     // 键盘 +2：电脑列 30 → 32，历史仍是 420px，聊天接剩下的。
     expect(Number(separator.getAttribute("aria-valuenow"))).toBe(32);
-    expect(grid()).toBe(`minmax(240px, 1fr) ${HISTORY_WIDTH}px 6px minmax(0, 32%)`);
+    expect(grid()).toBe(`minmax(240px, 1fr) ${HISTORY_WIDTH} 6px minmax(0, 32%)`);
   });
 
   it("the drawer CSS no longer pins itself over the viewport", () => {
     expect(css).not.toMatch(/position:\s*fixed/);
     expect(css).not.toMatch(/box-shadow:\s*-18px/);
     expect(css).toMatch(/\.drawer\s*\{[^}]*position:\s*relative/);
-    // 固定 420px 后，1440 聊天列约 397px；1420 时只剩约 382px，再窄就放不下
-    // 一句对话，所以三栏堆叠断点从 1180 上调到 1420（1280/1180 都堆叠）。
+    // 历史列改 min(420px, 36%) 后，1440 仍是 420，1280 / 1180 按比例收，
+    // 三栏保持并排；只有窄到聊天列放不下一句对话（约 1100 以下）才堆叠。
     expect(paneCss).toMatch(/data-history="true"\]\[data-split="true"\]/);
-    expect(paneCss).toMatch(/@media \(max-width: 1420px\)/);
+    expect(paneCss).toMatch(/@media \(max-width: 1100px\)/);
+    expect(paneCss).not.toMatch(/@media \(max-width: 1420px\)/);
     expect(paneCss).not.toMatch(/@media \(max-width: 1180px\)/);
     // 只开历史（无电脑）时不抢占，仍沿用 850 以下的堆叠。
     expect(paneCss).toMatch(/@media \(max-width: 850px\)/);

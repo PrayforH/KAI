@@ -5,11 +5,12 @@ import { ComputerDesktop } from "./computer-desktop";
 import styles from "./computer-desktop.module.css";
 
 /**
- * 历史列固定宽度：等于右侧助理抽屉（bot-side-panel）的初始宽度。
- * 本地同版构建 1440×1000 实测 420px（`.task-content-shell` 1176px 宽，
- * `min(420px, 44%)` 取 420），不再跟着容器百分比浮动。
+ * 历史列宽度：等于右侧助理抽屉（bot-side-panel）的初始宽度。
+ * 1440 下容器 1176px，36% = 423px，取 420 正好等于抽屉实测宽度；
+ * 窄屏按 36% 收（1280 → 366px，1180 → 330px），聊天列还留得住，
+ * 不用把三栏提前改成上下堆叠。
  */
-const HISTORY_WIDTH = 420;
+const HISTORY_WIDTH = "min(420px, 36%)";
 /** 三栏电脑列的默认份额：占总宽 30%，与参考稿的电脑列比例一致。 */
 const THREE_PANE_DEFAULT = 30;
 /** 三栏时电脑列的可用区间，保证聊天列始终还能放下一条消息气泡。 */
@@ -45,13 +46,13 @@ export function AssistantComputerPane({ open, onClose, children, botId, historyO
 
   let gridTemplateColumns: string | undefined;
   if (open && historyOpen) {
-    // 历史固定 420px；电脑列按总宽百分比，聊天吃剩余。
-    gridTemplateColumns = `minmax(240px, 1fr) ${HISTORY_WIDTH}px 6px minmax(0, ${computerShare}%)`;
+    // 历史列 min(420px, 36%)；电脑列按总宽百分比，聊天吃剩余。
+    gridTemplateColumns = `minmax(240px, 1fr) ${HISTORY_WIDTH} 6px minmax(0, ${computerShare}%)`;
   } else if (open) {
     gridTemplateColumns = `minmax(280px, ${100 - computerShare}fr) 6px minmax(0, ${computerShare}fr)`;
   } else if (historyOpen) {
-    // 只开历史时同样固定 420px，不再走 46/54 折算。
-    gridTemplateColumns = `minmax(280px, 1fr) ${HISTORY_WIDTH}px`;
+    // 只开历史时同样用抽屉宽度，不再走 46/54 折算。
+    gridTemplateColumns = `minmax(280px, 1fr) ${HISTORY_WIDTH}`;
   }
 
   // 拖拽只调电脑列：三栏时改 threePaneComputer（历史恒为 420px，聊天吃剩余），

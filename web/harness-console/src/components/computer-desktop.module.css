@@ -59,11 +59,11 @@
   .divider { cursor: default; pointer-events: none; border-inline: 0; border-block: 1px solid var(--codex-line, var(--line)); }
 }
 
-/* 历史列固定 420px 后，三栏要更多横向空间：1440（扣掉 264 左栏 = 1176）
-   聊天列约 397px，可以并排；1420 时只剩约 382px，再窄下去放不下一句对话，
-   所以三栏在 1420 以下改上下堆叠（1280 / 1180 都走堆叠）。
-   只开历史（无电脑）时 1280 仍有约 596px 聊天列，沿用 850 以下的堆叠规则。 */
-@media (max-width: 1420px) {
+/* 三栏的历史列取 min(420px, 36%)：1440（扣掉 264 左栏 = 1176）正好 420，
+   1280 → 366，1180 → 330，聊天列仍有 34% - 6px，够放一句对话，所以 1180
+   以上保持并排。再窄下去聊天列不足约 280px，才改上下堆叠。
+   只开历史（无电脑）时更宽松，沿用 850 以下的堆叠规则。 */
+@media (max-width: 1100px) {
   .workspace[data-history="true"][data-split="true"] {
     grid-template-columns: minmax(0, 1fr) !important;
     grid-template-rows: minmax(240px, 1fr) minmax(180px, .7fr) 6px minmax(220px, 1fr);
