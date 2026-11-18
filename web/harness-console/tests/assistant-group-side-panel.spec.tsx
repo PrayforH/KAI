@@ -120,29 +120,25 @@ function baseProps() {
 }
 
 describe("AssistantGroupSidePanel", () => {
-  it("shows group activity with the four tabs", async () => {
+  it("shows group activity with the three tabs, without a history tab", async () => {
     await render(<AssistantGroupSidePanel {...baseProps()} />);
-    expect(host.querySelectorAll('[role="tab"]')).toHaveLength(4);
-    expect(host.textContent).toContain("聊天记录");
+    const tabs = [...host.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent);
+    expect(tabs).toEqual(["动态", "任务", "资料库"]);
+    expect(tabs).not.toContain("聊天记录");
+    expect(host.textContent).not.toContain("聊天记录");
     expect(host.textContent).toContain("主助理");
     expect(host.textContent).toContain("已完成评审");
   });
 
-  it("shows the full message history in the history tab", async () => {
+  it("renders a status payload as readable text instead of raw JSON", async () => {
     await render(
       <AssistantGroupSidePanel
         {...baseProps()}
-        tab="history"
-        messages={[
-          message({ messageId: "m1", text: "第一句" }),
-          message({ messageId: "m2", author: "user", authorName: "我", text: "第二句" }),
-        ]}
+        messages={[message({ text: '{"status":"ready"}', status: "completed" })]}
       />,
     );
-    expect(host.querySelector('[aria-label="搜索群聊记录"]')).not.toBeNull();
-    expect(host.textContent).toContain("第一句");
-    expect(host.textContent).toContain("第二句");
-    expect(host.textContent).toContain("我");
+    expect(host.textContent).not.toContain('{"status":"ready"}');
+    expect(host.textContent).toContain("已就绪");
   });
 
   it("lists runs in the tasks tab", async () => {

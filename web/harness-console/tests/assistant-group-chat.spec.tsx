@@ -241,7 +241,41 @@ describe("AssistantGroupChat", () => {
     expect(host.querySelector('[role="dialog"][aria-label="群信息"]')).toBeNull();
   });
 
-  it("keeps both header actions in the fixed title band, outside the message scroll area", async () => {
+  it("opens the chat history from its own title-band button", async () => {
+    const onToggleHistory = vi.fn();
+    await act(async () =>
+      root!.render(
+        <AssistantGroupChat
+          groupId="g1"
+          userId="u1"
+          historyOpen={false}
+          onToggleHistory={onToggleHistory}
+        />,
+      ),
+    );
+    await flush();
+
+    const band = host.querySelector<HTMLElement>('[data-testid="assistant-surface-title"]')!;
+    const historyToggle = host.querySelector<HTMLButtonElement>(
+      '[aria-label$="的聊天记录"][aria-expanded]',
+    )!;
+    expect(historyToggle).not.toBeNull();
+    expect(historyToggle.title).toBe("聊天记录");
+    expect(historyToggle.getAttribute("aria-expanded")).toBe("false");
+    expect(band.contains(historyToggle)).toBe(true);
+    await act(async () => historyToggle.click());
+    expect(onToggleHistory).toHaveBeenCalledTimes(1);
+
+    // 聊天记录不再占用右侧栏的 tab：只剩动态 / 任务 / 资料库。
+    const sideToggle = host.querySelector<HTMLButtonElement>('[aria-label$="群右侧栏"]')!;
+    await act(async () => sideToggle.click());
+    await flush();
+    const tabs = [...host.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent);
+    expect(tabs).toEqual(["动态", "任务", "资料库"]);
+    expect(host.querySelector('aside[aria-label="群右侧栏"]')!.textContent).not.toContain("聊天记录");
+  });
+
+  it("keeps every header action in the fixed title band, outside the message scroll area", async () => {
     await act(async () =>
       root!.render(<AssistantGroupChat groupId="g1" userId="u1" />),
     );
@@ -252,14 +286,19 @@ describe("AssistantGroupChat", () => {
     const sideToggle = host.querySelector<HTMLButtonElement>(
       '[aria-label$="群右侧栏"][aria-expanded]',
     )!;
+    const historyToggle = host.querySelector<HTMLButtonElement>(
+      '[aria-label$="的聊天记录"][aria-expanded]',
+    )!;
     const membersToggle = host.querySelector<HTMLButtonElement>(".group-member-faces")!;
 
     expect(band).not.toBeNull();
     expect(timeline).not.toBeNull();
-    // 两个入口都在标题带里，且都不在滚动容器里。
+    // 三个入口都在标题带里，且都不在滚动容器里。
     expect(band.contains(sideToggle)).toBe(true);
+    expect(band.contains(historyToggle)).toBe(true);
     expect(band.contains(membersToggle)).toBe(true);
     expect(timeline.contains(sideToggle)).toBe(false);
+    expect(timeline.contains(historyToggle)).toBe(false);
     expect(timeline.contains(membersToggle)).toBe(false);
     // 标题带是滚动容器的前一个兄弟：消息滚动时带子不动，按钮矩形与气泡矩形必然分离。
     expect(band.nextElementSibling).toBe(timeline);

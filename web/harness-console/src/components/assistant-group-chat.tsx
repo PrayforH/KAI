@@ -26,6 +26,7 @@ import {
 import { studioClient, type StudioKnowledgeBase } from "../lib/studio-client";
 import { loadGroupComposerDraft, persistGroupComposerDraft } from "../lib/group-composer-draft";
 import { botAccent } from "./bot-rail";
+import { SidebarIcon } from "./sidebar-icon";
 import { AssistantGroupComposer } from "./assistant-group-composer";
 import { AssistantGroupMembersDialog, type MemberChange } from "./assistant-group-members-dialog";
 import { AssistantGroupMessage } from "./assistant-group-message";
@@ -79,6 +80,9 @@ type AssistantGroupChatProps = {
   onGroupMembers?: (members: GroupMember[]) => void;
   /** 群解散后让主界面退出这个群。 */
   onDissolved?: () => void;
+  /** 聊天记录列由主界面的分栏网格拥有，这里只报告开关状态与点击。 */
+  historyOpen?: boolean;
+  onToggleHistory?: () => void;
 };
 
 /**
@@ -92,6 +96,8 @@ export function AssistantGroupChat({
   onGroupName,
   onGroupMembers,
   onDissolved,
+  historyOpen = false,
+  onToggleHistory,
 }: AssistantGroupChatProps) {
   const [groups, setGroups] = useState<AssistantGroup[]>([]);
   const [specialists, setSpecialists] = useState<Specialist[]>([]);
@@ -115,7 +121,7 @@ export function AssistantGroupChat({
   const [libraryBusy, setLibraryBusy] = useState(false);
   const [availableKnowledgeBases, setAvailableKnowledgeBases] = useState<StudioKnowledgeBase[]>([]);
   const [sideOpen, setSideOpen] = useState(false);
-  const [sideTab, setSideTab] = useState<GroupSideTab>("history");
+  const [sideTab, setSideTab] = useState<GroupSideTab>("activity");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
@@ -211,6 +217,25 @@ export function AssistantGroupChat({
       mountedRef.current = false;
     };
   }, []);
+
+  // 聊天记录列的「在聊天中定位」：滚到目标消息并短暂描边。
+  // 目标不在当前已加载的消息里时什么也不做，由记录列自己保留原文。
+  useEffect(() => {
+    const locate = (event: Event) => {
+      const detail = (event as CustomEvent<{ groupId?: string; messageId?: string }>).detail;
+      if (!detail?.messageId || detail.groupId !== groupId) return;
+      const node = [...(timelineRef.current?.querySelectorAll<HTMLElement>("[data-group-message-id]") ?? [])]
+        .find((item) => item.dataset.groupMessageId === detail.messageId);
+      if (!node) return;
+      node.scrollIntoView({ block: "center", behavior: "smooth" });
+      node.dataset.flash = "true";
+      window.setTimeout(() => {
+        if (node.isConnected) delete node.dataset.flash;
+      }, 1400);
+    };
+    window.addEventListener("kai:group-locate", locate);
+    return () => window.removeEventListener("kai:group-locate", locate);
+  }, [groupId]);
 
   // 草稿按群保留：切走再回来、刷新页面都还在。
   useEffect(() => {
@@ -526,7 +551,7 @@ export function AssistantGroupChat({
     requestAnimationFrame(() => composerRef.current?.focus());
   };
 
-  const openSidePanel = (tab: GroupSideTab = "history") => {
+  const openSidePanel = (tab: GroupSideTab = "activity") => {
     setSideTab(tab);
     setSideOpen(true);
   };
@@ -674,13 +699,25 @@ export function AssistantGroupChat({
               )}
             </button>
             <div className={styles.settingsButtons}>
+              {/* 聊天记录和单助理一样是外侧独立按钮：点开在对话区里多一列历史，
+                  右侧栏只剩动态 / 任务 / 资料库。 */}
+              <button
+                type="button"
+                className={styles.settingsButton}
+                aria-label={`${selected.name} 的聊天记录`}
+                aria-expanded={historyOpen}
+                title="聊天记录"
+                onClick={onToggleHistory}
+              >
+                <SidebarIcon name="history" size={16} />
+              </button>
               <button
                 type="button"
                 className={styles.settingsButton}
                 aria-label={sideOpen ? "关闭群右侧栏" : "打开群右侧栏"}
-                title="聊天记录 / 动态 / 任务 / 资料库"
+                title="动态 / 任务 / 资料库"
                 aria-expanded={sideOpen}
-                onClick={() => (sideOpen ? setSideOpen(false) : openSidePanel("history"))}
+                onClick={() => (sideOpen ? setSideOpen(false) : openSidePanel("activity"))}
               >
                 <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
                   <rect x="3" y="4" width="14" height="12" rx="2.5" fill="none" stroke="currentColor" strokeWidth="1.5" />

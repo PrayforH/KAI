@@ -36,6 +36,7 @@ import { DesktopOccupancyChip, occupancyHolding, useDesktopOccupancy } from "../
 import { AssistantComputerPane } from "../components/assistant-computer-pane";
 import { AssistantRuntimeShell } from "../components/assistant-runtime-shell";
 import { AssistantGroupChat } from "../components/assistant-group-chat";
+import { AssistantGroupHistoryPanel } from "../components/assistant-group-history-panel";
 import { AssistantHistoryPanel } from "../components/assistant-history-panel";
 import { ProductivityCommandCenter } from "../components/productivity-command-center";
 import { RunTraceConsole } from "../components/run-trace-console";
@@ -244,6 +245,8 @@ function AuthenticatedHome() {
   // 助理入口一律用对话形态；选中机器人时标题与输入框跟着它变。
   const [computerOpen, setComputerOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  // 群聊的聊天记录列和单助理共用同一个分栏槽位，状态放在这一层。
+  const [groupHistoryOpen, setGroupHistoryOpen] = useState(false);
   const [readyConversation, setReadyConversation] = useState<string | null>(null);
   useEffect(() => {
     // A previous visit must not connect the desktop during a new chat load.
@@ -292,8 +295,15 @@ function AuthenticatedHome() {
   // Leaving the assistant surface closes 聊天记录 with it; the drawer belongs
   // to the assistant, not to whichever task replaces it.
   useEffect(() => {
-    if (!assistantView) setHistoryOpen(false);
+    if (!assistantView) {
+      setHistoryOpen(false);
+      setGroupHistoryOpen(false);
+    }
   }, [assistantView]);
+  // 切群时历史列跟着关：它属于上一个群的对话，不该原样套到新群上。
+  useEffect(() => {
+    setGroupHistoryOpen(false);
+  }, [groupParam]);
 
   useEffect(() => {
     if (!assistantEntry) { botViewedRef.current = null; return; }
@@ -1070,8 +1080,14 @@ function AuthenticatedHome() {
           </header>}
           <AssistantComputerPane open={assistantView && computerOpen}
             botId={botParam ?? null} onClose={() => showComputer(false)}
-            historyOpen={assistantView && !groupParam && historyOpen}
-            history={assistantView && !groupParam ? (
+            historyOpen={assistantView && (groupParam ? groupHistoryOpen : historyOpen)}
+            history={groupParam ? (
+              <AssistantGroupHistoryPanel
+                open={groupHistoryOpen}
+                groupId={groupParam}
+                onClose={() => setGroupHistoryOpen(false)}
+              />
+            ) : assistantView ? (
               <AssistantHistoryPanel
                 open={historyOpen}
                 threadId={bot?.threadId ?? threadId}
@@ -1120,6 +1136,8 @@ function AuthenticatedHome() {
                   userId={user.user_id}
                   onGroupName={setGroupTitle}
                   onDissolved={() => router.replace("/assistant", { scroll: false })}
+                  historyOpen={groupHistoryOpen}
+                  onToggleHistory={() => setGroupHistoryOpen((current) => !current)}
                 />
               </div>
             ) : stageView === "trace" ? (

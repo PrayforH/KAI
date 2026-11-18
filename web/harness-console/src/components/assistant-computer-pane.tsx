@@ -4,9 +4,13 @@ import { useRef, useState, type ReactNode } from "react";
 import { ComputerDesktop } from "./computer-desktop";
 import styles from "./computer-desktop.module.css";
 
-/** 三栏时历史面板固定占 32%，与参考稿「聊天 38 / 历史 32 / 电脑 30」一致。 */
-const HISTORY_SHARE = 32;
-/** 三栏电脑列的默认份额：参考稿里电脑是 30，聊天 38 是最宽那栏。 */
+/**
+ * 历史列固定宽度：等于右侧助理抽屉（bot-side-panel）的初始宽度。
+ * 本地同版构建 1440×1000 实测 420px（`.task-content-shell` 1176px 宽，
+ * `min(420px, 44%)` 取 420），不再跟着容器百分比浮动。
+ */
+const HISTORY_WIDTH = 420;
+/** 三栏电脑列的默认份额：占总宽 30%，与参考稿的电脑列比例一致。 */
 const THREE_PANE_DEFAULT = 30;
 /** 三栏时电脑列的可用区间，保证聊天列始终还能放下一条消息气泡。 */
 const THREE_PANE_MIN = 25;
@@ -22,8 +26,8 @@ const clamp = (value: number, min: number, max: number) =>
 /**
  * 聊天区网格：聊天 |（历史）|（分隔条 + 电脑）。
  *
- * 历史面板是网格里的一列，不是浮层，所以不会再压住桌面画面。三栏时历史列
- * 固定 32%，拖拽只调电脑列、聊天列吃剩余——分隔条始终是真的能拖的。
+ * 历史面板是网格里的一列，不是浮层，所以不会再压住桌面画面。历史列固定
+ * 420px，拖拽只调电脑列、聊天列吃剩余——分隔条始终是真的能拖的。
  */
 export function AssistantComputerPane({ open, onClose, children, botId, historyOpen = false, history }: {
   open: boolean; onClose: () => void; children: ReactNode; botId?: string | null;
@@ -38,18 +42,19 @@ export function AssistantComputerPane({ open, onClose, children, botId, historyO
   const computerShare = historyOpen
     ? clamp(threePaneComputer, THREE_PANE_MIN, THREE_PANE_MAX)
     : clamp(twoPaneWidth, TWO_PANE_MIN, TWO_PANE_MAX);
-  const chatShare = 100 - HISTORY_SHARE - computerShare;
 
   let gridTemplateColumns: string | undefined;
   if (open && historyOpen) {
-    gridTemplateColumns = `minmax(240px, ${chatShare}fr) minmax(0, ${HISTORY_SHARE}fr) 6px minmax(0, ${computerShare}fr)`;
+    // 历史固定 420px；电脑列按总宽百分比，聊天吃剩余。
+    gridTemplateColumns = `minmax(240px, 1fr) ${HISTORY_WIDTH}px 6px minmax(0, ${computerShare}%)`;
   } else if (open) {
     gridTemplateColumns = `minmax(280px, ${100 - computerShare}fr) 6px minmax(0, ${computerShare}fr)`;
   } else if (historyOpen) {
-    gridTemplateColumns = `minmax(280px, 46fr) minmax(0, 54fr)`;
+    // 只开历史时同样固定 420px，不再走 46/54 折算。
+    gridTemplateColumns = `minmax(280px, 1fr) ${HISTORY_WIDTH}px`;
   }
 
-  // 拖拽只调电脑列：三栏时改 threePaneComputer（历史恒为 32，聊天吃剩余），
+  // 拖拽只调电脑列：三栏时改 threePaneComputer（历史恒为 420px，聊天吃剩余），
   // 两栏时改 twoPaneWidth。两种模式的宽度互不影响。
   const nudge = (delta: number) => {
     if (historyOpen) {

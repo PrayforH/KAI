@@ -32,17 +32,15 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-const shares = () =>
-  workspace().style.gridTemplateColumns
-    .match(/([\d.]+)fr/g)!
-    .map(value => Number(value.replace("fr", "")));
+/** 历史列固定 420px：等于右侧助理抽屉在 1440 下的实测初始宽度。 */
+const HISTORY_WIDTH = 420;
 
 function render(element: ReactElement) {
   return act(async () => root!.render(element));
 }
 
 const workspace = () => host.querySelector<HTMLElement>("[data-history]")!;
-const tracks = () => (workspace().style.gridTemplateColumns.match(/minmax\([^)]*\)|\d+px/g) ?? []);
+const grid = () => workspace().style.gridTemplateColumns;
 
 describe("聊天记录是聊天区里的一列，不是浮层", () => {
   it("history is a leaf of the chat grid, next to chat and computer", async () => {
@@ -56,21 +54,20 @@ describe("聊天记录是聊天区里的一列，不是浮层", () => {
     expect(history.parentElement!.parentElement).toBe(workspace());
     expect(history.closest("body")!.querySelectorAll("[data-testid=history]")).toHaveLength(1);
     expect(workspace().dataset.history).toBe("true");
-    // 聊天 | 历史 | 分隔条 | 电脑
-    expect(tracks()).toHaveLength(4);
+    // 聊天 | 历史 420px | 分隔条 | 电脑
+    expect(grid()).toBe(`minmax(240px, 1fr) ${HISTORY_WIDTH}px 6px minmax(0, 30%)`);
   });
 
-  it("three columns are 38 / 32 / 30 at the default width", async () => {
+  it("pins the history column to the right drawer's measured width", async () => {
     await render(<AssistantComputerPane open onClose={() => {}} botId={null} historyOpen
       history={<aside data-testid="history">记录</aside>}>
       <section data-testid="chat">对话</section>
     </AssistantComputerPane>);
 
-    // 参考稿：聊天 38 / 历史 32 / 电脑 30，聊天列是最宽那栏。
-    const [chat, history, computer] = shares();
-    expect(chat).toBeCloseTo(38, 0);
-    expect(history).toBe(32);
-    expect(computer).toBeCloseTo(30, 0);
+    // 固定像素列，不再按容器百分比浮动；电脑列仍是可拖的百分比。
+    expect(grid()).toContain(`${HISTORY_WIDTH}px`);
+    expect(grid()).toContain("minmax(0, 30%)");
+    expect(grid()).not.toMatch(/\d+fr.*\d+fr 6px/);
   });
 
   it("two columns default to 44 / 56", async () => {
@@ -79,9 +76,7 @@ describe("聊天记录是聊天区里的一列，不是浮层", () => {
       <section data-testid="chat">对话</section>
     </AssistantComputerPane>);
 
-    const [chat, computer] = shares();
-    expect(chat).toBe(44);
-    expect(computer).toBe(56);
+    expect(grid()).toBe("minmax(280px, 44fr) 6px minmax(0, 56fr)");
   });
 
   it("keeps the two-pane and three-pane computer widths independent", async () => {
@@ -91,7 +86,7 @@ describe("聊天记录是聊天区里的一列，不是浮层", () => {
     </AssistantComputerPane>;
     await render(pane(true));
 
-    // 三栏把电脑列拖宽到 34（30 + 2 + 2），历史恒为 32，聊天吃剩余的 34。
+    // 三栏把电脑列拖宽到 34（30 + 2 + 2），历史仍是固定 420px。
     const separator = host.querySelector('[role=separator]')!;
     await act(async () => {
       separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
@@ -99,26 +94,25 @@ describe("聊天记录是聊天区里的一列，不是浮层", () => {
     await act(async () => {
       separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
     });
-    expect(shares()).toEqual([34, 32, 34]);
+    expect(grid()).toBe(`minmax(240px, 1fr) ${HISTORY_WIDTH}px 6px minmax(0, 34%)`);
 
     // 关掉历史回到两栏：用回两栏自己的默认 44 / 56，不会跟着变成 30 左右的窄条。
     await render(pane(false));
-    expect(shares()).toEqual([44, 56]);
+    expect(grid()).toBe("minmax(280px, 44fr) 6px minmax(0, 56fr)");
 
     // 再打开历史：三栏记住刚才拖到的 34，不会跳回 30。
     await render(pane(true));
-    expect(shares()).toEqual([34, 32, 34]);
+    expect(grid()).toBe(`minmax(240px, 1fr) ${HISTORY_WIDTH}px 6px minmax(0, 34%)`);
   });
 
-  it("history alone takes 54% and leaves chat 46%", async () => {
+  it("history alone is 420px and leaves chat the rest", async () => {
     await render(<AssistantComputerPane open={false} onClose={() => {}} botId={null} historyOpen
       history={<aside data-testid="history">记录</aside>}>
       <section data-testid="chat">对话</section>
     </AssistantComputerPane>);
 
-    const [chat, history] = shares();
-    expect(history).toBe(54);
-    expect(chat).toBe(46);
+    // 只开历史时同样固定 420px，不再走 46/54 折算。
+    expect(grid()).toBe(`minmax(280px, 1fr) ${HISTORY_WIDTH}px`);
   });
 
   it("the divider still drags the computer column in three-pane mode", async () => {
@@ -134,27 +128,33 @@ describe("聊天记录是聊天区里的一列，不是浮层", () => {
     await act(async () => {
       separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
     });
-    // 键盘 +2：电脑列 30 → 32，历史仍是 32，聊天接剩下的 36。
+    // 键盘 +2：电脑列 30 → 32，历史仍是 420px，聊天接剩下的。
     expect(Number(separator.getAttribute("aria-valuenow"))).toBe(32);
-    expect(shares()).toEqual([36, 32, 32]);
+    expect(grid()).toBe(`minmax(240px, 1fr) ${HISTORY_WIDTH}px 6px minmax(0, 32%)`);
   });
 
   it("the drawer CSS no longer pins itself over the viewport", () => {
     expect(css).not.toMatch(/position:\s*fixed/);
     expect(css).not.toMatch(/box-shadow:\s*-18px/);
     expect(css).toMatch(/\.drawer\s*\{[^}]*position:\s*relative/);
-    // 窄屏堆叠成行，分隔线转到上方。堆叠断点必须低于 1280，否则 1280 会白堆。
+    // 固定 420px 后，1440 聊天列约 397px；1420 时只剩约 382px，再窄就放不下
+    // 一句对话，所以三栏堆叠断点从 1180 上调到 1420（1280/1180 都堆叠）。
     expect(paneCss).toMatch(/data-history="true"\]\[data-split="true"\]/);
-    expect(paneCss).toMatch(/@media \(max-width: 1180px\)/);
-    expect(paneCss).not.toMatch(/@media \(max-width: 1300px\)/);
+    expect(paneCss).toMatch(/@media \(max-width: 1420px\)/);
+    expect(paneCss).not.toMatch(/@media \(max-width: 1180px\)/);
+    // 只开历史（无电脑）时不抢占，仍沿用 850 以下的堆叠。
+    expect(paneCss).toMatch(/@media \(max-width: 850px\)/);
   });
 
-  it("keeps exactly one history entry, in the floating controls", () => {
+  it("keeps one history entry per surface, owned by the chat grid", () => {
     // 助理面整块 header 不渲染，原来那颗「聊天记录」按钮永远不可见，已删。
     expect(page).not.toContain('aria-label="聊天记录"');
     expect(page).toContain("的聊天记录`");
-    // 历史面板由网格拥有，不再作为兄弟节点浮在页面上。
+    // 单助理和群聊各有一个历史面板，都由分栏网格拥有，不作为兄弟节点漂浮。
     expect(page.match(/<AssistantHistoryPanel/g) ?? []).toHaveLength(1);
-    expect(page).toContain("historyOpen={assistantView && !groupParam && historyOpen}");
+    expect(page.match(/<AssistantGroupHistoryPanel/g) ?? []).toHaveLength(1);
+    expect(page).toContain("historyOpen={assistantView && (groupParam ? groupHistoryOpen : historyOpen)}");
+    expect(page).toContain("historyOpen={groupHistoryOpen}");
+    expect(page).toContain("onToggleHistory={() => setGroupHistoryOpen((current) => !current)}");
   });
 });

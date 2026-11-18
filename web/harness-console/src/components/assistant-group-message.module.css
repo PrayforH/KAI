@@ -332,3 +332,19 @@
 }
 .pickerButton:hover,
 .pickerButtonOn { background: var(--codex-surface-hover, #303030); }
+
+/* 从聊天记录「在聊天中定位」跳过来时，目标消息短暂描边，避免用户找不到落点。 */
+.memberRow[data-flash="true"],
+.userRow[data-flash="true"],
+.systemRow[data-flash="true"] {
+  border-radius: 12px;
+  outline: 2px solid var(--codex-accent, #bfa3c9);
+  outline-offset: 4px;
+  transition: outline-color 180ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .memberRow[data-flash="true"],
+  .userRow[data-flash="true"],
+  .systemRow[data-flash="true"] { transition: none; }
+}

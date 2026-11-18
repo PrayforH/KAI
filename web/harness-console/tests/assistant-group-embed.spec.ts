@@ -94,11 +94,13 @@ describe("group chats live in the main assistant surface", () => {
     expect(groupChat).not.toContain("styles.toolbarInner");
     expect(groupChat).toContain("<AssistantGroupMembersDialog");
     expect(groupChat).toContain("setMembersOpen(true)");
-    // 右侧「聊天记录 / 动态 / 任务 / 资料库」侧栏；入口是真正的开关，开着再点会关。
+    // 右侧只剩「动态 / 任务 / 资料库」；聊天记录改成标题带的独立按钮。
     expect(groupChat).toContain("<AssistantGroupSidePanel");
     expect(groupChat).toContain('aria-label={sideOpen ? "关闭群右侧栏" : "打开群右侧栏"}');
-    expect(groupChat).toContain('sideOpen ? setSideOpen(false) : openSidePanel("history")');
+    expect(groupChat).toContain('sideOpen ? setSideOpen(false) : openSidePanel("activity")');
+    expect(groupChat).toContain("title=\"聊天记录\"");
     expect(sidePanel).not.toContain("群信息");
+    expect(sidePanel).not.toContain('key: "history"');
   });
 
   it("renders messages through the shared row and composer components", () => {

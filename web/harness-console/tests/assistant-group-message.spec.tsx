@@ -616,4 +616,40 @@ describe("AssistantGroupMessage", () => {
     expect(quotedBlock).toContain("max-width: min(640px, 78%)");
     expect(attachmentsBlock).toContain("max-width: min(640px, 78%)");
   });
+
+  it("renders a run-status payload as readable text instead of raw JSON", async () => {
+    await render(
+      <AssistantGroupMessage
+        message={message({ text: '{"status":"ready"}', author: "specialist", authorName: "架构评审官" })}
+        tone="#8a8a8a"
+        onReact={() => {}}
+        onReply={() => {}}
+      />,
+    );
+
+    expect(host.textContent).not.toContain('{"status":"ready"}');
+    expect(host.textContent).toContain("已就绪");
+  });
+
+  it("leaves ordinary JSON-looking text alone when it is not a status payload", async () => {
+    const text = '{"answer":42}';
+    await render(
+      <AssistantGroupMessage message={message({ text })} tone="#8a8a8a" onReact={() => {}} onReply={() => {}} />,
+    );
+    expect(host.textContent).toContain(text);
+  });
+
+  it("keeps a user's own status-shaped JSON exactly as typed", async () => {
+    const text = '{"status":"ready"}';
+    await render(
+      <AssistantGroupMessage
+        message={message({ text, author: "user", authorName: "我" })}
+        tone="#8a8a8a"
+        onReact={() => {}}
+        onReply={() => {}}
+      />,
+    );
+    expect(host.textContent).toContain(text);
+    expect(host.textContent).not.toContain("已就绪");
+  });
 });
