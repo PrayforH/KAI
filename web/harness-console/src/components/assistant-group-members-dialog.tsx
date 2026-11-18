@@ -6,7 +6,7 @@ import type { AssistantGroup, Specialist } from "../lib/assistant-client";
 import { botAccent } from "./bot-rail";
 import styles from "./assistant-group-members-dialog.module.css";
 
-/** 与群信息面板同一口径：个人主线程的助理不进群。 */
+/** 个人主线程的助理不进群。 */
 const PERSONAL_THREAD = "kai-personal-assistant-v1";
 
 export type MemberChange = {

@@ -33,6 +33,10 @@ const sharedActions = readFileSync(
   "utf8",
 );
 const client = readFileSync(join(process.cwd(), "src/lib/assistant-client.ts"), "utf8");
+const sidePanel = readFileSync(
+  join(process.cwd(), "src/components/assistant-group-side-panel.tsx"),
+  "utf8",
+);
 
 describe("group chats live in the main assistant surface", () => {
   it("opens a group through ?group= inside the main chat stage", () => {
@@ -62,7 +66,6 @@ describe("group chats live in the main assistant surface", () => {
       "markAssistantGroupRead",
       "addAssistantGroupMember",
       "removeAssistantGroupMember",
-      "setAssistantGroupReplyAs",
       "mentionTargets",
     ]) {
       expect(groupChat).toContain(capability);
@@ -83,17 +86,19 @@ describe("group chats live in the main assistant surface", () => {
     expect(groupChat).toContain("条新消息");
   });
 
-  it("keeps the roster behind the group info toggle", () => {
-    // 花名册/邀请/接话人默认收起，对话区上方不再有一条工具条。
-    expect(groupChat).toContain('aria-label="群信息"');
-    expect(groupChat).toContain("<AssistantGroupInfoPanel");
-    expect(groupChat).toContain("aria-expanded={settingsOpen}");
+  it("drops the group info panel and keeps only the members dialog", () => {
+    // 群管理只剩标题带头像簇拉起的成员弹窗；旧的 ⋯ 群信息面板整块删除。
+    expect(groupChat).not.toContain("AssistantGroupInfo");
+    expect(groupChat).not.toContain("群信息");
+    expect(groupChat).not.toContain("settingsOpen");
     expect(groupChat).not.toContain("styles.toolbarInner");
+    expect(groupChat).toContain("<AssistantGroupMembersDialog");
+    expect(groupChat).toContain("setMembersOpen(true)");
     // 右侧「聊天记录 / 动态 / 任务 / 资料库」侧栏；入口是真正的开关，开着再点会关。
     expect(groupChat).toContain("<AssistantGroupSidePanel");
     expect(groupChat).toContain('aria-label={sideOpen ? "关闭群右侧栏" : "打开群右侧栏"}');
     expect(groupChat).toContain('sideOpen ? setSideOpen(false) : openSidePanel("history")');
-    expect(groupChat).toContain("onOpenInfo");
+    expect(sidePanel).not.toContain("群信息");
   });
 
   it("renders messages through the shared row and composer components", () => {
@@ -168,7 +173,6 @@ describe("group chats live in the main assistant surface", () => {
     expect(groupChat).toContain("group-member-faces");
     expect(groupChat).toContain("setMembersOpen(true)");
     expect(page).not.toContain("group-member-faces");
-    expect(page).not.toContain("kai:group-settings-open");
     expect(page).not.toContain("kai:group-members-open");
   });
 });

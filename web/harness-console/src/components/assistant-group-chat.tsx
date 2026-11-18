@@ -6,7 +6,6 @@ import {
   addAssistantGroupMember,
   assistantRequest,
   bindAssistantGroupKnowledgeBase,
-  deleteAssistantGroup,
   deleteAssistantGroupDocument,
   getAssistantGroupLibrary,
   listAssistantGroupMessages,
@@ -14,10 +13,8 @@ import {
   markAssistantGroupRead,
   postAssistantGroupMessage,
   removeAssistantGroupMember,
-  setAssistantGroupReplyAs,
   toggleAssistantGroupReaction,
   unbindAssistantGroupKnowledgeBase,
-  updateAssistantGroup,
   uploadAssistantGroupDocument,
   type AssistantGroup,
   type AssistantGroupLibrary,
@@ -30,14 +27,12 @@ import { studioClient, type StudioKnowledgeBase } from "../lib/studio-client";
 import { loadGroupComposerDraft, persistGroupComposerDraft } from "../lib/group-composer-draft";
 import { botAccent } from "./bot-rail";
 import { AssistantGroupComposer } from "./assistant-group-composer";
-import { AssistantGroupInfoPanel, type GroupProfileUpdate } from "./assistant-group-info-panel";
 import { AssistantGroupMembersDialog, type MemberChange } from "./assistant-group-members-dialog";
 import { AssistantGroupMessage } from "./assistant-group-message";
 import { AssistantGroupSidePanel, type GroupSideTab } from "./assistant-group-side-panel";
 import { groupStampLabel } from "../lib/group-chat-time";
 import styles from "./assistant-group-chat.module.css";
 
-const PRIMARY_MEMBER_ID = "primary";
 /** 相邻两条消息超过这段时间就插一个时间分隔。 */
 const STAMP_GAP_MS = 10 * 60 * 1000;
 /** 引用条里展示的文本长度；服务端快照本身已截断到 200 字。 */
@@ -76,7 +71,7 @@ function groupMetadataKey(list: AssistantGroup[]): string {
 
 type AssistantGroupChatProps = {
   groupId: string;
-  /** 当前登录用户：创建者才能改名/解散，草稿按用户隔离。 */
+  /** 当前登录用户：草稿按用户隔离，也是资料库文件删除权限的判定依据。 */
   userId?: string;
   /** 群名回传给主界面页头；群被删或未加载时传 null。 */
   onGroupName?: (name: string | null) => void;
@@ -132,18 +127,15 @@ export function AssistantGroupChat({
   const [unreadSeed, setUnreadSeed] = useState<number | null>(null);
   const [dividerIndex, setDividerIndex] = useState<number | null>(null);
   const [newPill, setNewPill] = useState(0);
-  /** 花名册/邀请/接话人平时收起，点右上角「⋯」才展开，不占对话区。 */
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  /** 页头头像簇直接拉起成员管理弹窗，群设置面板里不再重复这一节。 */
+  /** 标题带头像簇直接拉起成员管理弹窗；群管理只有这一处入口。 */
   const [membersOpen, setMembersOpen] = useState(false);
-  const settingsRef = useRef<HTMLDivElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const seenCounts = useRef<Record<string, number>>({});
   const dividerPlaced = useRef(false);
   const lastMessageCount = useRef(0);
   const atBottom = useRef(true);
-  /** 解散只处理一次：轮询与手动解散可能同时发现群已不存在。 */
+  /** 解散只处理一次：轮询与左侧栏解散可能同时发现群已不存在。 */
   const dissolvedRef = useRef(false);
   /** 组件是否仍挂载：卸载后在途的解散响应不得再导航或改父界面状态。 */
   const mountedRef = useRef(true);
@@ -188,7 +180,7 @@ export function AssistantGroupChat({
   }, []);
 
   /** 服务端确认群已不存在：停轮询、清活动群与输入框，再交给主界面离场。
-   *  轮询与手动解散共用这一条幂等路径；targetGroupId 由发起方传入，
+   *  解散入口在左侧群列表的群菜单里，这里只负责下一轮轮询确认后离场；
    *  旧群或已卸载的晚到响应不得改写新群，也不得再次导航。 */
   const markDissolved = useCallback((targetGroupId?: string) => {
     if (!mountedRef.current) return;
@@ -204,7 +196,6 @@ export function AssistantGroupChat({
     setNotice(null);
     setQuoted(null);
     setBusy(false);
-    setSettingsOpen(false);
     setSideOpen(false);
     window.dispatchEvent(new CustomEvent("kai:groups-changed"));
     const callbacks = callbacksRef.current;
@@ -219,23 +210,6 @@ export function AssistantGroupChat({
       mountedRef.current = false;
     };
   }, []);
-
-  // 点面板外面或按 Esc 收起群设置。
-  useEffect(() => {
-    if (!settingsOpen) return;
-    const onPointerDown = (event: MouseEvent) => {
-      if (!settingsRef.current?.contains(event.target as Node)) setSettingsOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSettingsOpen(false);
-    };
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [settingsOpen]);
 
   // 草稿按群保留：切走再回来、刷新页面都还在。
   useEffect(() => {
@@ -490,21 +464,6 @@ export function AssistantGroupChat({
     }
   };
 
-  const handleReplyAs = async (value: string) => {
-    if (!selected || busy) return;
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const replyAs = value === PRIMARY_MEMBER_ID ? null : value;
-      replaceGroup(await setAssistantGroupReplyAs(selected.groupId, replyAs));
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "设置接话人失败");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const handleSend = async () => {
     if (!selected || !draft.trim() || busy) return;
     const text = draft.trim();
@@ -566,54 +525,9 @@ export function AssistantGroupChat({
     requestAnimationFrame(() => composerRef.current?.focus());
   };
 
-  const handleUpdateProfile = async (fields: GroupProfileUpdate): Promise<string | null> => {
-    if (!selected || busy) return "正在保存，请稍候再试。";
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      replaceGroup(await updateAssistantGroup(selected.groupId, fields));
-      await refreshGroups();
-      // 左侧栏的群名同步刷新。
-      window.dispatchEvent(new CustomEvent("kai:groups-changed"));
-      return null;
-    } catch (reason) {
-      const message = reason instanceof Error ? reason.message : "群资料保存失败";
-      setError(message);
-      return message;
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleDissolve = async (): Promise<boolean> => {
-    if (!selected || busy) return false;
-    const targetGroupId = selected.groupId;
-    // DELETE 返回时只有仍挂载、仍是本次发起的群、且尚未离场，才允许改写界面或导航。
-    const isLiveTarget = () =>
-      mountedRef.current && groupIdRef.current === targetGroupId && !dissolvedRef.current;
-    setBusy(true);
-    setError(null);
-    try {
-      await deleteAssistantGroup(targetGroupId);
-    } catch (reason) {
-      // 失败不写离场标记：群页保留，用户可以修正后重试；切群/卸载后的旧失败不打扰新群。
-      if (isLiveTarget()) {
-        setBusy(false);
-        setError(reason instanceof Error ? reason.message : "解散群聊失败");
-      }
-      return false;
-    }
-    // 成功与轮询确认走同一条幂等离场，先到者只离场一次；晚到的旧响应不再导航。
-    markDissolved(targetGroupId);
-    if (isLiveTarget()) setBusy(false);
-    return true;
-  };
-
   const openSidePanel = (tab: GroupSideTab = "history") => {
     setSideTab(tab);
     setSideOpen(true);
-    setSettingsOpen(false);
   };
 
   /** 上传到群资料库；返回新文档，输入框「+」据此把它选进本条消息。 */
@@ -726,11 +640,11 @@ export function AssistantGroupChat({
   return (
     <section className={styles.chat} aria-label={`群聊 ${selected.name}`}>
       <div className={styles.main}>
-        {/* 固定标题带：群名在左，右侧栏与群信息入口在右。它在消息滚动区之外，
+        {/* 固定标题带：群名在左，成员头像簇与右侧栏入口在右。它在消息滚动区之外，
             所以按钮不会随滚动压到气泡上（本轮返工的核心）。 */}
         <div className="assistant-surface-title" data-testid="assistant-surface-title">
           <span className="task-context-title">{selected.name}</span>
-          <div className={styles.settings} ref={settingsRef}>
+          <div className={styles.settings}>
             {/* 成员头像簇：最多 3 个，其余折成 +N；点它直接打开成员管理弹窗。
                 助理面无顶栏，所以入口放在群聊自己的固定标题带里。 */}
             <button
@@ -772,33 +686,7 @@ export function AssistantGroupChat({
                   <path d="M12.5 4v12" fill="none" stroke="currentColor" strokeWidth="1.5" />
                 </svg>
               </button>
-              <button
-                type="button"
-                className={styles.settingsButton}
-                aria-label="群信息"
-                title="群信息"
-                aria-haspopup="dialog"
-                aria-expanded={settingsOpen}
-                onClick={() => setSettingsOpen((open) => !open)}
-              >
-                ⋯
-              </button>
             </div>
-            {settingsOpen && (
-              <div className={styles.settingsPopover}>
-                <AssistantGroupInfoPanel
-                  group={selected}
-                  isCreator={isCreator}
-                  busy={busy}
-                  error={error}
-                  onUpdate={handleUpdateProfile}
-                  onReplyAs={(value) => void handleReplyAs(value)}
-                  onOpenLibrary={() => openSidePanel("library")}
-                  onDissolve={handleDissolve}
-                  onClose={() => setSettingsOpen(false)}
-                />
-              </div>
-            )}
           </div>
         </div>
         <div
@@ -817,7 +705,7 @@ export function AssistantGroupChat({
             {(notice || error) && (
               <div className={styles.bannerStack}>
                 {notice && <div className={styles.notice}>{notice}</div>}
-                {error && !settingsOpen && <div className={styles.error} role="alert">{error}</div>}
+                {error && <div className={styles.error} role="alert">{error}</div>}
               </div>
             )}
             {messagesReady && orderedMessages.length === 0 && (
@@ -918,11 +806,6 @@ export function AssistantGroupChat({
           tab={sideTab}
           onTabChange={setSideTab}
           onClose={() => setSideOpen(false)}
-          onOpenInfo={() => {
-            // 侧栏收起后再开群信息；两者同占右侧，不同时叠着。
-            setSideOpen(false);
-            setSettingsOpen(true);
-          }}
           library={library}
           libraryLoading={libraryLoading}
           libraryError={libraryError}

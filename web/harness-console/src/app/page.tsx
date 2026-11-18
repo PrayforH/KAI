@@ -1112,7 +1112,7 @@ function AuthenticatedHome() {
             )}
             {groupParam ? (
               <div className="chat-surface">
-                {/* 群名与右侧栏/群信息入口同在群聊组件自己的固定标题带里，
+                {/* 群名、成员头像簇与右侧栏入口同在群聊组件自己的固定标题带里，
                     不随消息滚动；这里不再单独渲染一行标题，避免两行空占位。 */}
                 <AssistantGroupChat
                   key={groupParam}

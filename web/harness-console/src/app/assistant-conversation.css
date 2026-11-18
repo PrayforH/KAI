@@ -29,7 +29,7 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
 
 /* 对话区顶部固定标题带：名称在左、页头入口在右，高 46px；
    没有右图标夹层、分隔线、阴影或渐变，也不随消息滚动。
-   群聊与单助理共用这一条，右侧栏/群信息按钮都住在带子里，不再悬浮到消息上。 */
+   群聊与单助理共用这一条，成员头像簇与右侧栏按钮都住在带子里，不再悬浮到消息上。 */
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-surface-title {
   display: flex;
   flex: 0 0 auto;

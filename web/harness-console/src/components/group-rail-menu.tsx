@@ -8,7 +8,8 @@ import styles from "./bot-rail-menu.module.css";
 
 /**
  * 群聊列表项的操作入口：仅创建者可见，删除/解散需输入群名二次确认。
- * 复用与群信息面板同一套接口（DELETE /v1/studio/assistant/groups/{id}），不新增后端。
+ * 复用群接口（DELETE /v1/studio/assistant/groups/{id}），不新增后端；
+ * 群信息面板删除后，这里是解散群的唯一入口。
  */
 export function GroupRailMenu({
   group,
@@ -57,7 +58,7 @@ export function GroupRailMenu({
     setBusy(true);
     setError("");
     try {
-      // 与群信息面板同一个接口，不新增后端端点。
+      // 群解散的唯一入口，不新增后端端点。
       await assistantRequest<void>(`groups/${encodeURIComponent(group.groupId)}`, "DELETE");
       setPosition(null);
       onDeleted();

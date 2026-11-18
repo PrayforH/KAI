@@ -47,8 +47,6 @@ type AssistantGroupSidePanelProps = {
   tab: GroupSideTab;
   onTabChange: (tab: GroupSideTab) => void;
   onClose: () => void;
-  /** 打开群信息（成员、改名、解散）；与单助理侧栏的详情入口对齐。 */
-  onOpenInfo?: () => void;
   library: AssistantGroupLibrary | null;
   libraryLoading: boolean;
   libraryError: string | null;
@@ -72,7 +70,6 @@ export function AssistantGroupSidePanel({
   tab,
   onTabChange,
   onClose,
-  onOpenInfo,
   library,
   libraryLoading,
   libraryError,
@@ -99,17 +96,6 @@ export function AssistantGroupSidePanel({
     <aside className={styles.panel} aria-label="群右侧栏">
       <header className={styles.header}>
         <h2 className={styles.title} title={group.name}>{group.name}</h2>
-        {onOpenInfo && (
-          <button
-            type="button"
-            className={styles.infoButton}
-            aria-label="群信息"
-            title="群信息"
-            onClick={onOpenInfo}
-          >
-            群信息
-          </button>
-        )}
         <button type="button" className={styles.close} aria-label="关闭群右侧栏" title="关闭" onClick={onClose}>
           ×
         </button>

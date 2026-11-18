@@ -68,8 +68,8 @@ describe("group and assistant composer parity", () => {
   });
 
   it("restores a fixed surface title on both surfaces without header chrome", () => {
-    // 单助理的标题带在 page.tsx；群聊的标题带跟着群聊组件走（群名 + 右侧栏/群信息
-    // 按钮同一条带，按钮因此不在消息滚动区里）。
+    // 单助理的标题带在 page.tsx；群聊的标题带跟着群聊组件走（群名 + 成员头像簇与
+    // 右侧栏按钮同一条带，按钮因此不在消息滚动区里）。
     expect(page.match(/data-testid="assistant-surface-title"/g)).toHaveLength(1);
     expect(source("src/components/assistant-group-chat.tsx")).toContain(
       'data-testid="assistant-surface-title"',

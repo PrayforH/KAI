@@ -13,8 +13,6 @@
 
 /* 对话列；右侧栏打开时并排，不挤压消息阅读列的最小宽度。 */
 .main {
-  /* 群信息弹层挂在标题带的按钮组上（.settings 是 relative），
-     以对话列为界，不会盖住右侧栏的关闭按钮。 */
   position: relative;
   flex: 1;
   min-width: 0;
@@ -34,8 +32,8 @@
   text-align: center;
 }
 
-/* 右侧栏与「⋯」现在住在固定标题带里（.assistant-surface-title，高 46px），
-   处于消息滚动区之外：不再 absolute 悬浮在气泡上方随滚动遮挡。 */
+/* 成员头像簇与右侧栏入口住在固定标题带里（.assistant-surface-title，高 46px），
+   处于消息滚动区之外：不 absolute 悬浮，也不随消息滚动。 */
 .settings {
   position: relative;
   margin-left: auto;
@@ -43,12 +41,6 @@
   display: flex;
   align-items: center;
   gap: 6px;
-}
-.settingsPopover {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 8;
 }
 .settingsButtons {
   display: flex;
