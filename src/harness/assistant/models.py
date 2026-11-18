@@ -508,6 +508,9 @@ class AssistantGroupMessage(StudioModel):
     run_id: str | None = Field(default=None, alias="runId")
     reply_to_message_id: str | None = Field(default=None, alias="replyToMessageId")
     reply_to: AssistantGroupMessageReference | None = Field(default=None, alias="replyTo")
+    delivery_batch_id: str | None = Field(default=None, alias="deliveryBatchId")
+    delivery_member_id: str | None = Field(default=None, alias="deliveryMemberId")
+    delivery_order: int | None = Field(default=None, alias="deliveryOrder")
     reactions: tuple[str, ...] = ()
     attachments: tuple[AssistantGroupAttachment, ...] = ()
     status: str = "completed"
@@ -521,6 +524,9 @@ class AssistantGroupMessage(StudioModel):
         data = handler(self)
         if data.get("replyTo") is None:
             data.pop("replyTo", None)
+        for key in ("deliveryBatchId", "deliveryMemberId", "deliveryOrder"):
+            if data.get(key) is None:
+                data.pop(key, None)
         if not data.get("attachments"):
             data.pop("attachments", None)
         return data

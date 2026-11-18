@@ -42,6 +42,21 @@ from harness.assistant.constants import (
     PERSONAL_ASSISTANT_THREAD,
     primary_specialist_id,
 )
+from harness.assistant.group_delivery import (
+    GROUP_ARTIFACT_OFFSET_LIMIT,
+    GROUP_ARTIFACT_PAGE_LIMIT,
+    GROUP_FANOUT_LIMIT,
+    DeliveryState,
+    GroupArtifactPage,
+    GroupDeliveryBatch,
+    GroupDeliveryTarget,
+    broadcast_group_message,
+    delivery_batch_id,
+    has_broadcast,
+    hydrate_delivery_batch,
+    reconcile_group_summaries,
+    strip_broadcast,
+)
 from harness.assistant.group_library import (
     GROUP_ATTACHMENT_LIMIT,
     group_description,
@@ -198,7 +213,7 @@ def _group_mentions(
 def _strip_group_mentions(
     text: str, roster: dict[str, AssistantGroupMember]
 ) -> str:
-    cleaned = text
+    cleaned = strip_broadcast(text) if has_broadcast(text) else text
     for member in roster.values():
         name = unicodedata.normalize("NFKC", member.name).strip()
         if name:
@@ -1467,6 +1482,7 @@ class AssistantService:
             )
 
     async def process_once(self) -> None:
+        await reconcile_group_summaries(self)
         # Audit retry only; never creates or resumes expert work.
         await self._drain_group_delivery_notices()
         # Reconcile missed event fan-out on the existing maintenance loop.
@@ -3074,6 +3090,24 @@ class AssistantService:
             if retried is not None:
                 hydrated[index] = retried
                 break
+        fields = await self.repository.group_delivery_message_fields(
+            tenant_id,
+            user_id,
+            group_id,
+            [m.reply_to_message_id for m in messages if m.reply_to_message_id],
+        )
+        hydrated = [
+            m.model_copy(
+                update=fields.get(
+                    m.message_id,
+                    fields.get(m.reply_to_message_id or "", {})
+                    if m.author
+                    in (AssistantGroupMessageAuthor.PRIMARY, AssistantGroupMessageAuthor.SYSTEM)
+                    else {},
+                )
+            )
+            for m in hydrated
+        ]
         return await self._with_group_quotes(tenant_id, user_id, group_id, hydrated)
 
     async def _with_group_quotes(
@@ -3113,12 +3147,88 @@ class AssistantService:
                 # 引用目标已删或不在本群：省掉 replyTo，正文照常读。
                 result.append(message)
                 continue
-            result.append(
-                message.model_copy(update={"reply_to": _group_quote_reference(target)})
-            )
+            result.append(message.model_copy(update={"reply_to": _group_quote_reference(target)}))
         return result
 
+    async def get_assistant_group_delivery(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        message_id: str,
+    ) -> GroupDeliveryBatch:
+        await self.repository.require_group_member(tenant_id, user_id, group_id)
+        await self.repository.get_group_message(tenant_id, user_id, group_id, message_id)
+        batch = await self.repository.get_group_delivery(
+            tenant_id,
+            user_id,
+            group_id,
+            delivery_batch_id(group_id, message_id),
+        )
+        if batch is None:
+            raise NotFoundError("这条消息没有转交批次。")
+        return await hydrate_delivery_batch(self, tenant_id, user_id, batch)
+
+    async def list_assistant_group_artifacts(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        *,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> GroupArtifactPage:
+        if (
+            not 1 <= limit <= GROUP_ARTIFACT_PAGE_LIMIT
+            or not 0 <= offset <= GROUP_ARTIFACT_OFFSET_LIMIT
+        ):
+            raise InvalidRequestError("分页范围无效。")
+        if any(t is not None and t.tzinfo is None for t in (since, until)):
+            raise InvalidRequestError("时间范围必须带时区。")
+        if since is not None and until is not None and since >= until:
+            raise InvalidRequestError("开始时间必须早于结束时间。")
+        return await self.repository.list_group_artifacts(
+            tenant_id,
+            user_id,
+            group_id,
+            since=since,
+            until=until,
+            limit=limit,
+            offset=offset,
+        )
+
     async def post_assistant_group_message(
+        self,
+        tenant_id: str,
+        user_id: str,
+        group_id: str,
+        *,
+        text: str,
+        client_message_id: str | None = None,
+        reply_to_message_id: str | None = None,
+        attachment_ids: Sequence[str] = (),
+    ) -> GroupPostResult:
+        arguments: dict[str, Any] = dict(
+            text=text,
+            client_message_id=client_message_id,
+            reply_to_message_id=reply_to_message_id,
+            attachment_ids=attachment_ids,
+        )
+        if has_broadcast(text):
+            # Same admission lock as roster changes; deterministic source/reply
+            # identities also survive a rollback after AGUI has accepted a run.
+            async with self.repository.group_dispatch_guard(tenant_id, user_id, group_id) as repo:
+                return await self.with_repository(repo)._post_assistant_group_message(
+                    tenant_id,
+                    user_id,
+                    group_id,
+                    **arguments,
+                )
+        return await self._post_assistant_group_message(tenant_id, user_id, group_id, **arguments)
+
+    async def _post_assistant_group_message(
         self,
         tenant_id: str,
         user_id: str,
@@ -3149,20 +3259,14 @@ class AssistantService:
                 tenant_id, user_id, group_id, client_message_id
             )
             if prior is not None:
-                messages = await self.repository.list_group_messages(
-                    tenant_id, user_id, group_id
-                )
+                messages = await self.repository.list_group_messages(tenant_id, user_id, group_id)
                 replies = [
                     await self._hydrate_group_message(tenant_id, item)
                     for item in messages
                     if item.reply_to_message_id == prior.message_id
                 ]
-                replayed = await self._with_group_quotes(
-                    tenant_id, user_id, group_id, [prior]
-                )
-                return GroupPostResult(
-                    message=replayed[0], replies=tuple(replies), notices=()
-                )
+                replayed = await self._with_group_quotes(tenant_id, user_id, group_id, [prior])
+                return GroupPostResult(message=replayed[0], replies=tuple(replies), notices=())
         quoted_message: AssistantGroupMessage | None = None
         if reply_to_message_id:
             try:
@@ -3172,9 +3276,7 @@ class AssistantService:
             except NotFoundError:
                 raise NotFoundError("quoted message not found") from None
             # 机器人回复在库里既没有正文、状态也停在占位；先水合再判断能否引用。
-            quoted_message = await self._hydrate_group_message(
-                tenant_id, quoted_message
-            )
+            quoted_message = await self._hydrate_group_message(tenant_id, quoted_message)
             if quoted_message.status in GROUP_QUOTE_BLOCKED_STATUSES:
                 raise ConflictError("quoted message is not ready")
         attachments = await self._resolve_group_attachments(
@@ -3182,7 +3284,14 @@ class AssistantService:
         )
         now = datetime.now(UTC)
         message = AssistantGroupMessage(
-            messageId=f"gmsg_{uuid4().hex}",
+            messageId=(
+                "gmsg_broadcast_source_"
+                + hashlib.sha256(
+                    f"{tenant_id}:{user_id}:{group_id}:{client_message_id}".encode()
+                ).hexdigest()[:32]
+                if has_broadcast(value) and client_message_id
+                else f"gmsg_{uuid4().hex}"
+            ),
             groupId=group_id,
             author=AssistantGroupMessageAuthor.USER,
             authorName="我",
@@ -3208,6 +3317,9 @@ class AssistantService:
                 ),
             }
         )
+
+        if has_broadcast(value):
+            return await broadcast_group_message(self, tenant_id, user_id, group, message, quoted_message)
 
         active_roster = {
             member.specialist_id: member
@@ -3362,6 +3474,8 @@ class AssistantService:
         addressed: bool = False,
         quoted_message: AssistantGroupMessage | None = None,
         delegated: bool = False,
+        deduplicate: bool = False,
+        delivery_kind: str | None = None,
     ) -> AssistantGroupMessage:
         """在群专属线程里起一次运行，并把占位回复写进本群时间线。
 
@@ -3525,7 +3639,13 @@ class AssistantService:
                 "memberId": member.member_id,
                 "triggerMessageId": user_message.message_id,
                 "triggerAuthor": user_message.author.value,
-                **({"deliveryKind": "group_delegate"} if delegated else {}),
+                **(
+                    {"deliveryKind": delivery_kind}
+                    if delivery_kind
+                    else {"deliveryKind": "group_delegate"}
+                    if delegated
+                    else {}
+                ),
             },
             request=RunAgentInput(
                 thread_id=thread_id,
@@ -3562,7 +3682,7 @@ class AssistantService:
             reply,
             thread_id=thread_id,
             reply_to_message_id=user_message.message_id,
-            **({"deduplicate": True} if delegated else {}),
+            deduplicate=delegated or deduplicate,
         )
 
     async def delegate_assistant_group(
@@ -3662,6 +3782,8 @@ class AssistantService:
         group = await self._require_group_tool_primary(parent, session)
         assert group is not None
         context = parent.input["group_context"]
+        if context.get("deliveryKind") in ("group_broadcast", "group_summary"):
+            raise ConflictError("本条广播已由平台派发，请直接回复或汇总，不要重复转交。")
         source = group_thread_id(group.group_id, GROUP_PRIMARY_MEMBER_ID)
         origin = await self._agui.get_thread_record_for_session(
             tenant_id=session.tenant_id, user_id=session.user_id,
@@ -3697,32 +3819,88 @@ class AssistantService:
         quoted = None
         if trigger.reply_to_message_id:
             quoted = await self.repository.get_group_message(
-                session.tenant_id, session.user_id, group.group_id, trigger.reply_to_message_id,
+                session.tenant_id,
+                session.user_id,
+                group.group_id,
+                trigger.reply_to_message_id,
             )
             quoted = await self._hydrate_group_message(session.tenant_id, quoted)
             if quoted.status in GROUP_QUOTE_BLOCKED_STATUSES:
                 raise ConflictError("被引用消息尚不可用。")
-        reply_id = f"gmsg_delegate_{key}"
+        batch_id = delivery_batch_id(group.group_id, trigger.message_id)
+        batch = await self.repository.get_group_delivery(
+            session.tenant_id,
+            session.user_id,
+            group.group_id,
+            batch_id,
+        ) or GroupDeliveryBatch(
+            batchId=batch_id,
+            groupId=group.group_id,
+            triggerMessageId=trigger.message_id,
+            kind="delegate",
+            header="已转交",
+            createdAt=datetime.now(UTC),
+        )
+        existing_target = next(
+            (t for t in batch.targets if t.member.member_id == member.member_id), None
+        )
+        if existing_target is None and len(batch.targets) >= GROUP_FANOUT_LIMIT:
+            raise ConflictError(f"本批转交超过上限 {GROUP_FANOUT_LIMIT}，请新建一条消息分批转交。")
+        reply_id = (existing_target.message_id if existing_target else None) or f"gmsg_delegate_{key}"
         try:
             reply = await self.repository.get_group_message(
-                session.tenant_id, session.user_id, group.group_id, reply_id,
+                session.tenant_id,
+                session.user_id,
+                group.group_id,
+                reply_id,
             )
         except NotFoundError:
             reply = await self._dispatch_group_reply(
-                session.tenant_id, session.user_id, group, trigger, member=member,
-                prompt=_strip_group_mentions(trigger.text, {
-                    item.member_id: item for item in group.members
-                }), now=datetime.now(UTC), reply_message_id=reply_id,
-                addressed=True, quoted_message=quoted, delegated=True,
+                session.tenant_id,
+                session.user_id,
+                group,
+                trigger,
+                member=member,
+                prompt=_strip_group_mentions(
+                    trigger.text, {item.member_id: item for item in group.members}
+                ),
+                now=datetime.now(UTC),
+                reply_message_id=reply_id,
+                addressed=True,
+                quoted_message=quoted,
+                delegated=True,
             )
+        if existing_target is None:
+            target = GroupDeliveryTarget(
+                member=member,
+                order=len(batch.targets),
+                messageId=reply.message_id,
+                runId=reply.run_id,
+                state=DeliveryState.RUNNING,
+            )
+            batch = batch.model_copy(
+                update={
+                    "targets": (*batch.targets, target),
+                    "header": "已转交 "
+                    + "、".join(t.member.name for t in (*batch.targets, target)),
+                }
+            )
+            await self.repository.save_group_delivery(session.tenant_id, session.user_id, batch)
+        target = next(t for t in batch.targets if t.member.member_id == member.member_id)
         payload = {
-            "deliveryKind": "group_delegate", "groupId": group.group_id,
+            "deliveryBatchId": batch_id,
+            "targetMemberId": member.member_id,
+            "targetOrder": target.order,
+            "deliveryKind": "group_delegate",
+            "groupId": group.group_id,
             "actorMemberId": GROUP_PRIMARY_MEMBER_ID,
             "triggerMessageId": trigger.message_id,
-            "specialistId": specialist_id, "specialistName": reply.author_name,
+            "specialistId": specialist_id,
+            "specialistName": reply.author_name,
             "sourceThreadId": source,
             "targetThreadId": group_thread_id(group.group_id, member.member_id),
-            "runId": reply.run_id, "messageId": reply.message_id,
+            "runId": reply.run_id,
+            "messageId": reply.message_id,
         }
         return payload, reply.created_at.isoformat()
 
@@ -3740,9 +3918,7 @@ class AssistantService:
         把继续在群里的成员错过的跨成员消息再塞进本轮提示词，会让历史里
         别人的指令（例如“请主助理只回复已收到E”）被误当成当前任务。
         """
-        rows = await self.repository.list_group_messages(
-            tenant_id, user_id, group_id, limit=60
-        )
+        rows = await self.repository.list_group_messages(tenant_id, user_id, group_id, limit=60)
         joined_at = member.joined_at if member is not None else None
         previous = [
             row
@@ -3790,7 +3966,7 @@ class AssistantService:
         )
 
     async def _hydrate_group_message(
-        self, tenant_id: str, message: AssistantGroupMessage
+        self, tenant_id: str, message: AssistantGroupMessage, *, strict: bool = False
     ) -> AssistantGroupMessage:
         """回复文本以运行事件为准；占位/刷新后都能恢复同一条答案。"""
         if message.run_id is None or message.author in (
@@ -3801,6 +3977,8 @@ class AssistantService:
         try:
             run = await self._runs.get(tenant_id, message.run_id)
         except (NotFoundError, PermissionDeniedError):
+            if strict:
+                raise
             return message.model_copy(
                 update={"status": "failed", "text": message.text or "这条回复已不可读取。"}
             )
@@ -3822,12 +4000,16 @@ class AssistantService:
                         "text": "已转交 " + "、".join(names), "status": "completed",
                     })
             except Exception:  # noqa: BLE001 - preserve polling on event-store failure
+                if strict:
+                    raise
                 logger.warning("group delivery hydration failed run=%s", run.run_id)
         try:
             text = await recorded_response_text(
                 self._events, tenant_id, run.run_id, terminal=terminal
             )
         except Exception as error:  # noqa: BLE001 - 读事件失败时保留占位而不是 500
+            if strict:
+                raise
             logger.warning("group message hydration failed run=%s: %s", run.run_id, error)
             text = ""
         if not terminal and not text:
@@ -3836,6 +4018,8 @@ class AssistantService:
                     await self._events.list_after(tenant_id, run.run_id, 0)
                 )
             except Exception:  # noqa: BLE001
+                if strict:
+                    raise
                 text = ""
         status = "running"
         if run.status is RunStatus.SUCCEEDED:
@@ -3859,7 +4043,10 @@ class AssistantService:
     ) -> bool:
         """运行已成功但一个字都没有：只有很短时间内的回复值得自动重问。"""
         if (
-            stored.author
+            # Broadcasts have a fixed initial fan-out + one summary budget.
+            # A read must never repeat the original task after an empty result.
+            stored.message_id.startswith("gmsg_broadcast_")
+            or stored.author
             not in (
                 AssistantGroupMessageAuthor.PRIMARY,
                 AssistantGroupMessageAuthor.SPECIALIST,
