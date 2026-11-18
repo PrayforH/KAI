@@ -20,10 +20,12 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import AwareDatetime, Field
 
+from harness.assistant.constants import group_thread_id
 from harness.assistant.models import (
     AssistantGroup,
     AssistantGroupMember,
     AssistantGroupMessage,
+    AssistantGroupMessageAuthor,
     GroupMemberKind,
     GroupPostResult,
     SpecialistStatus,
@@ -267,16 +269,52 @@ async def hydrate_delivery_batch(
 ) -> GroupDeliveryBatch:
     targets: list[GroupDeliveryTarget] = []
     for target in batch.targets:
-        if not target.run_id or not target.message_id:
+        if not target.message_id or (
+            not target.run_id and target.state is not DeliveryState.UNKNOWN
+        ):
             targets.append(target)
             continue
         try:
-            stored = await service.repository.get_group_message(
-                tenant_id,
-                user_id,
-                batch.group_id,
-                target.message_id,
-            )
+            try:
+                stored = await service.repository.get_group_message(
+                    tenant_id,
+                    user_id,
+                    batch.group_id,
+                    target.message_id,
+                )
+            except NotFoundError:
+                if target.state is not DeliveryState.UNKNOWN or target.run_id:
+                    raise
+                run = await service.repository.find_group_delivery_run(
+                    tenant_id,
+                    user_id,
+                    batch,
+                    member_id=target.member.member_id,
+                    message_id=target.message_id,
+                )
+                if run is None:
+                    # Absence of confirmation is not a definitive rejection.
+                    targets.append(target)
+                    continue
+                stored = await service.repository.add_group_message(
+                    tenant_id,
+                    user_id,
+                    AssistantGroupMessage(
+                        messageId=target.message_id,
+                        groupId=batch.group_id,
+                        author=AssistantGroupMessageAuthor.PRIMARY
+                        if target.member.kind is GroupMemberKind.PRIMARY
+                        else AssistantGroupMessageAuthor.SPECIALIST,
+                        authorName=target.member.name,
+                        specialistId=target.member.specialist_id,
+                        runId=run.run_id,
+                        status="running",
+                        createdAt=run.created_at,
+                    ),
+                    thread_id=group_thread_id(batch.group_id, target.member.member_id),
+                    reply_to_message_id=batch.trigger_message_id,
+                    deduplicate=True,
+                )
             if stored.run_id is None:
                 raise NotFoundError("群回复没有关联运行。")
             run = await service._runs.get(tenant_id, stored.run_id)
@@ -311,6 +349,7 @@ async def hydrate_delivery_batch(
                         "result": result,
                         "run_id": stored.run_id,
                         "run_status": run.status.value,
+                        "detail": None,
                     }
                 )
             )
@@ -322,20 +361,36 @@ async def hydrate_delivery_batch(
             )
             targets.append(
                 target.model_copy(
-                    update={"state": DeliveryState.UNKNOWN, "detail": "运行或结果暂时无法确认。"}
+                    update={
+                        "state": DeliveryState.UNKNOWN,
+                        "result": None,
+                        "run_status": None,
+                        "detail": "运行或结果暂时无法确认。",
+                    }
                 )
             )
     summary = None
     if batch.summary_message_id:
-        stored = await service.repository.get_group_message(
-            tenant_id,
-            user_id,
-            batch.group_id,
-            batch.summary_message_id,
+        # Identity-only fallback also covers failure to read the message row.
+        stored = AssistantGroupMessage(
+            messageId=batch.summary_message_id,
+            groupId=batch.group_id,
+            author=AssistantGroupMessageAuthor.PRIMARY,
+            authorName="主助理",
+            createdAt=batch.created_at,
         )
         try:
+            stored = await service.repository.get_group_message(
+                tenant_id,
+                user_id,
+                batch.group_id,
+                batch.summary_message_id,
+            )
             summary = await service._hydrate_group_message(tenant_id, stored, strict=True)
+        except PermissionDeniedError:
+            raise
         except Exception:
+            logger.exception("group summary read unknown batch=%s", batch.batch_id)
             summary = stored.model_copy(
                 update={"status": "unknown", "text": "汇总状态暂时无法确认。"}
             )

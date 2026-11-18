@@ -39,7 +39,9 @@ from harness.assistant.appearance import (
 )
 from harness.assistant.constants import (
     GROUP_PRIMARY_MEMBER_ID,
+    GROUP_THREAD_PREFIX,
     PERSONAL_ASSISTANT_THREAD,
+    group_thread_id,
     primary_specialist_id,
 )
 from harness.assistant.group_delivery import (
@@ -65,7 +67,6 @@ from harness.assistant.group_library import (
 )
 
 GROUP_REACTION_EMOJIS = ("👍", "❤️", "😂", "🎉", "👀")
-GROUP_THREAD_PREFIX = "assistant_group_"
 GROUP_EMPTY_REPLY_RETRY_WINDOW = timedelta(minutes=10)
 GROUP_EMPTY_REPLY_MAX_RETRIES = 2
 GROUP_QUOTE_TEXT_LIMIT = 200
@@ -85,11 +86,6 @@ def _group_quote_reference(
         authorName=target.author_name,
         text=target.text[:GROUP_QUOTE_TEXT_LIMIT],
     )
-
-
-def group_thread_id(group_id: str, member_id: str) -> str:
-    """每个群成员一条独立线程；前缀保证不会和 1:1/任务线程撞车。"""
-    return f"{GROUP_THREAD_PREFIX}{group_id}_{member_id}"
 
 
 def _group_retry_attempts(idempotency_key: str, message_id: str) -> int:
@@ -3090,13 +3086,26 @@ class AssistantService:
             if retried is not None:
                 hydrated[index] = retried
                 break
+        hydrated = await self._with_group_delivery_fields(tenant_id, user_id, group_id, hydrated)
+        return await self._with_group_quotes(tenant_id, user_id, group_id, hydrated)
+
+    async def _with_group_delivery_fields(
+        self, tenant_id: str, user_id: str, group_id: str,
+        messages: Sequence[AssistantGroupMessage],
+    ) -> list[AssistantGroupMessage]:
+        # One source per visible row. Quote parents are not delivery sources;
+        # reply parents may be older than the 300-row timeline window.
+        source_ids = {
+            m.message_id if m.author is AssistantGroupMessageAuthor.USER else m.reply_to_message_id
+            for m in messages
+        }
         fields = await self.repository.group_delivery_message_fields(
             tenant_id,
             user_id,
             group_id,
-            [m.reply_to_message_id for m in messages if m.reply_to_message_id],
+            sorted(source_id for source_id in source_ids if source_id),
         )
-        hydrated = [
+        return [
             m.model_copy(
                 update=fields.get(
                     m.message_id,
@@ -3106,9 +3115,8 @@ class AssistantService:
                     else {},
                 )
             )
-            for m in hydrated
+            for m in messages
         ]
-        return await self._with_group_quotes(tenant_id, user_id, group_id, hydrated)
 
     async def _with_group_quotes(
         self,
@@ -3259,6 +3267,11 @@ class AssistantService:
                 tenant_id, user_id, group_id, client_message_id
             )
             if prior is not None:
+                batch = await self.repository.get_group_delivery(
+                    tenant_id, user_id, group_id, delivery_batch_id(group_id, prior.message_id)
+                )
+                if batch is not None:
+                    await hydrate_delivery_batch(self, tenant_id, user_id, batch)
                 messages = await self.repository.list_group_messages(tenant_id, user_id, group_id)
                 replies = [
                     await self._hydrate_group_message(tenant_id, item)
@@ -3266,7 +3279,12 @@ class AssistantService:
                     if item.reply_to_message_id == prior.message_id
                 ]
                 replayed = await self._with_group_quotes(tenant_id, user_id, group_id, [prior])
-                return GroupPostResult(message=replayed[0], replies=tuple(replies), notices=())
+                decorated = await self._with_group_delivery_fields(
+                    tenant_id, user_id, group_id, [*replayed, *replies]
+                )
+                return GroupPostResult(
+                    message=decorated[0], replies=tuple(decorated[1:]), notices=()
+                )
         quoted_message: AssistantGroupMessage | None = None
         if reply_to_message_id:
             try:

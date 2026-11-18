@@ -71,6 +71,10 @@ class FakeGroupRepository:
     async def save_group_delivery(self, tenant_id, user_id, batch):
         self.batches[batch.batch_id] = batch
 
+    async def find_group_delivery_run(self, tenant_id, user_id, batch, **kwargs):
+        await self.require_group_member(tenant_id, user_id, batch.group_id)
+        return None
+
     async def pending_group_summaries(self, *, limit=25):
         return [("t", "u", b) for b in self.batches.values() if b.summary_state == "pending"][
             :limit

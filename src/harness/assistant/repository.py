@@ -3452,18 +3452,56 @@ class PostgresAssistantRepository:
     async def pending_group_summaries(
         self, *, limit: int = 25
     ) -> list[tuple[str, str, GroupDeliveryBatch]]:
-        async with self._context() as session:
-            rows = await session.scalars(
+        # Rotate in a short transaction BEFORE attempting external work. A later
+        # timeout/rollback/cancellation must not put broken batches back at head.
+        async with self._context(write=True) as session:
+            rows = list(await session.scalars(
                 select(AssistantGroupDeliveryRow)
                 .where(
                     AssistantGroupDeliveryRow.summary_state == "pending",
                 )
                 .order_by(AssistantGroupDeliveryRow.updated_at, AssistantGroupDeliveryRow.batch_id)
                 .limit(min(max(limit, 1), 25))
-            )
+                .with_for_update(skip_locked=True)
+            ))
+            checked_at = datetime.now(UTC)
+            for row in rows:
+                row.updated_at = checked_at
             return [
                 (r.tenant_id, r.user_id, GroupDeliveryBatch.model_validate(r.payload)) for r in rows
             ]
+
+    async def find_group_delivery_run(
+        self, tenant_id: str, user_id: str, batch: GroupDeliveryBatch,
+        *, member_id: str, message_id: str,
+    ) -> Run | None:
+        """Recover admission by the persisted reply's exact deterministic key.
+
+        No new run is created. Ambiguous matches (e.g. session rollover) stay
+        unknown rather than selecting an arbitrary execution. Ownership and
+        server-written group context are checked independently of the key.
+        """
+        await self.require_group_member(tenant_id, user_id, batch.group_id)
+        context = RunRow.payload["input"]["group_context"]
+        async with self._context() as session:
+            rows = list(await session.scalars(
+                select(RunRow)
+                .join(SessionRow, and_(
+                    SessionRow.tenant_id == RunRow.tenant_id,
+                    SessionRow.session_id == RunRow.session_id,
+                ))
+                .where(
+                    RunRow.tenant_id == tenant_id,
+                    RunRow.idempotency_key == f"group-{message_id}",
+                    SessionRow.user_id == user_id,
+                    context["groupId"].as_string() == batch.group_id,
+                    context["triggerMessageId"].as_string() == batch.trigger_message_id,
+                    context["memberId"].as_string() == member_id,
+                    context["deliveryKind"].as_string() == "group_broadcast",
+                )
+                .limit(2)
+            ))
+        return Run.model_validate(rows[0].payload) if len(rows) == 1 else None
 
     async def list_group_artifacts(
         self,
@@ -3525,6 +3563,7 @@ class PostgresAssistantRepository:
         async with self._context() as session:
             rows = list(await session.execute(query))
             # Names come from persisted seats, including removed producers.
+            producer_ids = {member_id for _, _, member_id in rows[:limit]}
             seats = await session.execute(
                 select(
                     AssistantGroupMemberRow.member_id,
@@ -3532,6 +3571,7 @@ class PostgresAssistantRepository:
                 ).where(
                     AssistantGroupMemberRow.group_id == group_id,
                     AssistantGroupMemberRow.tenant_id == tenant_id,
+                    AssistantGroupMemberRow.member_id.in_(producer_ids),
                 )
             )
             names = {member_id: name for member_id, name in seats}

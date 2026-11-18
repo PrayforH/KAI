@@ -3,11 +3,13 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
-from harness.assistant.group_delivery import GROUP_FANOUT_LIMIT
+from harness.assistant.group_delivery import GROUP_FANOUT_LIMIT, reconcile_group_summaries
 from harness.assistant.repository import PostgresAssistantRepository
+from harness.assistant.service import AssistantService
 from harness.core.errors import PermissionDeniedError
 from harness.core.models import Artifact, ArtifactStatus, Run, RunStatus
 from harness.storage.models import SessionRow
@@ -43,6 +45,14 @@ async def broadcast_pg(database, count=2):
         )
         previous = await runs.find_by_idempotency_key("t", run.session_id, key)
         if previous is None:
+            async with database[1]() as db:
+                if await db.get(SessionRow, ("t", run.session_id)) is None:
+                    db.add(
+                        SessionRow(
+                            tenant_id="t", session_id=run.session_id, user_id="u", payload={}
+                        )
+                    )
+                    await db.commit()
             await runs.add(run)
         return SimpleNamespace(run=previous or run)
 
@@ -239,3 +249,205 @@ async def test_delivery_migration_upgrade_downgrade_roundtrip(database):
 
     async with database[0].begin() as connection:
         await connection.run_sync(check)
+
+
+@pytest.mark.asyncio
+async def test_summary_failures_rotate_past_25_batches(database, monkeypatch):
+    service, group, agui = await broadcast_pg(database, 1)
+    posted = [
+        await service.post_assistant_group_message(
+            "t", "u", group.group_id, text="@所有人 检查", client_message_id=f"rotate-{i}"
+        )
+        for i in range(26)
+    ]
+    service._runs = SimpleNamespace(
+        get=AsyncMock(return_value=SimpleNamespace(status=RunStatus.SUCCEEDED, run_id="fake"))
+    )
+    service._events.list_after.return_value = []
+    original = AssistantService._dispatch_group_reply
+    attempted = set()
+
+    async def dispatch(self, *args, **kwargs):
+        attempted.add(args[3].message_id)
+        if args[3].message_id != posted[-1].message.message_id:
+            raise TimeoutError("persistent per-batch admission outage")
+        return await original(self, *args, **kwargs)
+
+    monkeypatch.setattr(AssistantService, "_dispatch_group_reply", dispatch)
+    await reconcile_group_summaries(service)
+    await reconcile_group_summaries(service)
+    assert len(attempted) == 26
+    healthy = await service.repository.get_group_delivery(
+        "t", "u", group.group_id, posted[-1].message.delivery_batch_id
+    )
+    assert healthy.summary_state == "queued"
+    assert agui.create_run_with_result.await_count == 53
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("replay", [False, True])
+async def test_lost_ack_recovers_original_run_and_timeline_without_redispatch(database, replay):
+    service, group, agui = await broadcast_pg(database, 1)
+    original = agui.create_run_with_result.side_effect
+    accepted = []
+
+    async def create(**kwargs):
+        result = await original(**kwargs)
+        if kwargs["group_context"]["memberId"] == "specialist_0":
+            accepted.append(result.run)
+            raise TimeoutError("accepted but acknowledgement lost")
+        return result
+
+    agui.create_run_with_result.side_effect = create
+    posted = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="@所有人 检查", client_message_id="lost-ack"
+    )
+    child = accepted[0]
+    finished = child.model_copy(
+        update={"status": RunStatus.SUCCEEDED, "fencing_token": child.fencing_token + 1}
+    )
+    assert await service._runs.compare_and_set(RunStatus.RUNNING, finished)
+    service._events.list_after.return_value = []
+    if replay:
+        repeated = await service.post_assistant_group_message(
+            "t", "u", group.group_id, text="@所有人 检查", client_message_id="lost-ack"
+        )
+        assert repeated.message.delivery_batch_id == posted.message.delivery_batch_id
+        assert all(
+            m.delivery_batch_id == posted.message.delivery_batch_id for m in repeated.replies
+        )
+        assert any(m.run_id == child.run_id for m in repeated.replies)
+    batch = await service.get_assistant_group_delivery(
+        "t", "u", group.group_id, posted.message.message_id
+    )
+    target = next(t for t in batch.targets if t.member.member_id == "specialist_0")
+    assert target.state == "succeeded" and target.run_id == child.run_id
+    assert target.detail is None
+    assert target.result.run_id == child.run_id
+    timeline = await service.repository.list_group_messages("t", "u", group.group_id)
+    assert len([m for m in timeline if m.run_id == child.run_id]) == 1
+    assert agui.create_run_with_result.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_replay_preserves_delivery_metadata(database):
+    service, group, agui = await broadcast_pg(database, 1)
+    first = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="@所有人 检查", client_message_id="repeat-fields"
+    )
+    second = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="@所有人 检查", client_message_id="repeat-fields"
+    )
+    assert second.message.delivery_batch_id == first.message.delivery_batch_id
+    assert {
+        m.message_id: (m.delivery_batch_id, m.delivery_member_id, m.delivery_order)
+        for m in second.replies
+    } == {
+        m.message_id: (m.delivery_batch_id, m.delivery_member_id, m.delivery_order)
+        for m in first.replies
+    }
+    assert agui.create_run_with_result.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_cancelled_summary_attempt_joins_children_and_does_not_starve_next(
+    database, monkeypatch
+):
+    service, group, _ = await broadcast_pg(database, 1)
+    posted = [
+        await service.post_assistant_group_message(
+            "t", "u", group.group_id, text="@所有人 检查", client_message_id=f"cancel-{i}"
+        )
+        for i in range(2)
+    ]
+    service._runs = SimpleNamespace(
+        get=AsyncMock(return_value=SimpleNamespace(status=RunStatus.SUCCEEDED, run_id="fake"))
+    )
+    service._events.list_after.return_value = []
+    scan = PostgresAssistantRepository.pending_group_summaries
+
+    async def one_at_a_time(self, **kwargs):
+        return await scan(self, limit=1)
+
+    monkeypatch.setattr(PostgresAssistantRepository, "pending_group_summaries", one_at_a_time)
+    entered = asyncio.Event()
+    exited = asyncio.Event()
+    dispatch = AssistantService._dispatch_group_reply
+
+    async def suspended(self, *args, **kwargs):
+        if args[3].message_id == posted[0].message.message_id:
+            entered.set()
+            try:
+                await asyncio.Future()
+            finally:
+                exited.set()
+        return await dispatch(self, *args, **kwargs)
+
+    monkeypatch.setattr(AssistantService, "_dispatch_group_reply", suspended)
+    task = asyncio.create_task(reconcile_group_summaries(service))
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=2)
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert exited.is_set()
+    await reconcile_group_summaries(service)
+    healthy = await service.repository.get_group_delivery(
+        "t", "u", group.group_id, posted[1].message.delivery_batch_id
+    )
+    assert healthy.summary_state == "queued"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("boundary", ["not_accepted", "owner", "group", "member", "ambiguous"])
+async def test_unknown_recovery_does_not_guess_or_redispatch(database, boundary):
+    service, group, agui = await broadcast_pg(database, 1)
+    original = agui.create_run_with_result.side_effect
+    accepted = []
+
+    async def create(**kwargs):
+        if kwargs["group_context"]["memberId"] != "specialist_0":
+            return await original(**kwargs)
+        if boundary != "not_accepted":
+            accepted.append((await original(**kwargs)).run)
+        raise TimeoutError("unknown admission")
+
+    agui.create_run_with_result.side_effect = create
+    posted = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="@所有人 检查"
+    )
+    if accepted:
+        child = accepted[0]
+        if boundary == "owner":
+            async with database[1]() as db:
+                session = await db.get(SessionRow, ("t", child.session_id))
+                session.user_id = "outsider"
+                await db.commit()
+        elif boundary == "ambiguous":
+            async with database[1]() as db:
+                db.add(
+                    SessionRow(tenant_id="t", session_id="rotated-session", user_id="u", payload={})
+                )
+                await db.commit()
+            await service._runs.add(
+                child.model_copy(
+                    update={"run_id": "ambiguous-run", "session_id": "rotated-session"}
+                )
+            )
+        else:
+            context = dict(child.input["group_context"])
+            context["groupId" if boundary == "group" else "memberId"] = "other"
+            changed = child.model_copy(
+                update={
+                    "input": {"group_context": context},
+                    "fencing_token": child.fencing_token + 1,
+                }
+            )
+            assert await service._runs.compare_and_set(RunStatus.RUNNING, changed)
+    batch = await service.get_assistant_group_delivery(
+        "t", "u", group.group_id, posted.message.message_id
+    )
+    target = batch.targets[1]
+    assert target.state == "unknown" and target.run_id is None and target.result is None
+    assert agui.create_run_with_result.await_count == 2

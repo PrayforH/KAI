@@ -9,12 +9,14 @@ import pytest
 from harness.assistant.group_delivery import (
     GROUP_FANOUT_LIMIT,
     DeliveryState,
+    GroupSummaryState,
     has_broadcast,
+    hydrate_delivery_batch,
     reconcile_group_summaries,
     strip_broadcast,
 )
 from harness.assistant.models import SpecialistStatus
-from harness.core.errors import ConflictError, PermissionDeniedError
+from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
 from harness.core.models import RunStatus
 from tests.unit.assistant.test_group_chat import _service, _specialist
 from tests.unit.assistant.test_group_delegate import setup_delegate
@@ -321,3 +323,83 @@ async def test_empty_broadcast_result_does_not_repeat_original_work_on_read():
     await service.list_assistant_group_messages("t", "u", group.group_id)
     await service.list_assistant_group_messages("t", "u", group.group_id)
     assert agui.create_run_with_result.await_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [TimeoutError("read outage"), NotFoundError("missing")])
+async def test_summary_row_read_failure_preserves_targets_as_unknown(error):
+    service, repo, _, group = await setup_broadcast(1)
+    await service.post_assistant_group_message("t", "u", group.group_id, text="@所有人 检查")
+    batch = next(iter(repo.batches.values())).model_copy(
+        update={"summary_state": GroupSummaryState.QUEUED, "summary_message_id": "missing-summary"}
+    )
+    service._runs.get.return_value = SimpleNamespace(status=RunStatus.SUCCEEDED, run_id="fake")
+    service._events.list_after.return_value = []
+    original = repo.get_group_message
+
+    async def lookup(tenant, user, group_id, message_id):
+        if message_id == batch.summary_message_id:
+            raise error
+        return await original(tenant, user, group_id, message_id)
+
+    repo.get_group_message = lookup
+    hydrated = await hydrate_delivery_batch(service, "t", "u", batch)
+    assert all(t.state is DeliveryState.SUCCEEDED for t in hydrated.targets)
+    assert hydrated.summary.status == "unknown"
+    assert hydrated.summary.run_id is None
+    assert hydrated.summary_state == "queued"
+
+
+@pytest.mark.asyncio
+async def test_summary_permission_denial_is_not_hidden_as_unknown():
+    service, repo, _, group = await setup_broadcast(0)
+    await service.post_assistant_group_message("t", "u", group.group_id, text="@所有人 检查")
+    batch = next(iter(repo.batches.values())).model_copy(
+        update={"summary_state": GroupSummaryState.QUEUED, "summary_message_id": "summary"}
+    )
+    original = repo.get_group_message
+
+    async def lookup(tenant, user, group_id, message_id):
+        if message_id == "summary":
+            raise PermissionDeniedError("membership revoked")
+        return await original(tenant, user, group_id, message_id)
+
+    repo.get_group_message = lookup
+    with pytest.raises(PermissionDeniedError):
+        await hydrate_delivery_batch(service, "t", "u", batch)
+
+
+@pytest.mark.asyncio
+async def test_delivery_fields_include_reply_sources_outside_full_timeline_window():
+    service, repo, _, group = await setup_broadcast(0)
+    posted = await service.post_assistant_group_message(
+        "t", "u", group.group_id, text="@所有人 检查"
+    )
+    messages = [
+        posted.replies[0].model_copy(update={"message_id": f"reply-{i}"}) for i in range(300)
+    ]
+    repo.group_delivery_message_fields = AsyncMock(return_value={})
+    await service._with_group_delivery_fields("t", "u", group.group_id, messages)
+    assert repo.group_delivery_message_fields.await_args.args[-1] == [posted.message.message_id]
+
+
+@pytest.mark.asyncio
+async def test_summary_event_read_failure_preserves_summary_identity():
+    service, repo, _, group = await setup_broadcast(1)
+    await service.post_assistant_group_message("t", "u", group.group_id, text="@所有人 检查")
+    service._runs.get.return_value = SimpleNamespace(status=RunStatus.SUCCEEDED, run_id="fake")
+    service._events.list_after.return_value = []
+    await reconcile_group_summaries(service)
+    batch = next(iter(repo.batches.values()))
+    original = service._hydrate_group_message
+
+    async def hydrate(tenant, message, **kwargs):
+        if message.message_id == batch.summary_message_id:
+            raise TimeoutError("events unavailable")
+        return await original(tenant, message, **kwargs)
+
+    service._hydrate_group_message = hydrate
+    hydrated = await hydrate_delivery_batch(service, "t", "u", batch)
+    assert hydrated.summary.status == "unknown"
+    assert hydrated.summary.run_id is not None
+    assert all(t.state is DeliveryState.SUCCEEDED for t in hydrated.targets)

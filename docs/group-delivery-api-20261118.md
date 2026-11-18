@@ -64,6 +64,12 @@
 
 历史批次不回填；旧客户端忽略新增字段，旧正文仍可读取。
 
+确认丢失恢复：`messageId` 同时持久化了稳定请求键 `group-{messageId}`。批次读取及同一 `clientMessageId` 重放会先读既有回复；缺回复且准入为 unknown 时，按该请求键、服务端 group/member/trigger 上下文及实际 session owner 查回既有 run，幂等补回原回复占位，不创建或重发 run。最多读取两个匹配；零匹配、多个匹配或查询异常都保留 unknown，不猜测拒绝或成功。准入快照不覆盖原回执，实时状态以读取结果为准。
+
+同一 POST 重放保留 `deliveryBatchId/deliveryMemberId/deliveryOrder`，与时间线复用同一装饰实现。汇总消息行缺失/暂不可读或事件水合异常时，仍返回其他目标，`summary.status=unknown`；明确权限拒绝仍抛出权限错误。
+
+后台汇总每轮最多扫描 25 批；在独立短事务中先更新扫描时间，再进行有界派发。后续异常、回滚或取消不撤销轮转，持续异常批次不会占住后续健康批次。使用行锁及 skip-locked，不新增进程缓存或游离任务。
+
 ## C. 群产物只读接口
 
 `GET /v1/studio/assistant/groups/{groupId}/artifacts?since=2026-11-01T00:00:00Z&until=2026-12-01T00:00:00Z&limit=50&offset=0`
@@ -84,6 +90,8 @@
 只返回 READY 产物，复用既有 artifact 行与文件。鉴权先验证本群成员：**本版人类群成员仅支持创建者**，必须实际匹配 creatorUserId，不以租户身份、群/产物存在或前端合成头像替代鉴权。群外/跨用户/跨租户都是 403。再以 run 的服务端 group_context 与实际 session owner 双重限制范围；个人会话文件排除，被移出的子助理历史产物仍可读，空回复重试前旧 run 的产物也保留。
 
 `createdAt` 取 `artifact.ready` 事件时间；历史文件如果没有事件，返回 null（未知），不编造生成时间；指定时间区间时这类记录不命中。无 object_key、宿主路径或文件副本。下载仍走既有按运行权限检查的接口；前端按当前 BFF 约定映射 `/v1`。
+
+产生者名称只查询本页最多 100 个 memberId，包含已移除的历史产生者；既有成员鉴权入口仍会加载活跃花名册，因此不宣称整个接口内存与群规模无关。
 
 ## 迁移与回滚
 
