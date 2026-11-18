@@ -59,9 +59,41 @@ export type MessageActionsProps = {
   reactionsClassName?: string;
   /** 操作条不必等 hover 才出（群聊要的「常显」）。 */
   alwaysVisible?: boolean;
+  /** 是否在本组件内渲染已选表情；群聊与单助理把表情放到气泡下方，传 false。 */
+  renderReactions?: boolean;
   /** 额外操作，如任务会话里的“编辑消息”。 */
   children?: React.ReactNode;
 };
+
+type MessageReactionsProps = {
+  reactions: readonly string[];
+  onReact?: (emoji: string) => void;
+  className?: string;
+};
+
+/**
+ * 已选表情 chip：常显、可点击取消。
+ * 独立于操作条，方便挂在气泡下方另起一行（群聊与单助理同一套）。
+ */
+export function MessageReactions({ reactions, onReact, className }: MessageReactionsProps) {
+  if (reactions.length === 0 || !onReact) return null;
+  return (
+    <div className={className ?? styles.reactionRow}>
+      {reactions.map((emoji) => (
+        <button
+          key={emoji}
+          type="button"
+          className={`${styles.reactionChip} ${styles.reactionChipOn}`}
+          title={`取消 ${emoji}`}
+          aria-pressed="true"
+          onClick={() => onReact(emoji)}
+        >
+          {emoji}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 /**
  * 消息操作条：表情、引用、复制。群聊和单助理共用一套实现。
@@ -76,6 +108,7 @@ export function MessageActions({
   className,
   reactionsClassName,
   alwaysVisible = false,
+  renderReactions = true,
   children,
 }: MessageActionsProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -176,25 +209,12 @@ export function MessageActions({
     copyTimer.current = setTimeout(() => setCopyState("idle"), 1600);
   };
 
-  const reactionChips = reactions.length > 0 && onReact ? (
-    <div className={reactionsClassName ?? styles.reactionRow}>
-      {reactions.map((emoji) => (
-        <button
-          key={emoji}
-          type="button"
-          className={`${styles.reactionChip} ${styles.reactionChipOn}`}
-          title={`取消 ${emoji}`}
-          aria-pressed="true"
-          onClick={() => onReact(emoji)}
-        >
-          {emoji}
-        </button>
-      ))}
-    </div>
+  const reactionChips = renderReactions ? (
+    <MessageReactions reactions={reactions} onReact={onReact} className={reactionsClassName} />
   ) : null;
 
-  // 表情回复固定在气泡下方、常显：操作条在上，回复在下一行，
-  // 两者不再挤在同一行（单助理与群聊同一套）。
+  // 默认：操作条在上、回复在下一行（同一纵向堆叠）。
+  // 群聊与单助理把回复挂到气泡下方，传 renderReactions={false} 只留操作条。
   return (
     <div className={styles.stack}>
       <div

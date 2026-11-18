@@ -507,6 +507,55 @@ describe("AssistantGroupMessage", () => {
     expect(onReact).toHaveBeenCalledWith(expect.anything(), "👍");
   });
 
+  it("keeps the action bar beside the body, on the right of a member message", async () => {
+    await render(
+      <AssistantGroupMessage
+        message={message()}
+        tone="#38d591"
+        onReact={vi.fn()}
+        onReply={vi.fn()}
+      />,
+    );
+    const body = host.querySelector('[data-message-body="true"]')!;
+    const slot = host.querySelector<HTMLElement>('[class*="actionsSlot"]')!;
+    // 操作条槽与正文列同属正文行：并在气泡右侧，不是压在正文下方。
+    expect(slot.parentElement).toBe(body.parentElement?.parentElement);
+    expect(body.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("keeps the action bar on the left of my own bubble", async () => {
+    await render(
+      <AssistantGroupMessage
+        message={message({ author: "user", authorName: "我", text: "写发" })}
+        tone="#6b746e"
+        onReact={vi.fn()}
+        onReply={vi.fn()}
+      />,
+    );
+    const body = host.querySelector('[data-message-body="true"]')!;
+    const slot = host.querySelector<HTMLElement>('[class*="actionsSlot"]')!;
+    expect(slot.parentElement).toBe(body.parentElement?.parentElement);
+    expect(slot.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("renders selected reactions on their own row below the body, outside the action bar", async () => {
+    await render(
+      <AssistantGroupMessage
+        message={message({ reactions: ["👍"] })}
+        tone="#38d591"
+        onReact={vi.fn()}
+        onReply={vi.fn()}
+      />,
+    );
+    const chip = host.querySelector<HTMLElement>('[title="取消 👍"]')!;
+    const body = host.querySelector('[data-message-body="true"]')!;
+    expect(chip.parentElement?.className).toMatch(/reactionRow/);
+    expect(chip.closest('[class*="bodyRow"]')).toBeNull();
+    // 仍在同一条消息的正文列里，且排在正文之后。
+    expect(body.closest('[class*="memberColumn"]')!.contains(chip)).toBe(true);
+    expect(body.compareDocumentPosition(chip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("never renders a single-message delete action", async () => {
     await render(
       <AssistantGroupMessage
@@ -601,19 +650,22 @@ describe("AssistantGroupMessage", () => {
       "utf8",
     );
     const columnBlock = css.match(/\.userColumn\s*\{([^}]*)\}/)?.[1] ?? "";
+    const bodyColumnBlock = css.match(/\.userColumn \.bodyColumn\s*\{([^}]*)\}/)?.[1] ?? "";
     const bubbleBlock = css.match(/\.userBubble\s*\{([^}]*)\}/)?.[1] ?? "";
     const quotedBlock = css.match(/\.userColumn \.quoted\s*\{([^}]*)\}/)?.[1] ?? "";
     const attachmentsBlock = css.match(/\.userColumn \.attachments\s*\{([^}]*)\}/)?.[1] ?? "";
 
     expect(columnBlock).toContain("width: 100%");
     expect(columnBlock).toContain("align-items: flex-end");
-    // 气泡本身仍按内容收缩，只封顶，不铺满。
+    // 气泡本身仍按内容收缩，只封顶，不铺满；78% 的上限由正文列承担
+    // （正文列是满宽 bodyRow 的子项，百分比有确定参照物）。
     expect(bubbleBlock).toContain("width: max-content");
-    expect(bubbleBlock).toContain("max-width: min(640px, 78%)");
+    expect(bubbleBlock).toContain("max-width: 100%");
+    expect(bodyColumnBlock).toContain("max-width: min(640px, 78%)");
     // 引用条和附件跟着气泡的宽度上限，不能横贯整行。
     expect(quotedBlock).toContain("align-self: flex-end");
     expect(quotedBlock).not.toContain("align-self: stretch");
-    expect(quotedBlock).toContain("max-width: min(640px, 78%)");
+    expect(quotedBlock).toContain("max-width: 100%");
     expect(attachmentsBlock).toContain("max-width: min(640px, 78%)");
   });
 

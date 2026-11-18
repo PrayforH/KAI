@@ -10,7 +10,7 @@ import {
 import { useGroupReplyProgress } from "../lib/use-group-reply-progress";
 import { readableGroupMessageText } from "../lib/group-message-text";
 import { AssistantGroupMarkdown } from "./assistant-group-markdown";
-import { MESSAGE_REACTIONS, MessageActions } from "./message-actions";
+import { MESSAGE_REACTIONS, MessageActions, MessageReactions } from "./message-actions";
 import styles from "./assistant-group-message.module.css";
 
 export const GROUP_REACTIONS = MESSAGE_REACTIONS;
@@ -125,17 +125,24 @@ export function AssistantGroupMessage({
       })}
     </ul>
   ) : null;
+  // 操作条挂在正文一侧（成员在右、自己在左），已选表情另起一行放在正文下方。
   const actions = (
     <MessageActions
-      reactions={canReact ? message.reactions : []}
       onReact={canReact ? (emoji) => onReact(message, emoji) : undefined}
       onReply={() => onReply(message)}
       copyText={text}
       className={styles.actions}
-      reactionsClassName={styles.reactionRow}
       alwaysVisible
+      renderReactions={false}
     />
   );
+  const reactions = canReact ? (
+    <MessageReactions
+      reactions={message.reactions}
+      onReact={(emoji) => onReact(message, emoji)}
+      className={styles.reactionRow}
+    />
+  ) : null;
 
   if (system) {
     return (
@@ -152,10 +159,15 @@ export function AssistantGroupMessage({
           <div className={styles.userMeta}>
             <span>{groupTimeLabel(message.createdAt)}</span>
           </div>
-          {quote}
-          <div className={`${styles.userBubble} ${failed ? styles.failedBubble : ""}`} data-message-body="true">{body}</div>
+          <div className={styles.bodyRow}>
+            <div className={styles.actionsSlot}>{actions}</div>
+            <div className={styles.bodyColumn}>
+              {quote}
+              <div className={`${styles.userBubble} ${failed ? styles.failedBubble : ""}`} data-message-body="true">{body}</div>
+            </div>
+          </div>
           {attachments}
-          {actions}
+          {reactions}
         </div>
       </article>
     );
@@ -172,10 +184,15 @@ export function AssistantGroupMessage({
           <span className={styles.badge}>{ROLE_LABEL[message.author]}</span>
           <span>{groupTimeLabel(message.createdAt)}</span>
         </div>
-        {quote}
-        <div className={`${styles.memberBody} ${failed ? styles.failed : ""}`} data-message-body="true">{body}</div>
+        <div className={styles.bodyRow}>
+          <div className={styles.bodyColumn}>
+            {quote}
+            <div className={`${styles.memberBody} ${failed ? styles.failed : ""}`} data-message-body="true">{body}</div>
+          </div>
+          <div className={styles.actionsSlot}>{actions}</div>
+        </div>
         {attachments}
-        {actions}
+        {reactions}
       </div>
     </article>
   );

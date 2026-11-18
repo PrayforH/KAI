@@ -188,6 +188,7 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
 /* Bot controls hug the reply bubble; workbench controls retain their footer. */
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-answer-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: 6px;
   max-width: 100%;
@@ -216,6 +217,17 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-feedback-actions {
   min-height: 22px;
   gap: 2px;
+}
+
+/* 表情回复：整行换到气泡下方（像附件块那样），左缘与气泡对齐，不挤进侧边操作条。
+   chip 外观沿用共享操作条的 CSS 模块，这里只负责「另起一行」。空态不渲染，不占高度。 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-reply-reactions {
+  flex: 0 0 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: -2px;
 }
 
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-message-copy {

@@ -50,6 +50,40 @@
   max-width: 100%;
 }
 
+/* 正文行：正文列 + 操作条槽。操作条贴在气泡/正文外侧（成员消息在右、
+   自己的消息在左），与单助理同一套位置；表情回复另起一行在正文下方。 */
+.bodyRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+/* 正文列按内容收缩：短消息气泡不会被拉满整行，操作条紧贴正文边缘。 */
+.bodyColumn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.actionsSlot {
+  flex: none;
+  align-self: flex-end;
+  margin-bottom: 4px;
+}
+
+.userColumn .bodyRow { justify-content: flex-end; }
+.userColumn .bodyColumn {
+  align-items: flex-end;
+  /* 上限搬到这里：bodyRow 是满宽行，78% 有确定的参照物；
+     气泡自身再按 100% 跟随这一列，不再相对自身 max-content 结算。 */
+  max-width: min(640px, 78%);
+}
+
 .memberMeta,
 .userMeta {
   display: flex;
@@ -114,10 +148,13 @@
   }
 }
 
-/* 用户气泡：与主助理会话同一颗蓝色。 */
+/* 用户气泡：与主助理会话同一颗蓝色。宽度上限由 .bodyColumn 承担。
+   border-box 让 max-width: 100% 连内边距一起算，气泡边界不会越过正文列、
+   压到左侧操作条。 */
 .userBubble {
+  box-sizing: border-box;
   width: max-content;
-  max-width: min(640px, 78%);
+  max-width: 100%;
   min-width: 0;
   padding: 9px 13px;
   border-radius: 16px;
@@ -147,8 +184,8 @@
   font-size: 12px;
   line-height: 1.5;
 }
-/* 引用条与气泡同宽上限，靠右；不再 stretch 横贯整行。 */
-.userColumn .quoted { align-self: flex-end; max-width: min(640px, 78%); }
+/* 引用条跟着气泡的宽度上限（引用已在正文列内，按 100% 跟随即可），靠右。 */
+.userColumn .quoted { align-self: flex-end; max-width: 100%; }
 .quotedAuthor {
   flex: none;
   max-width: 40%;

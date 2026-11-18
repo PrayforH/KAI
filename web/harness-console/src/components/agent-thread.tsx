@@ -159,7 +159,7 @@ import { ComposerAssist, composerOptions } from "./composer-assist";
 import { TaskKnowledgeSelection } from "./task-knowledge-context";
 import { ComposerAddControl } from "./composer-add-control";
 import { MentionMenu, filterMentionTargets, mentionTrigger } from "./mention-picker";
-import { MessageActions } from "./message-actions";
+import { MessageActions, MessageReactions } from "./message-actions";
 import { useLocalMessageState } from "../lib/local-message-state";
 import composerStyles from "./agent-composer.module.css";
 import { composerTrigger, queueAttachments, queueMayDispatch, releaseUncertainSends, restorePromptQueue, settleAssistantFollowup, nextQueuedPrompt, nextSteeringPrompt, reconcilePromptHistory, type QueuedPrompt } from "../lib/composer-interactions";
@@ -1606,11 +1606,14 @@ export function ChatReplyActions({
   threadId,
   messageId,
   text,
+  renderReactions = true,
   children,
 }: {
   threadId: string | undefined;
   messageId: string;
   text: string;
+  /** 助理页把表情放到气泡下方，这里只留操作条；任务页保持原有行内表情。 */
+  renderReactions?: boolean;
   /** 额外的气泡操作（引用按钮）由调用方提供，跟随该气泡的消息上下文。 */
   children?: React.ReactNode;
 }) {
@@ -1621,9 +1624,31 @@ export function ChatReplyActions({
       onReact={localMessage.toggleReaction}
       copyText={text}
       className="assistant-shared-actions"
+      renderReactions={renderReactions}
     >
       {children}
     </MessageActions>
+  );
+}
+
+/**
+ * 单助理回答下方的表情回复行：与群聊同一套 chip，常显、可点击取消。
+ * 操作条仍在气泡一侧，表情不跟着挤到侧边。
+ */
+export function ChatReplyReactions({
+  threadId,
+  messageId,
+}: {
+  threadId: string | undefined;
+  messageId: string;
+}) {
+  const localMessage = useLocalMessageState(threadId, messageId);
+  return (
+    <MessageReactions
+      reactions={localMessage.reactions}
+      onReact={localMessage.toggleReaction}
+      className="assistant-reply-reactions"
+    />
   );
 }
 
@@ -1983,10 +2008,10 @@ export function HarnessAssistantMessage() {
       <AssistantActionBar.Root className="assistant-feedback-actions" hideWhenRunning>
         {assistantSurface ? (
           <MessageActions
-            reactions={localMessage.reactions}
             onReact={localMessage.toggleReaction}
             copyText={actionText}
             className="assistant-shared-actions"
+            renderReactions={false}
           >
             <MessageReplyButton className="assistant-message-copy" label="回复这条回答"
               excerptOverride={compactMain || controlSummary || showingInputCard ? actionText : undefined} />
@@ -2037,15 +2062,22 @@ export function HarnessAssistantMessage() {
           <AssistantResponse text={reply.text} streaming={reply.streaming} />
           <div className="assistant-message-controls">
             <AssistantActionBar.Root className="assistant-feedback-actions" hideWhenRunning>
-              <ChatReplyActions threadId={draftScope?.threadId} messageId={reply.id} text={reply.text}>
+              <ChatReplyActions
+                threadId={draftScope?.threadId}
+                messageId={reply.id}
+                text={reply.text}
+                renderReactions={!assistantSurface}
+              >
                 <MessageReplyButton className="assistant-message-copy" label="回复这条回答" excerptOverride={reply.text} />
               </ChatReplyActions>
             </AssistantActionBar.Root>
           </div>
+          {assistantSurface && <ChatReplyReactions threadId={draftScope?.threadId} messageId={reply.id} />}
         </div>
       )) : <div className={assistantSurface ? "assistant-answer-row" : "task-answer-row"}>
         <AssistantResponse key={messageId} text={displayedText} streaming={!controlSummary && (directStream ? live.status === "streaming" && !live.textComplete : messageStatus?.type === "running")} />
         {assistantSurface && responseActions}
+        {assistantSurface && <ChatReplyReactions threadId={draftScope?.threadId} messageId={messageId} />}
       </div>}
       <div className="followup-input-anchor" data-followup-for={messageId} />
       {!hasVideoGeneration && (assistantSurface ? <BotRunNotice activity={terminalActivity}
