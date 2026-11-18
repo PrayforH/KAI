@@ -102,6 +102,9 @@ CLOUD
 rm -f /etc/netplan/50-cloud-init.yaml
 systemctl daemon-reload
 systemctl enable kai-desktop.service
+# The Bot workdisk must be mounted at every boot: desktop units are disabled when
+# stopped, and without the mount the desktop gate refuses every ensure/start.
+systemctl enable kai-bot-workdisk.service
 
 # Inventory records what is supported; old HOME venvs are not made portable.
 install -d -m 0755 /usr/local/share/kai-computer
