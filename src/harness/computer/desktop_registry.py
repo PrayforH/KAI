@@ -294,6 +294,8 @@ class DesktopRegistry:
         computer: AssistantComputer,
         desktop_id: str,
         ensure_guest: Callable[[ComputerDesktop], Awaitable[str]],
+        *,
+        allow_during_execution: bool = False,
     ) -> ComputerDesktop:
         """Confirm a preview is ready without taking a Run or input lease."""
         async with self._sessions.begin() as session:
@@ -323,7 +325,7 @@ class DesktopRegistry:
                     Lease.expires_at > moment,
                 ).limit(1)
             )
-            if live is not None:
+            if live is not None and not allow_during_execution:
                 return ComputerDesktop.model_validate(row)
             provider_ref = await ensure_guest(ComputerDesktop.model_validate(row))
             moment = await _now(session)
@@ -334,7 +336,8 @@ class DesktopRegistry:
                 target.state = ComputerState.IDLE.value
             target.last_active_at = target.updated_at = moment
             target.revision += 1
-            row.state = DesktopState.IDLE.value
+            if live is None:
+                row.state = DesktopState.IDLE.value
             row.last_active_at = row.updated_at = moment
             row.revision += 1
             await session.flush()

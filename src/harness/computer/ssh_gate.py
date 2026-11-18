@@ -32,7 +32,7 @@ BOT_WORKDISK = Path("/opt/kai-computer/bot_workdisk.py")
 DESKTOP_KEYS = frozenset(
     {"op", "desktopId", "unixUser", "display", "profile", "workspace", "vncSocket"}
 )
-DESKTOP_OPS = frozenset({"ensure", "start", "stop", "status"})
+DESKTOP_OPS = frozenset({"prepare", "ensure", "start", "stop", "status"})
 ENVIRONMENT = {"PATH": "/usr/local/bin:/usr/bin:/bin", "LANG": "C.UTF-8"}
 
 
@@ -126,7 +126,13 @@ def run(*, require_workdisk: Callable[[], None] = _require_workdisk) -> None:
     if action == DESKTOP_ACTION:
         # A Bot desktop slot is provisioned by a fixed root module; the request
         # carries only slot descriptors, never a path, unit or command.
-        if spec.get("op") in ("ensure", "start"):
+        if spec.get("op") in {"prepare", "ensure", "start"}:
+            if expected_disk is not None:
+                subprocess.run(
+                    ["/usr/bin/systemctl", "start", "kai-bot-workdisk.service"],
+                    check=True,
+                    env=ENVIRONMENT,
+                )
             _load_module(BOT_WORKDISK).require(expected=expected_disk)
         desktop_request(spec)
         return

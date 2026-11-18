@@ -364,6 +364,12 @@ async def serve(settings: Settings) -> None:
                     idle_seconds=settings.assistant_computer_vm_idle_seconds
                 )
 
+        async def prewarm_maintenance() -> None:
+            if container.computer_runtime is not None:
+                await container.computer_runtime.prewarm_scheduled_computers(
+                    lead_seconds=settings.assistant_computer_vm_prewarm_seconds,
+                )
+
         control_tasks = [
             asyncio.create_task(
                 maintenance_loop(assistant_maintenance, stop=stop,
@@ -426,6 +432,11 @@ async def serve(settings: Settings) -> None:
                 )
             ),
         ]
+        if settings.assistant_computer_vm_prewarm_seconds:
+            control_tasks.append(asyncio.create_task(
+                maintenance_loop(prewarm_maintenance, stop=stop, poll_interval=10.0,
+                                 label="computer-prewarm")
+            ))
         try:
             await worker_loop(
                 container.task_queue,

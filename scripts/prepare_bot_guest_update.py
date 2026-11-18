@@ -54,6 +54,7 @@ os.replace(temp, target)
 def build(
     source: Path, output: Path, *, instance_id: str,
     bot_workdisk: str | None = None, initialize_bot_workdisk: bool = False,
+    lazy_desktops: bool = False,
 ) -> None:
     if not re.fullmatch(r"kai-bot-maint-[a-z0-9-]{1,80}", instance_id):
         raise ValueError("maintenance instance ID is invalid")
@@ -92,6 +93,14 @@ def build(
         if initialize_bot_workdisk:
             mount_commands += "/usr/bin/python3 -I /opt/kai-computer/bot_workdisk.py initialize\n"
         mount_commands += "systemctl start kai-bot-workdisk.service\n"
+    if lazy_desktops:
+        mount_commands += (
+            'for file in /etc/kai-desktop/sessions/desktop_*.env; do\n'
+            '  [ -f "$file" ] || continue\n'
+            '  name=${file##*/}\n'
+            '  systemctl disable --now "desktop-session@${name%.env}.service"\n'
+            'done\n'
+        )
     config = {
         "users": [],
         "ssh_pwauth": False,
@@ -124,8 +133,10 @@ if __name__ == "__main__":
     parser.add_argument("--instance-id", required=True)
     parser.add_argument("--bot-workdisk")
     parser.add_argument("--initialize-bot-workdisk", action="store_true")
+    parser.add_argument("--lazy-desktops", action="store_true")
     args = parser.parse_args()
     build(
         args.source, args.output, instance_id=args.instance_id,
         bot_workdisk=args.bot_workdisk, initialize_bot_workdisk=args.initialize_bot_workdisk,
+        lazy_desktops=args.lazy_desktops,
     )

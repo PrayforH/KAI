@@ -117,11 +117,12 @@ class DesktopRequest(BaseModel):
     expected_epoch: int
 
 
-class VmPowerRequest(BaseModel):
-    """Maintenance power request for one cloud VM; the node re-validates idleness."""
-
+class VmOwnerRequest(BaseModel):
     tenant_id: str
     user_id: str
+
+
+class VmPowerRequest(VmOwnerRequest):
     idle_seconds: float = Field(gt=0, le=86400)
 
 
@@ -426,6 +427,28 @@ def create_app(settings: ControllerSettings) -> FastAPI:
         return {"state": "stopped", "provider_ref": reference}
 
     app.add_api_route("/v1/computer/vm/suspend", vm_suspend, methods=["POST"])
+
+    async def vm_prewarm(request: Request):
+        try:
+            command = VmOwnerRequest.model_validate_json(await private_body(request))
+        except ValidationError:
+            raise HTTPException(400, "Computer VM owner is invalid") from None
+        if vm_lifecycle is None or command.user_id not in settings.owners.get(
+            command.tenant_id, frozenset()
+        ):
+            raise HTTPException(404, "No cloud VM is declared on this node for this owner")
+        try:
+            return {"warmed": await registry.prewarm_vm(
+                command.tenant_id, command.user_id, vm_lifecycle.ensure_preview,
+            )}
+        except NotFoundError:
+            raise HTTPException(404, "Computer is not registered") from None
+        except (ConflictError, ComputerLeaseLostError):
+            raise HTTPException(409, "Computer changed during prewarm") from None
+        except (httpx.HTTPError, RuntimeError, ValueError):
+            raise HTTPException(503, "Computer VM prewarm could not be confirmed") from None
+
+    app.add_api_route("/v1/computer/vm/prewarm", vm_prewarm, methods=["POST"])
 
     async def desktop(request: Request):
         try:

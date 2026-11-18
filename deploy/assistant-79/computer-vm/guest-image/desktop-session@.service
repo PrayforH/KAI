@@ -2,6 +2,7 @@
 Description=KAI Bot desktop %i
 Documentation=file:/usr/local/share/kai-computer/README
 ConditionPathExists=/etc/kai-desktop/sessions/%i.env
+ConditionPathExists=/run/kai-desktop-requests/%i
 After=network-online.target kai-bot-workdisk.service
 Wants=network-online.target
 Requires=kai-bot-workdisk.service

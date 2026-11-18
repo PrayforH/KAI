@@ -330,10 +330,13 @@ class SshComputerControl:
             )
             if desktop.computer_id != current.computer_id or desktop.epoch != current.epoch:
                 raise ComputerLeaseLostError("Bot desktop lease no longer owns the slot")
+            operation = payload.get("op", "ensure")
+            if operation not in ("prepare", "ensure"):
+                raise ValueError("Bot desktop lease cannot perform this operation")
             return await GuestGate(spec).call(
                 action,
                 {
-                    "op": "ensure",
+                    "op": operation,
                     "desktopId": desktop.desktop_id,
                     "unixUser": desktop.unix_user,
                     "display": desktop.display,

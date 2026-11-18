@@ -20,9 +20,11 @@ class VmComputerDriver(DockerComputerDriver):
 
     def __init__(
         self, host: ComputerHost, *, image: str, native_desktop: bool = False,
+        lazy_desktop: bool = False,
     ) -> None:
         super().__init__(host, image=image)
         self.native_desktop = native_desktop
+        self.lazy_desktop = lazy_desktop
 
     async def connect(self, computer: AssistantComputer, token: ComputerLease) -> None:
         self._validate(computer, token, LeasePurpose.EXECUTE)
@@ -30,14 +32,22 @@ class VmComputerDriver(DockerComputerDriver):
         # probe when it is already running. Never creates disks or containers.
         await self.host.lifecycle(token, "wake")
         if token.desktop_id != "vm":
-            # BUSY describes the execution lease. Only the guest can confirm
-            # whether the desktop survived a reboot or needs to be started.
-            result = await self.host.call(token, "desktop_session", {"timeout_seconds": 120})
-            if result.exit_code != 0 or json.loads(result.stdout) != {
-                "op": "ensure", "state": "active",
-            }:
-                raise RuntimeError("Bot desktop did not become ready")
+            await self._slot(token, "prepare" if self.lazy_desktop else "ensure")
         await super().connect(computer, token)
+
+    async def ensure_desktop(self, token: ComputerLease) -> None:
+        await self._slot(token, "ensure")
+
+    async def _slot(self, token: ComputerLease, operation: str) -> None:
+        payload: dict[str, object] = {"timeout_seconds": 120}
+        if operation == "prepare":
+            payload["op"] = operation
+        result = await self.host.call(token, "desktop_session", payload)
+        expected = "prepared" if operation == "prepare" else "active"
+        if result.exit_code != 0 or json.loads(result.stdout) != {
+            "op": operation, "state": expected,
+        }:
+            raise RuntimeError(f"Bot desktop did not confirm {operation}")
 
     async def recover(self, computer: AssistantComputer, token: ComputerLease) -> str | None:
         self._validate(computer, token, LeasePurpose.RECOVER)

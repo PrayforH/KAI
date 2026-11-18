@@ -13,6 +13,7 @@ import httpx
 import pytest
 from sqlalchemy import update
 
+from harness.assistant.storage import ObjectiveRow
 from harness.computer.control_server import ControllerSettings
 from harness.computer.desktop_registry import DesktopRegistry
 from harness.computer.models import ComputerDesktop, ComputerLease, ComputerState, DesktopState
@@ -227,6 +228,35 @@ async def backdate_activity(database: DatabaseFixture, idle_seconds: float) -> N
             )
             .values(last_active_at=moment)
         )
+
+
+@pytest.mark.asyncio
+async def test_upcoming_duty_warms_the_same_vm_once_without_claiming_work(
+    database: DatabaseFixture, gate_stub: type[FakeGate],
+) -> None:
+    state: dict[str, Any] = {"exists": True, "inspect": inspect_payload(running=True)}
+    host = await started_computer(database, state)
+    await backdate_activity(database, 0)
+    await host.suspend_idle("tenant-a", "user-a", idle_seconds=1)
+    registry = host.registry
+    assert not await registry.vms_with_upcoming_duties(lead_seconds=90)
+    now = datetime.now(UTC)
+    async with database[1].begin() as db:
+        db.add(ObjectiveRow(
+            objective_id="duty-fixture", tenant_id="tenant-a", user_id="user-a",
+            status="active", revision=1, next_check_at=now + timedelta(seconds=60),
+            created_at=now, updated_at=now, payload={},
+        ))
+    assert [row.provider_ref for row in await registry.vms_with_upcoming_duties(
+        lead_seconds=90,
+    )] == [CONTAINER]
+    assert await registry.prewarm_vm("tenant-a", "user-a", host.ensure_preview)
+    assert not await registry.prewarm_vm("tenant-a", "user-a", host.ensure_preview)
+    assert not await registry.vms_with_upcoming_duties(lead_seconds=90)
+    row = await registry.get("tenant-a", "user-a")
+    assert row.state == ComputerState.IDLE
+    assert row.provider_ref == CONTAINER
+    assert row.last_active_at is not None and row.last_active_at >= now
 
 
 @pytest.mark.asyncio

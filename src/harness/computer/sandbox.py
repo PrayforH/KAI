@@ -1,7 +1,7 @@
 """Lazy persistent Computer tools for a Worker-local model runtime.
 
-A Run scope owns the heartbeat task group. A model-only conversation allocates
-no computer; first tool use acquires the lease. Only file/shell/ACP use captures
+A Run scope owns the heartbeat task group. First tool use acquires the lease,
+including when the VM was prewarmed. Only file/shell/ACP use captures
 the remote baseline and stages inputs; GUI observations do not scan the disk.
 Scope failure cancels orchestration.
 """
@@ -58,6 +58,7 @@ class _Lease:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     workspace_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     workspace_ready: bool = False
+    desktop_ready: bool = False
     ready: asyncio.Future[tuple[ComputerAllocation, ComputerWorkspace]] | None = None
     task: asyncio.Task[None] | None = None
 
@@ -79,6 +80,7 @@ class ComputerSandboxProvider:
         max_members: int = 10_000,
         busy_wait_seconds: float = 120.0,
         bot_desktop: BotDesktopTarget | None = None,
+        prewarm: Callable[[Run, Session], None] | None = None,
     ) -> None:
         if busy_wait_seconds < 0:
             raise ValueError("computer busy wait cannot be negative")
@@ -89,6 +91,7 @@ class ComputerSandboxProvider:
         self.max_bytes, self.max_members = max_bytes, max_members
         self.busy_wait_seconds = busy_wait_seconds
         self.bot_desktop = bot_desktop
+        self.prewarm = prewarm
         self._scopes: dict[str, _Scope] = {}
         self._leases: dict[str, _Lease] = {}
 
@@ -130,6 +133,8 @@ class ComputerSandboxProvider:
             persistent_workspace=True,
         )
         self._leases[handle.sandbox_id] = _Lease(run, handle, scope)
+        if self.prewarm is not None:
+            self.prewarm(run, self.session)
         return handle
 
     async def provision_with_egress(self, run: Run, egress: SandboxEgress) -> SandboxHandle:
@@ -316,6 +321,12 @@ class ComputerSandboxProvider:
             except NotFoundError as error:
                 raise ComputerLeaseLostError("Bot desktop is no longer available") from error
             expected_epoch = state.epoch
+            if operation != "export" and self.driver.lazy_desktop:
+                lease = self._lease(handle)
+                async with lease.lock:
+                    if not lease.desktop_ready:
+                        await self.driver.ensure_desktop(allocation.token)
+                        lease.desktop_ready = True
             if operation == "export":
                 return await workspace.export(payload)
         if expected_epoch is None:

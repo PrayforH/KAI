@@ -160,6 +160,18 @@ class HttpComputerControl:
             raise RuntimeError("computer VM suspend acknowledgement is invalid")
         return cast(dict[str, object], value)
 
+    async def prewarm_vm(self, tenant_id: str, user_id: str) -> bool:
+        response = await self.client.post(
+            "/v1/computer/vm/prewarm",
+            json={"tenant_id": tenant_id, "user_id": user_id},
+            timeout=httpx.Timeout(120, connect=10),
+        )
+        response.raise_for_status()
+        warmed: object = response.json().get("warmed")
+        if not isinstance(warmed, bool):
+            raise RuntimeError("computer VM prewarm acknowledgement is invalid")
+        return warmed
+
     async def lifecycle(
         self, token: ComputerLease, operation: str, *, image: str | None = None
     ) -> str | None:

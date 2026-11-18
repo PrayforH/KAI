@@ -53,11 +53,14 @@ class Settings(BaseSettings):
     # Per-Bot desktops: an assistant Run executes on its own desktop slot
     # inside the owner's VM instead of holding the whole-machine lease.
     assistant_computer_per_bot_desktop: bool = False
+    assistant_computer_vm_lazy_desktop: bool = False
     assistant_computer_desktop_idle_seconds: float = Field(default=900, ge=60, le=86400)
     # Cloud VM power saving: halt an idle VM in place (container stopped, work
     # disks and identity kept) after this window; 0 disables. Remote computers
     # never sleep.
     assistant_computer_vm_idle_seconds: float = Field(default=1800, ge=0, le=86400)
+    assistant_computer_vm_prewarm_seconds: int = Field(default=0, ge=0, le=600)
+    assistant_computer_vm_interactive_prewarm: bool = False
     sandbox_provider: Literal[
         "local", "daytona", "e2b", "kubernetes", "cubesandbox", "opensandbox"
     ] = "local"

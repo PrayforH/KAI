@@ -2,11 +2,20 @@ x-application-computer-env: &application-computer-env
   - path: ${KAI_116_COMPUTER_DIR:?Set the private computer directory}/application.env
     format: raw
 
+x-computer-wake-settings: &computer-wake-settings
+  HARNESS_ASSISTANT_COMPUTER_VM_LAZY_DESKTOP: "true"
+
 services:
   api:
     env_file: *application-computer-env
+    environment: *computer-wake-settings
   worker:
     env_file: *application-computer-env
+    environment:
+      <<: *computer-wake-settings
+      HARNESS_ASSISTANT_COMPUTER_VM_IDLE_SECONDS: "1800"
+      HARNESS_ASSISTANT_COMPUTER_VM_PREWARM_SECONDS: "90"
+      HARNESS_ASSISTANT_COMPUTER_VM_INTERACTIVE_PREWARM: "true"
   web:
     environment:
       KAI_DESKTOP_VIEWER_URL: http://computer-viewer:8842

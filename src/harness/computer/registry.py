@@ -10,7 +10,7 @@ provider endpoint, volume path or computer id as an access grant.
 """
 
 import re
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -20,6 +20,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from harness.assistant.storage import ObjectiveRow
 from harness.computer.desktop_registry import lock_desktop
 from harness.computer.models import (
     AssistantComputer,
@@ -530,6 +531,43 @@ class ComputerRegistry:
                 )
             ).all()
         return tuple(AssistantComputer.model_validate(row) for row in rows)
+
+    async def vms_with_upcoming_duties(self, *, lead_seconds: float) -> list[AssistantComputer]:
+        async with self._sessions() as session:
+            now = await _now(session)
+            upcoming = select(ObjectiveRow.objective_id).where(
+                ObjectiveRow.tenant_id == Computer.tenant_id,
+                ObjectiveRow.user_id == Computer.user_id,
+                ObjectiveRow.status == "active",
+                ObjectiveRow.next_check_at > now,
+                ObjectiveRow.next_check_at <= now + timedelta(seconds=lead_seconds),
+                ObjectiveRow.payload["projectId"].as_string().is_(None),
+                ObjectiveRow.payload["managedThreadId"].as_string().is_(None),
+            ).exists()
+            rows = await session.scalars(select(Computer).where(
+                Computer.provider == "vm-computer",
+                Computer.state == ComputerState.SUSPENDED.value,
+                Computer.provider_ref.is_not(None),
+                upcoming,
+            ))
+            return [AssistantComputer.model_validate(row) for row in rows]
+
+    async def prewarm_vm(
+        self, tenant: str, user: str, wake: Callable[[AssistantComputer], Awaitable[str]],
+    ) -> bool:
+        """Wake an existing suspended VM under the same owner lock used to stop it."""
+        async with self._sessions.begin() as session:
+            computer = await self._get(session, tenant, user, lock=True)
+            if (computer.provider != "vm-computer" or computer.state != ComputerState.SUSPENDED
+                    or computer.provider_ref is None):
+                return False
+            reference = await wake(AssistantComputer.model_validate(computer))
+            if reference != computer.provider_ref:
+                raise ConflictError("computer instance changed while prewarming")
+            moment = await _now(session)
+            computer.last_active_at = moment
+            _touch(computer, moment, ComputerState.IDLE)
+            return True
 
     @asynccontextmanager
     async def suspend_gate(

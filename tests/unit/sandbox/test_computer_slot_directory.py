@@ -23,6 +23,27 @@ def test_slot_setup_refuses_profile_symlinks(tmp_path: Path) -> None:
     assert private.stat().st_mode & 0o777 == 0o755
 
 
+def test_preparing_a_shell_slot_does_not_authorize_desktop_start(tmp_path, monkeypatch):
+    desktop_id = "desktop_" + "a" * 24
+    slot = SimpleNamespace(desktop_id=desktop_id)
+    requests = tmp_path / "requests"
+    actions = []
+    (tmp_path / f"{desktop_id}.env").touch()
+    monkeypatch.setattr(computer_control, "REQUESTS", requests)
+    monkeypatch.setattr(computer_control, "SESSIONS", tmp_path)
+    monkeypatch.setattr(computer_control, "_prepare", lambda _slot: actions.append("prepare"))
+    monkeypatch.setattr(computer_control, "_systemctl", lambda verb, _unit: actions.append(verb))
+    monkeypatch.setattr(computer_control, "_wait_for_display", lambda _slot: "active")
+
+    assert computer_control.apply("prepare", slot) == "prepared"
+    assert not requests.exists()
+    assert actions == ["prepare"]
+
+    assert computer_control.apply("start", slot) == "active"
+    assert (requests / desktop_id).is_file()
+    assert actions == ["prepare", "start"]
+
+
 @pytest.mark.parametrize(
     ("mode", "gid", "taken"),
     [(0o700, 28111, False), (0o755, 28111, False), (0o700, 28112, False), (0o700, 28111, True)],

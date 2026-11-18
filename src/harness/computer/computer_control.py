@@ -16,6 +16,7 @@ import socket
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,6 +25,7 @@ SESSIONS = Path("/etc/kai-desktop/sessions")
 BOTS = Path("/home/kai-bots")
 # Root-owned 0711 parent: reachable by slot users, never listable.
 RUNTIME = Path("/run/kai-bots")
+REQUESTS = Path("/run/kai-desktop-requests")
 UNIT = "desktop-session@"
 UID_BASE = 28100
 UID_SPAN = 800
@@ -31,7 +33,7 @@ UID_SPAN = 800
 DESKTOP_ID = re.compile(r"^desktop_[0-9a-f]{24}$")
 UNIX_USER = re.compile(r"^kai-bot-[0-9a-f]{8}$")
 DISPLAY = re.compile(r"^(1[0-9][0-9])$")
-OPS = ("ensure", "start", "stop", "status")
+OPS = ("prepare", "ensure", "start", "stop", "status")
 ENVIRONMENT = {"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
                "LANG": "C.UTF-8"}
 
@@ -115,23 +117,27 @@ def plan(
 
 
 def apply(op: str, session: SessionPlan) -> str:
-    if op == "ensure":
+    if op in {"prepare", "ensure"}:
         _prepare(session)
-    elif op == "start":
+        if op == "prepare":
+            return "prepared"
+    if op in {"ensure", "start"}:
         if not (SESSIONS / f"{session.desktop_id}.env").is_file():
             raise ValueError("desktop has no prepared session")
+        REQUESTS.mkdir(mode=0o700, exist_ok=True)
+        (REQUESTS / session.desktop_id).touch(mode=0o600)
         _systemctl("start", _unit(session))
+        return _wait_for_display(session)
     elif op == "stop":
         _systemctl("stop", _unit(session))
         _systemctl("disable", _unit(session))
+        (REQUESTS / session.desktop_id).unlink(missing_ok=True)
         # A stopped slot must not leave a stale RFB socket or X cookie behind.
         runtime = Path(session.runtime)
         if runtime.parent == RUNTIME and runtime.name == session.desktop_id:
             shutil.rmtree(runtime, ignore_errors=True)
     elif op != "status":
         raise ValueError("desktop operation is invalid")
-    if op in {"ensure", "start"}:
-        return _wait_for_display(session)
     return status(session)
 
 
@@ -185,9 +191,6 @@ def _prepare(session: SessionPlan) -> None:
     finally:
         os.close(home)
     _write_environment(session)
-    _systemctl("enable", _unit(session))
-    if status(session) != "active":
-        _systemctl("start", _unit(session))
 
 
 def _open_directory(
@@ -214,9 +217,17 @@ def _open_directory(
 
 def _write_environment(session: SessionPlan) -> None:
     target = SESSIONS / f"{session.desktop_id}.env"
-    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as stream:
-        stream.write(session.environment())
+    staging: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=SESSIONS, delete=False,
+        ) as stream:
+            staging = Path(stream.name)
+            stream.write(session.environment())
+        staging.replace(target)
+    finally:
+        if staging is not None:
+            staging.unlink(missing_ok=True)
 
 
 def _ensure_account(session: SessionPlan) -> None:

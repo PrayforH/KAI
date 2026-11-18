@@ -1,5 +1,7 @@
 """Opt-in personal Computer routing and its private node transport."""
 
+import asyncio
+import logging
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
@@ -13,7 +15,7 @@ from harness.computer.desktop import DesktopControlService
 from harness.computer.desktop_registry import DesktopRegistry, desktop_id_for, desktop_slot_payload
 from harness.computer.docker import DockerComputerDriver
 from harness.computer.gui_tools import computer_gui_overlay
-from harness.computer.models import AssistantComputer, ComputerDesktop
+from harness.computer.models import AssistantComputer, ComputerDesktop, ComputerState
 from harness.computer.registry import ComputerRegistry
 from harness.computer.remote import PROVIDER as REMOTE_PROVIDER
 from harness.computer.remote import RemoteComputerDriver
@@ -30,6 +32,7 @@ from harness.storage.database import SessionFactory
 
 DOCKER_PROVIDER = "docker-computer"
 _IMAGE = r"(?:[A-Za-z0-9_./:-]+@)?sha256:[a-f0-9]{64}"
+logger = logging.getLogger(__name__)
 
 
 class ComputerRuntime:
@@ -48,6 +51,7 @@ class ComputerRuntime:
         self.registry = ComputerRegistry(sessions)
         self.settings = settings
         self.client: httpx.AsyncClient | None = None
+        self._interactive_prewarms: dict[tuple[str, str], asyncio.Task[None]] = {}
         self.drivers: dict[str, DockerComputerDriver] = {}
         self.desktop = DesktopControlService(sessions)
         self.desktops = DesktopRegistry(sessions)
@@ -87,6 +91,7 @@ class ComputerRuntime:
             self.drivers[VM_PROVIDER] = VmComputerDriver(
                 control, image=vm_image,
                 native_desktop=settings.assistant_computer_vm_native_desktop,
+                lazy_desktop=settings.assistant_computer_vm_lazy_desktop,
             )
         elif settings.assistant_computer_vm_native_desktop:
             raise ValueError("native VM desktop requires an enabled VM image")
@@ -136,6 +141,10 @@ class ComputerRuntime:
         read_run: Callable[[str, str], Awaitable[Run]],
     ) -> ComputerSandboxProvider:
         driver = await self.resolve_driver(session.tenant_id, session.user_id)
+        interactive_prewarm = (
+            driver.provider == VM_PROVIDER
+            and self.settings.assistant_computer_vm_interactive_prewarm
+        )
         return ComputerSandboxProvider(
             self.registry,
             driver,
@@ -146,7 +155,32 @@ class ComputerRuntime:
             max_bytes=self.settings.workspace_archive_max_bytes,
             max_members=self.settings.workspace_archive_max_members,
             busy_wait_seconds=self.settings.assistant_computer_busy_wait_seconds,
+            prewarm=self._prewarm_interactive if interactive_prewarm else None,
         )
+
+    def _prewarm_interactive(self, run: Run, session: Session) -> None:
+        if (
+            run.input.get("conversation_surface") != "assistant"
+            or run.input.get("assistant_dispatch")
+        ):
+            return
+        owner = (session.tenant_id, session.user_id)
+        if owner in self._interactive_prewarms:
+            return
+
+        async def warm() -> None:
+            try:
+                computer = await self.registry.get(*owner)
+                if computer.state is ComputerState.SUSPENDED and await self._prewarm_vm(computer):
+                    logger.info("interactive cloud VM prewarmed", extra={"run_id": run.run_id})
+            except NotFoundError:
+                pass
+            except Exception:
+                logger.warning("interactive cloud VM prewarm failed", exc_info=True)
+            finally:
+                self._interactive_prewarms.pop(owner, None)
+
+        self._interactive_prewarms[owner] = asyncio.create_task(warm())
 
     async def _desktop_target(
         self, session: Session, driver: DockerComputerDriver
@@ -210,7 +244,10 @@ class ComputerRuntime:
                 raise RuntimeError("guest did not confirm the desktop is ready")
             return provider_ref
 
-        return await self.desktops.start(computer, row.desktop_id, ensure_guest)
+        return await self.desktops.start(
+            computer, row.desktop_id, ensure_guest,
+            allow_during_execution=self.settings.assistant_computer_vm_lazy_desktop,
+        )
 
     async def suspend_idle_computers(self, *, idle_seconds: float) -> int:
         """Halt idle cloud VMs in place; disks and identity stay for the wake.
@@ -237,6 +274,25 @@ class ComputerRuntime:
                 # Busy or uncertain: leave it running for a later retry.
                 continue
         return stopped
+
+    async def prewarm_scheduled_computers(self, *, lead_seconds: float) -> int:
+        if lead_seconds <= 0 or self.client is None or VM_PROVIDER not in self.drivers:
+            return 0
+        candidates = await self.registry.vms_with_upcoming_duties(lead_seconds=lead_seconds)
+        return sum(await asyncio.gather(*(self._prewarm_vm(computer) for computer in candidates)))
+
+    async def _prewarm_vm(self, computer: AssistantComputer) -> bool:
+        if (self.client is None or computer.provider != VM_PROVIDER
+                or computer.user_id not in self.settings.assistant_computer_owners.get(
+                    computer.tenant_id, frozenset()
+                )):
+            return False
+        try:
+            control = HttpComputerControl(self.client)
+            return await control.prewarm_vm(computer.tenant_id, computer.user_id)
+        except (httpx.HTTPError, RuntimeError, ValueError):
+            logger.warning("cloud VM prewarm failed", exc_info=True)
+            return False
 
     async def reclaim_desktops(self, *, idle_seconds: float) -> int:
         """Stop guest sessions for stopped or idle slots; never touches active work."""
@@ -301,5 +357,10 @@ class ComputerRuntime:
                                    instructions=gui.instructions + "\n" + acp.instructions)
 
     async def close(self) -> None:
+        prewarms = tuple(self._interactive_prewarms.values())
+        for task in prewarms:
+            task.cancel()
+        await asyncio.gather(*prewarms, return_exceptions=True)
+        self._interactive_prewarms.clear()
         if self.client is not None:
             await self.client.aclose()

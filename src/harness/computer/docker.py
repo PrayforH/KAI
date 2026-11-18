@@ -53,6 +53,7 @@ class DockerComputerDriver:
     # whose image carries it may promise it to the model.
     image_office = False
     native_desktop = False
+    lazy_desktop = False
 
     def __init__(self, host: ComputerHost, *, image: str) -> None:
         if not image.strip():
@@ -90,6 +91,9 @@ class DockerComputerDriver:
     async def connect(self, computer: AssistantComputer, token: ComputerLease) -> None:
         self._validate(computer, token, LeasePurpose.EXECUTE)
         await self._ack(token, "activate", active=True)
+
+    async def ensure_desktop(self, token: ComputerLease) -> None:
+        raise RuntimeError("This computer driver does not manage Bot desktops")
 
     async def renew(self, computer: AssistantComputer, token: ComputerLease) -> None:
         self._validate(computer, token, LeasePurpose.EXECUTE)

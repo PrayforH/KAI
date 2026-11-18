@@ -1,10 +1,12 @@
 """Cloud VM power saving: halt in place, keep disks, wake on first use."""
 
+import asyncio
 import json
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -13,6 +15,7 @@ from harness.computer.manager import ComputerManager
 from harness.computer.models import ComputerLease, ComputerState, LeasePurpose, LeaseState
 from harness.computer.vm import VmComputerDriver
 from harness.computer.vm_host import VmComputerLifecycle, VmComputerSpec
+from harness.core.models import Run, RunStatus, Session
 from harness.sandbox.base import SandboxCommandResult
 
 BASE = "sha256:" + "b" * 64
@@ -233,6 +236,17 @@ class WakeHost:
         return CONTAINER
 
     async def call(self, token: ComputerLease, action: str, payload: object):
+        if action == "desktop_session":
+            assert isinstance(payload, dict)
+            operation = payload.get("op", "ensure")
+            self.calls.append(operation)
+            return SandboxCommandResult(
+                exit_code=0,
+                stdout=json.dumps({
+                    "op": operation, "state": "prepared" if operation == "prepare" else "active",
+                }),
+                stderr="",
+            )
         self.calls.append(action)
         return SandboxCommandResult(
             exit_code=0,
@@ -253,6 +267,20 @@ async def test_execution_connect_wakes_before_activating_the_guest():
     driver = VmComputerDriver(host, image=BASE)  # type: ignore[arg-type]
     await driver.connect(computer, token)  # type: ignore[arg-type]
     assert host.calls == ["wake", "activate"]
+
+
+@pytest.mark.asyncio
+async def test_lazy_bot_shell_prepares_slot_without_starting_a_desktop():
+    token = execution_lease().model_copy(update={"desktop_id": "desktop_" + "a" * 24})
+    computer = SimpleNamespace(
+        computer_id=token.computer_id, tenant_id=token.tenant_id, user_id=token.user_id,
+    )
+    host = WakeHost()
+    driver = VmComputerDriver(host, image=BASE, lazy_desktop=True)  # type: ignore[arg-type]
+    await driver.connect(computer, token)  # type: ignore[arg-type]
+    assert host.calls == ["wake", "prepare", "activate"]
+    await driver.ensure_desktop(token)
+    assert host.calls == ["wake", "prepare", "activate", "ensure"]
 
 
 @pytest.mark.asyncio
@@ -373,4 +401,60 @@ def test_vm_idle_default_is_thirty_minutes_and_zero_disables():
     assert power_settings().assistant_computer_vm_idle_seconds == 1800
     disabled = power_settings().model_copy(update={"assistant_computer_vm_idle_seconds": 0.0})
     assert disabled.assistant_computer_vm_idle_seconds == 0
+
+
+@pytest.mark.asyncio
+async def test_direct_bot_runs_share_one_background_vm_prewarm():
+    requested, acknowledge = asyncio.Event(), asyncio.Event()
+    requests: list[dict[str, str]] = []
+
+    async def node(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/computer/vm/prewarm"
+        requests.append(json.loads(request.content))
+        requested.set()
+        await acknowledge.wait()
+        return httpx.Response(200, json={"warmed": True})
+
+    runtime, engine = await runtime_with_node(node)
+    runtime.settings = runtime.settings.model_copy(
+        update={"assistant_computer_vm_interactive_prewarm": True}
+    )
+    runtime.registry = SimpleNamespace(get=AsyncMock(return_value=SimpleNamespace(
+        tenant_id="tenant-a", user_id="user-a", provider="vm-computer",
+        state=ComputerState.SUSPENDED,
+    )))  # type: ignore[assignment]
+    now = datetime.now(UTC)
+
+    async def provision(label: str, run_input: dict[str, object]) -> None:
+        session = Session(
+            tenant_id="tenant-a", user_id="user-a", session_id=f"bot-{label}",
+            agent_name="lead-agent", agent_version="1", created_at=now,
+        )
+        run = Run(
+            run_id=f"run-{label}", session_id=session.session_id, tenant_id=session.tenant_id,
+            status=RunStatus.PROVISIONING, idempotency_key=label, created_at=now, updated_at=now,
+            input=run_input,
+        )
+        sandbox = await runtime.provider(session, AsyncMock())
+        async with sandbox.run_scope(run):
+            await sandbox.provision(run)
+
+    try:
+        await provision("chat-task", {"conversation_surface": "task"})
+        await provision("dispatch", {
+            "conversation_surface": "assistant", "assistant_dispatch": True,
+        })
+        assert not runtime._interactive_prewarms
+        await asyncio.wait_for(provision("A", {"conversation_surface": "assistant"}), timeout=1)
+        await asyncio.wait_for(requested.wait(), timeout=1)
+        await provision("B", {"conversation_surface": "assistant"})
+        assert requests == [{"tenant_id": "tenant-a", "user_id": "user-a"}]
+        tasks = tuple(runtime._interactive_prewarms.values())
+        assert len(tasks) == 1
+        acknowledge.set()
+        await asyncio.gather(*tasks)
+        assert not runtime._interactive_prewarms
+    finally:
+        await runtime.close()
+        await engine.dispose()
 
