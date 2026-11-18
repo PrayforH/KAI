@@ -6,10 +6,13 @@ import styles from "./computer-desktop.module.css";
 
 /** 三栏时历史面板固定占 32%，与参考稿「聊天 38 / 历史 32 / 电脑 30」一致。 */
 const HISTORY_SHARE = 32;
+/** 三栏电脑列的默认份额：参考稿里电脑是 30，聊天 38 是最宽那栏。 */
+const THREE_PANE_DEFAULT = 30;
 /** 三栏时电脑列的可用区间，保证聊天列始终还能放下一条消息气泡。 */
 const THREE_PANE_MIN = 25;
 const THREE_PANE_MAX = 45;
-/** 两栏拖拽的区间（35–70）。 */
+/** 两栏电脑列的默认份额与拖拽区间（44 / 56）。 */
+const TWO_PANE_DEFAULT = 56;
 const TWO_PANE_MIN = 35;
 const TWO_PANE_MAX = 70;
 
@@ -27,12 +30,14 @@ export function AssistantComputerPane({ open, onClose, children, botId, historyO
   historyOpen?: boolean; history?: ReactNode;
 }) {
   const container = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(56);
+  // 两栏和三栏各记各的电脑列宽度：关掉历史回到两栏时用回用户上次的两栏宽度
+  // （默认 56），不会被三栏默认 30 拖成一条窄条；反之亦然。
+  const [twoPaneWidth, setTwoPaneWidth] = useState(TWO_PANE_DEFAULT);
+  const [threePaneComputer, setThreePaneComputer] = useState(THREE_PANE_DEFAULT);
 
-  // 三栏：电脑列取两栏宽度的 (100-32)/100 折算，默认 56 → 38，正好对上参考稿。
   const computerShare = historyOpen
-    ? clamp(((100 - HISTORY_SHARE) * width) / 100, THREE_PANE_MIN, THREE_PANE_MAX)
-    : clamp(width, TWO_PANE_MIN, TWO_PANE_MAX);
+    ? clamp(threePaneComputer, THREE_PANE_MIN, THREE_PANE_MAX)
+    : clamp(twoPaneWidth, TWO_PANE_MIN, TWO_PANE_MAX);
   const chatShare = 100 - HISTORY_SHARE - computerShare;
 
   let gridTemplateColumns: string | undefined;
@@ -44,8 +49,14 @@ export function AssistantComputerPane({ open, onClose, children, botId, historyO
     gridTemplateColumns = `minmax(280px, 46fr) minmax(0, 54fr)`;
   }
 
+  // 拖拽只调电脑列：三栏时改 threePaneComputer（历史恒为 32，聊天吃剩余），
+  // 两栏时改 twoPaneWidth。两种模式的宽度互不影响。
   const nudge = (delta: number) => {
-    setWidth(value => clamp(value + delta, TWO_PANE_MIN, TWO_PANE_MAX));
+    if (historyOpen) {
+      setThreePaneComputer(value => clamp(value + delta, THREE_PANE_MIN, THREE_PANE_MAX));
+    } else {
+      setTwoPaneWidth(value => clamp(value + delta, TWO_PANE_MIN, TWO_PANE_MAX));
+    }
   };
 
   return <div className={styles.workspace} ref={container}
@@ -67,7 +78,10 @@ export function AssistantComputerPane({ open, onClose, children, botId, historyO
         onPointerMove={event => {
           if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
           const bounds = container.current?.getBoundingClientRect();
-          if (bounds) setWidth(clamp((bounds.right - event.clientX) / bounds.width * 100, TWO_PANE_MIN, TWO_PANE_MAX));
+          if (!bounds) return;
+          const share = (bounds.right - event.clientX) / bounds.width * 100;
+          if (historyOpen) setThreePaneComputer(clamp(share, THREE_PANE_MIN, THREE_PANE_MAX));
+          else setTwoPaneWidth(clamp(share, TWO_PANE_MIN, TWO_PANE_MAX));
         }}
         onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }} />
       <aside id="assistant-computer-pane" className={styles.pane}><ComputerDesktop key={botId ?? "primary"} embedded onClose={onClose} botId={botId} /></aside>

@@ -66,10 +66,48 @@ describe("聊天记录是聊天区里的一列，不是浮层", () => {
       <section data-testid="chat">对话</section>
     </AssistantComputerPane>);
 
+    // 参考稿：聊天 38 / 历史 32 / 电脑 30，聊天列是最宽那栏。
     const [chat, history, computer] = shares();
+    expect(chat).toBeCloseTo(38, 0);
     expect(history).toBe(32);
-    expect(computer).toBeCloseTo(38, 0);
-    expect(chat).toBeCloseTo(30, 0);
+    expect(computer).toBeCloseTo(30, 0);
+  });
+
+  it("two columns default to 44 / 56", async () => {
+    await render(<AssistantComputerPane open onClose={() => {}} botId={null}
+      history={<aside data-testid="history">记录</aside>}>
+      <section data-testid="chat">对话</section>
+    </AssistantComputerPane>);
+
+    const [chat, computer] = shares();
+    expect(chat).toBe(44);
+    expect(computer).toBe(56);
+  });
+
+  it("keeps the two-pane and three-pane computer widths independent", async () => {
+    const pane = (historyOpen: boolean) => <AssistantComputerPane open onClose={() => {}} botId={null} historyOpen={historyOpen}
+      history={<aside data-testid="history">记录</aside>}>
+      <section data-testid="chat">对话</section>
+    </AssistantComputerPane>;
+    await render(pane(true));
+
+    // 三栏把电脑列拖宽到 34（30 + 2 + 2），历史恒为 32，聊天吃剩余的 34。
+    const separator = host.querySelector('[role=separator]')!;
+    await act(async () => {
+      separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+    });
+    await act(async () => {
+      separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+    });
+    expect(shares()).toEqual([34, 32, 34]);
+
+    // 关掉历史回到两栏：用回两栏自己的默认 44 / 56，不会跟着变成 30 左右的窄条。
+    await render(pane(false));
+    expect(shares()).toEqual([44, 56]);
+
+    // 再打开历史：三栏记住刚才拖到的 34，不会跳回 30。
+    await render(pane(true));
+    expect(shares()).toEqual([34, 32, 34]);
   });
 
   it("history alone takes 54% and leaves chat 46%", async () => {
@@ -90,20 +128,25 @@ describe("聊天记录是聊天区里的一列，不是浮层", () => {
     </AssistantComputerPane>);
 
     const separator = host.querySelector('[role=separator]')!;
-    expect(separator.getAttribute("aria-valuenow")).toBe("38");
+    expect(separator.getAttribute("aria-valuenow")).toBe("30");
+    expect(separator.getAttribute("aria-valuemin")).toBe("25");
+    expect(separator.getAttribute("aria-valuemax")).toBe("45");
     await act(async () => {
       separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
     });
-    // 键盘 +2 个宽度点：56 → 58 → 电脑列 (100-32)*58/100 = 39.44
-    expect(Number(separator.getAttribute("aria-valuenow"))).toBe(39);
+    // 键盘 +2：电脑列 30 → 32，历史仍是 32，聊天接剩下的 36。
+    expect(Number(separator.getAttribute("aria-valuenow"))).toBe(32);
+    expect(shares()).toEqual([36, 32, 32]);
   });
 
   it("the drawer CSS no longer pins itself over the viewport", () => {
     expect(css).not.toMatch(/position:\s*fixed/);
     expect(css).not.toMatch(/box-shadow:\s*-18px/);
     expect(css).toMatch(/\.drawer\s*\{[^}]*position:\s*relative/);
-    // 窄屏堆叠成行，分隔线转到上方。
+    // 窄屏堆叠成行，分隔线转到上方。堆叠断点必须低于 1280，否则 1280 会白堆。
     expect(paneCss).toMatch(/data-history="true"\]\[data-split="true"\]/);
+    expect(paneCss).toMatch(/@media \(max-width: 1180px\)/);
+    expect(paneCss).not.toMatch(/@media \(max-width: 1300px\)/);
   });
 
   it("keeps exactly one history entry, in the floating controls", () => {
