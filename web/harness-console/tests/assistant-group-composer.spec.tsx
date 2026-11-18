@@ -380,3 +380,85 @@ describe("AssistantGroupComposer", () => {
     expect(composerFocusBlock).toContain("border-color");
   });
 });
+
+describe("AssistantGroupComposer 粘贴与拖拽上传", () => {
+  const document = (file: File) => ({
+    documentId: "d9",
+    name: file.name,
+    contentType: file.type || "application/octet-stream",
+    sizeBytes: file.size,
+    uploadedBy: "u1",
+    uploadedByName: "我",
+    createdAt: "2026-11-18T05:00:00Z",
+    downloadUrl: "/download/d9",
+  });
+
+  async function renderComposer(onUploadDocument: (file: File) => Promise<ReturnType<typeof document>>) {
+    const onToggleAttachment = vi.fn();
+    await act(async () => root!.render(
+      <AssistantGroupComposer
+        value=""
+        onChange={vi.fn()}
+        onSend={vi.fn()}
+        sending={false}
+        placeholder="发消息"
+        members={members}
+        quoted={null}
+        onClearQuote={vi.fn()}
+        onUploadDocument={onUploadDocument}
+        onToggleAttachment={onToggleAttachment}
+      />,
+    ));
+    return onToggleAttachment;
+  }
+
+  async function flush() {
+    await act(async () => { await new Promise((done) => setTimeout(done, 0)); });
+  }
+
+  function pasteEvent(file: File) {
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: { files: [file] } });
+    return event;
+  }
+
+  function dragEvent(type: string, files: File[]) {
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "dataTransfer", { value: { types: ["Files"], files } });
+    return event;
+  }
+
+  it("uploads a pasted image through the same flow as 上传文件", async () => {
+    const upload = vi.fn(async (file: File) => document(file));
+    const onToggleAttachment = await renderComposer(upload);
+    const file = new File(["png"], "粘贴的截图.png", { type: "image/png" });
+    await act(async () => host.querySelector("textarea")!.dispatchEvent(pasteEvent(file)));
+    await flush();
+    expect(upload).toHaveBeenCalledWith(file);
+    expect(onToggleAttachment).toHaveBeenCalledWith("d9");
+  });
+
+  it("accepts a dropped file and shows the drag hint while over the composer", async () => {
+    const upload = vi.fn(async (file: File) => document(file));
+    const onToggleAttachment = await renderComposer(upload);
+    const file = new File(["pdf"], "评审.pdf", { type: "application/pdf" });
+    await act(async () => host.querySelector<HTMLElement>("[data-dragging]")!.dispatchEvent(dragEvent("dragover", [file])));
+    expect(host.textContent).toContain("松开即可上传到群资料库");
+    expect(host.querySelector<HTMLElement>("[data-dragging]")!.dataset.dragging).toBe("true");
+
+    await act(async () => host.querySelector<HTMLElement>("[data-dragging]")!.dispatchEvent(dragEvent("drop", [file])));
+    await flush();
+    expect(upload).toHaveBeenCalledWith(file);
+    expect(onToggleAttachment).toHaveBeenCalledWith("d9");
+    expect(host.querySelector<HTMLElement>("[data-dragging]")!.dataset.dragging).toBe("false");
+  });
+
+  it("keeps an upload failure visible instead of failing silently", async () => {
+    const upload = vi.fn(async () => { throw new Error("资料库容量已满"); });
+    await renderComposer(upload as unknown as (file: File) => Promise<ReturnType<typeof document>>);
+    const file = new File(["png"], "大图.png", { type: "image/png" });
+    await act(async () => host.querySelector("textarea")!.dispatchEvent(pasteEvent(file)));
+    await flush();
+    expect(host.querySelector('[role="alert"]')!.textContent).toContain("资料库容量已满");
+  });
+});

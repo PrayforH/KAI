@@ -329,3 +329,21 @@
   color: var(--codex-muted, #a3a3a3);
   font-size: 12px;
 }
+
+/* 粘贴/拖拽上传：拖到输入框范围时给一圈提示，失败在输入框下方说明。 */
+.root[data-dragging="true"] .composer {
+  border-color: var(--codex-accent, #7aa2f7);
+  box-shadow: 0 0 0 2px rgba(122, 162, 247, 0.25);
+}
+.uploadError {
+  margin: 0;
+  padding: 0 8px;
+  color: #ff7a7a;
+  font-size: 12px;
+}
+.dropHint {
+  margin: 0;
+  padding: 0 8px;
+  color: var(--codex-muted, #a3a3a3);
+  font-size: 12px;
+}

@@ -134,3 +134,48 @@
 .members:hover { background: rgba(255, 255, 255, 0.08); }
 .members:focus-visible { outline: 2px solid #7aa2f7; outline-offset: 2px; }
 .chevron { width: 16px; height: 16px; color: #8a8a8a; }
+
+/* 职责分工：每个在群成员一行，职责一行截断，鼠标悬停看全文。 */
+.duties {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #2e2e2e;
+  border-radius: 14px;
+  background: #232323;
+  padding: 12px 14px 10px;
+}
+
+.dutiesTitle {
+  margin: 0;
+  color: #9a9a9a;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.dutyList { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+
+.dutyRow { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+
+.dutyFace {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dutyMain { display: grid; gap: 1px; min-width: 0; }
+.dutyName { color: #ededed; font-size: 13px; }
+.dutyText {
+  color: #a9a9a9;
+  font-size: 12px;
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dutyText[data-empty="true"] { color: #6f6f6f; }

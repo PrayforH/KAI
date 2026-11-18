@@ -86,3 +86,35 @@ describe("message actions emoji picker", () => {
     expect(picker()?.className ?? "").not.toMatch(/reactionPickerBelow/);
   });
 });
+
+describe("reaction chips sit below the action bar", () => {
+  async function renderWithReactions(reactions: string[], props: Record<string, unknown> = {}) {
+    root = createRoot(host);
+    await act(async () =>
+      root!.render(<MessageActions reactions={reactions} onReact={() => undefined} copyText="hi" {...props} />),
+    );
+  }
+
+  it("renders the chips after the action bar, not beside it", async () => {
+    await renderWithReactions(["👍"]);
+    const chip = host.querySelector<HTMLButtonElement>('[title="取消 👍"]')!;
+    const bar = host.querySelector<HTMLElement>('[data-visible]')!;
+    // 同一个纵向堆叠容器里，chips 在操作条之后（下方）。
+    expect(chip.parentElement!.parentElement).toBe(bar.parentElement);
+    expect(bar.compareDocumentPosition(chip.parentElement!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("keeps the chips visible without any hover", async () => {
+    await renderWithReactions(["👍"]);
+    const chip = host.querySelector<HTMLButtonElement>('[title="取消 👍"]')!;
+    // chips 所在的回复行没有任何隐藏/透明度开关，默认就可见。
+    expect(chip.parentElement!.getAttribute("data-visible")).toBeNull();
+    expect(chip.parentElement!.hasAttribute("hidden")).toBe(false);
+  });
+
+  it("shows the action bar without hover when alwaysVisible is set", async () => {
+    await renderWithReactions([], { alwaysVisible: true });
+    const bar = host.querySelector<HTMLElement>("[data-visible]")!;
+    expect(bar.getAttribute("data-visible")).toBe("true");
+  });
+});

@@ -2,17 +2,30 @@
 
 import { useEffect, useId, useRef } from "react";
 
-import type { AssistantGroup } from "../lib/assistant-client";
+import type { AssistantGroup, Specialist } from "../lib/assistant-client";
 import { botAccent } from "./bot-rail";
 import styles from "./assistant-group-info-dialog.module.css";
+
+/** 成员职责：子助理取自己的 description；创建者/主助理没有 description 时按角色说明。 */
+function dutyOf(member: AssistantGroup["members"][number], specialists: readonly Specialist[]): {
+  text: string; empty: boolean;
+} {
+  if (member.kind === "creator") return { text: "创建者", empty: false };
+  if (member.kind === "primary") return { text: "未 @ 时由它接话", empty: false };
+  const description = specialists
+    .find(specialist => specialist.specialistId === member.specialistId)
+    ?.description?.trim();
+  return description ? { text: description, empty: false } : { text: "未填写职责", empty: true };
+}
 
 /**
  * 群资料：点标题带的群名打开，和单助理点名字看资料一样。
  * 只读视图——改名/改说明仍在左侧列表的「⋯ → 群资料…」（仅创建者）；
- * 这里回答三件事：谁接话、这个群是干什么的、有哪些成员（可跳到成员管理）。
+ * 这里回答四件事：谁接话、这个群是干什么的、各成员职责分工、有哪些成员（可跳到成员管理）。
  */
-export function AssistantGroupInfoDialog({ group, onMembers, onClose }: {
+export function AssistantGroupInfoDialog({ group, specialists = [], onMembers, onClose }: {
   group: AssistantGroup;
+  specialists?: readonly Specialist[];
   onMembers: () => void;
   onClose: () => void;
 }) {
@@ -93,7 +106,37 @@ export function AssistantGroupInfoDialog({ group, onMembers, onClose }: {
               {description || "还没有说明"}
             </dd>
           </div>
+        </dl>
 
+        <section className={styles.duties} aria-label="职责分工">
+          <h3 className={styles.dutiesTitle}>职责分工</h3>
+          <ul className={styles.dutyList}>
+            {active.map((member) => {
+              const duty = dutyOf(member, specialists);
+              return (
+                <li key={member.memberId} className={styles.dutyRow}>
+                  <span
+                    className={styles.dutyFace}
+                    aria-hidden="true"
+                    style={{ background: member.kind === "creator" ? "#6b746e" : botAccent(member.specialistId ?? member.name) }}
+                  >
+                    {member.name.slice(0, 1)}
+                  </span>
+                  <span className={styles.dutyMain}>
+                    <span className={styles.dutyName}>{member.name}</span>
+                    <span
+                      className={styles.dutyText}
+                      data-empty={duty.empty ? "true" : "false"}
+                      title={duty.text}
+                    >{duty.text}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+
+        <dl className={styles.rows}>
           <div className={styles.row}>
             <dt className={styles.label}>
               <svg className={styles.icon} viewBox="0 0 20 20" aria-hidden="true" focusable="false">

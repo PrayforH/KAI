@@ -127,3 +127,77 @@ describe("AssistantGroupHistoryPanel", () => {
     expect(host.querySelector('aside[aria-label="群聊天记录"]')).toBeNull();
   });
 });
+
+describe("群聊天记录的文件分类与筛选", () => {
+  const withFiles = () => [
+    message({
+      messageId: "m1",
+      author: "user",
+      authorName: "我",
+      text: "这是资料",
+      createdAt: "2026-11-13T05:00:00Z",
+      attachments: [
+        { documentId: "d1", name: "封面.png", contentType: "image/png", sizeBytes: 2048, downloadUrl: "/v1/studio/assistant/groups/g1/library/documents/d1/content" },
+        { documentId: "d2", name: "评审.pdf", contentType: "application/pdf", sizeBytes: 4096, downloadUrl: "/v1/studio/assistant/groups/g1/library/documents/d2/content" },
+      ],
+    }),
+    message({ messageId: "m2", text: "收到", createdAt: "2026-11-13T06:00:00Z" }),
+  ];
+
+  it("has the same 消息/文件/图片与视频 tabs as the single assistant", async () => {
+    mocks.listAssistantGroupMessages.mockResolvedValue(withFiles());
+    await act(async () => root!.render(<AssistantGroupHistoryPanel open groupId="g1" onClose={() => {}} />));
+    await flush();
+
+    const tabs = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].map(tab => tab.textContent);
+    expect(tabs).toEqual(["全部", "文件", "图片与视频"]);
+  });
+
+  it("classifies attachments by kind and filters by type", async () => {
+    mocks.listAssistantGroupMessages.mockResolvedValue(withFiles());
+    await act(async () => root!.render(<AssistantGroupHistoryPanel open groupId="g1" onClose={() => {}} />));
+    await flush();
+
+    const filesTab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+      .find(tab => tab.textContent === "文件")!;
+    await act(async () => filesTab.click());
+
+    expect(host.textContent).toContain("封面.png");
+    expect(host.textContent).toContain("评审.pdf");
+    const kind = host.querySelector<HTMLSelectElement>('[aria-label="按文件类型筛选"]')!;
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!;
+    await act(async () => {
+      setter.call(kind, "pdf");
+      kind.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(host.textContent).toContain("评审.pdf");
+    expect(host.textContent).not.toContain("封面.png");
+  });
+
+  it("shows image attachments in the media grid with an inline href", async () => {
+    mocks.listAssistantGroupMessages.mockResolvedValue(withFiles());
+    await act(async () => root!.render(<AssistantGroupHistoryPanel open groupId="g1" onClose={() => {}} />));
+    await flush();
+
+    const mediaTab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+      .find(tab => tab.textContent === "图片与视频")!;
+    await act(async () => mediaTab.click());
+
+    const img = host.querySelector("img")!;
+    expect(img.getAttribute("src")).toBe("/api/studio/assistant/groups/g1/library/documents/d1/content?inline=1");
+    expect(host.querySelectorAll("figure")).toHaveLength(1);
+  });
+
+  it("opens group documents through their library download link", async () => {
+    mocks.listAssistantGroupMessages.mockResolvedValue(withFiles());
+    await act(async () => root!.render(<AssistantGroupHistoryPanel open groupId="g1" onClose={() => {}} />));
+    await flush();
+
+    const filesTab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+      .find(tab => tab.textContent === "文件")!;
+    await act(async () => filesTab.click());
+    const links = [...host.querySelectorAll<HTMLAnchorElement>("a")].map(link => link.getAttribute("href"));
+    expect(links).toContain("/api/studio/assistant/groups/g1/library/documents/d1/content?inline=1");
+    expect(links).toContain("/api/studio/assistant/groups/g1/library/documents/d2/content");
+  });
+});

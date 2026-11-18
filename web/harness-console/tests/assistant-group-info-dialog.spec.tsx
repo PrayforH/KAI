@@ -92,3 +92,50 @@ describe("群资料弹窗", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("群资料的职责分工", () => {
+  const specialist = (id: string, description: string) => ({
+    specialistId: id,
+    name: id,
+    slug: id,
+    description,
+    agentName: "kai",
+    agentVersion: "1",
+    status: "active" as const,
+    revision: 1,
+    config: {},
+    createdAt: "2026-11-01T00:00:00Z",
+    updatedAt: "2026-11-01T00:00:00Z",
+  });
+
+  it("lists every active member with the specialist's real description", async () => {
+    await render(<AssistantGroupInfoDialog group={group()}
+      specialists={[specialist("specialist_arch", "负责架构与接口评审")]}
+      onMembers={vi.fn()} onClose={vi.fn()} />);
+
+    expect(dialog().textContent).toContain("职责分工");
+    expect(dialog().textContent).toContain("架构评审官");
+    expect(dialog().textContent).toContain("负责架构与接口评审");
+    // 创建者与主助理按角色说明；已退出的成员不出现。
+    expect(dialog().textContent).toContain("创建者");
+    expect(dialog().textContent).toContain("未 @ 时由它接话");
+    expect(dialog().textContent).not.toContain("已退出的助理");
+  });
+
+  it("says 未填写职责 instead of inventing text when a specialist has none", async () => {
+    await render(<AssistantGroupInfoDialog group={group()}
+      specialists={[specialist("specialist_arch", "   ")]}
+      onMembers={vi.fn()} onClose={vi.fn()} />);
+
+    const row = [...dialog().querySelectorAll("li")]
+      .find(item => item.textContent?.includes("架构评审官"))!;
+    expect(row.textContent).toContain("未填写职责");
+    expect(row.querySelector('[title="未填写职责"]')).not.toBeNull();
+  });
+
+  it("still works without the specialists list", async () => {
+    await render(<AssistantGroupInfoDialog group={group()} onMembers={vi.fn()} onClose={vi.fn()} />);
+    expect(dialog().textContent).toContain("未填写职责");
+    expect(dialog().textContent).not.toContain("undefined");
+  });
+});

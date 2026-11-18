@@ -871,6 +871,7 @@ export function AssistantGroupChat({
       {infoOpen && (
         <AssistantGroupInfoDialog
           group={selected}
+          specialists={specialists}
           onClose={() => setInfoOpen(false)}
           onMembers={() => { setInfoOpen(false); setMembersOpen(true); }}
         />

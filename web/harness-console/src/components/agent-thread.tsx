@@ -447,6 +447,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     }});
   const [queuePaused, setQueuePaused] = useState(false);
   const [inputError, setInputError] = useState("");
+  const [draggingFiles, setDraggingFiles] = useState(false);
   const [voiceActive, setVoiceActive] = useState(false);
   const [followupVoiceActive, setFollowupVoiceActive] = useState(false);
   const [caret, setCaret] = useState(0);
@@ -1089,7 +1090,29 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       className="harness-composer-shell"
       data-run-phase={runView?.phase ?? "idle"}
       data-run-locked={runLocked ? "true" : "false"}
+      data-dragging={draggingFiles ? "true" : "false"}
       aria-busy={runLocked}
+      onDragOver={(event) => {
+        if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+        event.preventDefault();
+        setDraggingFiles(true);
+      }}
+      onDragLeave={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+        setDraggingFiles(false);
+      }}
+      onDrop={(event) => {
+        if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+        event.preventDefault();
+        setDraggingFiles(false);
+        const files = Array.from(event.dataTransfer.files);
+        if (!files.length) return;
+        setInputError("");
+        for (const file of files) void threadRuntime.composer.addAttachment(file).catch((error: unknown) => {
+          const reason = error instanceof Error ? error.message : "附件添加失败，请重试。";
+          setInputError((previous) => [previous, `${file.name}：${reason}`].filter(Boolean).join("\n"));
+        });
+      }}
     >
       {conversationScope?.composerAccessory}
       {requestedInput && !conversationScope?.composerAccessory && <FollowupInputPlacement key={requestedInput.messageId} messageId={requestedInput.messageId} input={requestedInput.input} modelRoute={overrideRouteId || ""} onVoiceActive={setFollowupVoiceActive} disabled={runLocked || busy || threadRunning || voiceActive} onSubmit={answer => {
@@ -1186,6 +1209,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
         }} />
       </AssistantConversationTail>
       {steeringNotice && !assistantSurface && <p className="composer-status-announcement" role="status">{steeringNotice}</p>}
+      {draggingFiles && <p className="composer-drop-hint" role="status">松开即可上传附件</p>}
       {inputError && <p className="composer-input-error" role="alert">{inputError}</p>}
       {showKnowledgeSelection && <TaskKnowledgeSelection disabled={busy || Boolean(conversationScope)} />}
       <ReplyComposerBar />

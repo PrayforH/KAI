@@ -133,6 +133,7 @@ export function AssistantGroupMessage({
       copyText={text}
       className={styles.actions}
       reactionsClassName={styles.reactionRow}
+      alwaysVisible
     />
   );
 

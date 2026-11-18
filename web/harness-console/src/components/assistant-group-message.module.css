@@ -213,7 +213,8 @@
   align-items: center;
   gap: 6px;
   margin-top: 1px;
-  opacity: 0;
+  /* 和单助理同一套：操作条与表情回复都常显，不再等 hover。 */
+  opacity: 1;
   transition: opacity 120ms ease;
 }
 /* 浮现时机由共享操作条按“气泡可见高度 + 气泡自身悬停”决定，

@@ -98,6 +98,8 @@ export function AssistantGroupComposer({
   const [composing, setComposing] = useState(false);
   const [voiceActive, setVoiceActive] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [dragging, setDragging] = useState(false);
   const mentionListId = useId();
 
   const setTextarea = (node: HTMLTextAreaElement | null) => {
@@ -173,13 +175,26 @@ export function AssistantGroupComposer({
   const uploadFile = async (file: File) => {
     if (!onUploadDocument || uploading) return;
     setUploading(true);
+    setUploadError("");
     try {
       const document = await onUploadDocument(file);
-      if (document) onToggleAttachment?.(document.documentId);
+      if (!document) setUploadError(`${file.name}：上传失败，请重试`);
+      else onToggleAttachment?.(document.documentId);
+    } catch (reason) {
+      const message = reason instanceof Error && reason.message ? reason.message : "上传失败，请重试";
+      setUploadError(`${file.name}：${message}`);
     } finally {
       setUploading(false);
     }
   };
+
+  /** 粘贴/拖拽的文件和「+ → 上传文件」走同一条流程：进群资料库并选中随消息发送。 */
+  const uploadFiles = (files: readonly File[]) => {
+    for (const file of files) void uploadFile(file);
+  };
+
+  const hasFiles = (event: { dataTransfer?: DataTransfer | null }) =>
+    Array.from(event.dataTransfer?.types ?? []).includes("Files");
 
   const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     const next = event.target.value;
@@ -226,7 +241,26 @@ export function AssistantGroupComposer({
   const atAttachmentLimit = attachmentIds.length >= MAX_ATTACHMENTS;
 
   return (
-    <div className={styles.root} ref={rootRef}>
+    <div
+      className={styles.root}
+      ref={rootRef}
+      data-dragging={dragging ? "true" : "false"}
+      onDragOver={(event) => {
+        if (!hasFiles(event) || disabled) return;
+        event.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={(event) => {
+        if (rootRef.current?.contains(event.relatedTarget as Node | null)) return;
+        setDragging(false);
+      }}
+      onDrop={(event) => {
+        if (!hasFiles(event) || disabled) return;
+        event.preventDefault();
+        setDragging(false);
+        uploadFiles(Array.from(event.dataTransfer.files));
+      }}
+    >
       <div className={styles.composer} data-testid="group-composer-card">
         {quoted && (
           <div className={styles.quoteBar}>
@@ -362,6 +396,12 @@ export function AssistantGroupComposer({
             onChange={handleChange}
             onSelect={(event) => setCaret(event.currentTarget.selectionStart ?? 0)}
             onBlur={() => setDismissedMention(trigger?.start ?? null)}
+            onPaste={(event) => {
+              const files = Array.from(event.clipboardData.files);
+              if (!files.length || disabled) return;
+              event.preventDefault();
+              uploadFiles(files);
+            }}
             onCompositionStart={() => setComposing(true)}
             onCompositionEnd={() => setComposing(false)}
             onKeyDown={handleKeyDown}
@@ -395,6 +435,8 @@ export function AssistantGroupComposer({
             </svg>
           </button>
         </div>
+        {uploadError && <p className={styles.uploadError} role="alert">{uploadError}</p>}
+        {dragging && <p className={styles.dropHint}>松开即可上传到群资料库</p>}
         {mentionOpen && (
           <MentionMenu
             id={mentionListId}

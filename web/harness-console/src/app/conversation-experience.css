@@ -51,6 +51,12 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-input { resize: none; 
 .composer-running-actions > span, .composer-input-guide > button { margin-right: auto; }
 .composer-help { padding: 8px 4px; margin: 0; font-size: 12px; color: var(--codex-muted); line-height: 1.7; }
 .composer-input-error { font-size: 12px; color: var(--codex-danger); }
+/* 拖文件到输入区：给一圈落点提示，松开后走与「+」相同的上传流程。 */
+.composer-drop-hint { margin: 0; padding: 0 4px; font-size: 12px; color: var(--codex-muted); }
+.harness-composer-shell[data-dragging="true"] .aui-composer-root {
+  outline: 2px dashed var(--codex-accent, #7aa2f7);
+  outline-offset: 2px;
+}
 .rail-file-toolbar { display: flex; align-items: center; justify-content: space-between; }
 .rail-file-toolbar button { background: transparent; border: 0; color: var(--codex-muted); cursor: pointer; padding: 5px; }
 .rail-file-search { position: sticky; top: 0; z-index: 1; width: 100%; margin-bottom: 8px; padding: 8px 10px; border: 1px solid var(--codex-line); border-radius: 7px; background: var(--codex-surface, #141414); color: var(--codex-ink); font-size: 12px; }
