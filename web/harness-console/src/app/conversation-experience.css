@@ -51,6 +51,9 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-input { resize: none; 
 .composer-running-actions > span, .composer-input-guide > button { margin-right: auto; }
 .composer-help { padding: 8px 4px; margin: 0; font-size: 12px; color: var(--codex-muted); line-height: 1.7; }
 .composer-input-error { font-size: 12px; color: var(--codex-danger); }
+/* 多文件上传：失败逐条列出，不互相覆盖。 */
+.composer-upload-errors { display: grid; gap: 2px; padding: 0 4px; }
+.composer-upload-errors p { margin: 0; overflow-wrap: anywhere; }
 /* 拖文件到输入区：给一圈落点提示，松开后走与「+」相同的上传流程。 */
 .composer-drop-hint { margin: 0; padding: 0 4px; font-size: 12px; color: var(--codex-muted); }
 .harness-composer-shell[data-dragging="true"] .aui-composer-root {

@@ -11,6 +11,7 @@ import {
 } from "react";
 
 import type { GroupLibraryDocument } from "../lib/assistant-client";
+import { useUploadQueue } from "../lib/upload-queue";
 import {
   MentionMenu,
   filterMentionTargets,
@@ -97,10 +98,19 @@ export function AssistantGroupComposer({
   const [dismissedMention, setDismissedMention] = useState<number | null>(null);
   const [composing, setComposing] = useState(false);
   const [voiceActive, setVoiceActive] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState("");
   const [dragging, setDragging] = useState(false);
   const mentionListId = useId();
+
+  // 槽位按「已选附件 + 队列中尚未完成的文件」算，超出的文件根本不上传。
+  const attachmentCountRef = useRef(attachmentIds.length);
+  attachmentCountRef.current = attachmentIds.length;
+  const upload = useUploadQueue<GroupLibraryDocument>({
+    upload: (file) => (onUploadDocument ? onUploadDocument(file) : Promise.resolve(null)),
+    onUploaded: (document) => onToggleAttachment?.(document.documentId),
+    availableSlots: () => MAX_ATTACHMENTS - attachmentCountRef.current,
+    limitNotice: (ignored) => `最多 ${MAX_ATTACHMENTS} 个附件，已忽略 ${ignored} 个`,
+    rejectedMessage: () => "上传失败，请重试",
+  });
 
   const setTextarea = (node: HTMLTextAreaElement | null) => {
     ownRef.current = node;
@@ -172,26 +182,8 @@ export function AssistantGroupComposer({
     });
   };
 
-  const uploadFile = async (file: File) => {
-    if (!onUploadDocument || uploading) return;
-    setUploading(true);
-    setUploadError("");
-    try {
-      const document = await onUploadDocument(file);
-      if (!document) setUploadError(`${file.name}：上传失败，请重试`);
-      else onToggleAttachment?.(document.documentId);
-    } catch (reason) {
-      const message = reason instanceof Error && reason.message ? reason.message : "上传失败，请重试";
-      setUploadError(`${file.name}：${message}`);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  /** 粘贴/拖拽的文件和「+ → 上传文件」走同一条流程：进群资料库并选中随消息发送。 */
-  const uploadFiles = (files: readonly File[]) => {
-    for (const file of files) void uploadFile(file);
-  };
+  /** 粘贴/拖拽的文件和「+ → 上传文件」走同一条队列：进群资料库并选中随消息发送。 */
+  const uploadFiles = upload.enqueue;
 
   const hasFiles = (event: { dataTransfer?: DataTransfer | null }) =>
     Array.from(event.dataTransfer?.types ?? []).includes("Files");
@@ -319,22 +311,22 @@ export function AssistantGroupComposer({
                   type="button"
                   role="menuitem"
                   className={styles.menuItem}
-                  disabled={uploading}
                   onClick={() => fileRef.current?.click()}
                 >
                   <span className={styles.menuCheck} aria-hidden="true">↑</span>
-                  <span className={styles.menuName}>{uploading ? "正在上传…" : "上传文件"}</span>
+                  <span className={styles.menuName}>{upload.pending > 0 ? "上传中…（可继续添加）" : "上传文件"}</span>
                 </button>
                 <input
                   ref={fileRef}
                   type="file"
+                  multiple
                   className={styles.fileInput}
                   tabIndex={-1}
                   aria-hidden="true"
                   onChange={(event) => {
-                    const file = event.target.files?.[0];
+                    const files = Array.from(event.target.files ?? []);
                     event.target.value = "";
-                    if (file) void uploadFile(file);
+                    if (files.length) uploadFiles(files);
                   }}
                 />
                 <p className={styles.menuTitle}>群资料库</p>
@@ -435,7 +427,29 @@ export function AssistantGroupComposer({
             </svg>
           </button>
         </div>
-        {uploadError && <p className={styles.uploadError} role="alert">{uploadError}</p>}
+        {upload.pending > 0 && (
+          <p className={styles.uploadStatus} role="status">正在上传 {upload.pending} 个文件…（可以继续添加）</p>
+        )}
+        {upload.summary && <p className={styles.uploadStatus} role="status">{upload.summary}</p>}
+        {upload.failures.length > 0 && (
+          <div className={styles.uploadError} role="alert">
+            <div className={styles.uploadFailureList}>
+              {upload.failures.map((failure, index) => (
+                <p key={`${failure.name}-${index}`}>{failure.name}：{failure.reason}</p>
+              ))}
+            </div>
+            <button
+              type="button"
+              className={styles.uploadDismiss}
+              aria-label="关闭上传错误提示"
+              title="关闭"
+              onClick={upload.dismiss}
+            >
+              ×
+            </button>
+          </div>
+        )}
+        {upload.notice && <p className={styles.uploadNotice} role="alert">{upload.notice}</p>}
         {dragging && <p className={styles.dropHint}>松开即可上传到群资料库</p>}
         {mentionOpen && (
           <MentionMenu

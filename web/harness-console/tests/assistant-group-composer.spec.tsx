@@ -393,7 +393,10 @@ describe("AssistantGroupComposer 粘贴与拖拽上传", () => {
     downloadUrl: "/download/d9",
   });
 
-  async function renderComposer(onUploadDocument: (file: File) => Promise<ReturnType<typeof document>>) {
+  async function renderComposer(
+    onUploadDocument: (file: File) => Promise<ReturnType<typeof document>>,
+    options: { attachmentIds?: string[] } = {},
+  ) {
     const onToggleAttachment = vi.fn();
     await act(async () => root!.render(
       <AssistantGroupComposer
@@ -407,6 +410,7 @@ describe("AssistantGroupComposer 粘贴与拖拽上传", () => {
         onClearQuote={vi.fn()}
         onUploadDocument={onUploadDocument}
         onToggleAttachment={onToggleAttachment}
+        attachmentIds={options.attachmentIds}
       />,
     ));
     return onToggleAttachment;
@@ -416,9 +420,9 @@ describe("AssistantGroupComposer 粘贴与拖拽上传", () => {
     await act(async () => { await new Promise((done) => setTimeout(done, 0)); });
   }
 
-  function pasteEvent(file: File) {
+  function pasteEvent(files: File | File[]) {
     const event = new Event("paste", { bubbles: true, cancelable: true });
-    Object.defineProperty(event, "clipboardData", { value: { files: [file] } });
+    Object.defineProperty(event, "clipboardData", { value: { files: Array.isArray(files) ? files : [files] } });
     return event;
   }
 
@@ -460,5 +464,107 @@ describe("AssistantGroupComposer 粘贴与拖拽上传", () => {
     await act(async () => host.querySelector("textarea")!.dispatchEvent(pasteEvent(file)));
     await flush();
     expect(host.querySelector('[role="alert"]')!.textContent).toContain("资料库容量已满");
+  });
+
+  it("uploads several pasted files one at a time, in order", async () => {
+    let running = 0;
+    let peak = 0;
+    const order: string[] = [];
+    const upload = vi.fn(async (file: File) => {
+      running += 1;
+      peak = Math.max(peak, running);
+      order.push(file.name);
+      await new Promise((done) => setTimeout(done, 2));
+      running -= 1;
+      return document(file);
+    });
+    const onToggleAttachment = await renderComposer(upload);
+    const files = [
+      new File(["a"], "a.png", { type: "image/png" }),
+      new File(["b"], "b.pdf", { type: "application/pdf" }),
+      new File(["c"], "c.zip", { type: "application/zip" }),
+    ];
+    await act(async () => host.querySelector("textarea")!.dispatchEvent(pasteEvent(files)));
+    for (let tick = 0; tick < 5; tick += 1) await flush();
+
+    expect(order).toEqual(["a.png", "b.pdf", "c.zip"]);
+    expect(peak).toBe(1);
+    expect(onToggleAttachment).toHaveBeenCalledTimes(3);
+    expect(host.textContent).toContain("已上传 3 个文件");
+  });
+
+  it("queues files pasted while an upload is still running instead of dropping them", async () => {
+    const releases: Array<() => void> = [];
+    const upload = vi.fn((file: File) =>
+      new Promise<ReturnType<typeof document>>((resolve) => {
+        releases.push(() => resolve(document(file)));
+      }),
+    );
+    const onToggleAttachment = await renderComposer(upload);
+    const first = new File(["a"], "先到的.png", { type: "image/png" });
+    const second = new File(["b"], "后到的.pdf", { type: "application/pdf" });
+
+    await act(async () => host.querySelector("textarea")!.dispatchEvent(pasteEvent(first)));
+    await flush();
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(host.textContent).toContain("正在上传 1 个文件");
+
+    await act(async () => host.querySelector("textarea")!.dispatchEvent(pasteEvent(second)));
+    await flush();
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(host.textContent).toContain("正在上传 2 个文件");
+
+    await act(async () => releases[0]());
+    await flush();
+    expect(upload).toHaveBeenLastCalledWith(second);
+
+    await act(async () => releases[1]());
+    await flush();
+    expect(onToggleAttachment).toHaveBeenCalledTimes(2);
+    expect(host.textContent).toContain("已上传 2 个文件");
+  });
+
+  it("keeps every failure on its own line", async () => {
+    const upload = vi.fn(async (file: File) => {
+      throw new Error(file.name === "一.png" ? "资料库容量已满" : "网络中断");
+    });
+    await renderComposer(upload as unknown as (file: File) => Promise<ReturnType<typeof document>>);
+    const files = [
+      new File(["a"], "一.png", { type: "image/png" }),
+      new File(["b"], "二.png", { type: "image/png" }),
+    ];
+    await act(async () => host.querySelector("textarea")!.dispatchEvent(pasteEvent(files)));
+    for (let tick = 0; tick < 5; tick += 1) await flush();
+
+    const alert = host.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toContain("一.png：资料库容量已满");
+    expect(alert.textContent).toContain("二.png：网络中断");
+    expect(alert.querySelectorAll("p")).toHaveLength(2);
+  });
+
+  it("treats a rejected upload (null) as a failure with a visible line", async () => {
+    const upload = vi.fn(async () => null);
+    await renderComposer(upload as unknown as (file: File) => Promise<ReturnType<typeof document>>);
+    const file = new File(["a"], "拒收.png", { type: "image/png" });
+    await act(async () => host.querySelector("textarea")!.dispatchEvent(pasteEvent(file)));
+    await flush();
+    expect(host.querySelector('[role="alert"]')!.textContent).toContain("拒收.png：上传失败，请重试");
+  });
+
+  it("uploads nothing past the attachment limit and says how many were ignored", async () => {
+    const upload = vi.fn(async (file: File) => document(file));
+    await renderComposer(upload, {
+      attachmentIds: Array.from({ length: 9 }, (_, index) => `doc-${index}`),
+    });
+    const files = [
+      new File(["a"], "一.png", { type: "image/png" }),
+      new File(["b"], "二.png", { type: "image/png" }),
+      new File(["c"], "三.png", { type: "image/png" }),
+    ];
+    await act(async () => host.querySelector("textarea")!.dispatchEvent(pasteEvent(files)));
+    for (let tick = 0; tick < 5; tick += 1) await flush();
+
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(host.textContent).toContain("最多 10 个附件，已忽略 2 个");
   });
 });

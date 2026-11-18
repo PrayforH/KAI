@@ -3,6 +3,7 @@ import { assistantChatReplies, assistantChatMessages, publicChatText } from "../
 import { AssistantChatTime } from "./assistant-chat-time";
 import { responseTextForDisplay } from "../lib/process-response";
 import { sendComposerWithRecovery } from "../lib/composer-send";
+import { useUploadQueue } from "../lib/upload-queue";
 import { TerminalResponseNotice } from "./terminal-response-notice";
 import { BotRunNotice } from "./bot-run-notice";
 import { TurnCompletionControl } from "./turn-completion";
@@ -436,6 +437,13 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const cancelActiveRun = useRunCancel();
   const scope = useContext(ComposerDraftContext);
   const queueKey = scope ? `harness:prompt-queue:${scope.userId}:${scope.threadId}` : null;
+  // 粘贴/拖拽的文件按序上传；上传中再添加会排队，不会丢，失败逐条保留。
+  const upload = useUploadQueue<unknown>({
+    upload: (file) => threadRuntime.composer.addAttachment(file),
+    onUploaded: () => {},
+    failureMessage: (reason) =>
+      reason instanceof Error && reason.message ? reason.message : "附件添加失败，请重试",
+  });
   const [queue, setQueue] = useState<QueuedPrompt[]>([]);
   const [taskFollowUpBehavior] = useFollowUpPreference();
   const followUpBehavior = assistantSurface ? "steer" : taskFollowUpBehavior;
@@ -1031,10 +1039,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
         if (!files.length) return;
         event.preventDefault();
         setInputError("");
-        for (const file of files) void threadRuntime.composer.addAttachment(file).catch((error: unknown) => {
-          const reason = error instanceof Error ? error.message : "附件添加失败，请重试。";
-          setInputError((previous) => [previous, `${file.name}：${reason}`].filter(Boolean).join("\n"));
-        });
+        upload.enqueue(files);
       }}
       onKeyDown={(event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
         if (event.nativeEvent.isComposing || composingRef.current) return;
@@ -1108,10 +1113,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
         const files = Array.from(event.dataTransfer.files);
         if (!files.length) return;
         setInputError("");
-        for (const file of files) void threadRuntime.composer.addAttachment(file).catch((error: unknown) => {
-          const reason = error instanceof Error ? error.message : "附件添加失败，请重试。";
-          setInputError((previous) => [previous, `${file.name}：${reason}`].filter(Boolean).join("\n"));
-        });
+        upload.enqueue(files);
       }}
     >
       {conversationScope?.composerAccessory}
@@ -1210,6 +1212,17 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       </AssistantConversationTail>
       {steeringNotice && !assistantSurface && <p className="composer-status-announcement" role="status">{steeringNotice}</p>}
       {draggingFiles && <p className="composer-drop-hint" role="status">松开即可上传附件</p>}
+      {upload.pending > 0 && (
+        <p className="composer-status-announcement" role="status">正在上传 {upload.pending} 个附件…（可以继续添加）</p>
+      )}
+      {upload.summary && <p className="composer-status-announcement" role="status">{upload.summary}</p>}
+      {upload.failures.length > 0 && (
+        <div className="composer-input-error composer-upload-errors" role="alert">
+          {upload.failures.map((failure, index) => (
+            <p key={`${failure.name}-${index}`}>{failure.name}：{failure.reason}</p>
+          ))}
+        </div>
+      )}
       {inputError && <p className="composer-input-error" role="alert">{inputError}</p>}
       {showKnowledgeSelection && <TaskKnowledgeSelection disabled={busy || Boolean(conversationScope)} />}
       <ReplyComposerBar />

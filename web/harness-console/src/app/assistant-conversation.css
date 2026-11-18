@@ -198,19 +198,15 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
   min-width: 0;
 }
 
+/* 单助理的动作条与表情回复常显在气泡下方，不靠 hover 才出现：
+   回复/复制的入口是消息的一部分，隐藏它们等于让用户找不到。 */
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-message-controls {
   position: static;
   flex: 0 0 auto;
   margin: 0 0 4px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 140ms ease;
-}
-
-body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message:hover .assistant-message-controls,
-body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message:focus-within .assistant-message-controls {
   opacity: 1;
   pointer-events: auto;
+  transition: opacity 140ms ease;
 }
 
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-feedback-actions {

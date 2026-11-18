@@ -336,9 +336,41 @@
   box-shadow: 0 0 0 2px rgba(122, 162, 247, 0.25);
 }
 .uploadError {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   margin: 0;
   padding: 0 8px;
   color: #ff7a7a;
+  font-size: 12px;
+}
+.uploadFailureList { display: grid; gap: 2px; min-width: 0; }
+.uploadFailureList p { margin: 0; overflow-wrap: anywhere; }
+.uploadDismiss {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.uploadDismiss:hover { background: rgb(255 255 255 / 8%); }
+.uploadDismiss:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.uploadStatus {
+  margin: 0;
+  padding: 0 8px;
+  color: var(--codex-muted, #a3a3a3);
+  font-size: 12px;
+}
+.uploadNotice {
+  margin: 0;
+  padding: 0 8px;
+  color: #f2b45c;
   font-size: 12px;
 }
 .dropHint {

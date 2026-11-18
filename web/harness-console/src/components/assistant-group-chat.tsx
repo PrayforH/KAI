@@ -561,7 +561,9 @@ export function AssistantGroupChat({
 
   /** 上传到群资料库；返回新文档，输入框「+」据此把它选进本条消息。 */
   const handleUploadDocument = async (file: File): Promise<GroupLibraryDocument | null> => {
-    if (!selected || libraryBusy) return null;
+    // 输入框的上传队列已经逐个串行，这里不再用 libraryBusy 挡：
+    // 连拍的多文件会在上一个完成后立刻开始，读到的 libraryBusy 还是旧值。
+    if (!selected) return null;
     setLibraryBusy(true);
     setLibraryError(null);
     try {
