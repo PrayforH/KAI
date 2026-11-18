@@ -181,7 +181,7 @@ export async function deletePersonalSkill(skillId: string): Promise<{ deleted: b
 
 /**
  * 群聊：带花名册的共享会话。消息只属于本群时间线；@ 谁谁回复，
- * 未 @ 时由配置的接话人（默认主助理）回复。
+ * 未 @ 时由主助理回复——接话人不再有前端设置入口，只作为服务端元数据回读。
  */
 export type GroupMemberKind = "creator" | "primary" | "specialist";
 export type GroupMember = {
@@ -199,6 +199,7 @@ export type AssistantGroup = {
   description?: string;
   creatorUserId: string;
   primaryPresent: boolean;
+  /** 只读：老群可能保留历史接话人；前端不再提供写入路径，未 @ 时以主助理回复为准。 */
   replyAs: string | null;
   lastReadAt: string | null;
   unreadCount: number;
@@ -290,15 +291,13 @@ export async function removeAssistantGroupMember(
     "DELETE",
   );
 }
-export async function setAssistantGroupReplyAs(
-  groupId: string,
-  replyAs: string | null,
-): Promise<AssistantGroup> {
-  return updateAssistantGroup(groupId, { replyAs });
-}
+/**
+ * 群资料 PATCH。接话人不在这里写：未 @ 任何人时由主助理回复，
+ * 老群已有 replyAs 保持服务端原值不动。
+ */
 export async function updateAssistantGroup(
   groupId: string,
-  fields: { name?: string; description?: string | null; replyAs?: string | null },
+  fields: { name?: string; description?: string | null },
 ): Promise<AssistantGroup> {
   return assistantRequest<AssistantGroup>(
     `groups/${encodeURIComponent(groupId)}`,

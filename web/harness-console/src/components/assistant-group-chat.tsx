@@ -82,8 +82,9 @@ type AssistantGroupChatProps = {
 };
 
 /**
- * 主界面聊天区里的群会话：花名册、接话人、消息、@、未读、引用和表情都在这里，
+ * 主界面聊天区里的群会话：花名册、消息、@、未读、引用和表情都在这里，
  * 不再自带左栏或独立顶栏——群列表由主界面左侧 BotRail 负责。
+ * 未 @ 任何人时由主助理回复，前端不再提供接话人设置。
  */
 export function AssistantGroupChat({
   groupId,

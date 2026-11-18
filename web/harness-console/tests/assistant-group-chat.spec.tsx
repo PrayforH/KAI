@@ -159,6 +159,25 @@ describe("AssistantGroupChat", () => {
     expect(host.textContent).toContain("我自己的消息");
   });
 
+  it("has no reply-as control; un-@ mentions are left to the primary assistant", async () => {
+    // 老群即使服务端还留着历史接话人，前端也不提供设置入口、不写入 replyAs。
+    stateGroup = group({ replyAs: "specialist-old" });
+    await act(async () =>
+      root!.render(<AssistantGroupChat groupId="g1" userId="u1" />),
+    );
+    await flush();
+
+    expect(host.textContent).not.toContain("接话人");
+    expect(host.textContent).not.toContain("未 @");
+    expect(host.querySelector('[aria-label*="接话人"]')).toBeNull();
+    expect(host.querySelector('[role="dialog"][aria-label*="接话人"]')).toBeNull();
+    // 前端只在群资料 PATCH 里写 name/description，任何一次调用都不带 replyAs。
+    for (const call of mocks.assistantRequest.mock.calls as unknown[][]) {
+      const body = call[2] as Record<string, unknown> | undefined;
+      expect(body ?? {}).not.toHaveProperty("replyAs");
+    }
+  });
+
   it("removes the group info panel and its entries from the title band and side panel", async () => {
     await act(async () =>
       root!.render(<AssistantGroupChat groupId="g1" userId="u1" />),
