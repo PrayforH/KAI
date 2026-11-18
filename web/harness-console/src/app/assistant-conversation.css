@@ -17,9 +17,19 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
   padding-top: 12px;
 }
 
+/* 对话列宽对齐 Grok 的 standard 档：列 60rem、助手里气泡 35rem、正文 44rem。
+   用户自己发的气泡比助手宽一档（48rem）：里面是原话，折成两行最影响扫读。
+   宽屏只生长两侧留白，消息列不跟着窗口铺满；这些值只在本页生效。 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] {
+  --chat-column-max: 60rem;
+  --chat-bubble-max: 35rem;
+  --chat-prose-max: 44rem;
+  --chat-user-bubble-max: 48rem;
+}
+
 /* 对话区顶部固定标题带：名称在左、页头入口在右，高 46px；
    没有右图标夹层、分隔线、阴影或渐变，也不随消息滚动。
-   群聊与单助理共用这一条，右侧栏/群信息按钮都住在带子里，不再悬浮到消息上。 */
+   群聊与单助理共用这一条，成员头像簇与右侧栏按钮都住在带子里，不再悬浮到消息上。 */
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-surface-title {
   display: flex;
   flex: 0 0 auto;
@@ -28,6 +38,13 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
   min-height: 46px;
   padding: 0 16px;
   z-index: 6;
+  /* 标题带横跨整个对话区，压在右上角悬浮入口之上；只有带内的控件接收点击，
+     空白段放行，否则「聊天记录」「云电脑」会被这条带子吃掉。 */
+  pointer-events: none;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-surface-title > * {
+  pointer-events: auto;
 }
 
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-surface-title .task-context-title {
@@ -55,13 +72,12 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
   background: transparent;
 }
 
-/* 令牌取自客户端（app.asar 的 index CSS）：
-   --conversation-bubble-max-width: min(640px,100%)、文本 14px/22px、
-   助手气泡 6% 前景填充、用户气泡为每个 bot 的强调色。 */
+/* 气泡外观取自客户端（app.asar 的 index CSS）：文本 14px/22px、
+   助手气泡 6% 前景填充、用户气泡为每个 bot 的强调色；宽度改用上面的 35rem 气泡列。 */
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message .assistant-answer {
   box-sizing: border-box;
   width: fit-content;
-  max-width: min(640px, 92%);
+  max-width: min(var(--chat-bubble-max), 92%);
   padding: 12px 16px;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.08);
@@ -83,10 +99,17 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message:not(:has(.assistant-answer)) > .aui-assistant-message-content:has(.aui-md) {
   box-sizing: border-box;
   width: fit-content;
-  max-width: min(640px, 92%);
+  max-width: min(var(--chat-bubble-max), 92%);
   padding: 10px 14px;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.08);
+}
+
+/* 表格、代码块这类富内容比纯文本宽一档：正文 44rem 与 88% 取小（Grok 同款），
+   纯文字气泡仍是 35rem，避免长回答把整列撑满。 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message .assistant-answer:has(.aui-md :is(table, pre)),
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message:not(:has(.assistant-answer)) > .aui-assistant-message-content:has(.aui-md):has(:is(table, pre)) {
+  max-width: min(var(--chat-prose-max), 88%);
 }
 
 /* 用户消息整体靠右 */
@@ -96,7 +119,18 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
 }
 
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-user-message > .aui-user-message-content {
-  max-width: min(640px, 86%);
+  max-width: min(var(--chat-user-bubble-max), 88%);
+}
+
+/* 用户消息这一行必须占满整列：.harness-user-message 是 align-items:flex-end 的
+   纵向 flex，行宽会缩成内容宽，气泡的 82% 再按这个窄行计算，640px 的额度
+   实际只剩 ~400px，一句普通提问就被折成两行。行宽钉成 100% 后百分比按 960px 列算。 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-user-answer-row {
+  width: 100%;
+}
+
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-user-answer-row > .sent-user-bubble {
+  max-width: min(var(--chat-user-bubble-max), 88%);
 }
 
 /* 状态行（已完成·耗时）居中、极小号、去掉方框感 */
@@ -164,19 +198,15 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
   min-width: 0;
 }
 
+/* 单助理的动作条与表情回复常显在气泡下方，不靠 hover 才出现：
+   回复/复制的入口是消息的一部分，隐藏它们等于让用户找不到。 */
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-message-controls {
   position: static;
   flex: 0 0 auto;
   margin: 0 0 4px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 140ms ease;
-}
-
-body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message:hover .assistant-message-controls,
-body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-assistant-message:focus-within .assistant-message-controls {
   opacity: 1;
   pointer-events: auto;
+  transition: opacity 140ms ease;
 }
 
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-feedback-actions {
@@ -330,16 +360,35 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
   line-height: 22px;
 }
 
-/* 对话区加宽：收窄 viewport 两侧的 72px 留白，输入区实际落在 1100–1200。 */
+/* 消息列收进居中列：宽屏时两侧留白自然生长，气泡不再贴左右边。
+   每个直接子项（消息、欢迎语、followup、尾部状态槽）都落在同一条 60rem 列上，
+   底部输入区单独排除，由下一条规则按列宽 + 内边距对齐。 */
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .aui-thread-viewport {
   padding-inline: clamp(16px, 2vw, 24px);
 }
 
-body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .aui-thread-viewport-footer,
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .aui-thread-viewport > :not(.aui-thread-viewport-footer) {
+  width: 100%;
+  max-width: var(--chat-column-max);
+  margin-inline: auto;
+}
+
+/* 输入区和消息列共用同一列宽：尾部槽是可滚动区里的整块底栏，
+   内层输入框自己收进 60rem 居中列，于是输入框左右边缘与消息列对齐。
+   footer 不设左右内边距，否则窄窗口下会把输入框挤得比消息列更窄。 */
+body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .aui-thread-viewport-footer {
+  box-sizing: border-box;
+  width: min(calc(var(--chat-column-max) + 2.5rem), 100%);
+  max-width: calc(var(--chat-column-max) + 2.5rem);
+  margin-inline: auto;
+  padding-inline: 0;
+}
+
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .harness-composer-shell {
   box-sizing: border-box;
-  width: min(1100px, 100%);
-  max-width: 1100px;
+  width: min(var(--chat-column-max), 100%);
+  max-width: var(--chat-column-max);
+  margin-inline: auto;
 }
 
 /* 窄屏（Mac 笔记本、分屏、右侧栏打开）不让输入区贴边或溢出。 */
@@ -355,7 +404,7 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
   align-items: flex-start;
   gap: 10px;
   padding: 6px 0;
-  max-width: min(640px, 92%);
+  max-width: min(var(--chat-bubble-max), 92%);
 }
 
 body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .grok-face {
@@ -469,7 +518,7 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
   gap: 2px;
   margin: 2px 0 0;
   padding: 0;
-  max-width: min(640px, 92%);
+  max-width: min(var(--chat-bubble-max), 92%);
   list-style: none;
   color: var(--codex-muted, #8a8a8a);
   font-size: 12px;
@@ -827,7 +876,7 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
 /* The live status sits above the composer, so it shares the composer's column
    (`width: min(800px, 100%); margin-inline: auto`). Full viewport width left it
    hugging the far-left gutter as soon as the window got wide. */
-.console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-message-tail-slot { flex-shrink: 0; width: min(1100px, 100%); max-width: 1100px; margin-inline: auto; padding-bottom: 12px; }
+.console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-message-tail-slot { flex-shrink: 0; width: min(var(--chat-column-max), 100%); max-width: var(--chat-column-max); margin-inline: auto; padding-bottom: 12px; }
 
 /* 助理消息与用户消息共用同一套操作条：桌面端常驻可见，触屏同样可点。 */
 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .assistant-shared-actions {
@@ -853,7 +902,7 @@ body.codex-theme-v1 .console-shell[data-conversation-surface="assistant"] .chat-
 .console-shell[data-conversation-surface="assistant"] .chat-stage[data-surface="assistant"] .handover-mention-text {
   box-sizing: border-box;
   width: fit-content;
-  max-width: min(640px, 86%);
+  max-width: min(var(--chat-bubble-max), 80%);
   margin: 6px 0 2px auto;
   padding: 10px 14px;
   border-radius: 18px;

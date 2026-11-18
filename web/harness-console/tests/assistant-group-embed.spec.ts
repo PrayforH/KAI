@@ -33,6 +33,10 @@ const sharedActions = readFileSync(
   "utf8",
 );
 const client = readFileSync(join(process.cwd(), "src/lib/assistant-client.ts"), "utf8");
+const sidePanel = readFileSync(
+  join(process.cwd(), "src/components/assistant-group-side-panel.tsx"),
+  "utf8",
+);
 
 describe("group chats live in the main assistant surface", () => {
   it("opens a group through ?group= inside the main chat stage", () => {
@@ -62,7 +66,6 @@ describe("group chats live in the main assistant surface", () => {
       "markAssistantGroupRead",
       "addAssistantGroupMember",
       "removeAssistantGroupMember",
-      "setAssistantGroupReplyAs",
       "mentionTargets",
     ]) {
       expect(groupChat).toContain(capability);
@@ -83,17 +86,22 @@ describe("group chats live in the main assistant surface", () => {
     expect(groupChat).toContain("条新消息");
   });
 
-  it("keeps the roster behind the group info toggle", () => {
-    // 花名册/邀请/接话人默认收起，对话区上方不再有一条工具条。
-    expect(groupChat).toContain('aria-label="群信息"');
-    expect(groupChat).toContain("<AssistantGroupInfoPanel");
-    expect(groupChat).toContain("aria-expanded={settingsOpen}");
+  it("keeps group info behind the title and members in their own dialog", () => {
+    // 旧的 ⋯ 群信息面板整块删除；点标题带群名打开只读群资料，
+    // 成员管理仍由标题带的头像簇拉起，两者不再是同一个面板。
+    expect(groupChat).toContain("<AssistantGroupInfoDialog");
+    expect(groupChat).toContain('aria-label={`查看 ${selected.name} 群资料`}');
+    expect(groupChat).not.toContain("settingsOpen");
     expect(groupChat).not.toContain("styles.toolbarInner");
-    // 右侧「聊天记录 / 动态 / 任务 / 资料库」侧栏；入口是真正的开关，开着再点会关。
+    expect(groupChat).toContain("<AssistantGroupMembersDialog");
+    expect(groupChat).toContain("setMembersOpen(true)");
+    // 右侧只剩「动态 / 任务 / 资料库」；聊天记录改成标题带的独立按钮。
     expect(groupChat).toContain("<AssistantGroupSidePanel");
     expect(groupChat).toContain('aria-label={sideOpen ? "关闭群右侧栏" : "打开群右侧栏"}');
-    expect(groupChat).toContain('sideOpen ? setSideOpen(false) : openSidePanel("history")');
-    expect(groupChat).toContain("onOpenInfo");
+    expect(groupChat).toContain('sideOpen ? setSideOpen(false) : openSidePanel("activity")');
+    expect(groupChat).toContain("title=\"聊天记录\"");
+    expect(sidePanel).not.toContain("群信息");
+    expect(sidePanel).not.toContain('key: "history"');
   });
 
   it("renders messages through the shared row and composer components", () => {
@@ -163,10 +171,11 @@ describe("group chats live in the main assistant surface", () => {
     expect(client).toContain("replyToMessageId: replyToMessageId ?? undefined");
   });
 
-  it("shows the member avatar cluster in the group header", () => {
-    expect(page).toContain("onGroupMembers={setGroupMembers}");
-    expect(page).toContain("group-member-faces");
-    expect(page).toContain("kai:group-settings-open");
-    expect(groupChat).toContain('window.addEventListener("kai:group-settings-open"');
+  it("opens the members dialog from the avatar cluster in the group title strip", () => {
+    // 助理面无顶栏，所以头像簇放在群聊自己的固定标题带里，而不是 page 的 header。
+    expect(groupChat).toContain("group-member-faces");
+    expect(groupChat).toContain("setMembersOpen(true)");
+    expect(page).not.toContain("group-member-faces");
+    expect(page).not.toContain("kai:group-members-open");
   });
 });

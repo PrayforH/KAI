@@ -42,9 +42,26 @@ it("routes each file type to the right preview", () => {
   expect(previewKindFor("application/octet-stream", "演示.pptx")).toBe("pptx");
   expect(previewKindFor("text/html", "flow.html")).toBe("html");
   expect(previewKindFor("application/octet-stream", "flow.htm")).toBe("html");
+  expect(previewKindFor("video/mp4", "clip.mp4")).toBe("video");
+  // Uploads that lose the MIME type still land on the same player.
+  expect(previewKindFor("application/octet-stream", "clip.mp4")).toBe("video");
+  expect(previewKindFor("application/octet-stream", "clip.webm")).toBe("video");
   expect(previewKindFor("application/zip", "bundle.zip")).toBe("none");
   // A .sqlite file shipped as octet-stream still falls back to download.
   expect(previewKindFor("application/octet-stream", "db.sqlite")).toBe("none");
+});
+
+it("reads and downloads an input artifact from its own upload route", async () => {
+  const fetcher = vi.fn(async (_input: RequestInfo | URL) => new Response("# 说明\n\n正文", { status: 200 }));
+  vi.stubGlobal("fetch", fetcher);
+  const container = await render(target("说明.md", "text/markdown", {
+    content_url: "/api/input-artifacts/input_artifact_a/content?inline=1",
+    download_url: "/api/input-artifacts/input_artifact_a/content",
+  }));
+  expect(fetcher.mock.calls[0][0]).toBe("/api/input-artifacts/input_artifact_a/content?inline=1");
+  expect(container.textContent).toContain("正文");
+  expect(container.querySelector(".rail-preview-download")?.getAttribute("href"))
+    .toBe("/api/input-artifacts/input_artifact_a/content");
 });
 
 it("parses quoted csv rows without losing fields", () => {
@@ -119,6 +136,24 @@ it("renders a generated page in the rail without downloading or trusting it", as
   // The page runs without the console origin, so its scripts cannot reach the session.
   expect(frame?.getAttribute("sandbox")).toContain("allow-scripts");
   expect(frame?.getAttribute("sandbox")).not.toContain("allow-same-origin");
+});
+
+it("plays a video in the same preview instead of a download note", async () => {
+  const fetcher = vi.fn();
+  vi.stubGlobal("fetch", fetcher);
+  const container = await render(target("clip.mp4", "video/mp4"));
+  const player = container.querySelector<HTMLVideoElement>("video.rail-preview-video");
+
+  // The browser streams the bytes; the panel must not pull them into memory.
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(player).not.toBeNull();
+  expect(player?.getAttribute("src")).toContain("/api/harness/artifacts/a1");
+  expect(player?.getAttribute("src")).toContain("preview=1");
+  expect(player?.controls).toBe(true);
+  expect(player?.autoplay).toBe(true);
+  expect(player?.muted).toBe(true);
+  expect(player?.playsInline).toBe(true);
+  expect(container.textContent).not.toContain("暂不支持在线预览");
 });
 
 it("offers the open file in a tab of its own", async () => {

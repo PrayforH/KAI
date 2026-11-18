@@ -57,6 +57,8 @@ export type MessageActionsProps = {
   /** 群聊沿用既有操作条的浮现时机与尺寸。 */
   className?: string;
   reactionsClassName?: string;
+  /** 操作条不必等 hover 才出（群聊要的「常显」）。 */
+  alwaysVisible?: boolean;
   /** 额外操作，如任务会话里的“编辑消息”。 */
   children?: React.ReactNode;
 };
@@ -73,6 +75,7 @@ export function MessageActions({
   onCopy,
   className,
   reactionsClassName,
+  alwaysVisible = false,
   children,
 }: MessageActionsProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -190,13 +193,14 @@ export function MessageActions({
     </div>
   ) : null;
 
+  // 表情回复固定在气泡下方、常显：操作条在上，回复在下一行，
+  // 两者不再挤在同一行（单助理与群聊同一套）。
   return (
-    <>
-      {reactionChips}
+    <div className={styles.stack}>
       <div
         className={`${styles.actions}${className ? ` ${className}` : ""}`}
         ref={actionsRef}
-        data-visible={engaged ? "true" : "false"}
+        data-visible={alwaysVisible || engaged ? "true" : "false"}
         data-suppressed={suppressed ? "true" : "false"}
       >
         <div className={styles.actionButtons}>
@@ -268,6 +272,7 @@ export function MessageActions({
           </span>
         )}
       </div>
-    </>
+      {reactionChips}
+    </div>
   );
 }

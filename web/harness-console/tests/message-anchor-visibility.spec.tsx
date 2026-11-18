@@ -141,22 +141,22 @@ describe("message action bar follows its bubble", () => {
     }
   });
 
-  it("reveals on bubble hover, not on row hover", async () => {
+  it("keeps the group bar visible without hover, and still hides it out of view", async () => {
     mockGeometry(100);
     await render(
       <AssistantGroupMessage message={message()} tone="#6b746e" onReact={vi.fn()} onReply={vi.fn()} />,
     );
-    const body = host.querySelector<HTMLElement>("[data-message-body]")!;
     const bar = actionBar()!;
-    expect(bar.getAttribute("data-visible")).toBe("false");
-
-    await act(async () => body.dispatchEvent(new Event("pointerenter")));
+    // 用户口径：表情回复与操作条常显，不用先 hover 才看得到。
     expect(bar.getAttribute("data-visible")).toBe("true");
 
-    await act(async () =>
-      body.dispatchEvent(new MouseEvent("pointerleave", { relatedTarget: null })),
+    // 气泡滚出上沿时仍要整条隐去，不能悬在空白处。
+    await act(async () => root!.render(null));
+    mockGeometry(12);
+    await render(
+      <AssistantGroupMessage message={message()} tone="#6b746e" onReact={vi.fn()} onReply={vi.fn()} />,
     );
-    expect(bar.getAttribute("data-visible")).toBe("false");
+    expect(actionBar()!.getAttribute("data-suppressed")).toBe("true");
   });
 
   it("applies the same rule to the shared bar used by the single assistant", async () => {

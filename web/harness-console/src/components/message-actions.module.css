@@ -1,5 +1,12 @@
 /* 共享消息操作条。群聊传自己的 actions/reactionRow 类保留原浮现时机；
    单助理用这里的默认样式。 */
+.stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: fit-content;
+}
 .reactionRow {
   display: flex;
   align-items: center;

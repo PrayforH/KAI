@@ -1,0 +1,181 @@
+/* 群资料：点标题带群名弹出的只读信息卡，视觉沿用成员管理弹窗的深色面板。 */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 62;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.panel {
+  position: relative;
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(620px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 16px 16px;
+  border: 1px solid #333;
+  border-radius: 18px;
+  background: #1b1b1b;
+  color: #ededed;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  overflow-y: auto;
+}
+
+.close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #cfcfcf;
+  cursor: pointer;
+}
+
+.close:hover { background: rgba(255, 255, 255, 0.12); }
+.close:focus-visible { outline: 2px solid #7aa2f7; outline-offset: 2px; }
+.close svg { width: 18px; height: 18px; }
+
+.header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.faces { display: flex; align-items: center; }
+.faces .face { margin-left: -8px; }
+.faces .face:first-child { margin-left: 0; }
+
+.face {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 2px solid #1b1b1b;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.name { margin: 0; font-size: 18px; font-weight: 600; text-align: center; }
+
+.rows {
+  margin: 0;
+  display: grid;
+  gap: 2px;
+  border: 1px solid #2e2e2e;
+  border-radius: 14px;
+  background: #232323;
+  overflow: hidden;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: 12px;
+  padding: 13px 14px;
+}
+
+.row + .row { border-top: 1px solid #2e2e2e; }
+
+.label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #ededed;
+  font-size: 14px;
+}
+
+.icon { width: 20px; height: 20px; flex: 0 0 auto; color: #9a9a9a; }
+
+.value {
+  margin: 0;
+  min-width: 0;
+  color: #cfcfcf;
+  font-size: 13px;
+  line-height: 20px;
+  text-align: right;
+}
+
+.hint { display: block; color: #7d7d7d; font-size: 11px; }
+
+/* 说明是长文本：占满整行，空值走灰色占位。 */
+.row:has(.description) { grid-template-columns: 1fr; }
+.description { text-align: left; white-space: pre-wrap; word-break: break-word; }
+.description[data-empty="true"] { color: #7d7d7d; }
+
+.members {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #cfcfcf;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.members:hover { background: rgba(255, 255, 255, 0.08); }
+.members:focus-visible { outline: 2px solid #7aa2f7; outline-offset: 2px; }
+.chevron { width: 16px; height: 16px; color: #8a8a8a; }
+
+/* 职责分工：每个在群成员一行，职责一行截断，鼠标悬停看全文。 */
+.duties {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #2e2e2e;
+  border-radius: 14px;
+  background: #232323;
+  padding: 12px 14px 10px;
+}
+
+.dutiesTitle {
+  margin: 0;
+  color: #9a9a9a;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.dutyList { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+
+.dutyRow { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+
+.dutyFace {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dutyMain { display: grid; gap: 1px; min-width: 0; }
+.dutyName { color: #ededed; font-size: 13px; }
+.dutyText {
+  color: #a9a9a9;
+  font-size: 12px;
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dutyText[data-empty="true"] { color: #6f6f6f; }

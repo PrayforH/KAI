@@ -8,6 +8,7 @@ import {
   GROUP_REPLY_STAGE_LABEL,
 } from "../lib/group-reply-progress";
 import { useGroupReplyProgress } from "../lib/use-group-reply-progress";
+import { readableGroupMessageText } from "../lib/group-message-text";
 import { AssistantGroupMarkdown } from "./assistant-group-markdown";
 import { MESSAGE_REACTIONS, MessageActions } from "./message-actions";
 import styles from "./assistant-group-message.module.css";
@@ -77,8 +78,11 @@ export function AssistantGroupMessage({
   /** 本人发送的消息不提供表情回复；表情只给助理的答复。 */
   const canReact = !mine && !system;
   const runningRunId = message.status === "running" ? message.runId : null;
-  const body = message.text ? (
-    <AssistantGroupMarkdown text={message.text} />
+  // 运行状态载荷（如 {"status":"ready"}）渲染成可读状态或按空正文处理，不照搬 JSON。
+  // 用户自己发的文字保持原样：这是助理运行记录的清洗，不替用户改写输入。
+  const text = message.author === "user" ? message.text : readableGroupMessageText(message.text);
+  const body = text ? (
+    <AssistantGroupMarkdown text={text} />
   ) : runningRunId ? (
     <RunningReplyStatus runId={runningRunId} />
   ) : (
@@ -87,7 +91,9 @@ export function AssistantGroupMessage({
   const quote = message.replyTo ? (
     <div className={styles.quoted} aria-label={`引用 ${message.replyTo.authorName}`}>
       <span className={styles.quotedAuthor}>{message.replyTo.authorName}</span>
-      <span className={styles.quotedText}>{message.replyTo.text}</span>
+      <span className={styles.quotedText}>{
+        message.replyTo.author === "user" ? message.replyTo.text : readableGroupMessageText(message.replyTo.text)
+      }</span>
     </div>
   ) : null;
   const attachments = message.attachments && message.attachments.length > 0 ? (
@@ -124,15 +130,16 @@ export function AssistantGroupMessage({
       reactions={canReact ? message.reactions : []}
       onReact={canReact ? (emoji) => onReact(message, emoji) : undefined}
       onReply={() => onReply(message)}
-      copyText={message.text}
+      copyText={text}
       className={styles.actions}
       reactionsClassName={styles.reactionRow}
+      alwaysVisible
     />
   );
 
   if (system) {
     return (
-      <article className={styles.systemRow} data-author="system">
+      <article className={styles.systemRow} data-author="system" data-group-message-id={message.messageId}>
         <div className={`${styles.systemPill} ${failed ? styles.failed : ""}`}>{body}</div>
       </article>
     );
@@ -140,7 +147,7 @@ export function AssistantGroupMessage({
 
   if (mine) {
     return (
-      <article className={styles.userRow} data-author="user">
+      <article className={styles.userRow} data-author="user" data-group-message-id={message.messageId}>
         <div className={styles.userColumn}>
           <div className={styles.userMeta}>
             <span>{groupTimeLabel(message.createdAt)}</span>
@@ -155,7 +162,7 @@ export function AssistantGroupMessage({
   }
 
   return (
-    <article className={styles.memberRow} data-author={message.author}>
+    <article className={styles.memberRow} data-author={message.author} data-group-message-id={message.messageId}>
       <span className={styles.avatar} style={{ background: tone }} aria-hidden="true">
         {message.authorName.slice(0, 1)}
       </span>

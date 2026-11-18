@@ -68,8 +68,8 @@ describe("group and assistant composer parity", () => {
   });
 
   it("restores a fixed surface title on both surfaces without header chrome", () => {
-    // 单助理的标题带在 page.tsx；群聊的标题带跟着群聊组件走（群名 + 右侧栏/群信息
-    // 按钮同一条带，按钮因此不在消息滚动区里）。
+    // 单助理的标题带在 page.tsx；群聊的标题带跟着群聊组件走（群名 + 成员头像簇与
+    // 右侧栏按钮同一条带，按钮因此不在消息滚动区里）。
     expect(page.match(/data-testid="assistant-surface-title"/g)).toHaveLength(1);
     expect(source("src/components/assistant-group-chat.tsx")).toContain(
       'data-testid="assistant-surface-title"',
@@ -89,13 +89,16 @@ describe("group and assistant composer parity", () => {
     expect(css).toMatch(/\.input:focus,\s*\.input:focus-visible\s*\{[^}]*outline: none !important/);
   });
 
-  it("puts the actual assistant input area inside 1100–1200 and shrinks on narrow screens", () => {
+  it("puts the actual assistant input area in the shared 60rem column and shrinks on narrow screens", () => {
     expect(groupChatCss).toContain("max-width: 1100px");
     expect(groupComposerCss).toContain("max-width: 1100px");
     // 两侧 72px 的 viewport 留白会吃掉宽度，助理面收窄到 16–24px。
     expect(assistantCss).toContain("padding-inline: clamp(16px, 2vw, 24px)");
-    expect(assistantCss).toContain("width: min(1100px, 100%)");
-    expect(assistantCss).toContain("max-width: 1100px");
+    // 助理面与 Grok standard 档一致：输入区落在 60rem 列上（列宽 + 2.5rem 内边距）。
+    expect(assistantCss).toContain("--chat-column-max: 60rem");
+    expect(assistantCss).toContain("width: min(calc(var(--chat-column-max) + 2.5rem), 100%)");
+    expect(assistantCss).toContain("max-width: calc(var(--chat-column-max) + 2.5rem)");
+    expect(assistantCss).toContain("max-width: var(--chat-column-max)");
     expect(assistantCss).toContain("@media (max-width: 1240px)");
   });
 

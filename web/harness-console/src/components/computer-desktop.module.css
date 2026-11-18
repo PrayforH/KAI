@@ -3,6 +3,9 @@
 .workspace { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; min-height: 0; overflow: hidden; }
 .workspace > :global(.chat-stage) { min-width: 0; min-height: 0; }
 .pane { min-width: 0; min-height: 0; overflow: hidden; }
+/* 历史面板的网格槽位：侧边时留左边线，堆叠时由外层改到上边。 */
+.historySlot { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.historySlot > aside { flex: 1; min-height: 0; }
 .divider { background: var(--codex-surface, var(--surface)); border-inline: 1px solid var(--codex-line, var(--line)); cursor: col-resize; touch-action: none; }
 .divider:hover, .divider:focus-visible { background: #bfa3c9; outline: none; }
 .windowHeader { display: flex; align-items: center; min-height: 44px; gap: 8px; padding: 0 14px; color: var(--codex-muted, #999); font-size: 12px; }
@@ -48,4 +51,31 @@
 @keyframes desktop-pending { 50% { opacity: .45; } }
 @media (prefers-reduced-motion: reduce) { .shell *, .shell *::before, .shell *::after { animation: none !important; transition: none !important; } }
 @media (max-width: 540px) { .toolbar { padding: 10px 8px; gap: 6px; } .connection { display: none; } .display { margin: 0 8px; } }
-@media (max-width: 850px) { .split { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(220px, 1fr) 6px minmax(240px, 1fr); } .divider { cursor: default; pointer-events: none; border-inline: 0; border-block: 1px solid var(--codex-line, var(--line)); } }
+/* 窄屏不再并排：历史、电脑各自成行，聊天仍是第一行。
+   三栏在 850px 以下挤到放不下一句对话，所以整体改成上下堆叠。 */
+@media (max-width: 850px) {
+  .workspace[data-split="true"] { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(220px, 1fr) 6px minmax(240px, 1fr); }
+  .workspace[data-history="true"][data-split="false"] { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(220px, 1fr) minmax(200px, .8fr); }
+  .divider { cursor: default; pointer-events: none; border-inline: 0; border-block: 1px solid var(--codex-line, var(--line)); }
+}
+
+/* 三栏的历史列取 min(420px, 36%)：1440（扣掉 264 左栏 = 1176）正好 420，
+   1280 → 366，1180 → 330，聊天列仍有 34% - 6px，够放一句对话，所以 1180
+   以上保持并排。再窄下去聊天列不足约 280px，才改上下堆叠。
+   只开历史（无电脑）时更宽松，沿用 850 以下的堆叠规则。 */
+@media (max-width: 1100px) {
+  .workspace[data-history="true"][data-split="true"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: minmax(240px, 1fr) minmax(180px, .7fr) 6px minmax(220px, 1fr);
+  }
+  .workspace[data-history="true"][data-split="true"] .divider {
+    cursor: default;
+    pointer-events: none;
+    border-inline: 0;
+    border-block: 1px solid var(--codex-line, var(--line));
+  }
+  .historySlot[data-stacked="true"] > aside {
+    border-left: 0;
+    border-top: 1px solid var(--codex-line, var(--line));
+  }
+}

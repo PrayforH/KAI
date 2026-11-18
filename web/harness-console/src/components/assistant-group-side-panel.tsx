@@ -12,24 +12,17 @@ import type {
 import type { StudioKnowledgeBase } from "../lib/studio-client";
 import { resolveDownloadUrl } from "../lib/assistant-download-url";
 import { groupTimeLabel } from "../lib/group-chat-time";
-import { ChatHistoryList } from "./chat-history-list";
+import { GROUP_MESSAGE_STATUS_LABEL as STATUS_LABEL } from "../lib/group-message-status";
+import { readableGroupMessageText } from "../lib/group-message-text";
 import styles from "./assistant-group-side-panel.module.css";
 
+// 聊天记录不再住在右侧栏：群聊和单助理一样，由标题带的独立按钮拉起历史列。
 export const GROUP_SIDE_TABS = [
-  { key: "history", label: "聊天记录" },
   { key: "activity", label: "动态" },
   { key: "tasks", label: "任务" },
   { key: "library", label: "资料库" },
 ] as const;
 export type GroupSideTab = typeof GROUP_SIDE_TABS[number]["key"];
-
-const STATUS_LABEL: Record<GroupMessage["status"], string> = {
-  running: "运行中",
-  waiting: "等待确认",
-  completed: "已完成",
-  failed: "失败",
-  stopped: "已停止",
-};
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
@@ -47,8 +40,6 @@ type AssistantGroupSidePanelProps = {
   tab: GroupSideTab;
   onTabChange: (tab: GroupSideTab) => void;
   onClose: () => void;
-  /** 打开群信息（成员、改名、解散）；与单助理侧栏的详情入口对齐。 */
-  onOpenInfo?: () => void;
   library: AssistantGroupLibrary | null;
   libraryLoading: boolean;
   libraryError: string | null;
@@ -72,7 +63,6 @@ export function AssistantGroupSidePanel({
   tab,
   onTabChange,
   onClose,
-  onOpenInfo,
   library,
   libraryLoading,
   libraryError,
@@ -99,17 +89,6 @@ export function AssistantGroupSidePanel({
     <aside className={styles.panel} aria-label="群右侧栏">
       <header className={styles.header}>
         <h2 className={styles.title} title={group.name}>{group.name}</h2>
-        {onOpenInfo && (
-          <button
-            type="button"
-            className={styles.infoButton}
-            aria-label="群信息"
-            title="群信息"
-            onClick={onOpenInfo}
-          >
-            群信息
-          </button>
-        )}
         <button type="button" className={styles.close} aria-label="关闭群右侧栏" title="关闭" onClick={onClose}>
           ×
         </button>
@@ -146,20 +125,6 @@ export function AssistantGroupSidePanel({
         id={`${id}-panel`}
         aria-labelledby={`${id}-${tab}`}
       >
-        {tab === "history" && (
-          <ChatHistoryList
-            items={messages.map((message) => ({
-              id: message.messageId,
-              author: message.authorName,
-              text: message.text || STATUS_LABEL[message.status],
-              time: groupTimeLabel(message.createdAt),
-            }))}
-            emptyText="这个群还没有聊天记录"
-            searchPlaceholder="搜索群聊记录"
-            label="群聊天记录"
-          />
-        )}
-
         {tab === "activity" && (
           <section className={styles.section} aria-label="群动态">
             {recent.length === 0 ? (
@@ -170,7 +135,8 @@ export function AssistantGroupSidePanel({
                   <li key={message.messageId} className={styles.activityItem}>
                     <span className={styles.activityName}>{message.authorName}</span>
                     <span className={styles.activityText}>
-                      {message.text ? message.text.slice(0, 60) : STATUS_LABEL[message.status]}
+                      {(message.author === "user" ? message.text : readableGroupMessageText(message.text)).slice(0, 60)
+                        || STATUS_LABEL[message.status]}
                     </span>
                     <time className={styles.time} dateTime={message.createdAt}>
                       {groupTimeLabel(message.createdAt)}
@@ -196,7 +162,10 @@ export function AssistantGroupSidePanel({
                         {STATUS_LABEL[message.status]}
                       </span>
                     </div>
-                    <p className={styles.taskText}>{message.text.slice(0, 120) || "（没有文字输出）"}</p>
+                    <p className={styles.taskText}>{
+                      (message.author === "user" ? message.text : readableGroupMessageText(message.text)).slice(0, 120)
+                        || "（没有文字输出）"
+                    }</p>
                     <time className={styles.time} dateTime={message.createdAt}>
                       {groupTimeLabel(message.createdAt)}
                     </time>
