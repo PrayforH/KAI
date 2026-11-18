@@ -28,6 +28,7 @@ import { loadGroupComposerDraft, persistGroupComposerDraft } from "../lib/group-
 import { botAccent } from "./bot-rail";
 import { SidebarIcon } from "./sidebar-icon";
 import { AssistantGroupComposer } from "./assistant-group-composer";
+import { AssistantGroupInfoDialog } from "./assistant-group-info-dialog";
 import { AssistantGroupMembersDialog, type MemberChange } from "./assistant-group-members-dialog";
 import { AssistantGroupMessage } from "./assistant-group-message";
 import { AssistantGroupSidePanel, type GroupSideTab } from "./assistant-group-side-panel";
@@ -136,6 +137,8 @@ export function AssistantGroupChat({
   const [newPill, setNewPill] = useState(0);
   /** 标题带头像簇直接拉起成员管理弹窗；群管理只有这一处入口。 */
   const [membersOpen, setMembersOpen] = useState(false);
+  /** 点标题带群名打开只读的群资料（谁回复 / 说明 / 成员跳转）。 */
+  const [infoOpen, setInfoOpen] = useState(false);
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const seenCounts = useRef<Record<string, number>>({});
@@ -669,7 +672,17 @@ export function AssistantGroupChat({
         {/* 固定标题带：群名在左，成员头像簇与右侧栏入口在右。它在消息滚动区之外，
             所以按钮不会随滚动压到气泡上（本轮返工的核心）。 */}
         <div className="assistant-surface-title" data-testid="assistant-surface-title">
-          <span className="task-context-title">{selected.name}</span>
+          {/* 和单助理一样：点标题带的群名看群资料（谁回复 / 说明 / 成员跳转），
+              编辑群名与说明仍只在左侧列表的「⋯ → 群资料…」。 */}
+          <button
+            type="button"
+            className="task-context-title task-context-bot-name"
+            aria-label={`查看 ${selected.name} 群资料`}
+            title="群资料"
+            onClick={() => setInfoOpen(true)}
+          >
+            {selected.name}
+          </button>
           <div className={styles.settings}>
             {/* 成员头像簇：最多 3 个，其余折成 +N；点它直接打开成员管理弹窗。
                 助理面无顶栏，所以入口放在群聊自己的固定标题带里。 */}
@@ -853,6 +866,13 @@ export function AssistantGroupChat({
           onDeleteDocument={(document) => void handleDeleteDocument(document)}
           onBind={(reference) => void handleBindKnowledgeBase(reference)}
           onUnbind={(base) => void handleUnbindKnowledgeBase(base.reference)}
+        />
+      )}
+      {infoOpen && (
+        <AssistantGroupInfoDialog
+          group={selected}
+          onClose={() => setInfoOpen(false)}
+          onMembers={() => { setInfoOpen(false); setMembersOpen(true); }}
         />
       )}
       {membersOpen && (

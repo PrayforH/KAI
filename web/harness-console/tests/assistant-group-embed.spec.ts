@@ -86,10 +86,11 @@ describe("group chats live in the main assistant surface", () => {
     expect(groupChat).toContain("条新消息");
   });
 
-  it("drops the group info panel and keeps only the members dialog", () => {
-    // 群管理只剩标题带头像簇拉起的成员弹窗；旧的 ⋯ 群信息面板整块删除。
-    expect(groupChat).not.toContain("AssistantGroupInfo");
-    expect(groupChat).not.toContain("群信息");
+  it("keeps group info behind the title and members in their own dialog", () => {
+    // 旧的 ⋯ 群信息面板整块删除；点标题带群名打开只读群资料，
+    // 成员管理仍由标题带的头像簇拉起，两者不再是同一个面板。
+    expect(groupChat).toContain("<AssistantGroupInfoDialog");
+    expect(groupChat).toContain('aria-label={`查看 ${selected.name} 群资料`}');
     expect(groupChat).not.toContain("settingsOpen");
     expect(groupChat).not.toContain("styles.toolbarInner");
     expect(groupChat).toContain("<AssistantGroupMembersDialog");

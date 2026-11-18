@@ -178,23 +178,41 @@ describe("AssistantGroupChat", () => {
     }
   });
 
-  it("removes the group info panel and its entries from the title band and side panel", async () => {
+  it("opens the group info sheet from the title band's group name", async () => {
+    stateGroup = group({ description: "KAI 项目研发协作组。" });
     await act(async () =>
       root!.render(<AssistantGroupChat groupId="g1" userId="u1" />),
     );
     await flush();
 
     const band = host.querySelector<HTMLElement>('[data-testid="assistant-surface-title"]')!;
+    // 旧的「群信息」按钮和 ⋯ 菜单都不在了：改名/改说明在左侧列表的 ⋯ 菜单里。
     expect(band.querySelector('[aria-label="群信息"]')).toBeNull();
     expect(band.textContent).not.toContain("⋯");
+
+    // 和单助理一样，点群名看群资料：谁回复 / 说明 / 成员。
+    const nameButton = band.querySelector<HTMLButtonElement>('[aria-label$="群资料"]')!;
+    expect(nameButton.textContent).toBe("产品评审群");
+    await act(async () => nameButton.click());
+    const dialog = host.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]')!;
+    expect(dialog).not.toBeNull();
+    expect(dialog.textContent).toContain("谁回复");
+    expect(dialog.textContent).toContain("主助理");
+    expect(dialog.textContent).toContain("未 @ 时由它接话");
+    expect(dialog.textContent).toContain("KAI 项目研发协作组。");
+    expect(dialog.textContent).toContain("2 人");
+
+    // 成员行是跳转：关掉资料，打开成员管理。
+    const members = [...dialog.querySelectorAll("button")].find((button) => button.textContent?.includes("人"))!;
+    await act(async () => members.click());
+    await flush();
+    expect(host.querySelector('[role="dialog"]')?.textContent).toContain("成员管理");
 
     await act(async () => {
       host.querySelector<HTMLButtonElement>('[aria-expanded][aria-label$="群右侧栏"]')!.click();
     });
     await flush();
-    const aside = host.querySelector('aside[aria-label="群右侧栏"]')!;
-    expect(aside.textContent).not.toContain("群信息");
-    expect(host.querySelector('[role="dialog"][aria-label="群信息"]')).toBeNull();
+    expect(host.querySelector('aside[aria-label="群右侧栏"]')!.textContent).not.toContain("群信息");
   });
 
   it("restores the draft for the same user and group after remount", async () => {
